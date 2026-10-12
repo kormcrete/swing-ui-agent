@@ -15,7 +15,7 @@ java -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,plugins=
 | --- | --- | --- |
 | `port` | `8765` | Where the CLI, tests and MCP clients connect. |
 | `bind` | `127.0.0.1` | The address to listen on. Loopback only. |
-| `mode` | `normal` | `normal` or `background`. |
+| `mode` | `normal` | `normal` or `background`. On macOS, `background` keeps the app out of the Dock so it never takes the foreground; elsewhere both behave the same. On every platform the app can be driven while other windows are in front. |
 | `plugins` | none | Plugin jars or class folders, separated by `:`. See [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/). |
 
 ## System properties
