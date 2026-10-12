@@ -1,0 +1,2259 @@
+{
+  "tools": [
+    {
+      "name": "describe_ui",
+      "description": "The app facts the app plugin reports for the live client: activeTab, the navigate targets (navTargets: the friendly names, and navTargetEntryPointIds: the entry-point ids), the toolbar's toolbarActions (id/label/enabled/submenu), the menu bar's leaf menuPaths, navEntryPoints (roots, children), the open view's viewTabs and sections (every section it registered, including one never built - 'created':false; target it by its 'id') with sectionProblems, and any waiting dialog ('dialog': title, message, buttons - answer it with the 'answer' verb). Tables, buttons and fields are read from the element tree with 'snapshot' or 'read'. Pass 'fields' to get only the parts you need.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "description": "Only these top-level fields, e.g. [\"sections\",\"dialog\"] or [\"activeTab\",\"viewTabs\"]; default all.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "do_action",
+      "description": "Execute ONE flow step against the live client and return pass/fail and its duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the app steps navigate, close, loginAs. A successful step with a Java form is recorded for export_test; one without (a loginAs after the first step, a target by ref) runs but is not recorded, and 'notRecorded' says why. The 'action' object uses the flow schema, e.g. {\"action\":\"navigate\",\"target\":\"home\"} or {\"action\":\"expect\",\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step that opens a message or confirmation returns at once with 'dialog' (title, message, buttons); navigate, close and loginAs refuse to run until it is answered with the 'answer' verb.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "object",
+            "description": "A flow step named by its 'action' field: a verb, or navigate / close / loginAs. The verbs are also tools of their own, with full argument schemas.",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "click",
+                  "type",
+                  "press",
+                  "check",
+                  "select",
+                  "pick",
+                  "menu",
+                  "answer",
+                  "chooseFile",
+                  "drag",
+                  "drop",
+                  "expect",
+                  "scroll",
+                  "setClipboard",
+                  "screenshot",
+                  "contextMenu",
+                  "hover",
+                  "resizeColumn",
+                  "resizeWindow",
+                  "closeWindow",
+                  "focusFileChooserName",
+                  "navigate",
+                  "close",
+                  "loginAs"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "record": {
+            "type": "boolean",
+            "default": true,
+            "description": "false keeps this step out of export_test's recording (used by tests)"
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "do_actions",
+      "description": "Execute SEVERAL flow steps in order against the live client, in one call, stopping at the first failure. Prefer this over repeated do_action when the next steps are already known. Returns {passed, ran, total, steps:[{passed, action, message}]}; successful steps are recorded for export_test exactly as do_action records them. Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"action\":\"close\"}]}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "description": "Flow actions to run in order",
+            "items": {
+              "type": "object",
+              "description": "A flow step named by its 'action' field: a verb, or navigate / close / loginAs. The verbs are also tools of their own, with full argument schemas.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "click",
+                    "type",
+                    "press",
+                    "check",
+                    "select",
+                    "pick",
+                    "menu",
+                    "answer",
+                    "chooseFile",
+                    "drag",
+                    "drop",
+                    "expect",
+                    "scroll",
+                    "setClipboard",
+                    "screenshot",
+                    "contextMenu",
+                    "hover",
+                    "resizeColumn",
+                    "resizeWindow",
+                    "closeWindow",
+                    "focusFileChooserName",
+                    "navigate",
+                    "close",
+                    "loginAs"
+                  ]
+                }
+              },
+              "required": [
+                "action"
+              ]
+            }
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      }
+    },
+    {
+      "name": "batch",
+      "description": "Run SEVERAL steps in ONE call, in order, stopping at the first that does not pass - use it whenever the next steps are already known. Each step runs, answers and records exactly as its own tool call would, so export_test writes the same test either way; 'read' steps record nothing, and a 'read' that finds nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, ms, recorded?, notRecorded?, ...}], snapshot?}. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool error naming the step; the steps before it ran and were recorded. Example: {\"steps\":[{\"verb\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Name\"},\"text\":\"X\"},{\"verb\":\"expect\",\"target\":{\"role\":\"button\",\"name\":\"Save\"},\"state\":[\"!disabled\"]}]}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "description": "The steps, in order. Each is {\"verb\": <name>, ...the arguments that verb's own tool takes}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "verb": {
+                  "type": "string",
+                  "description": "A verb tool's name (click, type, press, check, select, pick, menu, context_menu, answer, choose_file, drag, drop, expect, scroll, set_clipboard), 'read', or a flow step type (navigate, close, loginAs, screenshot, ...)."
+                }
+              },
+              "required": [
+                "verb"
+              ]
+            }
+          },
+          "snapshot": {
+            "description": "true, or the snapshot tool's arguments (target, depth, compact, ...): a snapshot taken after the last step that ran, pass or fail."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      }
+    },
+    {
+      "name": "export_test",
+      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a recording that did not begin at a reset, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "Test class name; must end in UiIT, e.g. OrderSaveUiIT"
+          },
+          "method": {
+            "type": "string",
+            "description": "Test method name (default: recorded)"
+          },
+          "package": {
+            "type": "string",
+            "description": "Java package (default: the app plugin's export package, else 'recorded')"
+          },
+          "clear": {
+            "type": "boolean",
+            "description": "Empty the recording after exporting (default: true); reset before recording the next test"
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "class"
+        ]
+      }
+    },
+    {
+      "name": "snapshot",
+      "description": "The live client as an element tree: every showing window, dialog and popup (focused window first, popups last), each element with role, name, value, state and a ref (e1, e2, ...). Refs stay valid until the next snapshot; pass one as {\"ref\":\"e12\"} as a verb's target. SCOPE IT: an unscoped snapshot is the whole app and costs thousands of tokens. Give a 'target' locator (e.g. {\"scope\":[\"tab:Customer\"],\"role\":\"section\",\"name\":\"Header\"} or {\"role\":\"tab\",\"name\":\"Line items\"}) for one element's subtree, 'depth' for a few levels, and compact:true to drop rows and items. The answer ends with 'size' {nodes, bytes, scoped}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "Only the roots this names: main | popup | dialog | dialog:<title> | window:<title>"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Only this element's subtree (a ref from the previous snapshot)"
+          },
+          "target": {
+            "type": "object",
+            "description": "Only this element's subtree, found like a verb's target - a tab's content for a tab. At most one of window, ref and target.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Levels of nodes to include below the windows (or the scoped element), which is level 1; deeper nodes are cut and their parent marked truncated. 2-4 is usually enough."
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "Drop table/list/tree rows and items, scroll geometry and expanded paths (columns and rowCount stay); maxRows defaults to 0."
+          },
+          "maxNodes": {
+            "type": "integer",
+            "description": "Node budget, default 400; cut parts are marked truncated"
+          },
+          "maxRows": {
+            "type": "integer",
+            "description": "Rows per table, list or tree, default 20"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read",
+      "description": "Reads one element without acting: its node, or with row/column one table cell or row. 'target' is required for every form except menuItems. A node carries 'tooltip' when the element (or the rendered cell) shows one. A target that does not resolve returns found:false with candidates.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "A UI element: {\"ref\":\"e12\"} from the last snapshot, or a locator. row/column/item/point address a part of it.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "maxRows": {
+            "type": "integer",
+            "description": "Rows for a table, list or tree"
+          },
+          "form": {
+            "type": "string",
+            "description": "What to read: node (default; {found,node}), all (every match; {found,nodes}), geometry ({found,geometry}), candidates ({candidates}) or menuItems ({found,items}; needs 'path', takes no target)",
+            "enum": [
+              "node",
+              "all",
+              "geometry",
+              "candidates",
+              "menuItems"
+            ]
+          },
+          "path": {
+            "type": "array",
+            "description": "menuItems form: the menu path to list the items under",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "A PNG of the app: the target element, or the current window when no target is given. It PAINTS the app's own components into an offscreen image - it never grabs the screen - so it captures the client whether or not it is in front, takes no focus, and cannot catch another application's window. Give a 'target' for one dialog, panel, table or toolbar, and 'region' for a snippet inside it. Anything drawn in a window of its own (an open popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window instead. A read: nothing is recorded and there is no flow step for it. Use it for an aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for anything that is really a number or a boolean.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "A UI element: {\"ref\":\"e12\"} from the last snapshot, or a locator. row/column/item/point address a part of it.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "region": {
+            "type": "object",
+            "description": "A snippet of the target instead of all of it: x, y, w, h as fractions 0..1 of its bounds (the way 'point' works).",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "w": {
+                "type": "number"
+              },
+              "h": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h"
+            ]
+          },
+          "maxSize": {
+            "type": "integer",
+            "description": "Longest side of the returned image, default 1200; it is scaled down to fit."
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read_clipboard",
+      "description": "The system clipboard's text as {text}, e.g. to check what a copy in the app left there (a tab between cells, a line break between rows). text is null when the clipboard holds no text. A read: nothing is recorded; a test reads it with ui.clipboardText().",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read_file_chooser",
+      "description": "The showing file chooser as {found, folder, name, nameFocused, lookAndFeel}: the absolute path of the folder it shows, the file-name field's text, whether that field has focus (so a press with no target lands in it), and the look and feel whose key bindings it runs. One look; it waits the driver's default unless 'timeout' (ms, 0 = no wait) is given; found is false with the reason when no chooser shows. A read: nothing is recorded; a test reads it with ui.fileChooser().",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds to wait for a chooser to show; 0 looks once. Omitted: the driver's default wait."
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "click",
+      "description": "Clicks an element as a mouse would: the click is posted into the client's event queue at the element (or its row/column/item/point), where AWT decides who receives it. A disabled, hidden, covered or modal-blocked target is refused. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The element to click.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "button": {
+            "type": "string",
+            "description": "Mouse button; default left.",
+            "enum": [
+              "left",
+              "right"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "description": "1, 2 or 3 clicks; default 1."
+          },
+          "modifiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keys held while clicking: Mod (Cmd on macOS, Ctrl elsewhere), Shift, Ctrl, Alt, Meta. Mod toggles a row into the selection; Shift extends it."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "type",
+      "description": "Types text into a field or a table cell as a keyboard would. A cell target (row and column) is clicked, then edited; commit presses Enter after typing. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The field, or a table with row and column.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "text": {
+            "type": "string",
+            "description": "The text to type."
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Replace what is there (select all first); default true."
+          },
+          "commit": {
+            "type": "boolean",
+            "description": "Press Enter after typing; default false."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target",
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "press",
+      "description": "Presses a key chord, e.g. \"Enter\", \"Escape\", \"Mod+O\", \"Shift+Tab\". With a target, focuses it first; without one the keys go to the showing modal dialog, else the focused window. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "string",
+            "description": "The key chord."
+          },
+          "target": {
+            "type": "object",
+            "description": "The element to focus first.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      }
+    },
+    {
+      "name": "check",
+      "description": "Sets a check box, toggle or Boolean table cell to the given state by clicking it; does nothing when it is already in that state. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The check box, or a table with row and column of a Boolean cell.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "checked": {
+            "type": "boolean",
+            "description": "The wanted state."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target",
+          "checked"
+        ]
+      }
+    },
+    {
+      "name": "select",
+      "description": "Selects by clicking: a combo box item (opens its popup, clicks the item), list items (the first plain, the rest with Mod), or a tab of a tab strip. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The combo box, list or tab strip.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "item": {
+            "type": "string",
+            "description": "The item's text as shown."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Several list items, as shown."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "pick",
+      "description": "Clicks down a path of items in the showing popup (a dropdown button's menu, a context menu), opening submenus on the way. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Item labels from the popup down; a submenu's label comes before its items."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "menu",
+      "description": "Invokes a main-window menu-bar item by its label path. An in-window menu bar is clicked; the native macOS screen menu bar has no input path, so its item is invoked directly (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Menu, submenus and item, e.g. [\"File\", \"Export\", \"PDF\"]."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "context_menu",
+      "description": "Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Labels from the context menu down to the item."
+          },
+          "target": {
+            "type": "object",
+            "description": "The element to right-click.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "path",
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "answer",
+      "description": "Answers the showing modal dialog: clicks the button with this label, or with \"escape\" presses Escape and requires the dialog to close. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "button": {
+            "type": "string",
+            "description": "The button's label as shown (\"Yes\", \"OK\", \"Assign\"), or \"escape\"."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "button"
+        ]
+      }
+    },
+    {
+      "name": "choose_file",
+      "description": "Answers the showing file chooser: types the path and presses Enter (falling back to the chooser's own approve, recorded as via:api), or with approve:false presses Escape. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The file to choose; required unless approve is false."
+          },
+          "approve": {
+            "type": "boolean",
+            "description": "Approve (default true) or cancel."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        }
+      }
+    },
+    {
+      "name": "drag",
+      "description": "Posts a mouse drag gesture from one element to another in the same window. A native drag is never started; use drop to deliver data. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "description": "Where the drag starts.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "to": {
+            "type": "object",
+            "description": "Where it ends.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      }
+    },
+    {
+      "name": "drop",
+      "description": "Drops files or text onto an element's drop target without the OS (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The element to drop onto.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Absolute paths of existing files."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to drop instead of files."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "expect",
+      "description": "Checks an element without acting, retrying until it holds or the timeout (default 10000 ms) passes. Give exactly one of state, text, value, tooltip, rows, cell, selected. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The element to check.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "state": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "States that must hold; \"!x\" must not. The tokens: disabled, focused, selected, checked, readonly, editable, rollover, editing (a table with an open cell editor), atTop and atBottom (a scrollable element's viewport), expanded and leaf (a tree row), and any state the app reports for a section (e.g. hidden, incomplete). On a table target with a 'row' and no 'column' this is that ROW's selection (and focused); on a tree target with an 'item' it is that ROW's selected, expanded, leaf."
+          },
+          "text": {
+            "type": "string",
+            "description": "The element's text as shown (a cell with row and column)."
+          },
+          "value": {
+            "type": "string",
+            "description": "A field's or combo's value, a toggle's true/false."
+          },
+          "tooltip": {
+            "type": "string",
+            "description": "The tooltip shown on hover, HTML stripped (a cell's with row and column); \"\" for none."
+          },
+          "rows": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string"
+              },
+              "value": {
+                "type": "integer"
+              }
+            },
+            "description": "Row count of a table, list, tree or combo: {op: eq|gt|gte|lt|lte, value}."
+          },
+          "cell": {
+            "type": "object",
+            "properties": {
+              "row": {
+                "type": "object"
+              },
+              "column": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string"
+              }
+            },
+            "description": "One table cell: {row, column, expected}."
+          },
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The rows of a table, list or tree that must be selected, and only those, e.g. [0, 1]; order does not matter. Use [] for nothing selected."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "scroll",
+      "description": "Scrolls a table, tree, list or panel: to an end with 'to', by whole screens with 'pages', or until a row is in view by giving the target a 'row'. Exactly one of the three. It moves the viewport directly rather than posting wheel input, so it is exact and it fires the same change a scroll bar does - which is what continuous paging listens for. Read where it ended up from the element's 'scroll' block (x, y, width, height, maxX, maxY) or its atTop/atBottom states. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The scrollable element; add a 'row' to it to scroll that row into view.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "to": {
+            "type": "string",
+            "description": "Scroll all the way to this end.",
+            "enum": [
+              "top",
+              "bottom",
+              "left",
+              "right"
+            ]
+          },
+          "pages": {
+            "type": "integer",
+            "description": "Scroll by this many screens; negative scrolls back up."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "set_clipboard",
+      "description": "Puts text on the system clipboard, as a copy in another application would - e.g. a block copied from Excel: a tab between cells, a line break between rows, each value as displayed. Paste it into the app with press \"Mod+V\" on the focused element (click the anchor cell first). It REPLACES what the user had on the clipboard. Read it back with read_clipboard. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text. For a spreadsheet block: \\t between cells, \\n between rows."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "plugin_call",
+      "description": "Calls one method of a plugin's hooks by name. args is a JSON array, converted to the method's parameter types. Returns {\"value\": …}. Without 'plugin', the only plugin.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array"
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      }
+    },
+    {
+      "name": "session",
+      "description": "The agent itself. info (default): versions, app start, lease, plugins (the plugins array lists every plugin with its state). lease {owner, ttlMs}: take the agent for one owner; pass the token as _lease on every mutating call. release {token}. renew {token}: keep the lease alive while the test makes no call; answers renewed: false once the lease is gone. reset {alias | user+password}: the start of every test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). Starts a fresh recording for export_test. login {alias | user+password | relogin:true}: switch users mid-test. edt: the client's event-thread stack.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "info",
+              "lease",
+              "release",
+              "renew",
+              "reset",
+              "login",
+              "edt"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "ttlMs": {
+            "type": "integer"
+          },
+          "token": {
+            "type": "string"
+          },
+          "alias": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "relogin": {
+            "type": "boolean"
+          },
+          "_lease": {
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

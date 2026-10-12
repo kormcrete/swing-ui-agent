@@ -1,0 +1,68 @@
+// @ts-check
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+import starlightLinksValidator from 'starlight-links-validator';
+import starlightLlmsTxt from 'starlight-llms-txt';
+
+const repo = 'https://github.com/kormcrete/swing-ui-agent';
+
+export default defineConfig({
+	site: 'https://kormcrete.github.io',
+	base: '/swing-ui-agent',
+	// Literal quotes stay straight: tool descriptions quote values an agent copies ('created', "escape").
+	markdown: { smartypants: false },
+	integrations: [
+		starlight({
+			title: 'swing-ui-agent',
+			description:
+				'Let a coding agent drive your real Swing app and write its UI tests. Attach one jar, no changes to the app.',
+			favicon: '/favicon.svg',
+			social: [{ icon: 'github', label: 'GitHub', href: repo }],
+			editLink: { baseUrl: `${repo}/edit/main/site/` },
+			customCss: [
+				'@fontsource/figtree/700.css',
+				'@fontsource/figtree/800.css',
+				'@fontsource/nunito-sans/400.css',
+				'@fontsource/nunito-sans/600.css',
+				'@fontsource/nunito-sans/700.css',
+				'@fontsource/jetbrains-mono/400.css',
+				'./src/styles/kormcrete.css',
+			],
+			expressiveCode: {
+				themes: ['github-dark-default', 'github-light-default'],
+				styleOverrides: {
+					borderRadius: '10px',
+					codeFontFamily: 'var(--__sl-font-mono)',
+					frames: { frameBoxShadowCssValue: 'none' },
+				},
+			},
+			components: {
+				Footer: './src/components/Footer.astro',
+			},
+			plugins: [
+				starlightLinksValidator(),
+				starlightLlmsTxt({
+					projectName: 'swing-ui-agent',
+					description:
+						'A Java agent (-javaagent) that lets a coding agent drive a real Java Swing app from a shell or over MCP, and records what it did as JUnit 5 @UiTest classes. No changes to the app; no java.awt.Robot.',
+					details: [
+						'- Coding agents: the skills in the repository (`skills/`) teach the drive, target and record workflow; install them rather than working from these docs alone.',
+						'- Every tool and its parameters: https://kormcrete.github.io/swing-ui-agent/reference/tools/ (generated from the agent\'s own schemas; `java -jar <agent jar> tools <name>` prints the same from a running app).',
+					].join('\n'),
+					optionalLinks: [
+						{ label: 'README', url: `${repo}#readme`, description: 'Quick start, status and build' },
+						{ label: 'Skills', url: `${repo}/tree/main/skills`, description: 'Agent skills: swing-ui-record-test, swing-ui-targeting, swing-ui-driver' },
+					],
+				}),
+			],
+			sidebar: [
+				{ label: 'Getting started', items: [{ autogenerate: { directory: 'start' } }] },
+				{ label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
+				{ label: 'AI agents', items: [{ autogenerate: { directory: 'agents' } }] },
+				{ label: 'Plugins', items: [{ autogenerate: { directory: 'plugins' } }] },
+				{ label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
+				{ label: 'Project', items: [{ autogenerate: { directory: 'project' } }] },
+			],
+		}),
+	],
+});

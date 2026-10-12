@@ -1,0 +1,209 @@
+/*
+ * Kormcrete design system (tokens v4) mapped onto Starlight's theme variables.
+ * White ground, near-black ink, one navy, sky tints, hairlines instead of shadows; the dark theme is navy-black.
+ * Starlight's scale runs from --sl-color-white (strongest text) to --sl-color-black (page ground) in both themes.
+ */
+
+:root {
+	--sl-font: 'Nunito Sans', 'Segoe UI', system-ui, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+	--kc-font-display: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+	--kc-signal: #76d8ff;
+	--kc-radius-sm: 6px;
+	--kc-radius-md: 10px;
+	--kc-radius-lg: 16px;
+
+	/* dark (Starlight's default): navy-black */
+	--sl-color-white: #f2f5f8; /* ink */
+	--sl-color-gray-1: #e3e9ee; /* ink-soft */
+	--sl-color-gray-2: #a9b6c2; /* ink-muted */
+	--sl-color-gray-3: #7e8e9c;
+	--sl-color-gray-4: #5e88a8; /* steel */
+	--sl-color-gray-5: #2a3d4f; /* hairline */
+	--sl-color-gray-6: #162533; /* ground-raised */
+	--sl-color-black: #0f1a24; /* ground */
+
+	--sl-color-accent-low: #1e3a52; /* sky */
+	--sl-color-accent: #7fb3d9; /* navy */
+	--sl-color-accent-high: #a9cfea; /* navy-bright */
+
+	--sl-color-text: var(--sl-color-gray-1);
+	--sl-color-bg-nav: #0b141c;
+	--sl-color-bg-sidebar: var(--sl-color-black);
+	--sl-color-hairline: var(--sl-color-gray-5);
+	--sl-color-hairline-light: var(--sl-color-gray-5);
+
+	--sl-color-green-low: #183a29;
+	--sl-color-green: #7fcb9c; /* moss */
+	--sl-color-green-high: #a9dfbd;
+	--sl-color-orange-low: #3d2d10;
+	--sl-color-orange: #e0ae4a; /* amber */
+	--sl-color-orange-high: #f0cd85;
+	--sl-color-red-low: #3f1d18;
+	--sl-color-red: #e0786a; /* brick */
+	--sl-color-red-high: #f0aca2;
+	--sl-color-blue-low: #1e3a52;
+	--sl-color-blue: #7fb3d9;
+	--sl-color-blue-high: #a9cfea;
+	--sl-color-purple-low: #1e3a52; /* "tip" asides stay navy: one saturated colour */
+	--sl-color-purple: #7fb3d9;
+	--sl-color-purple-high: #a9cfea;
+}
+
+:root[data-theme='light'] {
+	--sl-color-white: #111213; /* ink */
+	--sl-color-gray-1: #1b1e21; /* ink-soft */
+	--sl-color-gray-2: #3a3e43; /* ink-muted */
+	--sl-color-gray-3: #5b6672;
+	--sl-color-gray-4: #7fa9c9; /* steel */
+	--sl-color-gray-5: #d5dee6; /* hairline */
+	--sl-color-gray-6: #f5f8fa; /* ground-raised */
+	--sl-color-gray-7: #fafbfc;
+	--sl-color-black: #ffffff; /* ground */
+
+	--sl-color-accent-low: #e6f1fc; /* sky tint */
+	--sl-color-accent: #1a4a6b; /* navy */
+	--sl-color-accent-high: #17456a; /* navy-deep */
+
+	--sl-color-text: var(--sl-color-gray-1);
+	--sl-color-bg-nav: #1a4a6b; /* the navy header band */
+	--sl-color-bg-sidebar: var(--sl-color-black);
+
+	--sl-color-green-low: #e5f2ea;
+	--sl-color-green: #2e7d4f; /* moss */
+	--sl-color-green-high: #2e7d4f;
+	--sl-color-orange-low: #fbf0dc;
+	--sl-color-orange: #a86a0b; /* amber */
+	--sl-color-orange-high: #8a5709;
+	--sl-color-red-low: #f8e4e1;
+	--sl-color-red: #a63a2b; /* brick */
+	--sl-color-red-high: #8f3125;
+	--sl-color-blue-low: #e6f1fc;
+	--sl-color-blue: #1a4a6b;
+	--sl-color-blue-high: #17456a;
+	--sl-color-purple-low: #e6f1fc;
+	--sl-color-purple: #1a4a6b;
+	--sl-color-purple-high: #17456a;
+}
+
+/* The header is a band: navy in light, a deeper navy-black in dark. Its own text scale is light-on-dark in both. */
+header.header {
+	border-bottom: 0;
+	--sl-color-white: #ffffff;
+	--sl-color-gray-1: #f2f5f8;
+	--sl-color-gray-2: #d6e4ef;
+	--sl-color-gray-3: #b2d8ff;
+	--sl-color-gray-4: #7fa9c9;
+	--sl-color-gray-5: rgb(255 255 255 / 0.28);
+	--sl-color-gray-6: rgb(255 255 255 / 0.1);
+	--sl-color-text-accent: #ffffff;
+	--sl-color-hairline-shade: transparent;
+}
+
+/* The search dialog lives inside the header; give it the page's scale back. */
+:root[data-theme='light'] header.header dialog {
+	--sl-color-white: #111213;
+	--sl-color-gray-1: #1b1e21;
+	--sl-color-gray-2: #3a3e43;
+	--sl-color-gray-3: #5b6672;
+	--sl-color-gray-4: #7fa9c9;
+	--sl-color-gray-5: #d5dee6;
+	--sl-color-gray-6: #f5f8fa;
+	--sl-color-text-accent: #17456a;
+}
+:root:not([data-theme='light']) header.header dialog {
+	--sl-color-white: #f2f5f8;
+	--sl-color-gray-1: #e3e9ee;
+	--sl-color-gray-2: #a9b6c2;
+	--sl-color-gray-3: #7e8e9c;
+	--sl-color-gray-4: #5e88a8;
+	--sl-color-gray-5: #2a3d4f;
+	--sl-color-gray-6: #162533;
+	--sl-color-text-accent: #a9cfea;
+}
+
+/* Type: Figtree for the wordmark and headings, sentence case, slightly tight. */
+.site-title {
+	font-family: var(--kc-font-display);
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	text-transform: lowercase;
+}
+h1,
+h2,
+h3,
+h4,
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+	font-family: var(--kc-font-display);
+	letter-spacing: -0.015em;
+}
+:is(h1, h2) {
+	font-weight: 800;
+}
+.sl-markdown-content :is(h3, h4, h5, h6) {
+	font-weight: 700;
+}
+
+/* Shapes: hairlines, not shadows; cards 16, controls 10, inline code 6. */
+.sl-markdown-content code:not(:where(.not-content *)) {
+	border-radius: var(--kc-radius-sm);
+}
+.card,
+.sl-link-card {
+	border-radius: var(--kc-radius-lg);
+	box-shadow: none;
+}
+.starlight-aside {
+	border-radius: var(--kc-radius-md);
+}
+.sl-link-button {
+	border-radius: var(--kc-radius-md);
+}
+site-search button[data-open-modal] {
+	border-radius: var(--kc-radius-md);
+}
+
+/* The one signal accent per view: the current sidebar entry. */
+.sidebar-content a[aria-current='page'] {
+	box-shadow: inset 3px 0 0 var(--kc-signal);
+}
+
+/* Search in the header band: a quiet field on navy. */
+header.header site-search button[data-open-modal] {
+	background-color: rgb(255 255 255 / 0.08);
+	border-color: rgb(255 255 255 / 0.28);
+	color: #d6e4ef;
+}
+header.header site-search button[data-open-modal]:hover {
+	border-color: rgb(255 255 255 / 0.6);
+	color: #ffffff;
+}
+
+/* Cards: one navy, not a rotating palette; the title in Figtree. */
+.card {
+	--sl-card-border: var(--sl-color-accent);
+	--sl-card-bg: var(--sl-color-accent-low);
+}
+.card .title {
+	font-family: var(--kc-font-display);
+	font-weight: 700;
+}
+.card .icon {
+	border-radius: var(--kc-radius-sm);
+}
+
+/* On the home page, three cards in a row on wide screens: Drive, Record, Run. */
+@media (min-width: 72rem) {
+	[data-has-hero] .card-grid {
+		grid-template-columns: repeat(3, 1fr);
+	}
+}
+
+/* Code shows what you type: no ligatures (JetBrains Mono turns "->" and "://" into glyphs). */
+code,
+kbd,
+pre,
+.expressive-code {
+	font-variant-ligatures: none;
+	font-feature-settings: 'liga' 0, 'calt' 0;
+}

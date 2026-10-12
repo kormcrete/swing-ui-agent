@@ -1,0 +1,32 @@
+---
+title: swing-ui-agent
+description: Let a coding agent drive your real Swing app and write its UI tests. Attach one jar, no changes to the app.
+template: splash
+hero:
+  title: Let a coding agent drive your Swing app and write its UI tests
+  tagline: Attach one jar to your app's JVM. No changes to the app, and it never takes over your mouse.
+  actions:
+    - text: Get started
+      link: /swing-ui-agent/start/why/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/kormcrete/swing-ui-agent
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+	<Card title="Drive" icon="seti:shell">
+		A coding agent clicks, types and reads the live app, from a shell (`java -jar … <tool>`) or over MCP.
+	</Card>
+	<Card title="Record" icon="pencil">
+		What it did becomes a JUnit 5 `@UiTest` class (`export_test`). You review it like any other code.
+	</Card>
+	<Card title="Run" icon="rocket">
+		The tests run against the live app in CI, or by hand when you want to watch them work.
+	</Card>
+</CardGrid>
+
+Java 8 to 25 · Apache-2.0 · macOS today, Linux and Windows in progress ([Limits](/swing-ui-agent/project/limits/))

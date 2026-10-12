@@ -1,0 +1,19 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default><slot /></Default>
+<p class="kc-credit">
+	Apache-2.0 · A <a href="https://github.com/kormcrete">Kormcrete</a> project
+</p>
+
+<style>
+	.kc-credit {
+		margin-top: 1.5rem;
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.kc-credit a {
+		color: inherit;
+	}
+</style>
