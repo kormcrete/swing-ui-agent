@@ -97,12 +97,25 @@ class UiTestMultiClientTest {
     private InJvmAgent a, b;
     private AgentClient ca, cb;
 
-    private void startTwo(AppHooks appA, AppHooks appB) {
+    /** Stands in for an app until the agents' ports are known; then it delegates to the one for its port. */
+    static final class LateApp implements AppHooks {
+        volatile AppHooks app;
+        @Override public void recoverSession() { app.recoverSession(); }
+        @Override public void reset(ResetSpec spec) { app.reset(spec); }
+        @Override public void login(ResetSpec who, boolean force) { app.login(who, force); }
+        @Override public AppInfo info() { return app.info(); }
+    }
+
+    /** {@code low} runs on the agent with the lower port, which the pool binds first; {@code high} on the other. */
+    private void startTwo(AppHooks low, AppHooks high) {
         RecordingVerbs va = new RecordingVerbs(), vb = new RecordingVerbs();
+        LateApp appA = new LateApp(), appB = new LateApp();
         a = InJvmAgent.start(va, new PluginParts(new RecordingHost(va), null, appA, null, null, null));
         b = InJvmAgent.start(vb, new PluginParts(new RecordingHost(vb), null, appB, null, null, null));
-        // UiPool.of keeps the given order: put the lower port first, as a parsed spec would
+        // the OS picks the ports: UiPool.of keeps the given order, so put the lower port first, as a parsed spec would
         boolean aFirst = a.port() < b.port();
+        appA.app = aFirst ? low : high;
+        appB.app = aFirst ? high : low;
         ca = new AgentClient("127.0.0.1", aFirst ? a.port() : b.port());
         cb = new AgentClient("127.0.0.1", aFirst ? b.port() : a.port());
         poolUnderTest = UiPool.of(ca, cb);

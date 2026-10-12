@@ -13,7 +13,7 @@ class LeaseHeartbeatTest {
         AtomicInteger calls = new AtomicInteger();
         LeaseHeartbeat h = new LeaseHeartbeat(() -> { calls.incrementAndGet(); return true; }, 20, "hb-test");
         h.start();
-        Thread.sleep(150);
+        awaitAtLeast(calls, 3);
         h.stop();
         int seen = calls.get();
         assertThat(seen).isGreaterThanOrEqualTo(3);
@@ -27,7 +27,8 @@ class LeaseHeartbeatTest {
     void aRenewThatSaysTheLeaseIsGoneStopsAndIsReported() throws Exception {
         LeaseHeartbeat h = new LeaseHeartbeat(() -> false, 10, "hb-test");
         h.start();
-        Thread.sleep(80);
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (h.isRunning() && System.currentTimeMillis() < deadline) Thread.sleep(10);
         assertThat(h.isRunning()).isFalse();
         assertThat(h.lost()).contains("lease was lost");
     }
@@ -40,9 +41,15 @@ class LeaseHeartbeatTest {
             return true;
         }, 10, "hb-test");
         h.start();
-        Thread.sleep(100);
+        awaitAtLeast(calls, 3);
         h.stop();
         assertThat(calls.get()).isGreaterThanOrEqualTo(3);
         assertThat(h.lost()).isNull();
+    }
+
+    /** Waits for {@code n} renews, up to 5 s: a slow or loaded machine runs fewer periods in a fixed sleep. */
+    private static void awaitAtLeast(AtomicInteger calls, int n) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (calls.get() < n && System.currentTimeMillis() < deadline) Thread.sleep(10);
     }
 }
