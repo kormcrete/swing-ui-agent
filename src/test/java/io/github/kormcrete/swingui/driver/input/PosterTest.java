@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.input;
 
+import io.github.kormcrete.swingui.driver.platform.Platform;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JPanel;
@@ -44,6 +45,13 @@ class PosterTest {
         List<MouseEvent> other = Poster.clickEvents(source, new Point(1, 1), Poster.Button.RIGHT, 1, 0, 5L, false);
         assertThat(other.get(1).isPopupTrigger()).isFalse();
         assertThat(other.get(2).isPopupTrigger()).isTrue();
+    }
+
+    @Test
+    void onlyWindowsTriggersPopupsOnRelease() {
+        assertThat(Poster.popupTriggerOnPress(Platform.MAC)).isTrue();
+        assertThat(Poster.popupTriggerOnPress(Platform.LINUX)).isTrue();
+        assertThat(Poster.popupTriggerOnPress(Platform.WINDOWS)).isFalse();
     }
 
     @Test

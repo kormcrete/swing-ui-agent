@@ -3,7 +3,9 @@ package io.github.kormcrete.swingui.driver.input;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import java.awt.event.MouseAdapter;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,6 +47,25 @@ class HitCheckTest {
         root.add(blocker);
         root.add(button);
         assertThat(HitCheck.mouseTarget(root, 20, 15)).isSameAs(blocker);
+    }
+
+    @Test
+    void aLabelWithOnlyItsOwnPopupMenuTakesTheClick() {
+        JLabel attachments = new JLabel("[attachments]");
+        attachments.setBounds(10, 10, 60, 20);
+        attachments.setComponentPopupMenu(new JPopupMenu());
+        root.add(attachments);
+        assertThat(HitCheck.mouseTarget(root, 20, 15)).isSameAs(attachments);
+    }
+
+    @Test
+    void anInheritedPopupMenuDoesNotMakeAComponentTakeTheClick() {
+        root.setComponentPopupMenu(new JPopupMenu());
+        JLabel label = new JLabel("idle");
+        label.setBounds(10, 10, 60, 20);
+        label.setInheritsPopupMenu(true);
+        root.add(label);
+        assertThat(HitCheck.mouseTarget(root, 20, 15)).isSameAs(root);
     }
 
     @Test

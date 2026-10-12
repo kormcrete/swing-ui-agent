@@ -16,6 +16,7 @@ import java.util.Set;
 public class FakeSeam implements Seam {
     public final EnumSet<Capability> available = EnumSet.allOf(Capability.class);
     public final Map<Capability, String> because = new EnumMap<Capability, String>(Capability.class);
+    public final Map<Capability, String> notes = new EnumMap<Capability, String>(Capability.class);
     public boolean systemGenerated;
     public Boolean active = Boolean.FALSE;
     public Window pinned;
@@ -33,6 +34,7 @@ public class FakeSeam implements Seam {
     @Override public String name() { return "FakeSeam"; }
     @Override public Set<Capability> available() { return available; }
     @Override public String missingBecause(Capability c) { return because.get(c); }
+    @Override public String note(Capability c) { return notes.get(c); }
     @Override public String fix() { return "use the real seam"; }
     @Override public void pinFocusedWindow(Window w) { pinned = w; }
     @Override public Window pinnedWindow() { return pinned; }

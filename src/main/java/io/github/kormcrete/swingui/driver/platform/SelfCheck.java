@@ -14,13 +14,16 @@ public final class SelfCheck {
 
     public static CapabilityReport run(Seam seam) {
         Map<Capability, String> missing = new EnumMap<Capability, String>(Capability.class);
+        Map<Capability, String> notes = new EnumMap<Capability, String>(Capability.class);
         for (Capability c : Capability.values()) {
             if (!seam.available().contains(c)) {
                 String because = seam.missingBecause(c);
                 missing.put(c, because == null ? "not found" : because);
+            } else if (seam.note(c) != null) {
+                notes.put(c, seam.note(c));
             }
         }
-        CapabilityReport report = new CapabilityReport(seam.name(), missing);
+        CapabilityReport report = new CapabilityReport(seam.name(), missing, notes);
         List<Capability> required = report.missingRequired();
         if (!required.isEmpty()) {
             StringBuilder why = new StringBuilder();

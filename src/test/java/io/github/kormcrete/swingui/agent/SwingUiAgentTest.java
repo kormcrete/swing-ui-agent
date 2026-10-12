@@ -4,8 +4,6 @@ import io.github.kormcrete.swingui.mcp.HttpMcpEndpoint;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
@@ -31,9 +29,6 @@ import static org.mockito.Mockito.when;
 
 class SwingUiAgentTest {
 
-    /** These start the real driver, which so far exists only for macOS (see Seams). */
-    private static final String MAC_ONLY = "the driver runs on macOS only so far";
-
     @Test
     void badArgumentsLeaveTheAppRunning() {
         String err = captureErr(() -> assertThat(SwingUiAgent.start("plugin=/x.jar", mock(Instrumentation.class))).isNull());
@@ -41,7 +36,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void busyPortLeavesTheAppRunning(@TempDir Path dir) throws Exception {
         Path plugin = pluginDir(dir);
         Instrumentation inst = mock(Instrumentation.class);
@@ -66,7 +60,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void aMissingPluginIsReportedAndTheAgentStillStarts() {
         String[] err = new String[1];
         HttpMcpEndpoint[] endpoint = new HttpMcpEndpoint[1];
@@ -81,7 +74,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void anUnreadableDescriptorIsReportedAndTheAgentStillStarts(@TempDir Path dir) throws Exception {
         Path props = dir.resolve(PluginDescriptor.RESOURCE);
         Files.createDirectories(props.getParent());
@@ -101,7 +93,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void anInstrumentationFailureNeverEscapes(@TempDir Path dir) throws Exception {
         Path plugin = pluginDir(dir);
         Instrumentation inst = mock(Instrumentation.class);
@@ -118,7 +109,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void startsTheEndpointOnTheGivenPort() {
         HttpMcpEndpoint endpoint = SwingUiAgent.start("mode=background,port=0", mock(Instrumentation.class));
         try {
@@ -130,7 +120,6 @@ class SwingUiAgentTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, disabledReason = MAC_ONLY)
     void sessionInfoReportsTheBoundPort() throws Exception {
         HttpMcpEndpoint endpoint = SwingUiAgent.start("mode=background,port=0", mock(Instrumentation.class));
         try {

@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.input;
 
 import io.github.kormcrete.swingui.driver.Edt;
 import io.github.kormcrete.swingui.driver.focus.FocusEmulator;
+import io.github.kormcrete.swingui.driver.platform.Platform;
 
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
@@ -17,7 +18,6 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.IntSupplier;
 
 /**
@@ -48,9 +48,13 @@ public final class Poster {
     }
 
     public static Poster forThisJvm() {
-        boolean mac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
-        return new Poster(e -> Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(e), mac,
-                KeyChord::menuShortcutMask);
+        return new Poster(e -> Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(e),
+                popupTriggerOnPress(Platform.current()), KeyChord::menuShortcutMask);
+    }
+
+    /** Where the toolkit marks a right click as the popup trigger: on press on macOS and X11, on release on Windows. */
+    static boolean popupTriggerOnPress(Platform platform) {
+        return platform != Platform.WINDOWS;
     }
 
     public int menuShortcutMask() {

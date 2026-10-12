@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * The only code that touches JDK internals. One implementation per platform and JDK line.
+ * The only code that touches JDK internals.
  * Every method belonging to a missing capability throws CAPABILITY_GAP.
  */
 public interface Seam {
@@ -20,6 +20,11 @@ public interface Seam {
 
     /** Why a capability is missing, or null when it is available. */
     String missingBecause(Capability capability);
+
+    /** Why an available capability needs nothing on this platform, or null. */
+    default String note(Capability capability) {
+        return null;
+    }
 
     /** What to do when a required capability is missing. */
     String fix();

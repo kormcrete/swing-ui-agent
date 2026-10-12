@@ -17,7 +17,9 @@ import java.util.function.Function;
  * Before posting: the target shows, is enabled where required, the point is in its visible
  * part, and a press there would reach it. Mirrors AWT's mouse-target rule: the topmost visible
  * component under the point that has mouse listeners. A component's private event mask cannot be
- * read, so one that enabled mouse events without adding a listener counts as transparent.
+ * read, so one that enabled mouse events without adding a listener counts as transparent - except for the one
+ * Swing case that is known: {@code setComponentPopupMenu} enables mouse events, so a component with its own
+ * popup menu takes mouse input even with no listener (a label or panel that only has a context menu).
  */
 public final class HitCheck {
 
@@ -61,7 +63,16 @@ public final class HitCheck {
 
     private static boolean listensToMouse(Component c) {
         return c.getMouseListeners().length > 0 || c.getMouseMotionListeners().length > 0
-                || c.getMouseWheelListeners().length > 0;
+                || c.getMouseWheelListeners().length > 0 || hasOwnPopupMenu(c);
+    }
+
+    /** An inherited popup menu enables nothing on {@code c}: only one set on {@code c} itself counts. */
+    private static boolean hasOwnPopupMenu(Component c) {
+        if (!(c instanceof JComponent)) return false;
+        JComponent j = (JComponent) c;
+        if (j.getComponentPopupMenu() == null) return false;
+        if (!j.getInheritsPopupMenu() || !(j.getParent() instanceof JComponent)) return true;
+        return j.getComponentPopupMenu() != ((JComponent) j.getParent()).getComponentPopupMenu();
     }
 
     private static boolean isAncestor(Component ancestor, Component c) {

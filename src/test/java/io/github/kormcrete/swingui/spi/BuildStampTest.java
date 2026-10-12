@@ -54,7 +54,7 @@ class BuildStampTest {
     @Test
     void aLiteralSpaceIsAccepted() throws Exception {
         Path j = jar(dir.resolve("Application Support/a.jar"), null, null);
-        URL url = new URL("file:" + j.toAbsolutePath());   // some class loaders hand out unencoded paths
+        URL url = new URL("file:" + j.toUri().getPath());  // some class loaders hand out unencoded paths: file:/C:/…
         assertThat(BuildStamp.location(url)).isEqualTo(j);
     }
 

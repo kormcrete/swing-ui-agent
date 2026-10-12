@@ -48,7 +48,7 @@ public final class ModuleAccess {
                     Collections.emptyMap());
             return null;
         } catch (Exception | LinkageError e) {
-            return "cannot open java.desktop to swing-ui-agent: " + MacSeam.describe(e);
+            return "cannot open java.desktop to swing-ui-agent: " + AwtSeam.describe(e);
         }
     }
 }

@@ -1,18 +1,29 @@
 package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.agent.fixture.FixturePlugin;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PluginHostTest {
 
     @TempDir Path dir;
+    /** Closed after each test: on Windows an open loader locks its jar, and the temp folder could not be deleted. */
+    private final List<URLClassLoader> appLoaders = new ArrayList<URLClassLoader>();
+
+    @AfterEach
+    void closeAppLoaders() throws Exception {
+        for (URLClassLoader loader : appLoaders) loader.close();
+    }
 
     private PluginDescriptor descriptor(boolean withService) throws Exception {
         Path props = dir.resolve(PluginDescriptor.RESOURCE);
@@ -124,7 +135,9 @@ class PluginHostTest {
         Path classes = Files.createDirectories(dir.resolve("app-classes"));   // javac -d needs the folder to exist
         PluginJars.compile(classes, "com.example.orders.AppContext", "package com.example.orders; public class AppContext {}");
         Path jar = PluginJars.jar(classes, dir.resolve("app lib/app.jar"), "Build-Session", stamp);
-        return new java.net.URLClassLoader(new java.net.URL[] {jar.toUri().toURL()}, getClass().getClassLoader());
+        URLClassLoader loader = new URLClassLoader(new java.net.URL[] {jar.toUri().toURL()}, getClass().getClassLoader());
+        appLoaders.add(loader);
+        return loader;
     }
 
     private static final String MATCHED = "app-class=com.example.orders.AppContext\nbuild-match=Build-Session\n";

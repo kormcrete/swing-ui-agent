@@ -25,8 +25,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * macOS, Java 8 and later. Every lookup happens once, in the constructor. A failed lookup leaves
+ * macOS, Windows and Linux (X11), Java 8 and later: the lookups are in the shared {@code sun.awt} / {@code java.awt}
+ * code, so one seam serves every toolkit. Every lookup happens once, in the constructor. A failed lookup leaves
  * its capability missing with the reason, and {@link SelfCheck} decides whether that stops the launch.
+ *
+ * <p>Windows differs in one place: its focus peer reads the focused window from the OS and cannot set it
+ * ({@code setCurrentFocusedWindow} throws "not implemented"). It does not need to: the emulated focus moves work
+ * without it, in front of or behind other apps. So there pinning is {@link #note noted} as not needed, and a no-op.</p>
  *
  * <p>Constructing this starts the AWT toolkit, so {@code LaunchMode} must already have set {@code apple.awt.UIElement}.
  * On Java 9+ the lookups need {@code java.desktop} opened first ({@link ModuleAccess}); without that they fail with
@@ -34,9 +39,11 @@ import java.util.Set;
  * The focus peer is reached through {@code sun.awt.KeyboardFocusManagerPeerProvider}: on 1.8.0_291
  * {@code sun.awt.ComponentFactory} does not declare {@code getKeyboardFocusManagerPeer()}.</p>
  */
-public final class MacSeam implements Seam {
+public final class AwtSeam implements Seam {
 
     private final Map<Capability, String> missing = new EnumMap<Capability, String>(Capability.class);
+    private final Map<Capability, String> notes = new EnumMap<Capability, String>(Capability.class);
+    private final Platform platform;
     private final Toolkit toolkit;
 
     private Object focusPeer;
@@ -50,7 +57,8 @@ public final class MacSeam implements Seam {
     private DropPeerHook dropPeer;
     private Method isApplicationActive;
 
-    public MacSeam() {
+    public AwtSeam(Platform platform) {
+        this.platform = platform;
         toolkit = Toolkit.getDefaultToolkit();
         lookUpFocusPeer();
         lookUpTypeAhead();
@@ -60,6 +68,10 @@ public final class MacSeam implements Seam {
     }
 
     private void lookUpFocusPeer() {
+        if (platform == Platform.WINDOWS) {
+            notes.put(Capability.PIN_FOCUSED_WINDOW, "not needed: Windows reads the focused window from the OS");
+            return;
+        }
         try {
             Class<?> provider = Class.forName("sun.awt.KeyboardFocusManagerPeerProvider");
             if (!provider.isInstance(toolkit)) {
@@ -125,7 +137,7 @@ public final class MacSeam implements Seam {
 
     @Override
     public String name() {
-        return "MacSeam(" + System.getProperty("java.version") + ")";
+        return "AwtSeam(" + platform.label + ", Java " + System.getProperty("java.version") + ")";
     }
 
     @Override
@@ -141,21 +153,29 @@ public final class MacSeam implements Seam {
     }
 
     @Override
+    public String note(Capability capability) {
+        return notes.get(capability);
+    }
+
+    @Override
     public String fix() {
         return "attach the driver with -javaagent (on Java 9+ it opens the JDK internals it needs) and run the app on "
                 + "Java " + Seams.VERIFIED_JAVA + ", the versions these lookups are verified on, or update the "
-                + "lookups in MacSeam for this JDK";
+                + "lookups in AwtSeam for this JDK";
     }
 
     @Override
     public void pinFocusedWindow(Window window) {
         require(Capability.PIN_FOCUSED_WINDOW);
+        if (notes.containsKey(Capability.PIN_FOCUSED_WINDOW)) return;
         invoke(Capability.PIN_FOCUSED_WINDOW, setFocusedWindow, focusPeer, window);
     }
 
     @Override
     public Window pinnedWindow() {
         require(Capability.PIN_FOCUSED_WINDOW);
+        if (notes.containsKey(Capability.PIN_FOCUSED_WINDOW)) return KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                .getFocusedWindow();
         return (Window) invoke(Capability.PIN_FOCUSED_WINDOW, getFocusedWindow, focusPeer);
     }
 

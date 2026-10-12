@@ -8,7 +8,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicLong;
@@ -61,6 +63,15 @@ public final class AgentConnection {
         c.setReadTimeout(READ_MS);
         c.setRequestProperty("Content-Type", "application/json");
         c.setRequestProperty("Accept", "application/json, text/event-stream");
+        try {
+            c.connect();
+        } catch (SocketTimeoutException e) {
+            // Windows does not refuse a closed local port at once: it retries for about 2 s, so a missing agent shows
+            // as a connect timeout there. A listening agent is accepted by the OS at once, however busy the app is.
+            ConnectException refused = new ConnectException("no answer to connect within " + CONNECT_MS + " ms");
+            refused.initCause(e);
+            throw refused;
+        }
         try (OutputStream out = c.getOutputStream()) {
             mapper.writeValue(out, req);
         }

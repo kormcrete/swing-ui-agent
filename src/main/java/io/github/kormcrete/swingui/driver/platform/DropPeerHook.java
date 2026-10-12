@@ -33,7 +33,7 @@ final class DropPeerHook {
         } catch (Exception | LinkageError e) {
             a = null;
             d = null;
-            why = MacSeam.describe(e);
+            why = AwtSeam.describe(e);
         }
         attach = a;
         detach = d;

@@ -29,7 +29,8 @@ class ModuleTargetTest {
         Path target = ModuleTarget.of(ModuleTargetTest.class);
         assertThat(target.isAbsolute()).isTrue();
         assertThat(target.getFileName().toString()).isEqualTo("target");
-        assertThat(target.getParent().getFileName().toString()).isEqualTo("swing-ui-agent");
+        assertThat(target.getParent().resolve("pom.xml")).as("the module directory, whatever the checkout is named")
+                .isRegularFile();
     }
 
     @Test

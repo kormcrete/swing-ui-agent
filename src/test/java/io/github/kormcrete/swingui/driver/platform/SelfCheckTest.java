@@ -18,6 +18,16 @@ class SelfCheckTest {
     }
 
     @Test
+    void aCapabilityThePlatformNeedsNothingForIsReportedWithItsNote() {
+        FakeSeam seam = new FakeSeam();
+        seam.notes.put(Capability.PIN_FOCUSED_WINDOW, "not needed: Windows reads the focused window from the OS");
+        CapabilityReport report = SelfCheck.run(seam);
+        assertThat(report.has(Capability.PIN_FOCUSED_WINDOW)).isTrue();
+        assertThat(report.lines())
+                .contains("pin the toolkit's focused window: not needed: Windows reads the focused window from the OS");
+    }
+
+    @Test
     void aMissingOptionalCapabilityIsReportedAsUnavailable() {
         CapabilityReport report = SelfCheck.run(new FakeSeam().without(Capability.APP_ACTIVE, "no LWCToolkit"));
         assertThat(report.has(Capability.APP_ACTIVE)).isFalse();

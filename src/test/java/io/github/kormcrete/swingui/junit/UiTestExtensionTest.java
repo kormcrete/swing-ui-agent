@@ -21,6 +21,7 @@ import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -107,7 +108,8 @@ class UiTestExtensionTest {
     void screenshotsGoUnderTheTestModulesTarget() {
         assertThat(UiTestExtension.screenshotRoot(UiTestExtensionTest.class))
                 .isEqualTo(ModuleTarget.of(UiTestExtensionTest.class).resolve("ui-screenshots"));
-        assertThat(UiTestExtension.screenshotRoot(UiTestExtensionTest.class).toString())
-                .endsWith("swing-ui-agent/target/ui-screenshots");
+        Path root = UiTestExtension.screenshotRoot(UiTestExtensionTest.class);
+        assertThat(root.getFileName().toString()).isEqualTo("ui-screenshots");
+        assertThat(root.getParent().getParent().resolve("pom.xml")).isRegularFile();
     }
 }
