@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The apple.awt.UIElement property only works when set before the toolkit starts, so initialising the
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code Dimension} — constructing one of those loads {@code java.awt.Toolkit} as a side effect
  * without ever loading a concrete {@code sun.*Toolkit}. So the pattern matches either the bare
  * {@code java.awt.Toolkit} class or any concrete {@code sun.*Toolkit}. The child JVMs run headless,
- * so neither can activate anything.
+ * so neither can activate anything. Java 25 no longer loads the toolkit from {@code Color}; CI saw it do so on 8 to 21.
  */
 class SwingUiAgentStaticInitTest {
 
@@ -47,6 +48,7 @@ class SwingUiAgentStaticInitTest {
 
     @Test
     void theColorControlAlsoStartsAToolkit() throws Exception {
+        assumeTrue(javaFeatureVersion() <= 21, "Color loads no toolkit on Java 25");
         String out = runProbe("color");
         String after = out.substring(out.indexOf(SwingUiAgentStaticInitProbe.START));
         assertThat(TOOLKIT_LOADED.matcher(after).find())
@@ -66,6 +68,11 @@ class SwingUiAgentStaticInitTest {
         assertThat(process.waitFor(60, TimeUnit.SECONDS)).isTrue();
         assertThat(out).contains(SwingUiAgentStaticInitProbe.START);
         return out;
+    }
+
+    private static int javaFeatureVersion() {
+        String spec = System.getProperty("java.specification.version");
+        return Integer.parseInt(spec.startsWith("1.") ? spec.substring(2) : spec);
     }
 
     private static String read(InputStream in) throws Exception {
