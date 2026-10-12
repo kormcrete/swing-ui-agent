@@ -156,7 +156,7 @@ public final class FailureDiagnostics {
 
     private void screenshot(Verbs verbs, String flowName, int index, StepDiagnostics d) {
         try {
-            Shot shot = verbs.screenshot(null, null, null);
+            Shot shot = verbs.screenshot(null, null, null, null);
             Files.createDirectories(screenshotDir);
             Path file = screenshotDir.resolve(safe(flowName) + "-step" + index + ".png");
             Files.write(file, shot.png);

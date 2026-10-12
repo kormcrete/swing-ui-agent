@@ -169,4 +169,18 @@ class UiMcpReadToolsTest {
         assertThat(r.get("found").asBoolean()).isFalse();
         assertThat(r.get("reason").asText()).isEqualTo("NOT_FOUND");
     }
+
+    @Test
+    void screenshotPassesMaxSizeAndScale() throws Exception {
+        session.screenshot(json("{\"maxSize\":3000,\"scale\":2}"));
+        assertThat(backend.verbs.calls).containsExactly("screenshot null 3000 2.0");
+    }
+
+    @Test
+    void aScaleThatIsNotANumberIsBadInput() {
+        DriverException e = catchThrowableOfType(
+                () -> session.screenshot(json("{\"scale\":\"2x\"}")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("scale");
+    }
 }

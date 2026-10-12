@@ -587,7 +587,11 @@
           },
           "maxSize": {
             "type": "integer",
-            "description": "Longest side of the returned image, default 1200; it is scaled down to fit."
+            "description": "Longest side of the returned image, default 1200 times 'scale'; it is scaled down to fit."
+          },
+          "scale": {
+            "type": "number",
+            "description": "Image pixels per screen pixel, 1 to 4, default 1: 2 paints the app as a 2x (HiDPI) display would, same layout, finer text and lines - for images people will look at."
           }
         }
       },

@@ -234,7 +234,10 @@ public final class UiMcpTools {
                 rp.putObject("h").put("type", "number");
                 region.putArray("required").add("x").add("y").add("w").add("h");
                 p.putObject("maxSize").put("type", "integer").put("description",
-                        "Longest side of the returned image, default 1200; it is scaled down to fit.");
+                        "Longest side of the returned image, default 1200 times 'scale'; it is scaled down to fit.");
+                p.putObject("scale").put("type", "number").put("description",
+                        "Image pixels per screen pixel, 1 to 4, default 1: 2 paints the app as a 2x (HiDPI) display "
+                        + "would, same layout, finer text and lines - for images people will look at.");
                 return readOnly(tool(m, "screenshot",
                         "A PNG of the app: the target element, or the current window when no target is given. "
                         + "It PAINTS the app's own components into an offscreen image - it never grabs the screen - so "

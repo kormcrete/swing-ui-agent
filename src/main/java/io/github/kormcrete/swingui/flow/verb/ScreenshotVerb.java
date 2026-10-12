@@ -64,7 +64,7 @@ public class ScreenshotVerb extends VerbAction {
             what = new Locator();
             what.window = window;
         }
-        Shot shot = verbs.screenshot(what, null, maxSize);
+        Shot shot = verbs.screenshot(what, null, maxSize, null);
         Path file = resolve(path.trim());
         try {
             if (file.getParent() != null) Files.createDirectories(file.getParent());

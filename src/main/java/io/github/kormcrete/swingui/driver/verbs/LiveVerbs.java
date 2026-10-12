@@ -195,12 +195,13 @@ public final class LiveVerbs implements Verbs {
      * activates nothing and is not recorded.
      */
     @Override
-    public Shot screenshot(final Locator target, final double[] region, final Integer maxSize) {
+    public Shot screenshot(final Locator target, final double[] region, final Integer maxSize,
+                           final Double scale) {
         return Edt.call(() -> {
             Component c = target == null ? keyWindow()
                     : isWindowOnly(target) ? windowRoot(target.window)
                     : driver.resolver().resolve(target).component;
-            return Screenshots.of(c, region, maxSize);
+            return Screenshots.of(c, region, maxSize, scale);
         });
     }
 

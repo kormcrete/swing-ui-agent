@@ -283,7 +283,7 @@ public final class Target {
 
     public byte[] screenshot() {
         try {
-            return client.verbs().screenshot(locator.copy(), null, null).png;
+            return client.verbs().screenshot(locator.copy(), null, null, null).png;
         } catch (io.github.kormcrete.swingui.driver.DriverException e) {
             throw new UiActionFailed("screenshot", locator, e, Collections.<String>emptyList());
         }

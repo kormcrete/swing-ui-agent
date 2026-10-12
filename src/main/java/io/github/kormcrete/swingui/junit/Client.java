@@ -282,7 +282,7 @@ public final class Client {
 
     public byte[] screenshot() {
         try {
-            return verbs.screenshot(null, null, null).png;
+            return verbs.screenshot(null, null, null, null).png;
         } catch (DriverException e) {
             throw new UiActionFailed("screenshot", null, e, Collections.<String>emptyList());
         }

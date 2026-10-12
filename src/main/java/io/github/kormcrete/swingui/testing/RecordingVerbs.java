@@ -92,7 +92,7 @@ public final class RecordingVerbs implements Verbs {
         return geometryAnswer;
     }
     @Override public List<String> candidates(Locator target) { calls.add("candidates " + target); return candidates; }
-    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize) {
+    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale) {
         calls.add("screenshot " + target); return new Shot(new byte[] {1, 2, 3}, 1, 1, 1, 1, false);
     }
     @Override public VerbOutcome click(Locator t, String button, Integer count, List<String> modifiers, Long timeout) {

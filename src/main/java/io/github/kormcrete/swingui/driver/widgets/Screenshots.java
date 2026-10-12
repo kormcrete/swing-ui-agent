@@ -27,27 +27,36 @@ public final class Screenshots {
     /** The longest side an image may have before it is scaled down; an image is expensive to read. */
     public static final int DEFAULT_MAX_SIZE = 1200;
 
+    /** The largest {@code scale}: a 4x image of a big window is already tens of megabytes in memory. */
+    public static final double MAX_SCALE = 4;
+
     private Screenshots() {}
 
     /**
      * @param c      the component or window to paint
      * @param region the part of it to keep, in fractions 0..1 of its bounds (as {@code point} works),
      *               or null for all of it
-     * @param maxSize longest side of the returned image, or null for {@link #DEFAULT_MAX_SIZE}
+     * @param maxSize longest side of the returned image, or null for {@link #DEFAULT_MAX_SIZE} times the scale
+     * @param scale  image pixels per component pixel, 1 to {@link #MAX_SCALE}, or null for 1: 2 paints the
+     *               component as a 2x (HiDPI) display would, at the same layout
      */
-    public static Shot of(Component c, double[] region, Integer maxSize) {
+    public static Shot of(Component c, double[] region, Integer maxSize, Double scale) {
         if (c.getWidth() <= 0 || c.getHeight() <= 0) {
             throw new DriverException(Reason.NOT_ACTIONABLE, "nothing to capture: the target has no size"
                     + " on screen (" + c.getWidth() + "x" + c.getHeight() + ")");
         }
+        double s = scale == null ? 1 : scale;
+        if (!(s >= 1 && s <= MAX_SCALE)) {
+            throw new DriverException(Reason.BAD_INPUT, "'scale' must be between 1 and " + (int) MAX_SCALE);
+        }
         Rectangle shown = shown(c);
         int w = shown.width;
         int h = shown.height;
-        BufferedImage image = paint(c, shown);
-        Rectangle crop = crop(region, w, h);
+        BufferedImage image = paint(c, shown, s);
+        Rectangle crop = crop(region, image.getWidth(), image.getHeight());
         if (crop != null) image = image.getSubimage(crop.x, crop.y, crop.width, crop.height);
 
-        int limit = maxSize == null ? DEFAULT_MAX_SIZE : maxSize;
+        int limit = maxSize == null ? (int) Math.round(DEFAULT_MAX_SIZE * s) : maxSize;
         if (limit < 1) throw new DriverException(Reason.BAD_INPUT, "'maxSize' must be at least 1");
         boolean scaled = Math.max(image.getWidth(), image.getHeight()) > limit;
         if (scaled) image = scale(image, limit);
@@ -69,15 +78,19 @@ public final class Screenshots {
     /**
      * A non-opaque component paints nothing behind itself, which would leave the buffer black, so
      * the background is laid down first. The graphics is translated so that the scrolled-to part
-     * lands at the image's origin.
+     * lands at the image's origin. A scale above 1 is a transform on the graphics, the way a HiDPI
+     * display paints: the layout is unchanged and text and borders are drawn at the finer resolution.
      */
-    private static BufferedImage paint(Component c, Rectangle shown) {
-        BufferedImage image = new BufferedImage(shown.width, shown.height, BufferedImage.TYPE_INT_RGB);
+    private static BufferedImage paint(Component c, Rectangle shown, double scale) {
+        int iw = (int) Math.ceil(shown.width * scale);
+        int ih = (int) Math.ceil(shown.height * scale);
+        BufferedImage image = new BufferedImage(iw, ih, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
         try {
             Color background = c.getBackground();
             g.setColor(background == null ? Color.WHITE : background);
-            g.fillRect(0, 0, shown.width, shown.height);
+            g.fillRect(0, 0, iw, ih);
+            g.scale(scale, scale);
             g.translate(-shown.x, -shown.y);
             g.setClip(shown.x, shown.y, shown.width, shown.height);
             c.paint(g);

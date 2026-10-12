@@ -223,7 +223,7 @@ public class UiMcpSession {
     public synchronized String screenshot(JsonNode args) {
         JsonNode targetJson = args == null ? null : args.get("target");
         Locator target = targetJson != null && targetJson.isObject() ? locator(targetJson) : null;
-        Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"));
+        Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"), number(args, "scale"));
 
         ObjectNode r = mapper.createObjectNode();
         ArrayNode content = r.putArray("_mcpContent");
@@ -284,6 +284,13 @@ public class UiMcpSession {
         JsonNode v = args.get(field);
         if (!v.canConvertToInt()) throw new DriverException(Reason.BAD_INPUT, "'" + field + "' must be an integer");
         return v.asInt();
+    }
+
+    private static Double number(JsonNode args, String field) {
+        if (args == null || !args.hasNonNull(field)) return null;
+        JsonNode v = args.get(field);
+        if (!v.isNumber()) throw new DriverException(Reason.BAD_INPUT, "'" + field + "' must be a number");
+        return v.asDouble();
     }
 
     public synchronized String describe() {

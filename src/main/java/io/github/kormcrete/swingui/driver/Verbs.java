@@ -50,9 +50,10 @@ public interface Verbs {
      * An image of one component of ours - the key window when {@code target} is null.
      * A read, not an action: nothing is recorded and no flow step exists for it. {@code region} is
      * {x, y, w, h} in fractions 0..1 of the target's bounds, for a snippet rather than the whole of
-     * it; {@code maxSize} caps the longest side. A target with only a {@code window} is that window.
+     * it; {@code maxSize} caps the longest side; {@code scale} (1 to 4, null for 1) paints it as a display
+     * of that density would. A target with only a {@code window} is that window.
      */
-    default Shot screenshot(Locator target, double[] region, Integer maxSize) {
+    default Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale) {
         throw missing("screenshot");
     }
 
