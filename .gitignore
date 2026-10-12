@@ -1,0 +1,26 @@
+# build
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# AI tooling: never part of this repository
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+.cursor/
+.cursorrules
+.aider*
+.agent/
+.mcp.json
+
+# local IntelliJ run configs
+.run/
+
+# swing-ui-agent local credentials and logs
+.swing-ui-agent/

@@ -1,0 +1,57 @@
+package rt;
+
+import io.github.kormcrete.swingui.junit.Client;
+import io.github.kormcrete.swingui.junit.UiTest;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+
+import static io.github.kormcrete.swingui.junit.Rows.row;
+import static io.github.kormcrete.swingui.junit.UiAssertions.assertThat;
+
+/** Recorded through swing-ui-agent. Replace literals the test creates with ui.runId(). */
+@UiTest
+class RoundTripUiIT {
+
+    @Test
+    void walk(Client ui) {
+        ui.navigate("orders-finder");
+        ui.dialog("Assign").tab("Line items").button("Save").click();
+        ui.table("Orders").row("Order no.", "ORD-1640").doubleClick();
+        ui.clickable("x").click("right", 0);
+        ui.field("Short").fill("Ä \"q\"");
+        ui.field("Note").type("abc");
+        ui.press("ctrl S");
+        ui.checkbox("Active").uncheck();
+        ui.combo("Status").select("Approved");
+        ui.pick("Statistics");
+        ui.timeout(Duration.ofMillis(5000L)).menu("File", "Export");
+        ui.answer("OK");
+        ui.chooseFile("/tmp/x.pdf");
+        ui.label("a").dragTo(ui.label("b"));
+        ui.table("Attachments").drop("/tmp/a.txt");
+        ui.setClipboard("7.2\t<0.5\n12\tn/a\n");
+        ui.table("Orders").press("Mod+V");
+        ui.table("Orders").scrollTo("bottom");
+        ui.table("Orders").scrollBy(2);
+        ui.table("Orders").row("Order no.", "26-3").scrollIntoView();
+        ui.table("Orders").row("Order no.", "26-1").rightClick("Delete");
+        ui.button("Save").hover();
+        ui.button("Save").unhover();
+        ui.table("Orders").cell("Order no.").resizeColumn(-40);
+        ui.main().resizeTo(1200, 800);
+        ui.dialog("Notice").close();
+        ui.focusFileChooserName();
+        // FRAGILE: the recorder needed nth to make this target unique
+        ui.button("Next").nth(1).click();
+        // FRAGILE: the recorder needed nth to make this target unique
+        ui.field(null).nth(3).click();
+        assertThat(ui.button("Save")).isEnabled();
+        assertThat(ui.button("Save")).hasStates("editable", "!disabled");
+        assertThat(ui.table("Orders")).within(Duration.ofMillis(20000L)).hasRowCount("gte", 1);
+        assertThat(ui.table("Orders")).hasCell(row("Order no.", "26-2"), "Customer", "Test");
+        assertThat(ui.field("Short")).hasValue("Widget");
+        assertThat(ui.byId("orderList.export.pdf")).isDisabled();
+        ui.closeActiveTab();
+    }
+}

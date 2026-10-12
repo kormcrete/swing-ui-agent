@@ -1,0 +1,70 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS / Java 8
+    # The driver's macOS seam is verified on an x86_64 JDK 8; arm64 runners run it under Rosetta.
+    runs-on: macos-14
+    permissions:
+      contents: write # publishes the tests badge to the 'badges' branch on pushes to main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '8'
+          architecture: x64
+          cache: maven
+      - name: Build and test
+        run: mvn -B verify
+      - name: Keep test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-macos
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+      - name: Publish the tests badge
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          python3 .github/scripts/test-badge.py target/surefire-reports > "$RUNNER_TEMP/tests.json"
+          cd "$RUNNER_TEMP"
+          git init -q badges && cd badges
+          git checkout -q --orphan badges
+          cp ../tests.json .
+          git config user.name kormcrete
+          git config user.email 249758029+kormcrete@users.noreply.github.com
+          git add tests.json
+          git commit -q -m "tests badge"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" badges
+
+  linux:
+    name: Linux / Java 8 (driver not supported yet)
+    runs-on: ubuntu-latest
+    # Until a Linux seam exists this lane may fail; it must not fail the build.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '8'
+          cache: maven
+      - name: Build and test (virtual display)
+        run: xvfb-run -a mvn -B verify
+      - name: Keep test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-linux
+          path: target/surefire-reports/
+          if-no-files-found: ignore

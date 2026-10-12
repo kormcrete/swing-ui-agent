@@ -1,0 +1,89 @@
+package io.github.kormcrete.swingui.agent;
+
+import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.spi.PluginParts;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
+import java.util.stream.Stream;
+
+/** One {@code plugins=} entry: where it comes from, its state, and its parts once ready. */
+public final class PluginSlot {
+
+    public enum State { NONE, WAITING, STARTING, READY, FAILED }
+
+    private final String name;
+    private final Path location;
+    private volatile State state = State.NONE;
+    private volatile String detail = "not started";
+    private volatile PluginParts parts;
+    private volatile long locationTime;
+
+    public PluginSlot(String name, Path location) {
+        this.name = name;
+        this.location = location;
+    }
+
+    public String name() { return name; }
+    public Path location() { return location; }
+    /** The newest modification time under the location when the plugin became ready; 0 before. */
+    public long locationTime() { return locationTime; }
+    public State state() { return state; }
+    public String detail() { return detail; }
+    /** Null unless READY. */
+    public PluginParts parts() { return parts; }
+
+    public synchronized void waiting(String detail) { set(State.WAITING, detail); }
+    public synchronized void starting(String detail) { set(State.STARTING, detail); }
+
+    /** A failure after READY drops the parts: a half-working plugin is worse than a failed one. */
+    public synchronized void failed(String detail) {
+        boolean wasReady = state == State.READY;
+        parts = null;
+        set(State.FAILED, wasReady ? "failed after ready: " + detail : detail);
+    }
+
+    public synchronized void ready(PluginParts parts, String detail) {
+        this.parts = parts;
+        this.locationTime = newestTime(location);
+        set(State.READY, detail);
+    }
+
+    /** The parts, or a CAPABILITY_GAP naming this plugin's state. */
+    public PluginParts readyParts(String what) {
+        PluginParts p = parts;
+        if (p == null) {
+            throw new DriverException(Reason.CAPABILITY_GAP,
+                    what + " needs plugin '" + name + "', which is " + stateName() + ": " + detail);
+        }
+        return p;
+    }
+
+    String stateName() { return state.name().toLowerCase(Locale.ROOT); }
+
+    private void set(State state, String detail) {
+        this.state = state;
+        this.detail = detail;
+    }
+
+    static long newestTime(Path location) {
+        if (location == null || !Files.exists(location)) return 0L;
+        try {
+            if (!Files.isDirectory(location)) return Files.getLastModifiedTime(location).toMillis();
+            try (Stream<Path> files = Files.walk(location)) {
+                return files.filter(Files::isRegularFile).mapToLong(p -> {
+                    try {
+                        return Files.getLastModifiedTime(p).toMillis();
+                    } catch (IOException e) {
+                        return 0L;
+                    }
+                }).max().orElse(0L);
+            }
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+}
