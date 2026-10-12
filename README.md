@@ -3,7 +3,7 @@
 [![Build](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
 [![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkormcrete%2Fswing-ui-agent%2Fbadges%2Ftests.json)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Java](https://img.shields.io/badge/Java-8-orange.svg)](#status)
+[![Java](https://img.shields.io/badge/Java-8%20%7C%2011%20%7C%2017%20%7C%2021%20%7C%2025-orange.svg)](#status)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](#status)
 
 Let a coding agent drive your real Swing application and write its UI tests: attach a Java agent, no changes to the app.
@@ -31,6 +31,8 @@ java -javaagent:swing-ui-agent-0.1.0-SNAPSHOT-agent.jar -Dswingui.testsDir=/path
 Agent arguments go after `=`, comma-separated: `port` (default 8765), `bind` (loopback only, default `127.0.0.1`),
 `mode` (`normal` or `background`) and `plugins` (see [Plugins](#plugins-optional)).
 `-Dswingui.testsDir` is where exported tests go (default: `src/test/java` under the app's working directory).
+The same jar works on every supported Java; on Java 9+ the app needs no `--add-opens` flags, the agent opens what it
+uses.
 
 **2. Let your coding agent drive it.** From a shell, one tool call per run:
 
@@ -94,8 +96,9 @@ A plugin implements `io.github.kormcrete.swingui.spi.UiPlugin`. Load it with `pl
 
 ## Status
 
-Early, `0.1.0-SNAPSHOT`. The driver runs on **macOS with Java 8**. Linux and Windows, and Java 9+, are in progress;
-until then they fail with a clear "capability gap" error rather than misbehaving.
+Early, `0.1.0-SNAPSHOT`. The driver runs on **macOS** with **Java 8, 11, 17, 21 and 25**: one jar, built for Java 8
+so it also attaches to the legacy Swing apps still on it, and tested on every LTS release since. Linux and Windows
+are in progress; until then they fail with a clear "capability gap" error rather than misbehaving.
 
 ## Documentation
 
@@ -111,6 +114,9 @@ mvn -B verify
 
 This produces two jars: the library, and `swing-ui-agent-<version>-agent.jar`, the shaded agent (Jackson
 relocated) used for `-javaagent:` and the command line.
+
+To run the test suite on another Java, keep building on JDK 8 and point the tests at the other JVM:
+`mvn -B verify -Djvm=/path/to/jdk-21/bin/java`.
 
 ## License
 

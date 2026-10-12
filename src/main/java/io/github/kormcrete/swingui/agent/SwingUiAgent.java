@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.agent;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverSettings;
 import io.github.kormcrete.swingui.driver.LaunchMode;
+import io.github.kormcrete.swingui.driver.platform.ModuleAccess;
 import io.github.kormcrete.swingui.mcp.HttpMcpEndpoint;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -14,7 +15,8 @@ import java.util.List;
 
 /**
  * {@code -javaagent:swing-ui-agent.jar=…}: drives the app's Swing UI over MCP on a loopback port. Order matters —
- * the launch mode first (apple.awt.UIElement must precede the toolkit), then the driver, the endpoint, and only once
+ * the launch mode first (apple.awt.UIElement must precede the toolkit), then on Java 9+ opening java.desktop to the
+ * driver (the self-check reports what that left closed), then the driver, the endpoint, and only once
  * the endpoint listens, the plugin watch: an agent that could not start must not load its plugin into the app.
  * Never throws and never blocks: a failing agent leaves the app running without it.
  * Keep this class free of static fields that create AWT objects (SwingUiAgentStaticInitTest).
@@ -50,6 +52,8 @@ public final class SwingUiAgent {
         }
         try {
             LaunchMode mode = LaunchMode.apply(args.mode);
+            String closed = ModuleAccess.open(inst);
+            if (closed != null) System.err.println("swing-ui-agent: " + closed);
             Driver driver = Driver.install(DriverSettings.defaults(mode));
             Plugins plugins = new Plugins(driver.verbs());
 

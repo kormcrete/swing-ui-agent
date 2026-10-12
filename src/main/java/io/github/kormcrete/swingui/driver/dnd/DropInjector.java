@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.dnd;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.platform.Capability;
 import io.github.kormcrete.swingui.driver.platform.Seam;
 
 import java.awt.Component;
@@ -34,6 +35,11 @@ public final class DropInjector {
 
     /** EDT. {@code at} is in {@code target}'s coordinates. Returns what the drop target decided. */
     public String drop(Component target, Point at, Transferable data) {
+        if (!seam.available().contains(Capability.DROP_PEER)) {
+            // checked first: on Java 9+ FakeDropPeer itself cannot load while java.awt.dnd.peer is closed to us
+            throw new DriverException(Reason.CAPABILITY_GAP, Capability.DROP_PEER.what + " is unavailable on "
+                    + seam.name() + ": " + seam.missingBecause(Capability.DROP_PEER));
+        }
         Component c = target;
         Point p = new Point(at);
         while (c != null && (c.getDropTarget() == null || !c.getDropTarget().isActive())) {
@@ -53,7 +59,7 @@ public final class DropInjector {
             dropTarget.dragOver(new DropTargetDragEvent(context, p, copy, copy));
             dropTarget.drop(new DropTargetDropEvent(context, p, copy, copy));
         } finally {
-            context.removeNotify();
+            seam.detachDropPeer(context);
         }
         if (!peer.outcome.startsWith("drop accepted")) {
             throw new DriverException(Reason.NOT_ACTIONABLE, "drop rejected by " + describe(c) + ": " + peer.outcome);

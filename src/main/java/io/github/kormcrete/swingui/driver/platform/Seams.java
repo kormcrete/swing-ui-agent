@@ -6,22 +6,23 @@ import io.github.kormcrete.swingui.driver.Reason;
 import java.util.Locale;
 import java.util.function.Supplier;
 
-/** Picks the seam for this JVM. Only macOS on Java 8 has one (MacJdk8Seam). */
+/** Picks the seam for this JVM. Only macOS has one (MacSeam), for Java 8 and later. */
 public final class Seams {
+
+    /** The Java versions CI runs the suite on. A later one gets the seam too; its self-check decides. */
+    public static final String VERIFIED_JAVA = "8, 11, 17, 21 and 25";
 
     private Seams() {}
 
     public static Seam forThisJvm() {
-        return select(System.getProperty("os.name", ""), System.getProperty("java.version", ""), MacJdk8Seam::new);
+        return select(System.getProperty("os.name", ""), System.getProperty("java.version", ""), MacSeam::new);
     }
 
-    public static Seam select(String osName, String javaVersion, Supplier<Seam> macJdk8) {
-        String os = osName.toLowerCase(Locale.ROOT);
-        boolean java8 = javaVersion.startsWith("1.8");
-        if (os.startsWith("mac") && java8) {
-            return macJdk8.get();
+    public static Seam select(String osName, String javaVersion, Supplier<Seam> mac) {
+        if (osName.toLowerCase(Locale.ROOT).startsWith("mac")) {
+            return mac.get();
         }
-        throw new DriverException(Reason.CAPABILITY_GAP, "swing-ui-agent runs on macOS with Java 8; " + osName
+        throw new DriverException(Reason.CAPABILITY_GAP, "swing-ui-agent runs on macOS; " + osName
                 + " on Java " + javaVersion + " is not supported yet");
     }
 }

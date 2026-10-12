@@ -124,6 +124,9 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.22.2</version>
                 <configuration>
+                    <!-- Java 9+: the test JVM has no agent to open java.desktop (ModuleAccess), so it gets these flags.
+                         Java 8 ignores them. Run the suite on another JDK with -Djvm=<that JDK>/bin/java. -->
+                    <argLine>-XX:+IgnoreUnrecognizedVMOptions --add-opens=java.desktop/java.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.peer=ALL-UNNAMED --add-opens=java.desktop/java.awt.dnd=ALL-UNNAMED --add-opens=java.desktop/java.awt.dnd.peer=ALL-UNNAMED --add-opens=java.desktop/sun.awt=ALL-UNNAMED --add-opens=java.desktop/sun.lwawt=ALL-UNNAMED --add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED</argLine>
                     <systemPropertyVariables>
                         <!-- Unit tests build AWT events and unshown components; without this the test JVM takes focus. -->
                         <apple.awt.UIElement>true</apple.awt.UIElement>

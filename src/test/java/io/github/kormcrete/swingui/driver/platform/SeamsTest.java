@@ -17,11 +17,10 @@ class SeamsTest {
     }
 
     @Test
-    void laterJavaIsNotSupportedYet() {
-        DriverException e = catchThrowableOfType(() -> Seams.select("Mac OS X", "17.0.5", () -> mac), DriverException.class);
-        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
-        assertThat(e.getMessage()).contains("Mac OS X on Java 17.0.5").contains("not supported yet")
-                .contains("macOS with Java 8");
+    void macOnLaterJavaGetsTheMacSeamToo() {
+        assertThat(Seams.select("Mac OS X", "11.0.19", () -> mac)).isSameAs(mac);
+        assertThat(Seams.select("Mac OS X", "17.0.9", () -> mac)).isSameAs(mac);
+        assertThat(Seams.select("Mac OS X", "25", () -> mac)).isSameAs(mac);
     }
 
     @Test

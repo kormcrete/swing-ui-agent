@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.dnd;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.platform.Capability;
 import io.github.kormcrete.swingui.driver.platform.FakeSeam;
 import org.junit.jupiter.api.Test;
 
@@ -67,6 +68,16 @@ class DropInjectorTest {
         parent.add(child);
         drops.drop(child, new Point(2, 3), DropInjector.files(Collections.singletonList(new File("a.txt"))));
         assertThat(at.get()).isEqualTo(new Point(32, 43));
+    }
+
+    @Test
+    void withoutTheDropPeerCapabilityADropIsACapabilityGap() {
+        DropInjector closed = new DropInjector(new FakeSeam().without(Capability.DROP_PEER, "java.awt.dnd is closed"));
+        DriverException e = catchThrowableOfType(
+                () -> closed.drop(target(true), new Point(5, 5), DropInjector.text("x")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
+        assertThat(e.getMessage()).contains("attach a drop peer").contains("java.awt.dnd is closed");
+        assertThat(received.get()).isNull();
     }
 
     @Test

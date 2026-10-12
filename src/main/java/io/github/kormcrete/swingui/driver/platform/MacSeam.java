@@ -25,14 +25,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * macOS on Java 8. Every lookup happens once, in the constructor. A failed lookup leaves
+ * macOS, Java 8 and later. Every lookup happens once, in the constructor. A failed lookup leaves
  * its capability missing with the reason, and {@link SelfCheck} decides whether that stops the launch.
  *
  * <p>Constructing this starts the AWT toolkit, so {@code LaunchMode} must already have set {@code apple.awt.UIElement}.
+ * On Java 9+ the lookups need {@code java.desktop} opened first ({@link ModuleAccess}); without that they fail with
+ * IllegalAccessError or InaccessibleObjectException, which count as missing capabilities, never as a crash.
  * The focus peer is reached through {@code sun.awt.KeyboardFocusManagerPeerProvider}: on 1.8.0_291
  * {@code sun.awt.ComponentFactory} does not declare {@code getKeyboardFocusManagerPeer()}.</p>
  */
-public final class MacJdk8Seam implements Seam {
+public final class MacSeam implements Seam {
 
     private final Map<Capability, String> missing = new EnumMap<Capability, String>(Capability.class);
     private final Toolkit toolkit;
@@ -45,10 +47,10 @@ public final class MacJdk8Seam implements Seam {
     private Field untilFocused;
     private Method dequeueKeyEvents;
     private Method isSystemGenerated;
-    private Method addNotify;
+    private DropPeerHook dropPeer;
     private Method isApplicationActive;
 
-    public MacJdk8Seam() {
+    public MacSeam() {
         toolkit = Toolkit.getDefaultToolkit();
         lookUpFocusPeer();
         lookUpTypeAhead();
@@ -68,7 +70,7 @@ public final class MacJdk8Seam implements Seam {
             setFocusedWindow = peerType.getMethod("setCurrentFocusedWindow", Window.class);
             getFocusedWindow = peerType.getMethod("getCurrentFocusedWindow");
             getFocusedWindow.invoke(focusPeer);
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             missing.put(Capability.PIN_FOCUSED_WINDOW, describe(e));
         }
     }
@@ -83,7 +85,7 @@ public final class MacJdk8Seam implements Seam {
                     .getDeclaredMethod("dequeueKeyEvents", long.class, Component.class));
             pendingFocusRequests();
             heldKeyCount();
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             missing.put(Capability.TYPE_AHEAD, describe(e));
         }
     }
@@ -92,17 +94,14 @@ public final class MacJdk8Seam implements Seam {
         try {
             isSystemGenerated = Class.forName("sun.awt.SunToolkit").getMethod("isSystemGenerated", AWTEvent.class);
             isSystemGenerated.invoke(null, new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "probe"));
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             missing.put(Capability.OS_INPUT, describe(e));
         }
     }
 
     private void lookUpDropPeer() {
-        try {
-            addNotify = DropTargetContext.class.getMethod("addNotify", DropTargetContextPeer.class);
-        } catch (Exception e) {
-            missing.put(Capability.DROP_PEER, describe(e));
-        }
+        dropPeer = new DropPeerHook();
+        if (dropPeer.missingBecause() != null) missing.put(Capability.DROP_PEER, dropPeer.missingBecause());
     }
 
     private void lookUpApplicationActive() {
@@ -118,7 +117,7 @@ public final class MacJdk8Seam implements Seam {
                 throw new NoSuchMethodException(toolkit.getClass().getName() + ".isApplicationActive()");
             }
             invokeActive();
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             isApplicationActive = null;
             missing.put(Capability.APP_ACTIVE, describe(e));
         }
@@ -126,7 +125,7 @@ public final class MacJdk8Seam implements Seam {
 
     @Override
     public String name() {
-        return "MacJdk8Seam(" + System.getProperty("java.version") + ")";
+        return "MacSeam(" + System.getProperty("java.version") + ")";
     }
 
     @Override
@@ -143,8 +142,9 @@ public final class MacJdk8Seam implements Seam {
 
     @Override
     public String fix() {
-        return "run the client on JDK 1.8.0_291, the JDK these lookups were verified on, or update the lookups "
-                + "in MacJdk8Seam for this JDK";
+        return "attach the driver with -javaagent (on Java 9+ it opens the JDK internals it needs) and run the app on "
+                + "Java " + Seams.VERIFIED_JAVA + ", the versions these lookups are verified on, or update the "
+                + "lookups in MacSeam for this JDK";
     }
 
     @Override
@@ -204,7 +204,21 @@ public final class MacJdk8Seam implements Seam {
     @Override
     public void attachDropPeer(DropTargetContext context, DropTargetContextPeer peer) {
         require(Capability.DROP_PEER);
-        invoke(Capability.DROP_PEER, addNotify, context, peer);
+        try {
+            dropPeer.attach(context, peer);
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DROP_PEER, e);
+        }
+    }
+
+    @Override
+    public void detachDropPeer(DropTargetContext context) {
+        require(Capability.DROP_PEER);
+        try {
+            dropPeer.detach(context);
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DROP_PEER, e);
+        }
     }
 
     @Override
@@ -250,7 +264,7 @@ public final class MacJdk8Seam implements Seam {
         return new DriverException(Reason.CAPABILITY_GAP, capability.what + " failed: " + describe(e));
     }
 
-    private static String describe(Exception e) {
+    static String describe(Throwable e) {
         Throwable t = e instanceof InvocationTargetException && e.getCause() != null ? e.getCause() : e;
         return t.getClass().getSimpleName() + ": " + t.getMessage();
     }

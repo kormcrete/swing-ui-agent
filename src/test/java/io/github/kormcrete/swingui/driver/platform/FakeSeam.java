@@ -22,6 +22,7 @@ public class FakeSeam implements Seam {
     public int held;
     public final List<Component> pending = new ArrayList<Component>();
     public final List<Component> cancelled = new ArrayList<Component>();
+    private final DropPeerHook dropPeer = new DropPeerHook();
 
     public FakeSeam without(Capability c, String reason) {
         available.remove(c);
@@ -39,6 +40,19 @@ public class FakeSeam implements Seam {
     @Override public int heldKeyCount() { return held; }
     @Override public void cancelPendingFocus(Component c) { cancelled.add(c); pending.remove(c); }
     @Override public boolean isSystemGenerated(AWTEvent e) { return systemGenerated; }
-    @Override public void attachDropPeer(DropTargetContext context, DropTargetContextPeer peer) { context.addNotify(peer); }
+    @Override public void attachDropPeer(DropTargetContext context, DropTargetContextPeer peer) {
+        try {
+            dropPeer.attach(context, peer);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+    @Override public void detachDropPeer(DropTargetContext context) {
+        try {
+            dropPeer.detach(context);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
     @Override public Boolean appActive() { return active; }
 }

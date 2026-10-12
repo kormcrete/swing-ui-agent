@@ -43,6 +43,9 @@ public interface Seam {
 
     void attachDropPeer(DropTargetContext context, DropTargetContextPeer peer);
 
+    /** Clears what {@link #attachDropPeer} set. */
+    void detachDropPeer(DropTargetContext context);
+
     /** Whether the OS counts this process as the active app; null when unknown. */
     Boolean appActive();
 }
