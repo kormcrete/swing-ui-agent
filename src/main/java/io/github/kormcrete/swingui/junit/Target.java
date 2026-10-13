@@ -281,9 +281,17 @@ public final class Target {
 
     public void saveScreenshot(String path) { client.write(path, screenshot()); }
 
-    public byte[] screenshot() {
+    /** {@link #saveScreenshot(String)} at {@code scale} (1 to 4; 2 for images people will look at). */
+    public void saveScreenshot(String path, double scale) { client.write(path, screenshot(scale)); }
+
+    public byte[] screenshot() { return shoot(null); }
+
+    /** A PNG of this element at {@code scale} image pixels per screen pixel, 1 to 4. */
+    public byte[] screenshot(double scale) { return shoot(scale); }
+
+    private byte[] shoot(Double scale) {
         try {
-            return client.verbs().screenshot(locator.copy(), null, null, null).png;
+            return client.verbs().screenshot(locator.copy(), null, null, scale).png;
         } catch (io.github.kormcrete.swingui.driver.DriverException e) {
             throw new UiActionFailed("screenshot", locator, e, Collections.<String>emptyList());
         }

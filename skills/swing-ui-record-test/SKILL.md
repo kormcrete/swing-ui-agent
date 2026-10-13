@@ -88,7 +88,8 @@ you instead of describing:
   the step runs and the result says `notRecorded`. Pick another locator, or add the step to the class by hand.
 - A `{"ref":"e12"}` target is recorded as a locator the recorder derives. `fragile:true` means it needed `nth`;
   find a better locator, reset and redo.
-- Inside a `batch`, `{"verb":"screenshot","path":"..."}` is the flow step that writes a PNG and IS recorded.
+- Inside a `batch`, `{"verb":"screenshot","path":"..."}` is the flow step that writes a PNG and IS recorded;
+  add `"scale":2` for a HiDPI (2x) image.
   To just look, call the `screenshot` tool.
 
 ## Keep it a regression test

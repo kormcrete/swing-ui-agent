@@ -48,6 +48,8 @@ public class ScreenshotVerb extends VerbAction {
     public Locator target;
     @Doc("Longest side of the image, default 1200; it is scaled down to fit.")
     public Integer maxSize;
+    @Doc("Image pixels per screen pixel, 1 to 4, default 1: 2 paints a HiDPI (2x) image, same layout.")
+    public Double scale;
 
     @Override public String describe() {
         return "screenshot(" + (target != null ? target : window != null ? window : "current window") + " -> " + path + ")";
@@ -64,7 +66,7 @@ public class ScreenshotVerb extends VerbAction {
             what = new Locator();
             what.window = window;
         }
-        Shot shot = verbs.screenshot(what, null, maxSize, null);
+        Shot shot = verbs.screenshot(what, null, maxSize, scale);
         Path file = resolve(path.trim());
         try {
             if (file.getParent() != null) Files.createDirectories(file.getParent());

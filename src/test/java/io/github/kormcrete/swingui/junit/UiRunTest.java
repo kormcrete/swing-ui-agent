@@ -169,6 +169,16 @@ class UiRunTest {
     }
 
     @Test
+    void aScaledScreenshotReachesTheAgentAndIsSaved(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        UiRun run = new UiRun(client, "A#a (r1)", dir.resolve("ui-screenshots"), new Hooks());
+        Client ui = run.begin(null, "r1");
+        ui.saveScreenshot("shots/b.png", 2);
+        run.end();
+        assertThat(served.calls).contains("screenshot null 2.0");
+        assertThat(Files.readAllBytes(dir.resolve("ui-screenshots/shots/b.png"))).containsExactly(1, 2, 3);
+    }
+
+    @Test
     void theEdtStackComesFromTheClient() {
         assertThat(new UiRun(client, "A#a (r1)").edtStack()).contains("AWT-EventQueue");
     }

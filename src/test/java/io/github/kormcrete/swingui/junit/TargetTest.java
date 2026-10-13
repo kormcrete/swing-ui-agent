@@ -24,6 +24,15 @@ class TargetTest {
     private static Locator loc(String role, String name) { return Locator.of(role, name); }
 
     @Test
+    void aScreenshotCanAskForAScale() {
+        ui.screenshot(2);
+        ui.button("OK").screenshot(2);
+        ui.screenshot();
+        assertThat(verbs.calls).containsExactly("screenshot null 2.0",
+                "screenshot " + loc("button", "OK") + " 2.0", "screenshot null");
+    }
+
+    @Test
     void aLeafBecomesRoleAndName() {
         ui.button("Save").click();
         assertThat(verbs.calls).containsExactly("click " + loc("button", "Save") + " null null null null");

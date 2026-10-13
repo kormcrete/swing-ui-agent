@@ -124,6 +124,18 @@ class JavaTestWriterRoundTripTest {
         assertThat(src).isEqualTo(golden);
     }
 
+    @Test
+    void aScaledScreenshotStepRoundTrips() throws Exception {
+        ScreenshotVerb shot = new ScreenshotVerb(); shot.path = "shots/a.png"; shot.scale = 2.0;
+        List<Action> steps = Collections.<Action>singletonList(shot);
+
+        String src = JavaTestWriter.write(steps, "rt", "RoundTripUiIT", "walk");
+        RecordingVerbs viaJava = new RecordingVerbs();
+        run(src, new Client(viaJava, new RecordingApp(viaJava.calls), "rt", dir.resolve("shots")));
+
+        assertThat(viaJava.calls).containsExactly("screenshot null 2.0");
+    }
+
     private void run(String src, Client client) throws Exception {
         Path pkg = Files.createDirectories(dir.resolve("rt"));
         Path file = pkg.resolve("RoundTripUiIT.java");

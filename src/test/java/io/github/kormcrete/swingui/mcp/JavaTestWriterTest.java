@@ -120,6 +120,19 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void aScaledScreenshotKeepsItsScale() {
+        ScreenshotVerb s = new ScreenshotVerb();
+        s.path = "shots/a.png";
+        s.scale = 2.0;
+        assertThat(write(s)).contains("ui.saveScreenshot(\"shots/a.png\", 2);");
+        ScreenshotVerb w = new ScreenshotVerb();
+        w.path = "shots/b.png";
+        w.window = "dialog";
+        w.scale = 1.5;
+        assertThat(write(w)).contains("ui.inWindow(\"dialog\").saveScreenshot(\"shots/b.png\", 1.5);");
+    }
+
+    @Test
     void aScreenshotWithNoWindowOrTargetSavesDirectly() {
         ScreenshotVerb s = new ScreenshotVerb();
         s.path = "shots/a.png";

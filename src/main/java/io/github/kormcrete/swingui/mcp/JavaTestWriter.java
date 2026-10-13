@@ -317,20 +317,26 @@ public final class JavaTestWriter {
 
         private String buildScreenshot(ScreenshotVerb v, int stepNum) {
             if (v.window == null && v.target == null) {
-                return clientRoot(v.timeout) + ".saveScreenshot(" + quote(v.path) + ");";
+                return clientRoot(v.timeout) + ".saveScreenshot(" + quote(v.path) + scaleArg(v.scale) + ");";
             }
             if (v.target != null) {
                 String chain = actionChain(v.target, v.timeout, stepNum);
                 if (chain == null) return null;
-                return chain + ".saveScreenshot(" + quote(v.path) + ");";
+                return chain + ".saveScreenshot(" + quote(v.path) + scaleArg(v.scale) + ");";
             }
             StringBuilder sb = new StringBuilder("ui.inWindow(").append(quote(v.window)).append(")");
             if (v.timeout != null) {
                 usesDuration = true;
                 sb.append(".timeout(Duration.ofMillis(").append(v.timeout).append("L))");
             }
-            sb.append(".saveScreenshot(").append(quote(v.path)).append(");");
+            sb.append(".saveScreenshot(").append(quote(v.path)).append(scaleArg(v.scale)).append(");");
             return sb.toString();
+        }
+
+        /** ", 2" for a scaled screenshot (", 1.5" when not whole), "" without a scale: unscaled output is unchanged. */
+        private String scaleArg(Double scale) {
+            if (scale == null) return "";
+            return scale == Math.rint(scale) ? ", " + scale.longValue() : ", " + scale;
         }
 
         private String buildContextMenu(ContextMenuAction v, int stepNum) {

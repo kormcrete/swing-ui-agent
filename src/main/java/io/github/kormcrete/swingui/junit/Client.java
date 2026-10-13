@@ -280,9 +280,14 @@ public final class Client {
 
     private static String blankToNull(String s) { return s == null || s.trim().isEmpty() ? null : s.trim(); }
 
-    public byte[] screenshot() {
+    public byte[] screenshot() { return shoot(null); }
+
+    /** A PNG of the key window at {@code scale} image pixels per screen pixel, 1 to 4: 2 is a HiDPI (2x) image. */
+    public byte[] screenshot(double scale) { return shoot(scale); }
+
+    private byte[] shoot(Double scale) {
         try {
-            return verbs.screenshot(null, null, null, null).png;
+            return verbs.screenshot(null, null, null, scale).png;
         } catch (DriverException e) {
             throw new UiActionFailed("screenshot", null, e, Collections.<String>emptyList());
         }
@@ -290,6 +295,9 @@ public final class Client {
 
     /** Saves a screenshot; a relative {@code path} lands under the test module's target/ui-screenshots. */
     public void saveScreenshot(String path) { write(path, screenshot()); }
+
+    /** {@link #saveScreenshot(String)} at {@code scale} (1 to 4; 2 for images people will look at). */
+    public void saveScreenshot(String path, double scale) { write(path, screenshot(scale)); }
 
     void write(String path, byte[] png) {
         Path p = Paths.get(path);
