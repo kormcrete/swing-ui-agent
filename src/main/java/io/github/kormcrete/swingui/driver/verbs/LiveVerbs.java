@@ -64,6 +64,7 @@ import javax.swing.MenuSelectionManager;
 import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.table.TableCellEditor;
 import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
@@ -1068,32 +1069,128 @@ public final class LiveVerbs implements Verbs {
             focusOrRefuse(inner);
             String via = replace ? selectAll(inner) : POSTED;
             driver.poster().text(window, text);
-            if (commit) driver.poster().chord(window, chord("Enter"));
+            if (commit) {
+                driver.poster().chord(window, chord("Enter"));
+                if (stopEditingLeftOpen(table, cell, window)) via = API;
+            }
             return via;
         }
         driver.poster().click(table, a.point, Poster.Button.LEFT, 1, 0);
         driver.settle().drain();
+        // the click asked another cell's editor to stop, and its refusal came as a dialog: the test answers it
+        Edt.run(() -> refuseIfAnswered(table, a.resolved));
         String via = POSTED;
         if (replace) {
-            KeyStroke start = Edt.call(() ->
-                    Bindings.find(table, JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT, "startEditing"));
-            if (start != null) {
-                driver.poster().stroke(window, start);
-            } else {
-                Edt.run(() -> table.editCellAt(cell[0], cell[1]));
-                via = API;
+            // An editor that starts on one click (most custom ones) is already open, and its field holds the focus:
+            // startEditing then sees a table without focus and ends the edit instead (Metal, Windows)
+            if (!Edt.call(() -> editingCell(table, cell))) {
+                KeyStroke start = Edt.call(() ->
+                        Bindings.find(table, JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT, "startEditing"));
+                if (start != null) {
+                    driver.poster().stroke(window, start);
+                    driver.settle().drain();
+                    Edt.run(() -> refuseIfAnswered(table, a.resolved));
+                }
+                if (!Edt.call(() -> editingCell(table, cell))) {
+                    // queued: editCellAt first stops another cell's edit, whose validation may open a dialog
+                    EventQueue.invokeLater(() -> table.editCellAt(cell[0], cell[1]));
+                    driver.settle().drain();
+                    via = API;
+                }
+                Edt.run(() -> {
+                    refuseIfAnswered(table, a.resolved);
+                    refuseAnotherCell(table, cell, a.resolved);
+                });
             }
-            driver.settle().drain();
-            Component editor = Edt.call(table::getEditorComponent);
-            if (!(editor instanceof JTextComponent)) {
-                throw notActionable("the editor of " + a.resolved.describe() + " is not a text field");
+            JTextComponent field = Edt.call(() -> editorText(table.getEditorComponent()));
+            if (field == null) {
+                throw notActionable("the editor of " + a.resolved.describe() + " is not a text field and holds no single one");
             }
-            focusOrRefuse(editor);
-            if (API.equals(selectAll((JTextComponent) editor))) via = API;
+            focusOrRefuse(field);
+            if (API.equals(selectAll(field))) via = API;
         }
         driver.poster().text(window, text);
-        if (commit) driver.poster().chord(window, chord("Enter"));
+        if (commit) {
+            driver.poster().chord(window, chord("Enter"));
+            if (stopEditingLeftOpen(table, cell, window)) via = API;
+        }
         return via;
+    }
+
+    /** The text component typing goes into: the editor itself, or the one inside a composite editor (a spinner). EDT. */
+    static JTextComponent editorText(Component editor) {
+        return editor instanceof JTextComponent ? (JTextComponent) editor : compositeEditorText(editor);
+    }
+
+    /**
+     * Enter ends the edit of a plain text cell; an editor that holds its text field (a spinner) can take the Enter
+     * itself and stay open. Then the edit is stopped through the editor, as a click elsewhere would. An editor that
+     * refuses the text is cancelled, so the cell keeps its last valid value; a modal dialog the app raised for the
+     * value, now blocking the table's {@code window}, is left to the caller. True when the driver had to end the edit.
+     * Not run inside invokeAndWait: stopping runs app code (listeners, validation) that may open a modal dialog,
+     * which settle must see as pending.
+     */
+    private boolean stopEditingLeftOpen(final JTable table, final int[] cell, final Window window) {
+        driver.settle().drain();
+        // the app answered Enter with a dialog (a validating editor explaining a refusal): a second stop would
+        // only raise it again
+        if (Edt.call(() -> blocked(window))) return false;
+        if (!Edt.call(() -> editingCell(table, cell))) return false;
+        EventQueue.invokeLater(() -> {
+            if (!editingCell(table, cell)) return;
+            TableCellEditor editor = table.getCellEditor();
+            if (editor != null) editor.stopCellEditing();
+        });
+        driver.settle().drain();
+        if (Edt.call(() -> blocked(window))) return true;
+        if (Edt.call(() -> editingCell(table, cell))) {
+            EventQueue.invokeLater(() -> {
+                if (!editingCell(table, cell)) return;
+                TableCellEditor editor = table.getCellEditor();
+                if (editor != null) editor.cancelCellEditing();
+            });
+            driver.settle().drain();
+        }
+        return true;
+    }
+
+    /**
+     * The app answered the click into a cell (or the start of its edit) with a modal dialog, typically another
+     * cell's editor explaining why it refused to stop: the dialog is the test's to answer, and nothing more is
+     * asked of the editor under it. EDT.
+     */
+    private void refuseIfAnswered(JTable table, Resolved target) {
+        Window w = FocusEmulator.windowOf(table);
+        Dialog blocker = w == null ? null : Modality.blocker(w);
+        if (blocker != null) {
+            throw notActionable("blocked by dialog " + AppWindows.titleOf(blocker) + ", which the app opened when "
+                    + target.describe() + " was clicked; answer it");
+        }
+    }
+
+    /**
+     * Typing goes into the target cell's editor only: an editor that refused to stop keeps its own cell editing,
+     * and its field would take the text. EDT.
+     */
+    private static void refuseAnotherCell(JTable table, int[] cell, Resolved target) {
+        if (editingCell(table, cell)) return;
+        List<String> headers = TableWidget.headers(table);
+        String why = "the edit of row " + cell[0] + " column '" + headers.get(cell[1]) + "' of " + target.describe()
+                + " did not start";
+        if (table.isEditing()) {
+            why += ": row " + table.getEditingRow() + " column '" + headers.get(table.getEditingColumn())
+                    + "' is still being edited, its editor refused to stop";
+        }
+        throw notActionable(why);
+    }
+
+    /** Whether a modal dialog now blocks {@code window}; one the table itself sits in does not. EDT. */
+    private static boolean blocked(Window window) {
+        return window != null && Modality.blocker(window) != null;
+    }
+
+    private static boolean editingCell(JTable table, int[] cell) {
+        return table.isEditing() && table.getEditingRow() == cell[0] && table.getEditingColumn() == cell[1];
     }
 
     /**

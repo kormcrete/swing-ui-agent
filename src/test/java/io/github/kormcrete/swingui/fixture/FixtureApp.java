@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.fixture;
 
+import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -7,20 +8,32 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.CellEditorListener;
+import javax.swing.event.ChangeEvent;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellEditor;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
+import java.util.function.Consumer;
 
 /**
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
  * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
- * an attachments drop target with a context menu, and a status label that tells what happened.
+ * an attachments drop target with a context menu, a lines table and a status label that tells what happened.
+ * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
+ * digits: Code silently, Ref with a message dialog.
  */
 public final class FixtureApp {
 
@@ -74,12 +87,80 @@ public final class FixtureApp {
             menu.add(clear);
             attachments.setComponentPopupMenu(menu);
 
+            // Qty edits in a plain spinner: no key forwarding and no commit of its own, so Enter leaves it open
+            DefaultTableModel lines = new DefaultTableModel(new Object[][] {{"Paper", 1, "10", "20"}},
+                    new Object[] {"Product", "Qty", "Code", "Ref"}) {
+                @Override public Class<?> getColumnClass(int column) { return column == 1 ? Integer.class : String.class; }
+                @Override public boolean isCellEditable(int row, int column) { return column >= 1; }
+            };
+            JTable linesTable = new JTable(lines);
+            linesTable.setName("lines");
+            linesTable.getColumnModel().getColumn(1).setCellEditor(new SpinnerCellEditor());
+            DigitsCellEditor digits = new DigitsCellEditor(null);
+            digits.addCellEditorListener(new CellEditorListener() {
+                @Override public void editingStopped(ChangeEvent e) { }
+                @Override public void editingCanceled(ChangeEvent e) { status.setText("code cancelled"); }
+            });
+            linesTable.getColumnModel().getColumn(2).setCellEditor(digits);
+            int[] refusals = {0};
+            linesTable.getColumnModel().getColumn(3).setCellEditor(new DigitsCellEditor(field -> {
+                status.setText("ref refused " + ++refusals[0]);
+                JOptionPane.showMessageDialog(field, "Digits only", "Ref", JOptionPane.ERROR_MESSAGE);
+            }));
+            lines.addTableModelListener(e -> status.setText("qty " + lines.getValueAt(0, 1) + " code " + lines.getValueAt(0, 2)));
+            JScrollPane linesPane = new JScrollPane(linesTable);
+            linesPane.setPreferredSize(new Dimension(260, 60));
+
             JPanel form = new JPanel(new FlowLayout());
-            for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status}) form.add(c);
+            for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status, linesPane}) form.add(c);
             frame.setContentPane(form);
-            frame.setSize(760, 110);
+            frame.setSize(760, 190);
             frame.setLocation(40, 40);
             frame.setVisible(true);
         });
+    }
+
+    /** A spinner cell editor as an app would write it in a hurry: the value is the spinner's, nothing more. */
+    static final class SpinnerCellEditor extends AbstractCellEditor implements TableCellEditor {
+        private final JSpinner spinner = new JSpinner(new SpinnerNumberModel(1, 1, 999, 1));
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean selected, int row, int column) {
+            spinner.setValue(value);
+            return spinner;
+        }
+
+        @Override
+        public Object getCellEditorValue() { return spinner.getValue(); }
+    }
+
+    /**
+     * A validating editor: stopping is refused unless the text is all digits. Its field has no action of its own,
+     * so Enter reaches the table's selectNextRowCell, which asks the editor to stop: a refusal leaves the edit open.
+     * A {@code refusal} explains it to the user (a message dialog), as an app validating on Enter does.
+     */
+    static final class DigitsCellEditor extends AbstractCellEditor implements TableCellEditor {
+        private final JTextField field = new JTextField();
+        private final Consumer<JTextField> refusal;
+
+        DigitsCellEditor(Consumer<JTextField> refusal) {
+            this.refusal = refusal;
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean selected, int row, int column) {
+            field.setText(String.valueOf(value));
+            return field;
+        }
+
+        @Override
+        public Object getCellEditorValue() { return field.getText(); }
+
+        @Override
+        public boolean stopCellEditing() {
+            if (field.getText().matches("\\d+")) return super.stopCellEditing();
+            if (refusal != null) refusal.accept(field);
+            return false;
+        }
     }
 }

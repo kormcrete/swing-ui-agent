@@ -4,8 +4,10 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JPanel;
+import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.text.JTextComponent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -46,5 +48,15 @@ class CompositeCellEditorTextTest {
         label.setEditable(false);
         readOnly.add(label);
         assertThat(LiveVerbs.compositeEditorText(readOnly)).isNull();
+    }
+
+    @Test
+    void aSpinnerEditorIsTypedIntoThroughItsTextField() {
+        JSpinner spinner = new JSpinner();
+        JTextComponent field = ((JSpinner.DefaultEditor) spinner.getEditor()).getTextField();
+        assertThat(LiveVerbs.editorText(spinner)).isSameAs(field);
+        JTextField plain = new JTextField();
+        assertThat(LiveVerbs.editorText(plain)).isSameAs(plain);
+        assertThat(LiveVerbs.editorText(null)).isNull();
     }
 }

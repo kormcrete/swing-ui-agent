@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.cli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.fixture.FixtureApp;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -122,8 +123,80 @@ class FixtureAppDriveIT {
         step("expect", "{'target':{'name':'status'},'text':'attachments cleared'}");
     }
 
+    @Test
+    @Order(6)
+    void typeIntoASpinnerCellAndAValueOutOfRangeKeepsTheLastValidOne() throws Exception {
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Qty'},'text':'3','commit':true}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Qty','expected':'3'}}");
+        step("expect", "{'target':{'name':'status'},'text':'qty 3 code 10'}");
+        // the status moves on, so "qty 3" again can only come from the edit of the next step ending
+        step("click", "{'target':{'name':'save'}}");
+        step("expect", "{'target':{'name':'status'},'text':'saved 5'}");
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Qty'},'text':'0','commit':true}");
+        step("expect", "{'target':{'name':'status'},'text':'qty 3 code 10'}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Qty','expected':'3'}}");
+    }
+
+    @Test
+    @Order(7)
+    void aRefusedEditIsCancelledAndTheCellKeepsItsValue() throws Exception {
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc','commit':true}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'10'}}");
+        step("expect", "{'target':{'name':'status'},'text':'code cancelled'}");
+        // the editor is gone: a second type starts a fresh edit and this one is accepted
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'42','commit':true}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'42'}}");
+    }
+
+    @Test
+    @Order(8)
+    void aRefusalTheAppExplainsInADialogIsLeftToTheTest() throws Exception {
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Ref'},'text':'x1','commit':true}");
+        // one refusal: the driver asked the editor no second time under the app's dialog
+        step("expect", "{'target':{'name':'status'},'text':'ref refused 1'}");
+        step("answer", "{'button':'OK'}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Ref','expected':'20'}}");
+        // typing into another cell: the click asks Ref's editor to stop, and its second refusal is left to the test
+        refused("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'5','commit':true}",
+                "blocked by dialog Ref");
+        step("expect", "{'target':{'name':'status'},'text':'ref refused 2'}");
+        step("answer", "{'button':'OK'}");
+        // the edit is still open: typing again goes into its field, without asking the editor to stop first
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Ref'},'text':'7','commit':true}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Ref','expected':'7'}}");
+        step("expect", "{'target':{'name':'status'},'text':'qty 3 code 42'}");
+    }
+
+    @Test
+    @Order(9)
+    void anEditorThatKeepsItsEditOpenNeverTakesTheTextOfAnotherCell() throws Exception {
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'11','commit':true}");
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc'}");
+        // Code's editor refuses to stop, silently: Qty's edit cannot start, and Code's field must not take the 5
+        refused("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Qty'},'text':'5','commit':true}",
+                "column 'Code' is still being edited");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'11'}}");
+        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'12','commit':true}");
+        step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'12'}}");
+    }
+
     /** Runs one CLI call, {@code args} in single quotes for readability, and requires it to pass. */
     private static void step(String tool, String args) throws Exception {
+        JsonNode result = call(tool, args);
+        assertThat(result.path("passed").asBoolean()).as(result.path("why").asText()).isTrue();
+    }
+
+    /** Runs one CLI call and requires it to be refused as NOT_ACTIONABLE with a message holding {@code because}. */
+    private static void refused(String tool, String args, String because) throws Exception {
+        JsonNode result = call(tool, args);
+        String why = result.path("why").asText();
+        assertThat(result.path("passed").asBoolean()).as(why).isFalse();
+        assertThat(result.path("reason").asText()).as(why).isEqualTo("NOT_ACTIONABLE");
+        assertThat(result.path("message").asText()).as(why).contains(because);
+    }
+
+    /** The CLI's answer, which must exit 0, with a "why" for assertion messages. */
+    private static JsonNode call(String tool, String args) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int exit = UiCli.run(new String[] {"--port", String.valueOf(port), tool, args.replace('\'', '"')},
@@ -132,7 +205,7 @@ class FixtureAppDriveIT {
         String why = tool + " " + args + " -> exit " + exit + ": " + answer + new String(err.toByteArray(),
                 StandardCharsets.UTF_8) + "\napp output:\n" + appOutput;
         assertThat(exit).as(why).isZero();
-        JsonNode result = JSON.readTree(answer);
-        assertThat(result.path("passed").asBoolean()).as(why).isTrue();
+        ObjectNode result = (ObjectNode) JSON.readTree(answer);
+        return result.put("why", why);
     }
 }
