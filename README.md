@@ -29,7 +29,8 @@ java -javaagent:swing-ui-agent-0.1.0-SNAPSHOT-agent.jar -Dswingui.testsDir=/path
 ```
 
 Agent arguments go after `=`, comma-separated: `port` (default 8765), `bind` (loopback only, default `127.0.0.1`),
-`mode` (`normal` or `background`) and `plugins` (see [Plugins](#plugins-optional)). On every platform the app can be
+`mode` (`normal` or `background`), `inspector` (`off` by default, see [A person at the app](#a-person-at-the-app-optional))
+and `plugins` (see [Plugins](#plugins-optional)). On every platform the app can be
 driven while other windows are in front; on macOS, `background` also keeps it out of the Dock so it never takes the
 foreground.
 `-Dswingui.testsDir` is where exported tests go (default: `src/test/java` under the app's working directory).
@@ -71,6 +72,28 @@ A test connects to the agent on `127.0.0.1:8765` (`-Dswingui.port` changes the p
 dialogs are closed. The app may still be on any screen, so every test begins by getting to its own starting screen,
 through the menu bar or a shortcut. Recording works the same way: `session reset` starts it, and `export_test` warns
 when a test begins anywhere else.
+
+
+## A person at the app (optional)
+
+Start the app with `inspector=on` when a person works with the agent at the screen:
+
+```sh
+java -javaagent:swing-ui-agent-0.1.0-SNAPSHOT-agent.jar=inspector=on -jar my-app.jar
+```
+
+A small palette appears in the app window. The person presses **● Record** and uses the app: every step is recorded
+as if the agent had run it (a red pulsing dot says it is recording). In Check mode they click an element and choose a
+check built from what it shows; Steps lists the recording and replays it (at a speed they pick, or step by step),
+redoes from a step or deletes one. **Done** ends it; the agent reads the recording (`inspect recording`) and exports it
+with `export_test`. Only the person starts and ends a recording.
+
+The agent can also ask about the app in the app itself: `inspect highlight` boxes what a locator matches and the
+person confirms one with a check mark, `inspect pick` lets them click what they mean.
+
+Leave it off for agent-driven and CI runs (the default): no palette can appear and nothing listens to input. While the
+person records, picks, answers or replays, a test run cannot take the agent; while a test run holds it, the palette
+leaves the window.
 
 ## Skills for your coding agent
 

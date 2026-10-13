@@ -33,7 +33,7 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, plugins");
+                .hasMessageContaining("port, bind, mode, inspector, plugins");
     }
 
     @Test
@@ -76,5 +76,20 @@ class AgentArgsTest {
     @Test
     void aPairWithoutEqualsIsRefused() {
         assertThatThrownBy(() -> AgentArgs.parse("8765")).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("key=value");
+    }
+
+    @Test
+    void theInspectorIsOffUnlessAskedFor() {
+        assertThat(AgentArgs.parse(null).inspector).isFalse();
+        assertThat(AgentArgs.parse("inspector=on").inspector).isTrue();
+        assertThat(AgentArgs.parse("inspector=off").inspector).isFalse();
+        assertThatThrownBy(() -> AgentArgs.parse("inspector=maybe"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("inspector must be on or off");
+    }
+
+    @Test
+    void theInspectorNeedsAScreenSoNotBackgroundMode() {
+        assertThatThrownBy(() -> AgentArgs.parse("mode=background,inspector=on"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("mode=background");
     }
 }

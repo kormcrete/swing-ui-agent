@@ -5,13 +5,13 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JViewport;
+import javax.swing.SwingUtilities;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.util.Collections;
@@ -106,18 +106,26 @@ class ScrollsTest {
         assertThat(position().y).as("clamped at the bottom").isEqualTo(3600);
     }
 
+    /**
+     * Widening the table queues a viewport layout on the EDT; run off it, that layout could land between the resize and
+     * the scroll. On the EDT nothing interleaves: the queued layout runs only after the body.
+     */
     @Test
-    @Disabled("flaky: view width races a viewport layout off the EDT")
-    void horizontalEndsMoveTheOtherAxis() {
-        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        table.setSize(1200, 4000);
-        table.setPreferredSize(new Dimension(1200, 4000));
+    void horizontalEndsMoveTheOtherAxis() throws Exception {
+        int[] x = new int[2];
+        SwingUtilities.invokeAndWait(() -> {
+            table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+            table.setSize(1200, 4000);
+            table.setPreferredSize(new Dimension(1200, 4000));
 
-        Scrolls.scroll(table, "right", null, null);
-        assertThat(position().x).isEqualTo(900);
+            Scrolls.scroll(table, "right", null, null);
+            x[0] = position().x;
 
-        Scrolls.scroll(table, "left", null, null);
-        assertThat(position().x).isZero();
+            Scrolls.scroll(table, "left", null, null);
+            x[1] = position().x;
+        });
+        assertThat(x[0]).isEqualTo(900);
+        assertThat(x[1]).isZero();
     }
 
     @Test

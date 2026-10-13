@@ -68,6 +68,7 @@ public final class SwingUiAgent {
                 return null;
             }
             System.out.println("swing-ui-agent listening on http://" + args.bind + ":" + endpoint.port() + "/mcp");
+            assembly.session.startInspector(driver);
 
             watchPlugins(args.plugins, driver, plugins, inst);
             return endpoint;

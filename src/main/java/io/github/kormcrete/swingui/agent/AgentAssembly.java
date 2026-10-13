@@ -32,7 +32,12 @@ final class AgentAssembly {
     static AgentAssembly build(AgentArgs args, Verbs verbs, Plugins plugins, AgentInfo info, long appStartedAt,
                                ObjectMapper mapper) {
         Lease lease = new Lease(System::currentTimeMillis);
+        // a test run must not start while a person records, picks or answers in the app
+        lease.blockedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::engagedReason);
+        // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
+        lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
+        session.inspector(args.inspector);
         ScreenshotVerb.moduleDir = () -> plugins.exportDefaults().moduleDir;
         List<McpToolDefinition> raw = new ArrayList<McpToolDefinition>(UiMcpTools.build(session, mapper));
         raw.add(pluginCallTool(session, plugins, mapper));

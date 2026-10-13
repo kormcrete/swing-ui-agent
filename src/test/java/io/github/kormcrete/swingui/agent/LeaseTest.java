@@ -146,4 +146,27 @@ class LeaseTest {
         lease.release(g.token);
         assertThat(lease.renewHeld(g.token)).isFalse();
     }
+
+    @Test
+    void noTestRunLeasesTheAgentWhileAPersonIsBusyInTheApp() {
+        String[] reason = {"a person is recording in the app"};
+        lease.blockedBy(() -> reason[0]);
+        assertThatThrownBy(() -> lease.acquire("suite", null))
+                .isInstanceOf(DriverException.class)
+                .hasMessage("BUSY: busy: a person is recording in the app");
+        reason[0] = null;
+        assertThat(lease.acquire("suite", null).owner).isEqualTo("suite");
+    }
+
+    @Test
+    void thePalettehearsWhenATestRunTakesTheAgentAndWhenItEnds() {
+        java.util.List<Boolean> heard = new java.util.ArrayList<Boolean>();
+        lease.watchedBy(heard::add);
+        Lease.Grant g = lease.acquire("suite", 1000L);
+        lease.release(g.token);
+        lease.acquire("suite", 1000L);
+        now += 2000;
+        assertThat(lease.holder()).isNull();
+        assertThat(heard).containsExactly(true, false, true, false);
+    }
 }

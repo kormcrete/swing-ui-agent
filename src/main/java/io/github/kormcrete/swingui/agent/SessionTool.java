@@ -101,6 +101,11 @@ final class SessionTool implements McpToolDefinition {
                 return m.writeValueAsString(r);
             }
             case "reset": {
+                String person = io.github.kormcrete.swingui.driver.inspect.Inspector.engagedReason();
+                if (person != null) {
+                    // a reset starts a fresh recording: it must not wipe what the person is recording or answering
+                    throw new DriverException(Reason.BUSY, "busy: " + person);
+                }
                 final AppHooks app = resetHooks(a);
                 final ResetSpec spec = app == null ? null : who(a);
                 gated(a, new Callable<Object>() {
@@ -162,6 +167,7 @@ final class SessionTool implements McpToolDefinition {
         }
         r.putObject("endpoint").put("bind", args.bind).put("port", boundPort.getAsInt());
         r.put("mode", args.mode);
+        r.put("inspector", args.inspector);
         ObjectNode app = r.putObject("app");
         app.put("startedAtMillis", appStartedAt).put("startedAt", Instant.ofEpochMilli(appStartedAt).toString());
         ArrayNode classpath = app.putArray("classpath");

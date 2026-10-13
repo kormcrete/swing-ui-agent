@@ -13,7 +13,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The apple.awt.UIElement property only works when set before the toolkit starts, so initialising the
@@ -46,14 +45,21 @@ class SwingUiAgentStaticInitTest {
         assertThat(TOOLKIT_LOADED.matcher(after).find()).isTrue();
     }
 
+    /**
+     * Why the pattern also matches the bare {@code java.awt.Toolkit}: up to Java 21 a plain value class loads it. Java 25
+     * no longer does; the test says which way each Java goes instead of skipping one.
+     */
     @Test
-    void theColorControlAlsoStartsAToolkit() throws Exception {
-        assumeTrue(javaFeatureVersion() <= 21, "Color loads no toolkit on Java 25");
+    void theColorControlStartsAToolkitUpToJava21Only() throws Exception {
         String out = runProbe("color");
         String after = out.substring(out.indexOf(SwingUiAgentStaticInitProbe.START));
-        assertThat(TOOLKIT_LOADED.matcher(after).find())
-                .as("constructing java.awt.Color did not load a Toolkit class either:%n%s", after)
-                .isTrue();
+        boolean loaded = TOOLKIT_LOADED.matcher(after).find();
+        if (javaFeatureVersion() <= 21) {
+            assertThat(loaded).as("constructing java.awt.Color did not load a Toolkit class either:%n%s", after).isTrue();
+        } else {
+            assertThat(loaded).as("constructing java.awt.Color loaded a Toolkit class on Java %s:%n%s",
+                    javaFeatureVersion(), after).isFalse();
+        }
     }
 
     private static String runProbe(String... args) throws Exception {

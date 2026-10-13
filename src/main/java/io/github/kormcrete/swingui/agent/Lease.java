@@ -6,6 +6,8 @@ import io.github.kormcrete.swingui.driver.Reason;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * One owner at a time. An owner leases the agent and passes the token with every
@@ -39,6 +41,10 @@ final class Lease {
     }
 
     private final Clock clock;
+    /** Why no owner may lease the agent right now though nobody holds it - a person busy in the app - or null. */
+    private volatile Supplier<String> blocker = () -> null;
+    /** Told when the lease is taken (true) and when it ends (false): released, expired or never renewed. */
+    private volatile Consumer<Boolean> watcher = held -> { };
     private final SecureRandom random = new SecureRandom();
     private Grant held;
     private long lastCall;
@@ -49,10 +55,22 @@ final class Lease {
         this.clock = clock;
     }
 
+    /** {@code watch} hears when the lease is taken and when it ends. */
+    void watchedBy(Consumer<Boolean> watch) {
+        watcher = watch == null ? held -> { } : watch;
+    }
+
+    /** {@code reason} answers why a lease must wait, or null; asked on every {@link #acquire}. */
+    void blockedBy(Supplier<String> reason) {
+        blocker = reason == null ? () -> null : reason;
+    }
+
     synchronized Grant acquire(String owner, Long ttlMs) {
         if (owner == null || owner.trim().isEmpty()) throw new DriverException(Reason.BAD_INPUT, "lease needs an 'owner'");
         long now = clock.now();
         expire(now);
+        String blocked = blocker.get();
+        if (blocked != null) throw new DriverException(Reason.BUSY, "busy: " + blocked);
         if (tokenlessInFlight > 0) {
             throw new DriverException(Reason.BUSY, "busy: a call without a lease is running");
         }
@@ -65,6 +83,7 @@ final class Lease {
         held = new Grant(newToken(), owner.trim(), now, ttl);
         lastCall = now;
         inFlight = 0;
+        watcher.accept(true);
         return held;
     }
 
@@ -72,6 +91,7 @@ final class Lease {
         if (held == null || !held.token.equals(token)) return false;
         held = null;
         inFlight = 0;
+        watcher.accept(false);
         return true;
     }
 
@@ -134,7 +154,10 @@ final class Lease {
     }
 
     private void expire(long now) {
-        if (held != null && inFlight == 0 && now - lastCall >= held.ttlMs) held = null;
+        if (held != null && inFlight == 0 && now - lastCall >= held.ttlMs) {
+            held = null;
+            watcher.accept(false);
+        }
     }
 
     private DriverException busy() {

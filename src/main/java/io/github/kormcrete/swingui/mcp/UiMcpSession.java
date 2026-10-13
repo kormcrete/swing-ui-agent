@@ -1,6 +1,9 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Edt;
+import io.github.kormcrete.swingui.driver.LaunchMode;
 import io.github.kormcrete.swingui.driver.EdtClock;
 import io.github.kormcrete.swingui.driver.FileChooserState;
 import io.github.kormcrete.swingui.driver.PendingDialog;
@@ -10,7 +13,10 @@ import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.inspect.Inspector;
+import io.github.kormcrete.swingui.driver.inspect.Target;
 import io.github.kormcrete.swingui.driver.model.Recorder;
+import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
@@ -63,6 +69,8 @@ public class UiMcpSession {
     private boolean definedStart;
 
     private final Supplier<ExportDefaults> exportDefaults;
+    /** The agent was started with {@code inspector=on}: a person may record, check and answer in the app. */
+    private volatile boolean inspector;
 
     public UiMcpSession(StepHost host, UiInventory inventory, ObjectMapper mapper) {
         this(host, inventory, mapper, () -> Plugins.GENERIC_EXPORT);
@@ -73,6 +81,23 @@ public class UiMcpSession {
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
+    }
+
+    /** Lets {@code inspect} run: only for an app started with {@code inspector=on}. */
+    public void inspector(boolean on) {
+        inspector = on;
+    }
+
+    /** Puts the person's palette into the app (● Record), its recordings going into this session. */
+    public void startInspector(Driver driver) {
+        if (inspector) Inspector.of(driver).enable(humanSink());
+    }
+
+    /** The recording, one step per element, as export_test would read it. */
+    private synchronized ArrayNode recordingJson() {
+        ArrayNode out = mapper.createArrayNode();
+        for (Action a : recorded) out.add(stripNulls(mapper.valueToTree(a)));
+        return out;
     }
 
     /** An unscoped snapshot over this many bytes carries a hint to scope the next one. */
@@ -119,6 +144,225 @@ public class UiMcpSession {
                     + "'depth', add compact:true, or read one element with 'read' / 'expect'");
         }
         return tree;
+    }
+
+    /**
+     * The inspector, for a person at the app: {@code highlight} a target (numbered boxes; the person confirms one with its
+     * check mark, or says none), {@code pick} (the person clicks what they mean), {@code recording} (what the person
+     * recorded with the palette - they start and end it, the agent only reads it or waits for their Done; their steps go
+     * into THIS recording, as if the agent had run them), {@code steps} (the recording so far), {@code hover} on/off,
+     * {@code clear}. Only when the app was started with {@code inspector=on}. Not synchronized: it waits for a person,
+     * and must not hold the session meanwhile.
+     */
+    public String inspect(JsonNode args) {
+        if (!inspector) {
+            throw new DriverException(Reason.CAPABILITY_GAP, "the inspector is off: it is for a person at the app, so it "
+                    + "runs only when the app was started with -javaagent:<agent jar>=inspector=on (agent-driven and CI "
+                    + "runs leave it off)");
+        }
+        Driver driver = Driver.current();
+        if (driver == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed in this client");
+        if (driver.settings().mode == LaunchMode.BACKGROUND) {
+            throw new DriverException(Reason.CAPABILITY_GAP, "the inspector needs a person at the screen; this app runs in background mode");
+        }
+        Inspector inspector = Inspector.of(driver);
+        String op = text(args, "op");
+        if (op == null) throw new DriverException(Reason.BAD_INPUT, "inspect needs 'op': highlight, pick, recording, steps, hover or clear");
+        Integer wait = integer(args, "wait");
+        String question = text(args, "question");
+        ObjectNode r = mapper.createObjectNode();
+        Inspector.Answer answer;
+        switch (op) {
+            case "highlight": {
+                long waitMs = wait == null ? 60_000L : Math.min(wait.longValue(), 300_000L);
+                JsonNode targetJson = args.get("target");
+                if (targetJson == null || !targetJson.isObject()) throw new DriverException(Reason.BAD_INPUT, "highlight needs a 'target'");
+                Locator target = locator(targetJson);
+                target.validate();
+                List<Resolved> matches = Edt.call(
+                        () -> target.ref != null
+                                ? Collections.singletonList(driver.resolver().resolve(target))
+                                : driver.resolver().matches(target));
+                List<Target> targets = inspector.targets(matches);
+                ArrayNode list = r.putArray("matches");
+                for (int i = 0; i < targets.size(); i++) {
+                    ObjectNode m = list.addObject();
+                    m.put("n", i + 1);
+                    m.put("element", targets.get(i).element);
+                    m.set("locator", locatorJson(targets.get(i).locator));
+                    if (targets.get(i).fragile) m.put("fragile", true);
+                }
+                if (targets.isEmpty()) {
+                    r.put("outcome", "notFound");
+                    return r.toString();
+                }
+                answer = inspector.highlight(targets, question, waitMs);
+                break;
+            }
+            case "pick":
+                answer = inspector.pick(question, wait == null ? 60_000L : Math.min(wait.longValue(), 300_000L));
+                break;
+            case "recording":
+                answer = inspector.recording(wait == null ? 0L : Math.min(wait.longValue(), 540_000L));
+                break;
+            case "steps":
+                r.set("recording", recordingJson());
+                return r.toString();
+            case "hover":
+                inspector.hover(args.path("on").asBoolean(true));
+                r.put("outcome", args.path("on").asBoolean(true) ? "hoverOn" : "hoverOff");
+                return r.toString();
+            case "clear":
+                inspector.clear();
+                r.put("outcome", "cleared");
+                return r.toString();
+            default:
+                throw new DriverException(Reason.BAD_INPUT, "unknown inspect op '" + op + "' (highlight, pick, recording, steps, hover, clear)");
+        }
+        r.put("outcome", answer.outcome);
+        if (answer.chosen != null) r.put("chosen", answer.chosen);
+        if (answer.target != null) {
+            r.put("element", answer.target.element);
+            r.set("locator", locatorJson(answer.target.locator));
+            if (answer.target.fragile) r.put("fragile", true);
+        }
+        if (answer.steps != null) {
+            ArrayNode steps = r.putArray("steps");
+            for (String line : answer.steps) steps.add(line);
+            r.set("recording", recordingJson());
+        }
+        return r.toString();
+    }
+
+    /**
+     * Where the person's steps go. A step they did is parsed exactly as the agent's would be and appended to the
+     * recording without running it again (it already happened); a check runs like the agent's expect and is recorded
+     * when it passes.
+     */
+    Inspector.Sink humanSink() {
+        return new Inspector.Sink() {
+            @Override
+            public void begin() {
+                // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
+                startRecording(false);
+            }
+
+            @Override
+            public Inspector.Result done(Map<String, Object> step) {
+                JsonNode json = stripNulls(mapper.valueToTree(step));
+                try {
+                    synchronized (UiMcpSession.this) {
+                        Action action = action(json);
+                        List<String> problems = exportProblems(action);
+                        if (!problems.isEmpty()) {
+                            return new Inspector.Result(false,
+                                    action.describe() + " - " + String.join("; ", problems));
+                        }
+                        recorded.add(action);
+                        return new Inspector.Result(true, action.describe());
+                    }
+                } catch (RuntimeException e) {
+                    return new Inspector.Result(false, json + " - " + e.getMessage());
+                }
+            }
+
+            @Override
+            public List<String> steps() {
+                synchronized (UiMcpSession.this) {
+                    List<String> out = new ArrayList<String>();
+                    for (Action a : recorded) out.add(a.describe());
+                    return out;
+                }
+            }
+
+            @Override
+            public Locator target(int index) {
+                synchronized (UiMcpSession.this) {
+                    if (index < 0 || index >= recorded.size()) return null;
+                    JsonNode step = mapper.valueToTree(recorded.get(index));
+                    JsonNode t = step.get("target");
+                    if (t == null || !t.isObject()) return null;
+                    Locator l = locator(stripNulls(t));
+                    // a cell check targets the table; its box belongs on the cell
+                    JsonNode cell = step.get("cell");
+                    if (cell != null && cell.isObject()) {
+                        if (cell.get("row") != null && cell.get("row").isObject()) {
+                            l.row = mapper.convertValue(cell.get("row"), Map.class);
+                        }
+                        if (cell.hasNonNull("column")) l.column = cell.get("column").asText();
+                    }
+                    return l;
+                }
+            }
+
+            @Override
+            public Inspector.Result replay(int index) {
+                JsonNode json;
+                synchronized (UiMcpSession.this) {
+                    if (index < 0 || index >= recorded.size()) {
+                        return new Inspector.Result(false, "no step " + (index + 1));
+                    }
+                    json = stripNulls(mapper.valueToTree(recorded.get(index)));
+                }
+                try {
+                    JsonNode result = mapper.readTree(doAction(json, false));
+                    boolean passed = result.path("passed").asBoolean(false);
+                    String line = result.path("action").asText(json.toString());
+                    if (!passed) line += " - " + result.path("message").asText("");
+                    return new Inspector.Result(passed, line);
+                } catch (Exception e) {
+                    return new Inspector.Result(false, e.getMessage());
+                }
+            }
+
+            @Override
+            public void truncate(int keep) {
+                synchronized (UiMcpSession.this) {
+                    while (recorded.size() > Math.max(0, keep)) recorded.remove(recorded.size() - 1);
+                }
+            }
+
+            @Override
+            public void remove(int index) {
+                synchronized (UiMcpSession.this) {
+                    if (index >= 0 && index < recorded.size()) recorded.remove(index);
+                }
+            }
+
+            @Override
+            public Inspector.Result check(Map<String, Object> step) {
+                JsonNode json = stripNulls(mapper.valueToTree(step));
+                try {
+                    JsonNode result = mapper.readTree(doAction(json, true));
+                    boolean passed = result.path("passed").asBoolean(false) && result.has("recorded");
+                    String line = result.path("action").asText(json.toString());
+                    if (!passed) line += " - " + result.path("message").asText(result.path("notRecorded").asText(""));
+                    return new Inspector.Result(passed, line);
+                } catch (Exception e) {
+                    return new Inspector.Result(false, json + " - " + e.getMessage());
+                }
+            }
+        };
+    }
+
+    private static JsonNode stripNulls(JsonNode n) {
+        if (n.isObject()) {
+            ObjectNode o = (ObjectNode) n;
+            List<String> empty = new ArrayList<String>();
+            o.fieldNames().forEachRemaining(f -> { if (o.get(f).isNull()) empty.add(f); else stripNulls(o.get(f)); });
+            o.remove(empty);
+        } else if (n.isArray()) {
+            for (JsonNode c : n) stripNulls(c);
+        }
+        return n;
+    }
+
+    private ObjectNode locatorJson(Locator l) {
+        ObjectNode n = mapper.valueToTree(l);
+        List<String> empty = new ArrayList<String>();
+        n.fieldNames().forEachRemaining(f -> { if (n.get(f).isNull()) empty.add(f); });
+        n.remove(empty);
+        return n;
     }
 
     /** One element, read without acting. A target that does not resolve is an answer, not a tool error. */

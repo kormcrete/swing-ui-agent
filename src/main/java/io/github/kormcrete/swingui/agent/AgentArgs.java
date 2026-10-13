@@ -13,8 +13,11 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,plugins=a.jar:b/classes}.
+ * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,inspector=off,plugins=a.jar:b/classes}.
  * <p>{@code plugins} is a list separated by {@link File#pathSeparator}; every entry gets its own {@link PluginSlot}.
+ * <p>{@code inspector=on} is for a person at the app: it lets them record steps and checks in the app and answer the
+ * agent's questions there. Off by default, so an agent-driven or CI run can never show a palette or listen to input;
+ * it needs a screen, so it refuses {@code mode=background}.
  */
 public final class AgentArgs {
 
@@ -22,11 +25,13 @@ public final class AgentArgs {
     public final String bind;
     public final String mode;
     public final List<Path> plugins;
+    public final boolean inspector;
 
-    private AgentArgs(int port, String bind, String mode, List<Path> plugins) {
+    private AgentArgs(int port, String bind, String mode, List<Path> plugins, boolean inspector) {
         this.port = port;
         this.bind = bind;
         this.mode = mode;
+        this.inspector = inspector;
         this.plugins = Collections.unmodifiableList(plugins);
     }
 
@@ -35,6 +40,7 @@ public final class AgentArgs {
         String bind = "127.0.0.1";
         String mode = "normal";
         List<Path> plugins = new ArrayList<Path>();
+        boolean inspector = false;
         if (raw != null && !raw.trim().isEmpty()) {
             for (String pair : raw.split(",")) {
                 int eq = pair.indexOf('=');
@@ -52,16 +58,27 @@ public final class AgentArgs {
                         throw new IllegalArgumentException("mode must be normal or background, was '" + value + "'");
                     }
                     mode = value;
+                } else if ("inspector".equals(key)) {
+                    if ("on".equals(value) || "true".equals(value)) {
+                        inspector = true;
+                    } else if ("off".equals(value) || "false".equals(value)) {
+                        inspector = false;
+                    } else {
+                        throw new IllegalArgumentException("inspector must be on or off, was '" + value + "'");
+                    }
                 } else if ("plugins".equals(key)) {
                     for (String p : value.split(Pattern.quote(File.pathSeparator))) {
                         if (!p.trim().isEmpty()) plugins.add(Paths.get(p.trim()));
                     }
                 } else {
-                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, plugins)");
+                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, inspector, plugins)");
                 }
             }
         }
-        return new AgentArgs(port, bind, mode, plugins);
+        if (inspector && "background".equals(mode)) {
+            throw new IllegalArgumentException("inspector=on needs a person at the screen; it cannot run with mode=background");
+        }
+        return new AgentArgs(port, bind, mode, plugins, inspector);
     }
 
     /**

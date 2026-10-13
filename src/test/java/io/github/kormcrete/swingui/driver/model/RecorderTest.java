@@ -87,4 +87,21 @@ class RecorderTest {
         l.scope = Arrays.asList("section:Footer");
         return l;
     }
+
+    @Test
+    void anElementWithoutANameIsAddressedByRoleAndScopeNotNth() {
+        javax.swing.JTable unnamed = new javax.swing.JTable(2, 2);
+        JPanel lines = new JPanel();
+        lines.add(unnamed);
+        javax.swing.JTabbedPane cart = new javax.swing.JTabbedPane();
+        cart.addTab("Cart", lines);
+        scene.mainContent.add(cart);
+        Resolved table = scene.resolver.resolve(Locator.ofRef(scene.refs.add(unnamed, null)));
+        assertThat(table.name).isNull();
+        Recorder.Recorded r = recorder.record(table);
+        assertThat(r.fragile).isFalse();
+        assertThat(r.locator.nth).isNull();
+        assertThat(r.locator.name).isNull();
+        assertThat(scene.resolver.resolve(r.locator).component).isSameAs(unnamed);
+    }
 }

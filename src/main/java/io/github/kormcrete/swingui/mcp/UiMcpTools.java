@@ -254,6 +254,38 @@ public final class UiMcpTools {
         });
 
         tools.add(new McpToolDefinition() {
+            @Override public String name() { return "inspect"; }
+            @Override public ObjectNode descriptor(ObjectMapper m) {
+                ObjectNode schema = emptyObjectSchema(m);
+                ObjectNode p = schema.with("properties");
+                ObjectNode op = p.putObject("op");
+                op.put("type", "string");
+                op.putArray("enum").add("highlight").add("pick").add("recording").add("steps").add("hover").add("clear");
+                p.set("target", LocatorSchema.of(m));
+                p.putObject("question").put("type", "string").put("description",
+                        "highlight, pick: the question on the bar in the app window.");
+                p.putObject("wait").put("type", "integer").put("description",
+                        "Milliseconds to wait for the person: highlight and pick default 60000, at most 300000 "
+                        + "(highlight with 0 only shows the boxes); recording default 0 (just read), at most 540000.");
+                p.putObject("on").put("type", "boolean").put("description", "hover: true starts it, false stops it.");
+                schema.putArray("required").add("op");
+                return tool(m, "inspect",
+                        "Work WITH the person at the app (only when it was started with inspector=on; otherwise a "
+                        + "CAPABILITY_GAP). highlight: box every match of 'target' (numbered when several) with "
+                        + "'question' on a bar; they click the check mark on the one they mean (outcome confirmed, chosen "
+                        + "n, its locator) or 'None of these' (rejected). pick: they click the element they mean - the "
+                        + "click does not reach the app - and you get its locator. recording: what the person recorded. "
+                        + "THEY start it with ● Record in the palette in the app window and end it with Done - every "
+                        + "step they take is recorded as if you had run it, Check mode adds checks, Steps replays, redoes "
+                        + "or deletes - you only read it (outcome idle, recording or done; 'wait' waits for their Done) "
+                        + "and export it with export_test. steps: the recording so far. hover: a box follows their "
+                        + "pointer and names the locator under it. clear: removes your boxes and question. While a person "
+                        + "records, picks, answers or replays, no test run can take the lease.", schema);
+            }
+            @Override public String invoke(JsonNode args) { return session.inspect(args); }
+        });
+
+        tools.add(new McpToolDefinition() {
             @Override public String name() { return "read_clipboard"; }
             @Override public ObjectNode descriptor(ObjectMapper m) {
                 return readOnly(tool(m, "read_clipboard",

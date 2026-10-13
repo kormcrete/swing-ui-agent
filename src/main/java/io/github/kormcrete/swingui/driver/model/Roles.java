@@ -123,6 +123,7 @@ public final class Roles {
 
     /** Components that never contain a target: scroll bars and look-and-feel internals. */
     public static boolean skips(Component c) {
-        return c instanceof JScrollBar || c.getClass().getName().startsWith("javax.swing.plaf.");
+        return c instanceof JScrollBar || c.getClass().getName().startsWith("javax.swing.plaf.")
+                || c.getClass().getName().startsWith("io.github.kormcrete.swingui.driver.inspect.");
     }
 }

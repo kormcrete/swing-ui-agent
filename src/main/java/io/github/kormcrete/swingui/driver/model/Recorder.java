@@ -42,12 +42,12 @@ public final class Recorder {
             tries.add(with(sub, null, null, null, null, id));
             if (window != null) tries.add(with(sub, window, null, null, null, id));
         }
-        if (target.name != null) {
-            tries.add(with(sub, window, null, target.role, target.name, null));
-            for (int k = 1; k <= target.trail.size(); k++) {
-                List<String> innermost = new ArrayList<String>(target.trail.subList(target.trail.size() - k, target.trail.size()));
-                tries.add(with(sub, window, innermost, target.role, target.name, null));
-            }
+        // An element without a name (an unlabelled table) is still unique by role inside its scope often enough:
+        // try that before falling back to nth.
+        tries.add(with(sub, window, null, target.role, target.name, null));
+        for (int k = 1; k <= target.trail.size(); k++) {
+            List<String> innermost = new ArrayList<String>(target.trail.subList(target.trail.size() - k, target.trail.size()));
+            tries.add(with(sub, window, innermost, target.role, target.name, null));
         }
         for (Locator l : tries) {
             List<Resolved> m = resolver.matches(l);

@@ -65,6 +65,23 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 6. **A recorded step was wrong?** Do not patch it with more steps. Reset and redo from step 3.
 7. **Export, then verify** (below).
 
+## When a person records with you
+
+If `$UI session` shows `"inspector": true` (the app was started with `inspector=on`), the person at the app can show
+you instead of describing:
+
+- **Ask, don't guess.** When a target is unclear, `$UI inspect '{"op":"highlight","target":{...},"question":"Is this the
+  Customer field?"}'` boxes every match in the app; the answer names the one they confirmed and its locator
+  (`outcome` `confirmed` / `rejected`). `{"op":"pick","question":"Click the field that holds the customer"}` returns the
+  locator of what they click.
+- **They record, you export.** The person presses ● Record in the palette in the app window, uses the app (every step
+  is recorded as if you had run it), adds checks in Check mode, replays or fixes steps, and presses Done. You never
+  start or end it: `$UI inspect '{"op":"recording","wait":540000}'` waits for their Done (`outcome` `done`, or
+  `recording` while they are still at it, `idle` before they started) and returns the recording. Then export as below
+  and verify as always: their steps were recorded, not re-run, until a replay. While they record, `session reset` is
+  refused (it would wipe their recording).
+- With `"inspector": false` the tool answers CAPABILITY_GAP; work from the person's words as described above.
+
 ## What is not recorded
 
 - A target using `point` or `item`, a `row` with more than two columns, a `loginAs` that is not the first step:
