@@ -1,4 +1,6 @@
-# swing-ui-agent
+# Swing UI Agent
+
+**Let a coding agent drive your real Swing application and write its UI tests.**
 
 [![Build](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
 [![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkormcrete%2Fswing-ui-agent%2Fbadges%2Ftests.json)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
@@ -6,8 +8,7 @@
 [![Java](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkormcrete%2Fswing-ui-agent%2Fbadges%2Fjava.json)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
 [![Platform](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fkormcrete%2Fswing-ui-agent%2Fbadges%2Fplatform.json)](https://github.com/kormcrete/swing-ui-agent/actions/workflows/build.yml)
 
-Let a coding agent drive your real Swing application and write its UI tests. Attach one jar to the app's JVM: no
-changes to the app, and it never takes over your mouse.
+Attach one jar to the app's JVM: no changes to the app, and it never takes over your mouse.
 
 ![Order Desk, the demo app, with the agent asking in the app which of two tables holds the cart](site/public/hero-agent-asks.png)
 
