@@ -467,6 +467,11 @@ public class UiMcpSession {
     public synchronized String screenshot(JsonNode args) {
         JsonNode targetJson = args == null ? null : args.get("target");
         Locator target = targetJson != null && targetJson.isObject() ? locator(targetJson) : null;
+        String window = text(args, "window");
+        if (target == null && window != null) {
+            target = new Locator();   // a whole window, as snapshot takes it
+            target.window = window;
+        }
         Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"), number(args, "scale"));
 
         ObjectNode r = mapper.createObjectNode();

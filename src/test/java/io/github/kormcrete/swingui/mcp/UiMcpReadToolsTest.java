@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.mcp;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Geometry;
+import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.testing.RecordingHost;
 import io.github.kormcrete.swingui.testing.RecordingVerbs;
@@ -174,6 +175,18 @@ class UiMcpReadToolsTest {
     void screenshotPassesMaxSizeAndScale() throws Exception {
         session.screenshot(json("{\"maxSize\":3000,\"scale\":2}"));
         assertThat(backend.verbs.calls).containsExactly("screenshot null 3000 2.0");
+    }
+
+    @Test
+    void screenshotTakesAWindowLikeSnapshot() throws Exception {
+        session.screenshot(json("{\"window\":\"main\"}"));
+        assertThat(backend.verbs.calls).containsExactly("screenshot in main null");
+    }
+
+    @Test
+    void aScreenshotTargetWinsOverAWindow() throws Exception {
+        session.screenshot(json("{\"window\":\"main\",\"target\":{\"role\":\"button\",\"name\":\"OK\"}}"));
+        assertThat(backend.verbs.calls).containsExactly("screenshot " + Locator.of("button", "OK") + " null");
     }
 
     @Test

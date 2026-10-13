@@ -223,6 +223,9 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.set("target", LocatorSchema.of(m));
+                p.putObject("window").put("type", "string").put("description",
+                        "A whole window instead of the current one: main | dialog | dialog:<title> | window:<title> "
+                        + "(a title ending in * matches a prefix). Ignored when 'target' is given.");
                 ObjectNode region = p.putObject("region");
                 region.put("type", "object");
                 region.put("description", "A snippet of the target instead of all of it: x, y, w, h as "
@@ -245,7 +248,8 @@ public final class UiMcpTools {
                         + "another application's window. Give a 'target' for one dialog, panel, table or toolbar, "
                         + "and 'region' for a snippet inside it. Anything drawn in a window of its own (an open "
                         + "popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window "
-                        + "instead. A read: nothing is recorded and there is no flow step for it. Use it for an "
+                        + "instead. A read: nothing is recorded; to capture screens in a recorded test, use the "
+                        + "'screenshot' step in a batch, which writes a file. Use it for an "
                         + "aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for "
                         + "anything that is really a number or a boolean.",
                         schema));
