@@ -2,6 +2,8 @@
 title: swing-ui-agent
 description: Let a coding agent drive your real Swing app and write its UI tests. Attach one jar, no changes to the app.
 template: splash
+heroFacts: 'Java 8 to 25 · macOS, Linux and Windows · Apache-2.0 (<a href="/swing-ui-agent/project/limits/">Limits</a>)'
+heroDemo: true
 hero:
   title: Let a coding agent drive your Swing app and write its UI tests
   tagline: Attach one jar to your app's JVM. No changes to the app, and it never takes over your mouse.
@@ -9,24 +11,87 @@ hero:
     - text: Get started
       link: /swing-ui-agent/start/why/
       icon: right-arrow
+    - text: See the demo
+      link: /swing-ui-agent/demo/tour/
+      variant: secondary
     - text: GitHub
       link: https://github.com/kormcrete/swing-ui-agent
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Two ways to write a test
 
 <CardGrid>
-	<Card title="Drive" icon="seti:shell">
-		A coding agent clicks, types and reads the live app, from a shell (`java -jar … <tool>`) or over MCP.
+	<Card title="Tell the agent" icon="seti:shell">
+		Describe the test in words. The agent drives the live app from a shell, checks each step, and exports a JUnit 5
+		`@UiTest` class.
+
+		```sh wrap
+		$UI menu '{"path":["File","New order"]}'
+		$UI type '{"target":{"name":"Customer"},"text":"Ada"}'
+		$UI export_test '{"class":"PlaceOrderUiIT"}'
+		```
+
+		[Record a test with the agent](/swing-ui-agent/start/record/)
 	</Card>
-	<Card title="Record" icon="pencil">
-		What it did becomes a JUnit 5 `@UiTest` class (`export_test`). You review it like any other code.
-	</Card>
-	<Card title="Run" icon="rocket">
-		The tests run against the live app in CI, or by hand when you want to watch them work.
+	<Card title="Show it yourself" icon="pencil">
+		Start the app with `inspector=on`, press **● Record** in the palette and use the app. **Check** adds checks,
+		**Steps** replays and fixes them. After **Done**, **Export…** writes the JUnit class, or your agent does.
+
+		The agent can ask you too: it boxes what it found, and you confirm the one you mean.
+
+		[Record a test by showing it](/swing-ui-agent/start/show/)
 	</Card>
 </CardGrid>
 
-Java 8 to 25 · Apache-2.0 · macOS, Linux and Windows ([Limits](/swing-ui-agent/project/limits/))
+## Drive, record, run
+
+<CardGrid>
+	<Card title="Drive" icon="seti:shell">
+		A coding agent clicks, types and reads the live app, one tool call per step, from a shell (`java -jar … <tool>`)
+		or over MCP. [Let your agent drive the app](/swing-ui-agent/start/drive/)
+	</Card>
+	<Card title="Record" icon="pencil">
+		What it did, or what you showed it, becomes a `@UiTest` class. You review it like any other code.
+		[Record a test](/swing-ui-agent/start/record/)
+	</Card>
+	<Card title="Run" icon="rocket">
+		The tests run against the live app from Maven or your IDE, and in CI under a virtual display, with a screenshot
+		per step when you want one. [Run the tests](/swing-ui-agent/start/run/)
+	</Card>
+</CardGrid>
+
+## Built for real Swing apps
+
+- **Waits for the app, not a timer.** Every action lets the app settle before it returns, and checks retry until they
+  hold. [Waiting](/swing-ui-agent/guides/waiting/)
+- **Finds what a user sees.** Labels, button text, column headers and cell text, not pixel positions.
+  [Targets and locators](/swing-ui-agent/guides/targets/)
+- **Leaves your mouse alone.** Input goes into the app's event queue, so it works with other windows in front.
+- **One long-running app, isolated tests.** Each test gets to its own starting screen, and a lease keeps two clients
+  out of each other's way. [Reset and the starting screen](/swing-ui-agent/guides/reset/)
+
+## Built for coding agents
+
+- **A tree, not a screenshot.** `snapshot` returns the windows as an element tree, scoped as narrowly as the agent
+  asks. `screenshot` is there when a picture helps.
+- **Errors that say what exists.** A locator that misses comes back with the near misses, so the next try is right.
+- **Skills included.** Three agent skills teach the drive, target and record workflow.
+  [Skills](/swing-ui-agent/agents/skills/)
+- **Safe by default.** Loopback only, and no tool runs commands or evaluates code.
+  [Security](/swing-ui-agent/agents/security/)
+
+## See it run
+
+Order Desk is a small Swing order desk made to be driven: tabs, sortable tables, a tree, popup menus, a checkout
+wizard with rules, a background task and a file chooser. Its tests were recorded by an agent and run in CI:
+`CartTotalsUiIT` is the one playing above, and `PlaceOrderUiIT` takes an order through checkout with a screenshot per
+step.
+
+<CardGrid>
+	<LinkCard title="Tour of Order Desk" description="Start it with the agent and see every screen." href="/swing-ui-agent/demo/tour/" />
+	<LinkCard title="The recorded test" description="PlaceOrderUiIT step by step, with its ten screenshots." href="/swing-ui-agent/demo/recorded-test/" />
+</CardGrid>

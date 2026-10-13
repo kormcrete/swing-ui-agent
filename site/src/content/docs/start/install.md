@@ -1,40 +1,75 @@
 ---
 title: Installation
-description: Start your app with the agent and check that it is ready.
+description: Build swing-ui-agent, start an app with the agent, and check that it is ready.
 sidebar:
   order: 2
 ---
 
-swing-ui-agent runs inside your app's JVM as a Java agent. You add one flag to the command that starts your app. Your app's code does not change.
+swing-ui-agent runs inside your app's JVM as a Java agent. You add one flag to the command that starts your app, and the app's code does not change. This page starts Order Desk, the demo app, with the agent; the same steps work for your own app.
 
-## Build it
+## 1. Build and install it
 
 It is not on Maven Central yet. Build and install it with JDK 8 and Maven 3:
 
 ```sh
 git clone https://github.com/kormcrete/swing-ui-agent.git
-cd swing-ui-agent
-mvn -B install
+(cd swing-ui-agent && mvn -B install -DskipTests)
 ```
 
-This produces two jars in `target/`: the library, for your tests, and `swing-ui-agent-<version>-agent.jar`, the agent and command line.
+This installs two jars into your local Maven repository and leaves them in `swing-ui-agent/target/`:
 
-## Start your app with the agent
+- `swing-ui-agent-0.1.0-SNAPSHOT.jar`: the library, for your tests.
+- `swing-ui-agent-0.1.0-SNAPSHOT-agent.jar`: the Java agent and the command line client.
 
-Add `-javaagent` to the command that starts your app:
+## 2. Build Order Desk
 
 ```sh
-java -javaagent:swing-ui-agent-0.1.0-SNAPSHOT-agent.jar \
-     -Dswingui.testsDir=/path/to/project/src/test/java \
-     -jar my-app.jar
+git clone https://github.com/kormcrete/swing-order-desk-demo.git
+cd swing-order-desk-demo
+mvn -B package
 ```
 
-The agent listens on `http://127.0.0.1:8765/mcp`. `-Dswingui.testsDir` is where exported tests go. The same jar works on every supported Java; on Java 9 and newer the app needs no `--add-opens` flags. The agent's options are listed in [Agent options](/swing-ui-agent/reference/agent-options/).
+This writes `target/order-desk.jar`, the app, and copies the agent jar to `target/swing-ui-agent-agent.jar`.
 
-## Check that it is ready
+## 3. Start the app with the agent
+
+Add `-javaagent` to the command that starts the app:
 
 ```sh
-java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar session
+java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
+     -Dorderdesk.today=2026-10-12 \
+     -jar target/order-desk.jar
 ```
 
-Exit code `3` means no agent is reachable: the app is not running with the agent, or it listens on another port (pass `--port`). The other exit codes are in [CLI](/swing-ui-agent/reference/cli/).
+- `=port=8770` is the port Order Desk's run configurations and tests use. Without it the agent listens on 8765, at
+  `http://127.0.0.1:8765/mcp`.
+- `-Dorderdesk.today` is Order Desk's own: it fixes the date, so every run looks the same.
+- For your own app, add `-Dswingui.testsDir=/path/to/project/src/test/java`: that is where exported tests go. The default is `src/test/java` under the app's working directory.
+- The same jar works on every supported Java. On Java 9 and newer the app needs no `--add-opens` flags.
+
+The agent's options (`port`, `bind`, `mode`, `inspector`, `plugins`) are in [Agent options](/swing-ui-agent/reference/agent-options/).
+
+## 4. Check that it is ready
+
+```sh
+java -jar target/swing-ui-agent-agent.jar --port 8770 session
+```
+
+The answer names the agent, the port and the plugin state (trimmed):
+
+```json
+{"agent":{"version":"0.1.0-SNAPSHOT",…},"endpoint":{"bind":"127.0.0.1","port":8770},"mode":"normal","inspector":false,…,"lease":null,"plugins":[],"plugin":{"state":"none","detail":"no plugin configured (agent argument plugins=…)"}}
+```
+
+## When it does not connect
+
+- **Exit code `3`:** no agent is reachable. The app is not running with the agent, or it listens on another port: pass `--port <n>` before the tool name.
+- **Exit code `1`:** the agent answered with an error; the message is on stderr.
+- **Exit code `2`:** the command line itself is wrong.
+
+The exit codes and flags are in [CLI](/swing-ui-agent/reference/cli/).
+
+## What's next
+
+- [Let your agent drive the app](/swing-ui-agent/start/drive/).
+- [Limits](/swing-ui-agent/project/limits/): platforms and Java versions.

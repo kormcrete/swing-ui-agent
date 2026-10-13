@@ -23,9 +23,11 @@ function section(tool) {
 	const kind = tool.annotations?.readOnlyHint ? 'Read-only.' : 'Acts on the app.';
 	const lines = [`## ${tool.name}`, '', `*${kind}*`, '', text(tool.description), ''];
 	if (props.length) {
-		lines.push('| Parameter | Type | Required | Description |', '| --- | --- | --- | --- |');
+		// three columns, "required" under the name, so the table still fits a phone
+		lines.push('| Parameter | Type | Description |', '| --- | --- | --- |');
 		for (const [name, p] of props) {
-			lines.push(`| \`${name}\` | ${cell(typeOf(p))} | ${required.has(name) ? 'yes' : ''} | ${cell(p.description)} |`);
+			const label = required.has(name) ? `\`${name}\`<br>required` : `\`${name}\``;
+			lines.push(`| ${label} | ${cell(typeOf(p))} | ${cell(p.description)} |`);
 		}
 		lines.push('');
 	} else {

@@ -192,10 +192,18 @@ header.header site-search button[data-open-modal]:hover {
 	border-radius: var(--kc-radius-sm);
 }
 
-/* On the home page, three cards in a row on wide screens: Drive, Record, Run. */
-@media (min-width: 72rem) {
+/* On the home page, three cards in a row on wide screens (Drive, Record, Run); two cards share the row equally. */
+[data-has-hero] .card-grid > * {
+	min-width: 0;
+}
+@media (min-width: 50rem) {
 	[data-has-hero] .card-grid {
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+@media (min-width: 72rem) {
+	[data-has-hero] .card-grid:has(> :nth-child(3)) {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
 

@@ -1,0 +1,58 @@
+---
+import Default from '@astrojs/starlight/components/Hero.astro';
+import { story } from './hero-demo/steps';
+import './hero-demo/hero-demo.css';
+
+const { data } = Astro.locals.starlightRoute.entry;
+const { heroFacts, heroDemo } = data;
+
+// heroDemo: the record-and-replay demo (hero-demo/) takes the hero image's place; Starlight lays it out as one.
+if (heroDemo && data.hero) {
+	const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero-demo/`;
+	data.hero.image = {
+		html: `<figure class="kc-demo" data-kc-demo data-base="${base}" data-paused="false">
+	<div class="kc-demo-stage">
+		<div class="kc-demo-cam">
+			<img class="kc-demo-frame is-front" src="${base}${story.firstFrame}.webp" width="2000" height="1207" alt="" fetchpriority="high">
+			<img class="kc-demo-frame" width="2000" height="1207" alt="">
+			<div class="kc-demo-marks"></div>
+		</div>
+		<span class="kc-demo-badge"></span>
+	</div>
+	<div class="kc-demo-log" aria-hidden="true"></div>
+	<button class="kc-demo-toggle" type="button" aria-label="Pause the demo" aria-pressed="false">
+		<svg class="kc-demo-icon-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+		<svg class="kc-demo-icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11a.75.75 0 0 0 1.14.64l9-5.5a.75.75 0 0 0 0-1.28l-9-5.5A.75.75 0 0 0 4 2.5z"/></svg>
+	</button>
+	<figcaption class="kc-demo-caption">A coding agent records a test in Order Desk: it opens a new order for Ada Shop Ltd, adds A4 paper and gel pens, sets the quantities and adds three checks. It exports a JUnit test, which then replays every step and passes each check. In CI the same test runs headless.</figcaption>
+</figure>`,
+	};
+}
+---
+
+<Default />
+{heroFacts && <p class="kc-hero-facts" set:html={heroFacts} />}
+
+<script>
+	// plays every [data-kc-demo] on the page; does nothing without one
+	import './hero-demo/player';
+</script>
+
+<style>
+	/* The facts sit under the buttons, as far from them as the buttons are from the tagline. */
+	:global(.hero:has(+ .kc-hero-facts)) {
+		padding-bottom: 0;
+	}
+	.kc-hero-facts {
+		margin-top: clamp(1.5rem, calc(1.5rem + 1vw), 2rem);
+		margin-bottom: clamp(2.5rem, calc(1rem + 6vmin), 5rem);
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-sm);
+		text-align: center;
+	}
+	@media (min-width: 50rem) {
+		.kc-hero-facts {
+			text-align: start;
+		}
+	}
+</style>

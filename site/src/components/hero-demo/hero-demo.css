@@ -1,0 +1,289 @@
+/*
+ * The home hero's record-and-replay demo (player.ts), and the stage, marks, terminal lines and play button the
+ * IntelliJ page's run demo (run-demo/) shares with it. The stage shows screenshots of a light app in both themes,
+ * so the marks on it use fixed light-theme colours; the log under it is a terminal, dark in both themes.
+ * Inside .kc-demo-cam, lengths are frame pixels; --s (set by the player) is screen pixels per frame pixel.
+ */
+.kc-demo,
+.kc-run {
+	--kc-demo-act: #1a4a6b;
+	--kc-demo-act-glow: rgb(26 74 107 / 0.28);
+	--kc-demo-checking: #a86a0b;
+	--kc-demo-pass: #2e7d4f;
+	--kc-demo-pass-tint: rgb(46 125 79 / 0.12);
+	--kc-demo-record: #a63a2b;
+	--kc-demo-term-bg: #0f1a24;
+	--kc-demo-term-ink: #e3e9ee;
+	--kc-demo-term-dim: #8a9aa8;
+	--kc-demo-term-prompt: #76d8ff;
+	--kc-demo-term-pass: #7fcb9c;
+	--kc-demo-term-dot: #e0786a;
+}
+.kc-demo {
+	position: relative;
+	margin: 0;
+	width: 100%;
+	min-width: 0;
+}
+
+.kc-demo-stage {
+	position: relative;
+	aspect-ratio: 16 / 10;
+	overflow: hidden;
+	background: #f2f2f2;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: var(--kc-radius-sm) var(--kc-radius-sm) 0 0;
+}
+
+.kc-demo-cam {
+	position: absolute;
+	inset: 0 auto auto 0;
+	width: var(--kc-demo-frame-w, 2400px);
+	height: var(--kc-demo-frame-h, 1448px);
+	transform-origin: 0 0;
+	transition: transform 700ms cubic-bezier(0.45, 0, 0.2, 1);
+}
+
+.kc-demo-frame {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	opacity: 0;
+	transition: opacity 220ms ease-out;
+}
+.kc-demo-frame.is-front {
+	opacity: 1;
+}
+
+.kc-demo-marks {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.kc-demo-mark {
+	position: absolute;
+	box-sizing: border-box;
+	border-radius: calc(5px / var(--s, 0.4));
+}
+
+/* An action: a ring that spreads from the control's centre, the control outlined for a moment. */
+.kc-demo-mark.is-act {
+	border: calc(2px / var(--s, 0.4)) solid var(--kc-demo-act);
+	animation: kc-demo-outline 900ms ease-out forwards;
+}
+.kc-demo-mark.is-act::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: calc(44px / var(--s, 0.4));
+	height: calc(44px / var(--s, 0.4));
+	margin: calc(-22px / var(--s, 0.4));
+	border-radius: 50%;
+	background: var(--kc-demo-act-glow);
+	border: calc(2px / var(--s, 0.4)) solid var(--kc-demo-act);
+	animation: kc-demo-ripple 900ms ease-out forwards;
+}
+@keyframes kc-demo-ripple {
+	from {
+		transform: scale(0.2);
+		opacity: 1;
+	}
+	to {
+		transform: scale(1.6);
+		opacity: 0;
+	}
+}
+@keyframes kc-demo-outline {
+	0%,
+	55% {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+
+/* A check: noted while recording, amber while it runs in the replay, green with a tick once it passes. */
+.kc-demo-mark.is-noted,
+.kc-demo-mark.is-checking,
+.kc-demo-mark.is-passed {
+	border: calc(2.5px / var(--s, 0.4)) dashed var(--kc-demo-act);
+	outline: calc(4px / var(--s, 0.4)) solid rgb(255 255 255 / 0.7);
+}
+.kc-demo-mark.is-checking {
+	border-color: var(--kc-demo-checking);
+}
+.kc-demo-mark.is-passed {
+	border-style: solid;
+	border-color: var(--kc-demo-pass);
+	background: var(--kc-demo-pass-tint);
+}
+.kc-demo-mark.is-noted::after,
+.kc-demo-mark.is-checking::after,
+.kc-demo-mark.is-passed::after {
+	position: absolute;
+	right: calc(-2px / var(--s, 0.4));
+	bottom: 100%;
+	margin-bottom: calc(3px / var(--s, 0.4));
+	padding: calc(1px / var(--s, 0.4)) calc(6px / var(--s, 0.4));
+	border-radius: calc(4px / var(--s, 0.4));
+	color: #fff;
+	font: 600 calc(11px / var(--s, 0.4)) / 1.4 var(--sl-font);
+	white-space: nowrap;
+}
+.kc-demo-mark.is-noted::after {
+	content: 'check';
+	background: var(--kc-demo-act);
+}
+.kc-demo-mark.is-checking::after {
+	content: 'checking';
+	background: var(--kc-demo-checking);
+}
+.kc-demo-mark.is-passed::after {
+	content: '✓ passed';
+	background: var(--kc-demo-pass);
+}
+
+.kc-demo-badge {
+	position: absolute;
+	left: 0.5rem;
+	bottom: 0.5rem;
+	padding: 0.15rem 0.55rem;
+	border-radius: 999px;
+	background: var(--kc-demo-term-bg);
+	color: var(--kc-demo-term-ink);
+	font: 600 var(--sl-text-xs) / 1.5 var(--sl-font);
+	white-space: nowrap;
+}
+.kc-demo-badge:empty {
+	display: none;
+}
+.kc-demo[data-state='record'] .kc-demo-badge {
+	background: var(--kc-demo-record);
+	color: #fff;
+}
+.kc-demo[data-state='passed'] .kc-demo-badge,
+.kc-demo[data-state='end'] .kc-demo-badge {
+	background: var(--kc-demo-pass);
+	color: #fff;
+}
+
+.kc-demo-toggle {
+	position: absolute;
+	right: 0.5rem;
+	bottom: 0.5rem;
+	display: grid;
+	place-items: center;
+	width: 2rem;
+	height: 2rem;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgb(255 255 255 / 0.12);
+	color: var(--kc-demo-term-ink);
+	cursor: pointer;
+	opacity: 0.85;
+}
+.kc-demo-toggle:hover,
+.kc-demo-toggle:focus-visible {
+	opacity: 1;
+}
+.kc-demo-toggle:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+.kc-demo-toggle svg {
+	width: 0.9rem;
+	height: 0.9rem;
+	fill: currentColor;
+}
+.kc-demo-icon-play,
+[data-paused='true'] .kc-demo-icon-pause {
+	display: none;
+}
+[data-paused='true'] .kc-demo-icon-play {
+	display: block;
+}
+
+.kc-demo-log {
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	height: calc(3 * 1.6em + 1.1rem);
+	padding: 0.55rem 3rem 0.55rem 0.75rem;
+	overflow: hidden;
+	background: var(--kc-demo-term-bg);
+	border: 1px solid var(--sl-color-hairline);
+	border-top: 0;
+	border-radius: 0 0 var(--kc-radius-sm) var(--kc-radius-sm);
+	color: var(--kc-demo-term-ink);
+	font: 0.75rem / 1.6 var(--sl-font-mono);
+	text-align: start;
+}
+.kc-demo-line {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.kc-demo-prompt {
+	color: var(--kc-demo-term-prompt);
+}
+.kc-demo-prompt:not(:empty)::after {
+	content: ' ';
+}
+/* The gutter: ● once the agent has recorded the step, ✓ once the test has passed it. */
+.kc-demo-gutter {
+	display: inline-block;
+	width: 1.6ch;
+	color: var(--kc-demo-term-dot);
+}
+.kc-demo-line.is-java .kc-demo-gutter,
+.kc-demo-line.is-pass .kc-demo-gutter {
+	color: var(--kc-demo-term-pass);
+}
+.kc-demo-line.is-out {
+	color: var(--kc-demo-term-dim);
+}
+.kc-demo-line.is-pass {
+	color: var(--kc-demo-term-pass);
+	font-weight: 600;
+}
+
+.kc-demo-caption {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* The hero gives the demo half the width on wide screens, as it did the screenshot. */
+.hero .hero-html:has(.kc-demo) {
+	width: 100%;
+	min-width: 0;
+}
+@media (min-width: 50rem) {
+	.hero:has(.kc-demo) {
+		grid-template-columns: 1fr 1fr;
+	}
+}
+
+/* Phones: a smaller terminal font, so a command keeps its verb and target before the cut. */
+@media (max-width: 40rem) {
+	.kc-demo-log,
+	.kc-run-console {
+		font-size: 0.68rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.kc-demo-cam,
+	.kc-demo-frame {
+		transition: none;
+	}
+}

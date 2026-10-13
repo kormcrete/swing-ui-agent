@@ -1,0 +1,65 @@
+---
+// The IntelliJ page's run demo: a "UI tests" run with its test tree on the left and Order Desk on the right
+// (run-demo/). The figure renders without JavaScript as the run's start; run-demo/player.ts plays it.
+import { run, tests } from './run-demo/steps';
+import './hero-demo/hero-demo.css';
+import './run-demo/run-demo.css';
+
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/run-demo/`;
+---
+
+<figure class="kc-run not-content" data-kc-run data-base={base} data-paused="false" data-state="idle">
+	<div class="kc-run-ide">
+		<div class="kc-run-bar">
+			<span class="kc-run-config"><span class="kc-run-config-icon" aria-hidden="true"></span>{run.config}</span>
+			<span class="kc-run-status"></span>
+			<span class="kc-run-progress" aria-hidden="true"></span>
+		</div>
+		<div class="kc-run-body">
+			<div class="kc-run-tree" aria-hidden="true">
+				<div class="kc-run-node is-root" data-node="root" data-state="pending">
+					<span class="kc-run-icon"></span><span class="kc-run-name">Test Results</span><span class="kc-run-time"></span>
+				</div>
+				{
+					tests.map((t) => (
+						<>
+							<div class="kc-run-node is-class" data-node={t.cls} data-state="pending">
+								<span class="kc-run-icon" />
+								<span class="kc-run-name">{t.cls}</span>
+								<span class="kc-run-time" />
+							</div>
+							<div class="kc-run-node is-method" data-node={`${t.cls}#`} data-state="pending">
+								<span class="kc-run-icon" />
+								<span class="kc-run-name">{t.method}</span>
+								<span class="kc-run-time" />
+							</div>
+						</>
+					))
+				}
+			</div>
+			<div class="kc-run-app">
+				<div class="kc-run-app-title">Order Desk</div>
+				<div class="kc-demo-stage">
+					<div class="kc-demo-cam">
+						<img class="kc-demo-frame is-front" src={`${base}${run.firstFrame}.webp`} width="2000" height="1207" alt="" loading="lazy" />
+						<img class="kc-demo-frame" width="2000" height="1207" alt="" />
+						<div class="kc-demo-marks"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="kc-run-console" aria-hidden="true"></div>
+		<button class="kc-demo-toggle" type="button" aria-label="Pause the demo" aria-pressed="false">
+			<svg class="kc-demo-icon-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"></rect><rect x="9.5" y="2" width="3.5" height="12" rx="1"></rect></svg>
+			<svg class="kc-demo-icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11a.75.75 0 0 0 1.14.64l9-5.5a.75.75 0 0 0 0-1.28l-9-5.5A.75.75 0 0 0 4 2.5z"></path></svg>
+		</button>
+	</div>
+	<figcaption>
+		<strong>UI tests</strong> running against Order Desk, slowed down: the real run takes {run.seconds}.
+		Each action gets a ripple, each assert a box that turns green when it passes.
+	</figcaption>
+</figure>
+
+<script>
+	import './run-demo/player';
+</script>

@@ -38,6 +38,7 @@ export default defineConfig({
 			},
 			components: {
 				Footer: './src/components/Footer.astro',
+				Hero: './src/components/Hero.astro',
 			},
 			plugins: [
 				starlightLinksValidator(),
@@ -56,7 +57,8 @@ export default defineConfig({
 				}),
 			],
 			sidebar: [
-				{ label: 'Getting started', items: [{ autogenerate: { directory: 'start' } }] },
+				{ label: 'For developers', items: [{ autogenerate: { directory: 'start' } }] },
+				{ label: 'Order Desk demo', items: [{ autogenerate: { directory: 'demo' } }] },
 				{ label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
 				{ label: 'AI agents', items: [{ autogenerate: { directory: 'agents' } }] },
 				{ label: 'Plugins', items: [{ autogenerate: { directory: 'plugins' } }] },

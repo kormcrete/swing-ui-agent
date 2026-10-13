@@ -5,8 +5,49 @@ sidebar:
   order: 1
 ---
 
-swing-ui-agent is a Java agent you attach to your Swing app's JVM. A coding agent then drives the real app from a shell or over MCP, and what it did becomes a JUnit 5 test. It works on Java 8 and newer, needs no change to the app, and never uses `java.awt.Robot`, so it does not take over your mouse or keyboard.
+swing-ui-agent lets a coding agent drive your real Swing app and write its UI tests. You attach one jar to the app's JVM as a Java agent. The coding agent then clicks, types and reads the live app, from a shell or over MCP, and what it did becomes a JUnit 5 test that you review and run. Your app's code does not change.
 
-:::note[Being written]
-This page is part of the first release of these docs. Until it is written, the [README](https://github.com/kormcrete/swing-ui-agent#readme) covers the basics.
-:::
+![Order Desk, the demo app, on its Orders tab](../../../assets/order-desk/01-orders-light.png)
+
+## Who it is for
+
+- Teams with a Swing desktop app that works and earns its keep, but has few or no UI tests.
+- Teams that use a coding agent, or want to, and would rather review tests than write them.
+- Apps on old Java: the agent is built for Java 8 and attaches to apps on Java 8 to 25.
+
+## How it works
+
+- **Drive:** the agent jar runs inside your app and serves a set of tools: `snapshot`, `click`, `type`, `menu`, `expect`, `screenshot` and more. A coding agent calls them from a shell (`java -jar <agent jar> <tool> '<json>'`) or as an MCP client. See [Let your agent drive the app](/swing-ui-agent/start/drive/).
+- **Record:** every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class. See [Record a test with the agent](/swing-ui-agent/start/record/).
+- **Show it yourself:** with `inspector=on`, a person records the steps in the app and the agent exports them. See [Record a test by showing it](/swing-ui-agent/start/show/).
+- **Run:** the tests connect to the running app and drive it the same way, from Maven, your IDE or CI. See [Run the tests](/swing-ui-agent/start/run/).
+
+The tests are meant to be written by the agent, not by hand. You review them like any other code, and you run them.
+
+## The pieces
+
+- **The agent jar** (`swing-ui-agent-<version>-agent.jar`): the Java agent for `-javaagent:`, and a command line client for the same tools.
+- **The library** (`io.github.kormcrete:swing-ui-agent`): `@UiTest`, `Client` and the assertions, as a test dependency.
+- **The skills** ([`skills/`](https://github.com/kormcrete/swing-ui-agent/tree/main/skills)): three agent skills that teach a coding agent to drive, target and record. See [Skills](/swing-ui-agent/agents/skills/).
+- **A plugin** (optional): teaches the agent your app's own words, such as a reset to a defined state, a login or a screen by name. See [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/).
+
+## What it is not
+
+- **Not for JavaFX or SWT.** Swing only.
+- **No image matching.** It finds elements by what a user reads: labels, button text, column headers, cell text. Screenshots are for people.
+- **It does not take over your mouse.** Input is posted into the app's own event queue; it never uses `java.awt.Robot`. You can keep working while the agent drives the app, even with other windows in front.
+- **Not a hosted service.** Everything runs on your machine or your CI runner, and the agent listens on the loopback address only.
+
+## What it needs
+
+- **Your app:** a Swing app on Java 8, 11, 17, 21 or 25, started with one extra `-javaagent:` flag. On Java 9 and newer it needs no `--add-opens` flags.
+- **A desktop:** macOS, Linux (X11) or Windows. On a Linux machine without a display, a virtual one (Xvfb) works.
+- **To build it:** JDK 8 and Maven 3. It is not on Maven Central yet.
+- **For the tests:** JUnit 5.
+
+[Limits](/swing-ui-agent/project/limits/) lists what does not work yet.
+
+## What's next
+
+- [Installation](/swing-ui-agent/start/install/): build it and start an app with the agent.
+- [Tour of Order Desk](/swing-ui-agent/demo/tour/): the demo app every example on this site uses.

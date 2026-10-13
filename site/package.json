@@ -6,7 +6,8 @@
     "dev": "node scripts/render-tools.mjs && astro dev",
     "build": "node scripts/render-tools.mjs && astro build",
     "preview": "astro preview",
-    "reference": "node scripts/render-tools.mjs"
+    "reference": "node scripts/render-tools.mjs",
+    "check-snippets": "node scripts/check-snippets.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.6",
