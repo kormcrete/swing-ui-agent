@@ -6,9 +6,11 @@ import io.github.kormcrete.swingui.driver.Shot;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
+import javax.swing.JDialog;
 import javax.swing.JPanel;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.GraphicsEnvironment;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -16,6 +18,7 @@ import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * The capture paints the component itself, so none of this needs a window on screen - which is also
@@ -191,5 +194,19 @@ class ScreenshotsTest {
 
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
         assertThat(e.getMessage()).contains("maxSize");
+    }
+
+    @Test
+    void aWindowThatIsNotShowingIsRefusedRatherThanCapturedBlank() {
+        assumeFalse(GraphicsEnvironment.isHeadless());
+        JDialog closed = new JDialog();   // a disposed window keeps its size but paints nothing
+        closed.setSize(270, 99);
+        try {
+            DriverException e = catchThrowableOfType(() -> Screenshots.of(closed, null, null, null), DriverException.class);
+            assertThat(e.reason()).isEqualTo(Reason.NOT_ACTIONABLE);
+            assertThat(e.getMessage()).contains("not showing");
+        } finally {
+            closed.dispose();
+        }
     }
 }

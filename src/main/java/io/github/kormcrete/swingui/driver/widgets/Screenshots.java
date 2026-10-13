@@ -11,6 +11,7 @@ import java.awt.Component;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -33,7 +34,8 @@ public final class Screenshots {
     private Screenshots() {}
 
     /**
-     * @param c      the component or window to paint
+     * @param c      the component or window to paint; a window must be showing (a closed one keeps its size but
+     *               paints nothing)
      * @param region the part of it to keep, in fractions 0..1 of its bounds (as {@code point} works),
      *               or null for all of it
      * @param maxSize longest side of the returned image, or null for {@link #DEFAULT_MAX_SIZE} times the scale
@@ -41,6 +43,10 @@ public final class Screenshots {
      *               component as a 2x (HiDPI) display would, at the same layout
      */
     public static Shot of(Component c, double[] region, Integer maxSize, Double scale) {
+        if (c instanceof Window && !c.isShowing()) {
+            throw new DriverException(Reason.NOT_ACTIONABLE,
+                    "nothing to capture: the window is not showing (closed or hidden)");
+        }
         if (c.getWidth() <= 0 || c.getHeight() <= 0) {
             throw new DriverException(Reason.NOT_ACTIONABLE, "nothing to capture: the target has no size"
                     + " on screen (" + c.getWidth() + "x" + c.getHeight() + ")");

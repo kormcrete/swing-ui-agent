@@ -197,6 +197,7 @@ public final class LiveVerbs implements Verbs {
     @Override
     public Shot screenshot(final Locator target, final double[] region, final Integer maxSize,
                            final Double scale) {
+        driver.settle().drain();   // a panel swapped in just before (a new tab after a dialog closed) is laid out
         return Edt.call(() -> {
             Component c = target == null ? keyWindow()
                     : isWindowOnly(target) ? windowRoot(target.window)
@@ -1164,11 +1165,17 @@ public final class LiveVerbs implements Verbs {
 
     /** The window keys go to: the modal nothing blocks, else the focused window, else the main window. EDT. */
     private Window keyWindow() {
-        Dialog top = Modality.top();
+        return keyWindowOf(Modality.top(), KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow(),
+                driver.windows().main());
+    }
+
+    /**
+     * The focused window counts only while it is showing: the driver pins focus itself, so after a dialog closes
+     * (no OS focus events while the app is in the background) the focused window can be that closed dialog.
+     */
+    static Window keyWindowOf(Dialog top, Window focused, Component main) {
         if (top != null) return top;
-        Window focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
-        if (focused != null) return focused;
-        Component main = driver.windows().main();
+        if (focused != null && focused.isShowing() && focused.isFocusableWindow()) return focused;
         if (main instanceof Window) return (Window) main;
         throw new DriverException(Reason.NOT_FOUND, "no window to send keys to");
     }
