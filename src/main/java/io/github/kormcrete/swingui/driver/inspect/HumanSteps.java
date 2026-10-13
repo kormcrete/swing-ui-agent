@@ -44,8 +44,10 @@ import java.util.function.Consumer;
  * Turns what the person does in the app into the steps the agent would have sent: a press-and-release on one
  * element is a {@code click} (a double click one click with {@code count}), a check box a {@code check}, a menu-bar item
  * a {@code menu} (from its action, so the macOS screen menu bar and accelerators count too), a context-menu item a
- * {@code context_menu}, a combo choice a {@code select}, a text field's new content a {@code type} when focus leaves it
- * (with {@code commit} when Enter left it), a command chord or Escape a {@code press}. It listens and never consumes:
+ * {@code context_menu}, a choice from a button's dropdown a {@code pick}, a combo choice a {@code select}, a text
+ * field's new content a {@code type} when focus leaves it (with {@code commit} when Enter left it), a table cell edited
+ * with a spinner or another composite editor one {@code type} of its new value when the edit ends, a command chord or
+ * Escape a {@code press}. It listens and never consumes:
  * the app gets every event. EDT.
  */
 final class HumanSteps implements AWTEventListener {
@@ -72,6 +74,11 @@ final class HumanSteps implements AWTEventListener {
 
     private Map<String, Object> pendingChord;
 
+    /** A table cell the person is editing with a composite editor (a spinner): its value becomes a type at the end. */
+    private CellEdit cellEdit;
+    /** The table whose cell edit just became a type step, until the next input: an Enter on it belongs to that edit. */
+    private JTable endedEdit;
+
     private final List<JMenuItem> hooked = new ArrayList<JMenuItem>();
     private final ActionListener menuListener = this::menuAction;
 
@@ -90,6 +97,8 @@ final class HumanSteps implements AWTEventListener {
             if (focused instanceof JTextComponent && !Overlay.ours(focused)) startEditing((JTextComponent) focused);
         } else if (!on && installed) {
             flush();
+            if (cellEdit != null) cellEdit.stopWatching();
+            cellEdit = null;
             Toolkit.getDefaultToolkit().removeAWTEventListener(this);
             for (JMenuItem item : hooked) item.removeActionListener(menuListener);
             hooked.clear();
@@ -117,6 +126,7 @@ final class HumanSteps implements AWTEventListener {
 
     @Override
     public void eventDispatched(AWTEvent event) {
+        if (Inspector.agentIsActing()) return;
         Object source = event.getSource();
         if (!(source instanceof Component) || Overlay.ours((Component) source)) return;
         try {
@@ -134,22 +144,44 @@ final class HumanSteps implements AWTEventListener {
         Component deepest = SwingUtilities.getDeepestComponentAt(src, e.getX(), e.getY());
         if (deepest == null) deepest = src;
         if (Overlay.ours(deepest)) return;
+        JTable edited = editedTable(deepest);
+        if (edited != null && !(deepest instanceof JTextComponent && deepest.getParent() == edited)) {
+            // inside a composite cell editor (a spinner's arrows): no click of its own, the cell's new value is the step
+            pressed = null;
+            pressedTarget = null;
+            watchCellEdit(edited);
+            return;
+        }
         Point at = SwingUtilities.convertPoint(src, e.getPoint(), deepest);
+        AbstractButton answer = optionPaneButton(deepest);
         if (e.getID() == MouseEvent.MOUSE_PRESSED) {
+            endedEdit = null;
             if (deepest != editing) flushTyping(false);
             pressed = deepest;
             pressedTarget = null;
+            // a disabled element does nothing: no step; an option pane's button is answered by its label on release
+            if (!deepest.isEnabled() || answer != null) return;
             if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e)) {
-                contextTarget = inspector.snap(deepest, at);
+                contextTarget = inspector.snapNow(deepest, at);
                 return;
             }
             if (ignoredForClicks(deepest)) return;
-            pressedTarget = inspector.snap(deepest, at);
+            pressedTarget = inspector.snapNow(deepest, at);
             return;
         }
         if (e.getID() != MouseEvent.MOUSE_RELEASED) return;
+        if (answer != null) {
+            if (SwingUtilities.isLeftMouseButton(e) && pressed == deepest && answer.isEnabled() && answer.getText() != null) {
+                // what the agent records for a standard dialog: answer by the button's label, not its internal name
+                Map<String, Object> step = new LinkedHashMap<String, Object>();
+                step.put("action", "answer");
+                step.put("button", answer.getText());
+                emitStep(step);
+            }
+            return;
+        }
         if (e.isPopupTrigger()) {
-            contextTarget = inspector.snap(deepest, at);
+            contextTarget = inspector.snapNow(deepest, at);
             return;
         }
         if (deepest instanceof JMenuItem && !(deepest instanceof JMenu)) {
@@ -172,7 +204,7 @@ final class HumanSteps implements AWTEventListener {
             return;
         }
         if (!SwingUtilities.isLeftMouseButton(e) || pressedTarget == null || ignoredForClicks(deepest)) return;
-        Target t = inspector.snap(deepest, at);
+        Target t = inspector.snapNow(deepest, at);
         if (t == null || !t.same(pressedTarget)) return;
         if (t.component instanceof JCheckBox
                 || (t.component instanceof JToggleButton && !(t.component instanceof JRadioButton))) {
@@ -220,6 +252,19 @@ final class HumanSteps implements AWTEventListener {
         boolean inText = editing != null && e.getComponent() == editing;
         int mods = e.getModifiersEx();
         boolean command = (mods & (InputEvent.CTRL_DOWN_MASK | InputEvent.META_DOWN_MASK | InputEvent.ALT_DOWN_MASK)) != 0;
+        // keys inside a cell's composite editor (arrows, digits, Enter, Escape) edit the cell; its value is the step
+        // an editor that ended the edit by itself (on each spinner change): the Enter that follows on its table is the
+        // person's way of committing it, already part of that type step
+        if (code == KeyEvent.VK_ENTER && !command && endedEdit != null && e.getComponent() == endedEdit) {
+            endedEdit = null;
+            return;
+        }
+        endedEdit = null;
+        // (after a spinner's arrows the table itself has the focus: its Enter ends the edit, part of that type step)
+        if (!command && cellEdit != null
+                && (e.getComponent() == cellEdit.table || editedTable(e.getComponent()) == cellEdit.table)) {
+            return;
+        }
         if (code == KeyEvent.VK_ENTER && inText && !(editing instanceof JTextArea) && !command) {
             flushTyping(true);
             return;
@@ -252,6 +297,14 @@ final class HumanSteps implements AWTEventListener {
     private void focus(FocusEvent e) {
         Component c = e.getComponent();
         if (e.getID() == FocusEvent.FOCUS_GAINED && c instanceof JTextComponent) {
+            JTable edited = editedTable(c);
+            if (edited != null && c.getParent() != edited) {
+                // the text field of a spinner in a cell: the cell's value at the end of the edit is the step
+                flushTyping(false);
+                editing = null;
+                watchCellEdit(edited);
+                return;
+            }
             if (c != editing) {
                 flushTyping(false);
                 startEditing((JTextComponent) c);
@@ -317,15 +370,100 @@ final class HumanSteps implements AWTEventListener {
     private void menuItemReleased(JMenuItem item) {
         if (inMenuBar(item)) return;
         List<String> path = path(item);
-        if (contextTarget == null || path.isEmpty()) return;
+        if (path.isEmpty()) return;
+        if (contextTarget == null) {
+            // a button's dropdown: the click on the button opened it, the choice is a pick down its path
+            Map<String, Object> step = new LinkedHashMap<String, Object>();
+            step.put("action", "pick");
+            step.put("path", path);
+            emitStep(step);
+            return;
+        }
         Map<String, Object> step = step("context_menu", contextTarget);
         step.put("path", path);
         emitStep(step);
         contextTarget = null;
     }
 
+    /** {@code c} as a button of a standard option pane (a JOptionPane's Yes, OK, or its own options), else null. */
+    private static AbstractButton optionPaneButton(Component c) {
+        if (!(c instanceof AbstractButton) || c instanceof JMenuItem) return null;
+        return SwingUtilities.getAncestorOfClass(javax.swing.JOptionPane.class, c) != null ? (AbstractButton) c : null;
+    }
+
+    /** The table whose cell editor {@code c} is, or sits in, while that cell is being edited; else null. */
+    private static JTable editedTable(Component c) {
+        for (Component k = c; k != null && !(k instanceof Window); k = k.getParent()) {
+            if (k.getParent() instanceof JTable) {
+                JTable table = (JTable) k.getParent();
+                return table.isEditing() && table.getEditorComponent() == k ? table : null;
+            }
+        }
+        return null;
+    }
+
+    /** Starts watching the cell {@code table} is editing, unless it already is; a cell before it is done with. */
+    private void watchCellEdit(JTable table) {
+        int row = table.getEditingRow();
+        int column = table.getEditingColumn();
+        if (cellEdit != null && cellEdit.table == table && cellEdit.row == row && cellEdit.column == column) return;
+        if (cellEdit != null) cellEdit.stopWatching();
+        cellEdit = null;
+        Target cell = inspector.cell(table, row, column);
+        if (cell == null) return;
+        flushClick();
+        cellEdit = new CellEdit(table, row, column, cell);
+    }
+
+    /**
+     * One cell under a composite editor. When the table drops its editor, a value that changed (the edit was stopped,
+     * not cancelled) becomes a {@code type} with {@code commit}, as the agent records typing into such a cell.
+     */
+    private final class CellEdit implements java.beans.PropertyChangeListener {
+        final JTable table;
+        final int row;
+        final int column;
+        private final Target target;
+        private final int modelRow;
+        private final int modelColumn;
+        private final String before;
+
+        CellEdit(JTable table, int row, int column, Target target) {
+            this.table = table;
+            this.row = row;
+            this.column = column;
+            this.target = target;
+            this.modelRow = table.convertRowIndexToModel(row);
+            this.modelColumn = table.convertColumnIndexToModel(column);
+            this.before = value();
+            table.addPropertyChangeListener("tableCellEditor", this);
+        }
+
+        private String value() {
+            return String.valueOf(table.getModel().getValueAt(modelRow, modelColumn));
+        }
+
+        @Override
+        public void propertyChange(java.beans.PropertyChangeEvent e) {
+            if (e.getNewValue() != null) return;
+            stopWatching();
+            if (cellEdit == this) cellEdit = null;
+            String now = value();
+            if (now.equals(before)) return;
+            Map<String, Object> step = step("type", target);
+            step.put("text", now);
+            step.put("commit", true);
+            emitStep(step);
+            endedEdit = table;
+        }
+
+        void stopWatching() {
+            table.removePropertyChangeListener("tableCellEditor", this);
+        }
+    }
+
     private void menuAction(ActionEvent e) {
-        if (!(e.getSource() instanceof JMenuItem)) return;
+        if (Inspector.agentIsActing() || !(e.getSource() instanceof JMenuItem)) return;
         pendingChord = null;
         Map<String, Object> step = new LinkedHashMap<String, Object>();
         step.put("action", "menu");

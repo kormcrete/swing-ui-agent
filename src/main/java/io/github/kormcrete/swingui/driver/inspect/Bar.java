@@ -117,6 +117,18 @@ final class Bar extends JComponent {
         repaint();
     }
 
+    /** The line of text it shows now. */
+    String text() {
+        return text;
+    }
+
+    /** Its buttons' labels, left to right. */
+    List<String> labels() {
+        List<String> out = new ArrayList<String>();
+        for (Button b : buttons) out.add(b.label);
+        return out;
+    }
+
     private Button buttonAt(Point p) {
         for (Button b : buttons) if (b.at.contains(p)) return b;
         return null;

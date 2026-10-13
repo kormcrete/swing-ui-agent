@@ -41,6 +41,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -330,6 +331,28 @@ public class UiMcpSession {
             }
 
             @Override
+            public String exportPackage() {
+                ExportDefaults defaults = exportDefaults.get();
+                return defaults != Plugins.GENERIC_EXPORT ? defaults.packageName
+                        : mainPackage(System.getProperty("sun.java.command"));
+            }
+
+            @Override
+            public Inspector.Result export(String className, String pkg) {
+                try {
+                    // kept: the person may still replay, redo, or export again under another name
+                    JsonNode result = mapper.readTree(exportTest(className, null, pkg, false));
+                    Path saved = Paths.get(result.path("savedTo").asText());
+                    Path here = Paths.get("").toAbsolutePath();
+                    String line = "wrote " + (saved.startsWith(here) ? here.relativize(saved) : saved);
+                    if (result.has("startWarning")) line += " - " + result.path("startWarning").asText();
+                    return new Inspector.Result(true, line);
+                } catch (Exception e) {
+                    return new Inspector.Result(false, e.getMessage());
+                }
+            }
+
+            @Override
             public Inspector.Result check(Map<String, Object> step) {
                 JsonNode json = stripNulls(mapper.valueToTree(step));
                 try {
@@ -607,7 +630,13 @@ public class UiMcpSession {
         flow.steps = new ArrayList<Action>();
         flow.steps.add(action);
         long started = System.currentTimeMillis();
-        FlowResult result = executor.run(flow, host);
+        FlowResult result;
+        Inspector.agentActing(true);
+        try {
+            result = executor.run(flow, host);
+        } finally {
+            Inspector.agentActing(false);
+        }
         long elapsed = System.currentTimeMillis() - started;
         StepResult step = result.steps.isEmpty() ? null : result.steps.get(0);
         if (step != null && !step.passed && step.reason != null && Reason.valueOf(step.reason).isToolError()) {
@@ -942,6 +971,28 @@ public class UiMcpSession {
         if (startWarning != null) result.put("startWarning", startWarning);
         result.put("source", source);
         return result.toString();
+    }
+
+    /**
+     * The package of the app's main class, from the JVM's start command ({@code sun.java.command}: a main class, or a
+     * jar whose manifest names one), where a person's export goes first when no app plugin names a package; the
+     * generic package when there is none.
+     */
+    static String mainPackage(String javaCommand) {
+        String generic = Plugins.GENERIC_EXPORT.packageName;
+        if (javaCommand == null || javaCommand.trim().isEmpty()) return generic;
+        String first = javaCommand.trim().split("\\s+")[0];
+        String main = first;
+        if (first.endsWith(".jar")) {
+            try (java.util.jar.JarFile jar = new java.util.jar.JarFile(first)) {
+                java.util.jar.Manifest m = jar.getManifest();
+                main = m == null ? null : m.getMainAttributes().getValue(java.util.jar.Attributes.Name.MAIN_CLASS);
+            } catch (IOException e) {
+                main = null;
+            }
+        }
+        if (main == null || main.lastIndexOf('.') < 1) return generic;
+        return main.substring(0, main.lastIndexOf('.'));
     }
 
     /**

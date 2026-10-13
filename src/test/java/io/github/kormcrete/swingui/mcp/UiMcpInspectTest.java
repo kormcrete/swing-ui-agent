@@ -5,10 +5,19 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -22,11 +31,18 @@ class UiMcpInspectTest {
     private final UiMcpReadToolsTest.DriverHost backend = new UiMcpReadToolsTest.DriverHost();
     private final UiMcpSession session = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
     private Inspector.Sink sink;
+    @TempDir Path testsDir;
 
     @BeforeEach
     void setUp() {
         session.startRecording(true);
         sink = session.humanSink();
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, testsDir.toString());
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
     }
 
     @Test
@@ -116,5 +132,57 @@ class UiMcpInspectTest {
         assertThat(sink.done(step("click", Locator.ofId("new"))).ok).isTrue();
         assertThat(sink.steps()).containsExactly("click(#new)");
         assertThat(backend.verbs.calls).isEmpty();
+    }
+
+    @Test
+    void thePersonExportsTheRecordingAsAJUnitClassAndKeepsIt() throws Exception {
+        sink.done(step("click", Locator.ofId("save")));
+        Inspector.Result r = sink.export("SaveUiIT", "com.example.orders");
+        assertThat(r.ok).isTrue();
+        Path file = testsDir.resolve("com/example/orders/SaveUiIT.java");
+        assertThat(file).exists();
+        assertThat(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)).contains("class SaveUiIT");
+        assertThat(r.line).contains("SaveUiIT.java");
+        // the recording stays: replay, redo or another export are still possible
+        assertThat(sink.steps()).containsExactly("click(#save)");
+    }
+
+    @Test
+    void aRecordingOfOnlyChecksExportsAsATestThatOnlyAsserts() throws Exception {
+        session.startRecording(false);
+        Map<String, Object> s = step("expect", Locator.ofId("status"));
+        s.put("text", "Placed");
+        assertThat(sink.check(s).ok).isTrue();
+        Inspector.Result r = sink.export("StatusUiIT", "com.example");
+        assertThat(r.ok).isTrue();
+        String source = new String(Files.readAllBytes(testsDir.resolve("com/example/StatusUiIT.java")), StandardCharsets.UTF_8);
+        assertThat(source).contains("assertThat(").contains("Placed");
+        // no defined start and no menu or shortcut first: the palette shows why the test may start on the wrong screen
+        assertThat(r.line).contains("wrote").contains(" - ");
+    }
+
+    @Test
+    void anExportThatIsRefusedWritesNothingAndSaysWhy() throws Exception {
+        sink.done(step("click", Locator.ofId("save")));
+        Inspector.Result r = sink.export("1Save", "com.example");
+        assertThat(r.ok).isFalse();
+        assertThat(r.line).contains("1Save");
+        assertThat(sink.steps()).hasSize(1);
+        assertThat(Files.exists(testsDir.resolve("com/example"))).isFalse();
+    }
+
+    @Test
+    void theExportPackageDefaultsToThePackageOfTheAppsMainClass(@TempDir Path jars) throws Exception {
+        assertThat(UiMcpSession.mainPackage("io.github.kormcrete.orderdesk.OrderDesk --demo")).isEqualTo("io.github.kormcrete.orderdesk");
+        Path jar = jars.resolve("app.jar");
+        Manifest m = new Manifest();
+        m.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        m.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "com.example.orders.App");
+        new JarOutputStream(new FileOutputStream(jar.toFile()), m).close();
+        assertThat(UiMcpSession.mainPackage(jar + " --flag")).isEqualTo("com.example.orders");
+        // a class in the default package, an unreadable jar or no command at all: the generic package
+        assertThat(UiMcpSession.mainPackage("Main")).isEqualTo("recorded");
+        assertThat(UiMcpSession.mainPackage(jars.resolve("missing.jar").toString())).isEqualTo("recorded");
+        assertThat(UiMcpSession.mainPackage(null)).isEqualTo("recorded");
     }
 }

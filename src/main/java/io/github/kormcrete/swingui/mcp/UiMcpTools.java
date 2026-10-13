@@ -282,9 +282,10 @@ public final class UiMcpTools {
                         + "THEY start it with ● Record in the palette in the app window and end it with Done - every "
                         + "step they take is recorded as if you had run it, Check mode adds checks, Steps replays, redoes "
                         + "or deletes - you only read it (outcome idle, recording or done; 'wait' waits for their Done) "
-                        + "and export it with export_test. steps: the recording so far. hover: a box follows their "
-                        + "pointer and names the locator under it. clear: removes your boxes and question. While a person "
-                        + "records, picks, answers or replays, no test run can take the lease.", schema);
+                        + "and export it with export_test, unless they write it themselves with Export… after Done. "
+                        + "steps: the recording so far. hover: a box follows their pointer and names the locator under "
+                        + "it. clear: removes your boxes and question. While a person records, picks, answers or "
+                        + "replays, no test run can take the lease.", schema);
             }
             @Override public String invoke(JsonNode args) { return session.inspect(args); }
         });

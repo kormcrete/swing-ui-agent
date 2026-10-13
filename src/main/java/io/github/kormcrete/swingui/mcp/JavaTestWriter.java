@@ -61,6 +61,8 @@ public final class JavaTestWriter {
 
         private final List<String> problems = new ArrayList<String>();
         private final List<String> statements = new ArrayList<String>();
+        /** Whether the last statement checked (true) or acted (false); null before the first. */
+        private Boolean checking;
 
         private String loginAlias;
         private boolean usesDuration;
@@ -133,11 +135,13 @@ public final class JavaTestWriter {
                     if (target == null || target.trim().isEmpty()) {
                         problems.add("step " + stepNum + ": navigate needs a target");
                     } else {
+                        group(false);
                         statements.add(indent("ui.navigate(" + quote(target) + ");"));
                     }
                     continue;
                 }
                 if (a instanceof CloseAction) {
+                    group(false);
                     statements.add(indent("ui.closeActiveTab();"));
                     continue;
                 }
@@ -155,6 +159,8 @@ public final class JavaTestWriter {
                     continue;
                 }
 
+                // a screenshot belongs to the group before it: it shows what those steps left on screen
+                group(v instanceof ScreenshotVerb ? Boolean.TRUE.equals(checking) : v instanceof ExpectVerb);
                 if (v instanceof ScreenshotVerb && ((ScreenshotVerb) v).maxSize != null) {
                     statements.add(indent("// maxSize " + ((ScreenshotVerb) v).maxSize + " dropped"));
                 }
@@ -163,6 +169,15 @@ public final class JavaTestWriter {
                 }
                 statements.add(indent(stmt));
             }
+        }
+
+        /**
+         * Actions and the checks after them read as groups: a blank line wherever the body turns from acting to checking
+         * or back. {@code checking} is null before the first statement.
+         */
+        private void group(boolean check) {
+            if (checking != null && checking != check) statements.add("");
+            checking = check;
         }
 
         /** True (and a problem recorded per bad locator) when any of this verb's targets uses ref, point or item. */

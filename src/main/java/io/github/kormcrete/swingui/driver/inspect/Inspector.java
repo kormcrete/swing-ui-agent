@@ -101,6 +101,15 @@ public final class Inspector {
 
         /** Drops step {@code index}. */
         void remove(int index);
+
+        /** The package an export offers first: the app plugin's export package, else that of the app's main class. */
+        String exportPackage();
+
+        /**
+         * Writes the recording as a JUnit {@code @UiTest} class, as {@code export_test} does, and keeps it (the person
+         * may replay, redo or export again). The result's line says where it went, or why nothing was written.
+         */
+        Result export(String className, String pkg);
     }
 
     public static final class Result {
@@ -165,6 +174,22 @@ public final class Inspector {
     String engaged() {
         String a = asking;
         return a != null ? a : recordingBusy;
+    }
+
+    /** How many of the agent's own steps are running now: the person's recorder ignores input meanwhile. */
+    private static final java.util.concurrent.atomic.AtomicInteger agentActing = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * The agent starts ({@code true}) or ends one of its own steps. Its input reaches the app as events the person's
+     * recorder would also see; the agent's side records the step already, so the recorder must not record it twice.
+     */
+    public static void agentActing(boolean on) {
+        if (on) agentActing.incrementAndGet(); else agentActing.decrementAndGet();
+    }
+
+    /** Whether one of the agent's own steps is running. */
+    static boolean agentIsActing() {
+        return agentActing.get() > 0;
     }
 
     /** A test run took ({@code true}) or gave back the agent: the palette leaves the window meanwhile, then returns. */
@@ -437,6 +462,16 @@ public final class Inspector {
      * Walks up from {@code deepest} to the first thing a locator can address alone: a table cell or column, a tab, or a
      * component. Remembers the last answer: a walk resolves the whole window several times. EDT.
      */
+    /**
+     * {@link #snap} without its cache: for a click, whose element may have changed since the pointer last passed
+     * over it (a button that now reads "Place order" instead of "Next"). EDT.
+     */
+    Target snapNow(Component deepest, Point inDeepest) {
+        snappedAt = null;
+        snapped = null;
+        return snap(deepest, inDeepest);
+    }
+
     Target snap(Component deepest, Point inDeepest) {
         if (deepest == null) return null;
         Integer tab = null;

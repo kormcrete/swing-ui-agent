@@ -334,12 +334,17 @@ public final class Resolver {
         return new Resolved(c, entry.tab, role, name, window, Trail.of(c), l);
     }
 
-    /** The innermost root holding {@code c}: popups are listed last, so search from the end. */
+    /**
+     * The innermost root holding {@code c}: the first root met walking up from {@code c} to its own window. The walk
+     * stops at that window, since AWT makes a dialog's owner its parent: the owner frame must not claim the dialog's
+     * components (as {@code isAncestorOf} would), whatever order the roots are listed in.
+     */
     private WindowRoot rootOf(Component c) {
         List<WindowRoot> roots = windows.roots();
-        for (int i = roots.size() - 1; i >= 0; i--) {
-            WindowRoot r = roots.get(i);
-            if (r.content == c || (r.content instanceof Container && ((Container) r.content).isAncestorOf(c))) return r;
+        for (Component k = c; k != null; k = k instanceof Window ? null : k.getParent()) {
+            for (WindowRoot r : roots) {
+                if (r.content == k) return r;
+            }
         }
         return null;
     }

@@ -16,8 +16,9 @@ import java.util.concurrent.Semaphore;
 
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
- * Done), the person's own steps (Record mode), the check catcher (Check mode), and the steps panel with replay, redo
- * and delete. Only the person starts and ends it. EDT, except where a method says otherwise.
+ * Done; after Done ● Record, Steps, Export…), the person's own steps (Record mode), the check catcher (Check mode), the
+ * steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class. Only the
+ * person starts and ends it. EDT, except where a method says otherwise.
  */
 final class Recording {
 
@@ -39,6 +40,7 @@ final class Recording {
     /** Per step: ● recorded, ▶ running, ✓ replayed, ✗ failed. */
     private final List<String> marks = new ArrayList<String>();
     private StepsPanel panel;
+    ExportPanel exportPanel;
     State state = State.RECORDING;
     boolean replaying;
     /** Completes at the person's Done; a redo that records on starts a new one. */
@@ -66,7 +68,8 @@ final class Recording {
                 .button("Done", Overlay.HOVER, this::done);
         this.stoppedBar = new Bar("Recorded", "").dot(new Color(0x8A, 0x96, 0xAD), false)
                 .button("● Record", Overlay.NO, recordAgain)
-                .button("Steps", STEPS, this::toggleSteps);
+                .button("Steps", STEPS, this::toggleSteps)
+                .button("Export…", Overlay.YES, this::toggleExport);
         this.bar = activeBar;
     }
 
@@ -116,7 +119,7 @@ final class Recording {
         sinkThread.submit(() -> {
             int n = sink.steps().size();
             SwingUtilities.invokeLater(() -> stoppedBar.text(n + (n == 1 ? " step" : " steps")
-                    + " - the agent can export them as a test"));
+                    + " - Export… writes them as a test, or the agent does"));
             finished.complete(new ArrayList<String>(lines));
         });
     }
@@ -127,8 +130,9 @@ final class Recording {
         next.release();
         live.stop();
         steps.active(false);
-        if (panel != null) home.panel(null);
+        if (panel != null || exportPanel != null) home.panel(null);
         panel = null;
+        exportPanel = null;
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         if (!done.isDone()) done.complete(new ArrayList<String>(lines));
     }
@@ -169,11 +173,52 @@ final class Recording {
             live.stop();
             return;
         }
+        exportPanel = null;
         panel = new StepsPanel(() -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom, this::delete,
                 this::toggleSteps);
         home.panel(panel);
         refresh(-1);
         live.start();
+    }
+
+    /** Export…: opens (or closes) the panel where the person names the class; it replaces the steps panel. */
+    void toggleExport() {
+        if (exportPanel != null) {
+            home.panel(null);
+            exportPanel = null;
+            return;
+        }
+        if (state != State.STOPPED) return;
+        sinkThread.submit(() -> {
+            String pkg = sink.exportPackage();
+            SwingUtilities.invokeLater(() -> {
+                if (state != State.STOPPED || exportPanel != null) return;
+                if (panel != null) {
+                    panel = null;
+                    live.stop();
+                }
+                exportPanel = new ExportPanel("RecordedUiIT", pkg, (c, p) -> export(c, p).thenAccept(r ->
+                        SwingUtilities.invokeLater(() -> {
+                            if (exportPanel == null) return;
+                            if (r.ok) toggleExport(); else exportPanel.refused(r.line);
+                        })), this::toggleExport);
+                home.panel(exportPanel);
+            });
+        });
+    }
+
+    /**
+     * Writes the recording as {@code pkg.className} and says on the bar where it went, or why it did not; completes
+     * with the result after the bar is updated. Any thread.
+     */
+    CompletableFuture<Inspector.Result> export(String className, String pkg) {
+        CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
+        sinkThread.submit(() -> {
+            Inspector.Result r = sink.export(className, pkg);
+            SwingUtilities.invokeLater(() -> stoppedBar.text((r.ok ? "exported: " : "✗ not exported: ") + r.line));
+            result.complete(r);
+        });
+        return result;
     }
 
     private void delete(int i) {
@@ -210,6 +255,10 @@ final class Recording {
             SwingUtilities.invokeLater(() -> {
                 while (marks.size() > i) marks.remove(marks.size() - 1);
                 Runnable recordOn = () -> {
+                    if (exportPanel != null) {
+                        home.panel(null);
+                        exportPanel = null;
+                    }
                     if (state == State.STOPPED) {
                         state = State.RECORDING;
                         done = new CompletableFuture<List<String>>();

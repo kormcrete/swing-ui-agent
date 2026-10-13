@@ -28,6 +28,34 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void actionsAndTheChecksAfterThemAreGroupsWithABlankLineBetween() {
+        ExpectVerb tabOpen = new ExpectVerb();
+        tabOpen.target = Locator.of("tab", "New order");
+        tabOpen.state = Collections.singletonList("selected");
+        ScreenshotVerb shot = new ScreenshotVerb();
+        shot.path = "01-new-order.png";
+        ExpectVerb total = new ExpectVerb();
+        total.target = Locator.of("label", "€31.32");
+        total.state = Collections.singletonList("!hidden");
+        String java = write(click(Locator.of("button", "New order")), tabOpen, shot,
+                click(Locator.of("button", "Add to cart")), click(Locator.of("button", "Add to cart")), total);
+        String body = java.substring(java.indexOf("(Client ui) {\n") + "(Client ui) {\n".length(), java.lastIndexOf("    }\n}"));
+        String[] lines = body.split("\n", -1);
+        // click | check + its screenshot | two clicks | check: three blank lines, none at the start or the end
+        assertThat(lines[0]).contains("button(\"New order\").click()");
+        assertThat(lines[1]).isEmpty();
+        assertThat(lines[2]).contains("assertThat(ui.tab(\"New order\"))");
+        assertThat(lines[3]).contains("saveScreenshot");
+        assertThat(lines[4]).isEmpty();
+        assertThat(lines[5]).contains("Add to cart");
+        assertThat(lines[6]).contains("Add to cart");
+        assertThat(lines[7]).isEmpty();
+        assertThat(lines[8]).contains("€31.32");
+        assertThat(lines).hasSize(10);
+        assertThat(lines[9]).isEmpty();
+    }
+
+    @Test
     void aClickIsOneStatementWithTheChain() {
         Locator l = Locator.of("button", "Save");
         l.window = "dialog:Assign";

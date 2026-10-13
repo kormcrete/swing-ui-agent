@@ -80,6 +80,9 @@ you instead of describing:
   `recording` while they are still at it, `idle` before they started) and returns the recording. Then export as below
   and verify as always: their steps were recorded, not re-run, until a replay. While they record, `session reset` is
   refused (it would wipe their recording).
+- **Or they export.** After Done the palette offers Export…: the person names the class and package and the file is
+  written without you (the recording stays). When they ask you to check it, run it from another screen and fix what
+  it flags, as in "Export, then verify".
 - With `"inspector": false` the tool answers CAPABILITY_GAP; work from the person's words as described above.
 
 ## What is not recorded
