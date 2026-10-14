@@ -191,7 +191,7 @@
           },
           "clear": {
             "type": "boolean",
-            "description": "Empty the recording after exporting (default: true); reset before recording the next test"
+            "description": "Empty the recording after exporting (default: true); reset before recording the next test. Refused while a recording started by recording start or the person's Record runs: export with clear false, or stop it first"
           },
           "_lease": {
             "type": "string",
@@ -224,7 +224,7 @@
           "clear": {
             "type": "boolean",
             "default": true,
-            "description": "Empty the recording after exporting (default: true); reset before recording the next flow"
+            "description": "Empty the recording after exporting (default: true); reset before recording the next flow. Refused while a recording started by recording start or the person's Record runs: export with clear false, or stop it first"
           },
           "_lease": {
             "type": "string",
@@ -798,7 +798,7 @@
     },
     {
       "name": "recording",
-      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, flow), line, java and its flow JSON; wait (ms) waits until it stops. insert {at, step}: a step or check at position at, NOT run (marked edited until a replay passes it). delete {n | from, to}. move {n, to}. edit {n, target | text | step}. undo: takes back the last edit, by you or the person. Positions close up after a delete; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps again without recording them; from step 1 it resets the app first, as the exported test starts. redo {from}: cuts the steps from there, replays up to it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: java|flow, ...}: as export_test / export_flow, but keeps the recording. load {name | path}: a flow file becomes the recording (stopped; redo or insert to add to it).",
+      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, flow), line, java and its flow JSON; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: a step or check at position at, NOT run (marked edited until a replay passes it). delete {n | from, to}. move {n, to}. edit {n, target | text | step}. undo: takes back the last edit, by you or the person. Positions close up after a delete; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps again without recording them; from step 1 it resets the app first, as the exported test starts. redo {from}: cuts the steps from there, replays up to it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: java|flow, ...}: as export_test / export_flow, but keeps the recording. load {name | path}: a flow file becomes the recording (stopped; redo or insert to add to it).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -874,7 +874,7 @@
           },
           "clear": {
             "type": "boolean",
-            "description": "export: empty the recording afterwards (default false)."
+            "description": "export: empty the recording afterwards (default false); refused while a recording started by start or the person's Record runs."
           },
           "path": {
             "type": "string",
@@ -988,15 +988,15 @@
           },
           "rev": {
             "type": "integer",
-            "description": "insert, delete, move, edit, undo: the rev of your last list; refused if the recording changed since."
+            "description": "insert, delete, move, edit, undo, redo: the rev of your last list; refused if the recording changed since."
           },
           "reset": {
             "type": "boolean",
-            "description": "start: reset the app first, as a test starts (default false)."
+            "description": "start: reset the app first, as a test starts (default false; without it an export waits for a passing replay from step 1 or redo)."
           },
           "wait": {
             "type": "integer",
-            "description": "list: milliseconds to wait until the recording stops (default 0: just read), at most 540000."
+            "description": "list: milliseconds to wait until the recording stops (default 0: just read), at most 540000; a session reset's recording, which only you stop, is not waited for."
           },
           "_lease": {
             "type": "string",

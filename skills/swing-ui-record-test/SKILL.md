@@ -62,7 +62,7 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
    $UI expect '{"target":{"role":"table","name":"Orders"},"rows":{"op":"gte","value":1}}'
    $UI expect '{"target":{"role":"button","name":"Save"},"state":["!disabled"]}'
    ```
-6. **A recorded step was wrong?** Do not patch it with more steps. `recording redo {"from":3}`.
+6. **A recorded step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'`.
 7. **Export, then verify** (below).
 
 ## When a person records with you

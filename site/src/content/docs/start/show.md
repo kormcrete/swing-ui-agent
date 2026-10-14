@@ -126,7 +126,7 @@ class, runs it from another screen and fixes the locators it flags, as in
 
 ```sh
 UI="java -jar target/swing-ui-agent-agent.jar --port 8770"
-$UI recording '{"op":"list","wait":540000}'          # returns at your Done: outcome done, with the steps
+$UI recording '{"op":"list","wait":540000}'          # returns at your Done: state stopped, with the steps
 $UI export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.orderdesk"}'
 ```
 
