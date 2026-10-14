@@ -204,6 +204,68 @@
       }
     },
     {
+      "name": "export_flow",
+      "description": "Write the steps recorded since the last session reset as a flow file <flows folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_flow, from the palette, or in Maven with the JUnit runner (UiFlows). Same rules as export_test: it must have begun at a reset, startWarning flags a flow that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the flow the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The file name without .json, e.g. place-order"
+          },
+          "dir": {
+            "type": "string",
+            "description": "The folder; default the flows folder: agent option flows=, else -Dswingui.flowsDir, else uitest in the app's working directory"
+          },
+          "description": {
+            "type": "string",
+            "description": "What the flow does, one sentence"
+          },
+          "clear": {
+            "type": "boolean",
+            "default": true,
+            "description": "Empty the recording after exporting (default: true); reset before recording the next flow"
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "run_flow",
+      "description": "Run a flow file on the live app and report it: one of 'name' (in the flows folder), 'path', or 'flow' (the file's JSON inline). It begins as every flow does, with a reset (dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT recording, and stops at the first that fails; that step carries what its locators match now, a scoped tree and a picture of the window (written under 'evidence', default target/flow-screenshots/failures). Returns {passed, ran, total, steps, report}. After a failure take a new snapshot before using refs. Refused (BUSY) while a person records, answers or replays in the palette. From a shell the CLI exits 4 when the flow fails.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A flow in the flows folder, without .json, e.g. place-order"
+          },
+          "path": {
+            "type": "string",
+            "description": "A flow file, absolute or relative to the app's working directory"
+          },
+          "flow": {
+            "type": "object",
+            "description": "The flow file's JSON inline (what export_flow writes)"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "The folder for the failing step's picture; default target/flow-screenshots/failures"
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        }
+      }
+    },
+    {
       "name": "snapshot",
       "description": "The live client as an element tree: every showing window, dialog and popup (focused window first, popups last), each element with role, name, value, state and a ref (e1, e2, ...). Refs stay valid until the next snapshot; pass one as {\"ref\":\"e12\"} as a verb's target. SCOPE IT: an unscoped snapshot is the whole app and costs thousands of tokens. Give a 'target' locator (e.g. {\"scope\":[\"tab:Customer\"],\"role\":\"section\",\"name\":\"Header\"} or {\"role\":\"tab\",\"name\":\"Line items\"}) for one element's subtree, 'depth' for a few levels, and compact:true to drop rows and items. The answer ends with 'size' {nodes, bytes, scoped}.",
       "inputSchema": {
