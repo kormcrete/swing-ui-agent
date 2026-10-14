@@ -278,6 +278,79 @@ class FixtureAppDriveIT {
         assertThat(summary.getTestsSucceededCount()).isEqualTo(1);
     }
 
+    @Test
+    @Order(14)
+    void anAgentStartedRecordingIsEditedReplayedAndExported() throws Exception {
+        Path folder = Files.createDirectories(flows.resolve("together"));
+        String dir = folder.toString().replace('\\', '/');
+        String expectSaved = "{'at':4,'step':{'action':'expect','target':{'name':'status'},'text':'saved Rec 1'}}";
+        JsonNode started = call("recording", "{'op':'start','reset':true}");
+        try {
+            String why = started.path("why").asText();
+            assertThat(started.path("state").asText()).as(why).isEqualTo("recording");
+            assertThat(started.path("shared").asBoolean()).as(why).isTrue();
+            // a recording is running: the session cannot be reset under it
+            CliResult busy = cli("session", "{'op':'reset'}");
+            assertThat(busy.exit).as(busy.err).isEqualTo(1);
+            assertThat(busy.err).contains("recording");
+
+            step("click", "{'target':{'name':'new'}}");
+            step("type", "{'target':{'name':'customer'},'text':'Rec 1'}");
+            step("type", "{'target':{'name':'notes'},'text':'scratch'}");
+            step("click", "{'target':{'name':'save'}}");
+            JsonNode list = call("recording", "{'op':'list'}");
+            why = list.path("why").asText();
+            assertThat(list.path("steps")).as(why).hasSize(4);
+            for (JsonNode s : list.path("steps")) {
+                assertThat(s.path("author").asText()).as(why).isEqualTo("agent");
+                assertThat(s.path("java").asText()).as(why).isNotEmpty();
+            }
+
+            JsonNode deleted = call("recording", "{'op':'delete','n':3,'rev':" + list.path("rev").asLong() + "}");
+            assertThat(deleted.path("steps")).as(deleted.path("why").asText()).hasSize(3);
+            JsonNode inserted = call("recording", "{'op':'insert'," + expectSaved.substring(1));
+            why = inserted.path("why").asText();
+            assertThat(inserted.path("steps")).as(why).hasSize(4);
+            assertThat(inserted.path("steps").path(3).path("edited").asBoolean()).as(why).isTrue();
+            JsonNode undone = call("recording", "{'op':'undo'}");
+            assertThat(undone.path("steps")).as(undone.path("why").asText()).hasSize(3);
+            call("recording", "{'op':'insert'," + expectSaved.substring(1));
+
+            JsonNode replayed = call("recording", "{'op':'replay'}");
+            why = replayed.path("why").asText();
+            assertThat(replayed.path("passed").asBoolean()).as(why).isTrue();
+            assertThat(replayed.path("ran").asInt()).as(why).isEqualTo(4);
+            assertThat(replayed.path("reset").asBoolean()).as(why).isTrue();
+        } finally {
+            call("recording", "{'op':'stop'}");
+        }
+
+        JsonNode exported = call("recording", "{'op':'export','as':'flow','name':'together','dir':'" + dir + "'}");
+        String why = exported.path("why").asText();
+        Path file = Paths.get(exported.path("savedTo").asText());
+        assertThat(file).as(why).isRegularFile();
+        assertThat(FlowFiles.read(file).steps).as(why).hasSize(4);
+        JsonNode ran = call("run_flow", "{'path':'" + file.toString().replace('\\', '/') + "'}");
+        assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
+        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
+    }
+
+    /** Exit code and stderr of a CLI call that is refused as a tool error (empty stdout). */
+    private static final class CliResult {
+        int exit;
+        String err;
+    }
+
+    private static CliResult cli(String tool, String args) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        CliResult r = new CliResult();
+        r.exit = UiCli.run(new String[] {"--port", String.valueOf(port), tool, args.replace('\'', '"')},
+                new PrintStream(out, true, "UTF-8"), new PrintStream(err, true, "UTF-8"));
+        r.err = new String(err.toByteArray(), StandardCharsets.UTF_8);
+        return r;
+    }
+
     /** Runs one CLI call, {@code args} in single quotes for readability, and requires it to pass. */
     private static void step(String tool, String args) throws Exception {
         JsonNode result = call(tool, args);
