@@ -151,6 +151,20 @@ class UiMcpRunFlowTest {
     }
 
     @Test
+    void anInlineFlowGivenAsTextIsReadAsItsJson() throws Exception {
+        String ok = FlowFiles.write(flow("inline"));
+        JsonNode out = run("{\"flow\":" + mapper.valueToTree(ok) + "," + evidenceArg() + "}");
+        assertThat(out.path("passed").asBoolean()).isTrue();
+        assertThat(out.path("flow").asText()).isEqualTo("inline");
+
+        for (String notAFlow : new String[] {"42", "[1]", "true"}) {
+            DriverException e = catchThrowableOfType(() -> run("{\"flow\":" + notAFlow + "}"), DriverException.class);
+            assertThat(e.reason()).as(notAFlow).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).as(notAFlow).contains("'flow' must be a flow file's JSON object");
+        }
+    }
+
+    @Test
     void itTakesExactlyOneOfNamePathOrFlow() {
         for (String args : new String[] {"{}", "{\"name\":\"a\",\"path\":\"b\"}"}) {
             DriverException e = catchThrowableOfType(() -> run(args), DriverException.class);

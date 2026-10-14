@@ -6,9 +6,12 @@ import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.model.Roles;
 import io.github.kormcrete.swingui.driver.model.Snapshot;
 import io.github.kormcrete.swingui.driver.model.Visibility;
+import io.github.kormcrete.swingui.driver.widgets.Dialogs;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPopupMenu;
@@ -124,6 +127,24 @@ class PaletteUnseenTest {
                 assertThat(dialog.isShowing()).isFalse();
             } finally {
                 dialog.dispose();
+                frame.dispose();
+            }
+        });
+    }
+
+    @Test
+    void anAgentFileChooserStepNeverFindsTheFolderDialog() throws Exception {
+        onEdt(() -> {
+            JFrame frame = new JFrame();
+            FolderDialog folders = new FolderDialog(frame);
+            JDialog app = new JDialog(frame, "Open");
+            app.getContentPane().add(new JFileChooser());
+            try {
+                assertThat(Dialogs.appChooserWindow(folders)).isFalse();
+                assertThat(Dialogs.appChooserWindow(app)).isTrue();
+            } finally {
+                app.dispose();
+                folders.dispose();
                 frame.dispose();
             }
         });

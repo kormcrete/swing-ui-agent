@@ -97,6 +97,9 @@ public class UiMcpSession {
     private boolean flowsDirExplicit;
     /** The flow file the recording came from (loaded, or exported without clear): the one file a save may replace. */
     private Path loadedFlow;
+    /** The {@code name} and {@code description} written in {@link #loadedFlow}: a save over it without them keeps them. */
+    private String loadedName;
+    private String loadedDescription;
     /** The folder the person last used in the palette, offered when no folder was set explicitly. */
     private FolderMemory folderMemory = FolderMemory.preferences(Paths.get("").toAbsolutePath());
 
@@ -1104,7 +1107,7 @@ public class UiMcpSession {
         if (clear) {
             recorded.clear();
             recordingFromReset = false;
-            loadedFlow = null;
+            forgetLoadedFlow();
         }
 
         ObjectNode result = mapper.createObjectNode();
@@ -1142,8 +1145,9 @@ public class UiMcpSession {
      * {@code overwrote}, {@code startWarning} when it applies, {@code flow}). The refusals are export_test's (no reset
      * start; an empty recording and a bad name together, in one {@link ExportRefused}), plus a folder that cannot be
      * written ({@code FlowFolderNotWritable}); an existing file is refused unless it is the flow the recording came
-     * from. A refusal leaves the recording as it was. {@code clear} empties the recording; otherwise the written
-     * file becomes the one a further export saves over.
+     * from, which keeps its own {@code name} and, when no {@code description} is given, its description. A refusal
+     * leaves the recording as it was. {@code clear} empties the recording; otherwise the written file becomes the one
+     * a further export saves over.
      */
     public synchronized String exportFlow(String name, String dir, String description, boolean clear) throws Exception {
         requireResetStart();
@@ -1165,12 +1169,14 @@ public class UiMcpSession {
             throw new IllegalArgumentException(file + " already exists; choose another name (only the flow the "
                     + "recording came from is saved over)");
         }
+        // saved over the flow the recording came from: its own name and, unless a new one is given, its description stay
         Flow flow = new Flow();
-        flow.version = FlowFiles.VERSION;
-        flow.name = FlowFiles.checkName(name);
-        flow.description = description == null || description.trim().isEmpty() ? null : description.trim();
+        flow.name = exists && loadedName != null ? loadedName : FlowFiles.checkName(name);
+        flow.description = description != null && !description.trim().isEmpty() ? description.trim()
+                : exists ? loadedDescription : null;
         flow.start = FlowFiles.START_RESET;
         flow.steps = new ArrayList<Action>(recorded);
+        flow.version = FlowFiles.versionFor(flow);
         String text = FlowFiles.write(flow);
         Files.write(file, text.getBytes(StandardCharsets.UTF_8));
 
@@ -1185,9 +1191,11 @@ public class UiMcpSession {
         if (clear) {
             recorded.clear();
             recordingFromReset = false;
-            loadedFlow = null;
+            forgetLoadedFlow();
         } else {
             loadedFlow = file;
+            loadedName = flow.name;
+            loadedDescription = flow.description;
         }
         return result.toString();
     }
@@ -1226,7 +1234,10 @@ public class UiMcpSession {
             file = Paths.get("").toAbsolutePath().resolve(path.asText()).normalize();
             flow = FlowFiles.read(file);
         } else {
-            flow = FlowFiles.parse(inline.toString(), "the 'flow' argument");
+            // the file's JSON object, or that JSON as text (agents often send it quoted)
+            String text = inline.isObject() ? inline.toString() : inline.isTextual() ? inline.textValue() : null;
+            if (text == null) throw new DriverException(Reason.BAD_INPUT, "'flow' must be a flow file's JSON object");
+            flow = FlowFiles.parse(text, "the 'flow' argument");
             if (flow.name == null || flow.name.isEmpty()) flow.name = "flow";
         }
         String busy = personBusy.get();
@@ -1238,10 +1249,11 @@ public class UiMcpSession {
                 : ScreenshotVerb.screenshotDir(Paths.get("")).resolve("failures");
 
         long started = System.nanoTime();
-        appReset.run();
         FlowResult result;
+        // the reset is the agent's too, as in the palette's own runs: the person's recorder ignores it
         Inspector.agentActing(true);
         try {
+            appReset.run();
             result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).run(flow, host);
         } finally {
             Inspector.agentActing(false);
@@ -1316,6 +1328,8 @@ public class UiMcpSession {
         recordingFromReset = true;
         definedStart = appReset.defined();
         loadedFlow = abs;
+        loadedName = flow.name;
+        loadedDescription = flow.description;
         ObjectNode result = mapper.createObjectNode();
         result.put("loaded", abs.toString());
         result.put("name", flow.name);
@@ -1354,7 +1368,13 @@ public class UiMcpSession {
         recorded.clear();
         recordingFromReset = true;
         this.definedStart = definedStart;
+        forgetLoadedFlow();
+    }
+
+    private void forgetLoadedFlow() {
         loadedFlow = null;
+        loadedName = null;
+        loadedDescription = null;
     }
 
     /**

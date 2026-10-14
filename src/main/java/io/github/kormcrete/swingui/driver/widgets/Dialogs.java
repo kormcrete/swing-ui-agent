@@ -5,6 +5,7 @@ import io.github.kormcrete.swingui.driver.FileChooserState;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Names;
+import io.github.kormcrete.swingui.driver.model.Roles;
 import io.github.kormcrete.swingui.driver.window.AppWindows;
 
 import javax.swing.AbstractButton;
@@ -66,11 +67,11 @@ public final class Dialogs {
         return hits.get(0);
     }
 
-    /** The innermost showing file chooser, or null. */
+    /** The innermost showing file chooser of the app, or null. */
     public static JFileChooser showingFileChooser() {
         JFileChooser found = null;
         for (Window w : Window.getWindows()) {
-            if (!w.isShowing()) continue;
+            if (!w.isShowing() || !appChooserWindow(w)) continue;
             List<JFileChooser> choosers = new ArrayList<JFileChooser>();
             collect(w, JFileChooser.class, choosers);
             for (JFileChooser c : choosers) {
@@ -78,6 +79,11 @@ public final class Dialogs {
             }
         }
         return found;
+    }
+
+    /** Whether a file chooser in {@code w} may be the app's: never one in the palette's own folder dialog. */
+    public static boolean appChooserWindow(Window w) {
+        return !Roles.agentOwn(w);
     }
 
     /** The chooser's file-name field, or null for a look and feel without one. */

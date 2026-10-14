@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.agent;
 import io.github.kormcrete.swingui.client.AgentClient;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.inspect.PaletteDriving;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowFiles;
@@ -20,7 +21,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** run_flow through the real endpoint, lease gate and session reset. */
+/** run_flow through the real endpoint, lease gate and session reset; the palette's runs keep other calls out. */
 class RunFlowAgentTest {
 
     @TempDir Path evidence;
@@ -66,6 +67,23 @@ class RunFlowAgentTest {
                 .satisfies(e -> assertThat(((DriverException) e).reason()).isEqualTo(Reason.BUSY));
         JsonNode out = client.withLease(token).callJson("run_flow", args());
         assertThat(out.path("passed").asBoolean()).isTrue();
+    }
+
+    @Test
+    void whileAPersonRunsAFlowInThePaletteOtherCallsAreBusy() throws Exception {
+        ObjectNode click = client.args();
+        click.set("target", client.json().readTree("{\"role\":\"button\",\"name\":\"Add to cart\"}"));
+        try (PaletteDriving palette = new PaletteDriving("a person is running add-to-cart in the app")) {
+            assertThatThrownBy(() -> client.call("click", click))
+                    .isInstanceOf(DriverException.class)
+                    .hasMessageContaining("busy: a person is running add-to-cart in the app")
+                    .satisfies(e -> assertThat(((DriverException) e).reason()).isEqualTo(Reason.BUSY));
+            assertThat(verbs.calls).noneMatch(c -> c.startsWith("click"));
+            // the run ended: the app is everyone's again
+            palette.reason(null);
+            client.call("click", click);
+            assertThat(verbs.calls).anyMatch(c -> c.startsWith("click"));
+        }
     }
 
     @Test

@@ -435,7 +435,9 @@ final class Recording {
                 runReplay(from, to, delay, wasChecking, after);
             } catch (RuntimeException | Error e) {
                 // nobody reads this task's future: whatever broke, the replay ends and the app is the person's again
-                ended("✗ replay failed: " + e.getMessage(), -1, wasChecking, null);
+                System.err.println("swing-ui-agent inspector: replay failed");
+                e.printStackTrace();
+                ended("✗ replay failed: " + why(e), -1, wasChecking, null);
             }
         });
     }
@@ -445,8 +447,14 @@ final class Recording {
         try {
             return sink.reset();
         } catch (RuntimeException e) {
-            return new Inspector.Result(false, String.valueOf(e.getMessage()));
+            return new Inspector.Result(false, why(e));
         }
+    }
+
+    /** What broke, never "null": the message, else the kind of failure. */
+    private static String why(Throwable e) {
+        String m = e.getMessage();
+        return m != null && !m.trim().isEmpty() ? m : e.getClass().getSimpleName();
     }
 
     /** The replay loop, on the sink thread. */

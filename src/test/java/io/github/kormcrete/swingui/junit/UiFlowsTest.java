@@ -83,6 +83,8 @@ class UiFlowsTest {
                 .resolve("failsafe-reports").resolve("flow-failures").resolve("fail.txt");
         assertThat(txt).isRegularFile();
         assertThat(failure.getMessage()).contains("UI evidence: " + txt);
+        // a file without a name runs under its file's base name, like its test and its report file
+        assertThat(failure.getMessage()).contains("Flow 'fail' failed");
     }
 
     @Test

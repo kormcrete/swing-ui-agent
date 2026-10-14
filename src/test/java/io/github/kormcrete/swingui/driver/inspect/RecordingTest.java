@@ -613,6 +613,24 @@ class RecordingTest {
     }
 
     @Test
+    void aReplayThatBreaksWithoutAMessageSaysWhatBrokeAndLogsIt() throws Exception {
+        Recording r = loadAddToCart();
+        sink.replayThrows = new NullPointerException();
+        java.io.PrintStream err = System.err;
+        java.io.ByteArrayOutputStream logged = new java.io.ByteArrayOutputStream();
+        System.setErr(new java.io.PrintStream(logged, true));
+        try {
+            run(r, 0);
+            eventually(() -> !r.replaying ? Boolean.TRUE : null);
+        } finally {
+            System.setErr(err);
+        }
+        SwingUtilities.invokeAndWait(() -> assertThat(r.bar.text()).isEqualTo("✗ replay failed: NullPointerException"));
+        assertThat(logged.toString()).contains("swing-ui-agent inspector: replay failed")
+                .contains("java.lang.NullPointerException").contains("\tat ");
+    }
+
+    @Test
     void recordAfterALoadStartsFresh() throws Exception {
         Recording loaded = loadAddToCart();
         SwingUtilities.invokeAndWait(() -> loaded.bar.press("● Record"));

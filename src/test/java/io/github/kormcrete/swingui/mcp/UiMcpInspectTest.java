@@ -5,6 +5,8 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowFiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -292,6 +294,44 @@ class UiMcpInspectTest {
         assertThat(refused.line).contains("broken.json");
         assertThat(sink.steps()).containsExactly("click(#save)");
         assertThat(sink.loadedFlow()).isEqualTo(file);
+    }
+
+    @Test
+    void savingALoadedFlowKeepsItsNameAndDescription(@TempDir Path flows) throws Exception {
+        Path file = flows.resolve("place-order.json");
+        String json = "{\"version\":1,\"name\":\"Place an order\",\"description\":\"Ada orders two gel pens\","
+                + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"id\":\"save\"}}]}";
+        Files.write(file, json.getBytes(StandardCharsets.UTF_8));
+        assertThat(sink.loadFlow(file).ok).isTrue();
+        sink.done(step("click", Locator.ofId("new")));
+
+        // the palette's Save gives no description: the file keeps its own, and its own name
+        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
+        Flow saved = FlowFiles.read(file);
+        assertThat(saved.steps).hasSize(2);
+        assertThat(saved.description).isEqualTo("Ada orders two gel pens");
+        assertThat(saved.name).isEqualTo("Place an order");
+        // and again: what was written is what a further save keeps
+        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
+        assertThat(FlowFiles.read(file).description).isEqualTo("Ada orders two gel pens");
+
+        // a save under a new name is a new flow: its name is the file's, and it has no description unless given
+        assertThat(sink.exportFlow("place-order-copy", flows).ok).isTrue();
+        Flow copy = FlowFiles.read(flows.resolve("place-order-copy.json"));
+        assertThat(copy.name).isEqualTo("place-order-copy");
+        assertThat(copy.description).isNull();
+
+        // an agent's export with a description replaces the kept one
+        session.exportFlow("place-order-copy", flows.toString(), "Two gel pens for Ada", false);
+        session.exportFlow("place-order-copy", flows.toString(), null, false);
+        assertThat(FlowFiles.read(flows.resolve("place-order-copy.json")).description)
+                .isEqualTo("Two gel pens for Ada");
+
+        // a fresh recording forgets them
+        session.startRecording(true);
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.exportFlow("place-order-new", flows).ok).isTrue();
+        assertThat(FlowFiles.read(flows.resolve("place-order-new.json")).description).isNull();
     }
 
     @Test

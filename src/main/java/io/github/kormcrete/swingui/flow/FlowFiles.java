@@ -192,10 +192,21 @@ public final class FlowFiles {
         return flow;
     }
 
-    /** The file text of a flow: pretty-printed, {@code \n} line feeds on every OS, one final line feed. */
+    /**
+     * The lowest format version that holds {@code flow}, the one writers write so plain flows stay readable by older
+     * agents: 1 today. A later format returns its version only when the flow uses that format's fields.
+     */
+    public static int versionFor(Flow flow) {
+        return 1;
+    }
+
+    /**
+     * The file text of a flow: pretty-printed, {@code \n} line feeds on every OS, one final line feed. Without a
+     * version, the lowest that holds it ({@link #versionFor}).
+     */
     public static String write(Flow flow) {
         Flow out = new Flow();
-        out.version = flow.version == null ? VERSION : flow.version;
+        out.version = flow.version == null ? versionFor(flow) : flow.version;
         out.name = flow.name;
         out.description = flow.description;
         out.start = flow.start == null ? START_RESET : flow.start;

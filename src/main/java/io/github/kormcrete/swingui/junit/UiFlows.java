@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.junit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowFiles;
 import io.github.kormcrete.swingui.flow.FlowSelection;
 import org.junit.jupiter.api.DynamicTest;
@@ -80,10 +81,16 @@ public final class UiFlows {
         return new Executable() {
             @Override public void execute() throws Throwable {
                 String json = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+                Flow flow;
                 try {
-                    FlowFiles.parse(json, file.toString());
+                    flow = FlowFiles.parse(json, file.toString());
                 } catch (RuntimeException e) {
                     throw new AssertionError(e.getMessage(), e);
+                }
+                if (flow.name == null || flow.name.trim().isEmpty()) {
+                    // the run, its picture and its report go by the file's name, like the test
+                    flow.name = name;
+                    json = FlowFiles.write(flow);
                 }
                 JsonNode result = new ObjectMapper().readTree(ui.app().runFlow(json, evidence.toString()));
                 if (result.path("passed").asBoolean(false)) {

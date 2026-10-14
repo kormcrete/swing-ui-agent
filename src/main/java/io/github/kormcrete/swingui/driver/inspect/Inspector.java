@@ -190,7 +190,7 @@ public final class Inspector {
         }
     }
 
-    private static Inspector instance;
+    private static volatile Inspector instance;
 
     private final Refs refs;
     private final Resolver resolver;
@@ -242,6 +242,13 @@ public final class Inspector {
     public static synchronized Inspector of(Driver driver) {
         if (instance == null) instance = new Inspector(driver.refs(), driver.resolver(), driver.recorder());
         return instance;
+    }
+
+    /** Makes {@code inspector} this JVM's one (null: none), returning the one before; for tests. */
+    static synchronized Inspector swap(Inspector inspector) {
+        Inspector before = instance;
+        instance = inspector;
+        return before;
     }
 
     /** Why a test run must wait - a person is busy in the app - or null; null too when no inspector was ever made. */

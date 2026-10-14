@@ -116,6 +116,14 @@ class FlowFilesTest {
     }
 
     @Test
+    void aPlainFlowIsWrittenAsTheLowestVersionThatHoldsIt() throws Exception {
+        Flow flow = flowOf("{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}");
+        assertThat(FlowFiles.versionFor(flow)).isEqualTo(1);
+        assertThat(flow.version).isNull();
+        assertThat(FlowFiles.write(flow)).contains("\"version\" : 1,");
+    }
+
+    @Test
     void aNewerVersionSaysToUpdateTheAgent() {
         refused("{\"version\":2,\"start\":\"reset\",\"steps\":[]}",
                 "is flow version 2, written by a newer swing-ui-agent; this one reads version 1 - update the agent");
