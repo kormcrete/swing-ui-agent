@@ -226,12 +226,49 @@ class InspectorTest {
             o.bar(bar);
             archive.setBounds(bar.getBounds());
             root.getContentPane().add(archive);
-            scene.inspector.stepOff(bar, archive, inside(archive));
+            assertThat(scene.inspector.stepOff(bar, archive, inside(archive))).isTrue();
+            assertThat(bar.getBounds().intersects(archive.getBounds())).isFalse();
 
             bar.moved = archive.getLocation();
             o.relayout();
 
             assertThat(bar.getLocation()).isEqualTo(archive.getLocation());
+            o.dispose();
+        });
+    }
+
+    @Test
+    void aDragsTwoEndsStayClearTogetherAndTheNextStepStartsAfresh() throws Exception {
+        onEdt(() -> {
+            JRootPane root = window(800, 600);
+            Overlay o = scene.inspector.overlay(root);
+            Bar bar = idleBar();
+            o.bar(bar);
+            Rectangle home = bar.getBounds();
+            JButton from = archive;
+            JButton to = new JButton("Customer");
+            JButton next = new JButton("Checkout");
+            from.setBounds(home);
+            to.setBounds(8, home.y, home.width, home.height);
+            next.setBounds(home.x, 8, home.width, home.height);
+            root.getContentPane().add(from);
+            root.getContentPane().add(to);
+            root.getContentPane().add(next);
+
+            // one drag: both ends are checked before either is pressed
+            scene.inspector.stepOff(bar, from, inside(from));
+            assertThat(bar.getBounds().intersects(to.getBounds())).isTrue();
+            scene.inspector.stepOff(bar, to, inside(to));
+            assertThat(bar.getBounds().intersects(from.getBounds())).isFalse();
+            assertThat(bar.getBounds().intersects(to.getBounds())).isFalse();
+            assertThat(bar.getBounds()).isEqualTo(next.getBounds());
+
+            scene.inspector.agentDone();
+            o.relayout();
+            assertThat(bar.getBounds()).isEqualTo(next.getBounds());
+
+            scene.inspector.stepOff(bar, next, inside(next));
+            assertThat(bar.getBounds()).isEqualTo(home);
             o.dispose();
         });
     }

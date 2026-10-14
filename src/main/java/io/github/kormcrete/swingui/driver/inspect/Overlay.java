@@ -94,9 +94,15 @@ final class Overlay extends JComponent {
     private boolean hidden;
     /** The palette, panel and question are out until the agent's step ends: no spot in the window clears its target. */
     private boolean yielding;
-    /** What the agent acts on (layered-pane coordinates): the bar and its panel stay off it until the person drags. */
-    private Rectangle avoid;
-    /** The bar's {@link Bar#moved} when {@link #avoid} was set: a drag replaces it. */
+    /**
+     * What the agent acts on in its current step (layered-pane coordinates; a drag has two targets): the bar and its
+     * panel stay off all of it until the person drags. Kept after the step, so the bar stays where it went; the agent's
+     * next step starts a list of its own.
+     */
+    private final List<Rectangle> avoid = new ArrayList<Rectangle>();
+    /** The agent's step that filled {@link #avoid} ended: the next {@link #makeRoom} starts afresh. */
+    private boolean avoidDone;
+    /** The bar's {@link Bar#moved} when {@link #avoid} was filled: a drag replaces it. */
     private Point movedAtAvoid;
     private Catcher catcher;
     /** Follows layout changes, scrolling and resizes while anything shows. */
@@ -170,28 +176,39 @@ final class Overlay extends JComponent {
 
     /**
      * The agent is about to act on {@code area} (layered-pane coordinates) and the palette covers it: the bar (with its
-     * panel) and the question move to the first spot clear of it and stay there until the person drags the bar. With no
-     * such spot they leave the window until the agent's step ends ({@link #endYield}). True: nothing of the palette
-     * covers {@code area} any more.
+     * panel) and the question move to the first spot clear of it - and of what the agent acts on earlier in the same
+     * step - and stay there until the person drags the bar. With no such spot they leave the window until the agent's
+     * step ends ({@link #endYield}). True: nothing of the palette covers any of the step's areas any more.
      */
     boolean makeRoom(Rectangle area) {
-        avoid = new Rectangle(area);
+        if (avoidDone) avoid.clear();
+        avoidDone = false;
+        avoid.add(new Rectangle(area));
         movedAtAvoid = bar == null ? null : bar.moved;
         relayout();
-        for (JComponent c : new JComponent[] {bar, ask, panel}) {
-            if (c != null && c.getParent() == layers && c.getBounds().intersects(area)) {
-                yielding = true;
-                sync();
-                relayout();
-                layers.repaint();
-                break;
-            }
+        if (coversAvoided()) {
+            yielding = true;
+            sync();
+            relayout();
+            layers.repaint();
         }
         return true;
     }
 
-    /** The agent's step ended: a palette that left the window for it comes back. */
+    private boolean coversAvoided() {
+        for (JComponent c : new JComponent[] {bar, ask, panel}) {
+            if (c == null || c.getParent() != layers) continue;
+            for (Rectangle r : avoid) if (c.getBounds().intersects(r)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The agent's step ended: a palette that left the window for it comes back, and the agent's next step avoids only
+     * what that step acts on (the palette keeps its spot until then).
+     */
     void endYield() {
+        avoidDone = true;
         if (!yielding) return;
         yielding = false;
         sync();
@@ -333,8 +350,8 @@ final class Overlay extends JComponent {
             }
         }
         // a drag by the person wins again: the bar forgets what the agent acted on
-        if (avoid != null && (bar == null || bar.moved != movedAtAvoid)) avoid = null;
-        if (avoid != null) taken.add(avoid);
+        if (bar != null && bar.moved != movedAtAvoid) avoid.clear();
+        taken.addAll(avoid);
         boolean withPanel = panel != null && panelIn();
         if (bar != null && barIn()) {
             place(bar, taken, withPanel ? panel.getPreferredSize() : null);
