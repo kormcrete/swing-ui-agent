@@ -25,6 +25,20 @@ public final class HitCheck {
 
     private HitCheck() {}
 
+    /** Something the agent itself draws over the app - the person's palette - that can step off a point it covers. EDT. */
+    public interface Cover {
+        /** {@code cover} lies over {@code p} in {@code target}: true when it moved off. */
+        boolean stepOff(Component cover, Component target, Point p);
+    }
+
+    private static final Cover NEVER = (cover, target, p) -> false;
+    private static volatile Cover cover = NEVER;
+
+    /** What the agent draws over the app; null: nothing that steps off. */
+    public static void cover(Cover c) {
+        cover = c == null ? NEVER : c;
+    }
+
     /** EDT. */
     public static void check(Component target, Point p, boolean needsEnabled, Function<Component, String> namer) {
         String name = namer.apply(target);
@@ -34,12 +48,24 @@ public final class HitCheck {
             throw notActionable("hidden: " + name + " is clipped or scrolled out of view at " + p.x + "," + p.y);
         }
         Window window = FocusEmulator.windowOf(target);
-        Point at = SwingUtilities.convertPoint(target, p, window);
-        Component hit = mouseTarget(window, at.x, at.y);
+        Component hit = receiver(window, SwingUtilities.convertPoint(target, p, window), target, p);
         if (hit == null) throw notActionable("nothing at " + name + " takes mouse input");
-        if (hit != target && !isAncestor(target, hit) && !isAncestor(hit, target)) {
-            throw notActionable("covered by " + namer.apply(hit));
-        }
+        if (!reaches(hit, target)) throw notActionable("covered by " + namer.apply(hit));
+    }
+
+    /**
+     * The component a press at {@code at} in {@code window} goes to, after the agent's own cover stepped off
+     * {@code p} in {@code target} when it was in the way.
+     */
+    static Component receiver(Component window, Point at, Component target, Point p) {
+        Component hit = mouseTarget(window, at.x, at.y);
+        if (hit != null && !reaches(hit, target) && cover.stepOff(hit, target, p)) hit = mouseTarget(window, at.x, at.y);
+        return hit;
+    }
+
+    /** A press on {@code hit} reaches {@code target}: the same component, or one inside the other. */
+    private static boolean reaches(Component hit, Component target) {
+        return hit == target || isAncestor(target, hit) || isAncestor(hit, target);
     }
 
     public static boolean visibleAt(Component target, Point p) {

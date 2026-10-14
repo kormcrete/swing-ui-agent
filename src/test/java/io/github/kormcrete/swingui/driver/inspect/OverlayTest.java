@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import org.junit.jupiter.api.Test;
 
+import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.util.Collections;
@@ -38,5 +39,24 @@ class OverlayTest {
         assertThat(r.x).isGreaterThanOrEqualTo(0);
         assertThat(r.x + r.width).isLessThanOrEqualTo(400);
         assertThat(r.y + r.height).isLessThanOrEqualTo(300);
+    }
+
+    @Test
+    void aSpotIsFreeOnlyWhenTheBarAndItsPanelAreClear() {
+        List<Rectangle> box = Collections.singletonList(new Rectangle(600, 400, 50, 50));
+        assertThat(Overlay.placeBar(200, 30, 800, 600, null, box)).isEqualTo(new Rectangle(592, 562, 200, 30));
+        assertThat(Overlay.placeBar(200, 30, 800, 600, null, box, new Dimension(300, 200)))
+                .isEqualTo(new Rectangle(8, 562, 200, 30));
+    }
+
+    @Test
+    void thePanelSitsWhereItDidBefore() {
+        Dimension steps = new Dimension(300, 200);
+        assertThat(Overlay.panelBeside(new Rectangle(592, 562, 200, 30), steps, 800, 600))
+                .isEqualTo(new Rectangle(492, 356, 300, 200));
+        assertThat(Overlay.panelBeside(new Rectangle(592, 8, 200, 30), steps, 800, 600))
+                .isEqualTo(new Rectangle(492, 44, 300, 200));
+        assertThat(Overlay.panelBeside(new Rectangle(592, 562, 200, 30), new Dimension(1000, 1000), 800, 600))
+                .isEqualTo(new Rectangle(8, 16, 784, 540));
     }
 }

@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.driver.inspect;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Edt;
+import io.github.kormcrete.swingui.driver.input.HitCheck;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Recorder;
 import io.github.kormcrete.swingui.driver.model.Refs;
@@ -12,7 +13,9 @@ import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 
+import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.JLayeredPane;
 import javax.swing.JRootPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
@@ -23,6 +26,7 @@ import javax.swing.table.JTableHeader;
 import java.awt.AWTEvent;
 import java.awt.Component;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.AWTEventListener;
@@ -184,7 +188,12 @@ public final class Inspector {
      * recorder would also see; the agent's side records the step already, so the recorder must not record it twice.
      */
     public static void agentActing(boolean on) {
-        if (on) agentActing.incrementAndGet(); else agentActing.decrementAndGet();
+        if (on) {
+            agentActing.incrementAndGet();
+            return;
+        }
+        Inspector i = instance;
+        if (agentActing.decrementAndGet() == 0 && i != null) SwingUtilities.invokeLater(i::agentDone);
     }
 
     /** Whether one of the agent's own steps is running. */
@@ -202,6 +211,33 @@ public final class Inspector {
         });
     }
 
+    /**
+     * The agent is about to press {@code p} in {@code target} and {@code cover} is in the way: when it is the person's
+     * palette in the target's window, the palette steps off (see {@link Overlay#makeRoom}). The catcher and the agent's
+     * own check-mark badges never move. EDT.
+     */
+    boolean stepOff(Component cover, Component target, Point p) {
+        Overlay o = overlays.get(SwingUtilities.getRootPane(target));
+        if (o == null || !o.holds(cover)) return false;
+        JLayeredPane layers = o.layers();
+        Rectangle seen = target instanceof JComponent
+                ? ((JComponent) target).getVisibleRect()
+                : new Rectangle(0, 0, target.getWidth(), target.getHeight());
+        Rectangle area = SwingUtilities.convertRectangle(target, seen, layers);
+        // a big target (a table) keeps only the point clear, or the palette would never find a spot
+        if (area.width > layers.getWidth() / 2 || area.height > layers.getHeight() / 2) {
+            Point at = SwingUtilities.convertPoint(target, p, layers);
+            area = new Rectangle(at.x - 12, at.y - 12, 24, 24);
+        }
+        return o.makeRoom(area);
+    }
+
+    /** The agent's last step ended: a palette that left a window for it comes back. EDT. */
+    void agentDone() {
+        for (Overlay o : overlays.values()) o.endYield();
+        attachPalette();
+    }
+
     void recordingBusy(String reason) {
         recordingBusy = reason;
     }
@@ -217,14 +253,18 @@ public final class Inspector {
             if (this.sink != null) return;
             this.sink = sink;
             idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording);
+            HitCheck.cover((c, t, p) -> instance != null && instance.stepOff(c, t, p));
             new Timer(1000, e -> attachPalette()).start();
             attachPalette();
         });
     }
 
-    /** The palette lives in the main window: the first showing frame. EDT. */
+    /**
+     * The palette lives in the main window: the first showing frame. Not while the agent acts: a move between its hit
+     * check and its posted press could put a palette button under the press. EDT.
+     */
     private void attachPalette() {
-        if (sink == null) return;
+        if (sink == null || agentIsActing()) return;
         Overlay o = mainOverlay();
         if (o == null) return;
         if (recording != null && recording.replaying) return;

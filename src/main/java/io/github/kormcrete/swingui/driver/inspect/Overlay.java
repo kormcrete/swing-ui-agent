@@ -92,6 +92,12 @@ final class Overlay extends JComponent {
     private boolean away;
     /** The palette and panel are out while a test run holds the agent. */
     private boolean hidden;
+    /** The palette, panel and question are out until the agent's step ends: no spot in the window clears its target. */
+    private boolean yielding;
+    /** What the agent acts on (layered-pane coordinates): the bar and its panel stay off it until the person drags. */
+    private Rectangle avoid;
+    /** The bar's {@link Bar#moved} when {@link #avoid} was set: a drag replaces it. */
+    private Point movedAtAvoid;
     private Catcher catcher;
     /** Follows layout changes, scrolling and resizes while anything shows. */
     private final Timer follow = new Timer(120, e -> relayout());
@@ -136,7 +142,7 @@ final class Overlay extends JComponent {
         if (b == bar) return;
         if (bar != null) layers.remove(bar);
         bar = b;
-        if (b != null && !hidden) layers.add(b, CONTROLS);
+        sync();
         relayout();
         layers.repaint();
     }
@@ -145,7 +151,7 @@ final class Overlay extends JComponent {
     void ask(Bar b) {
         if (ask != null) layers.remove(ask);
         ask = b;
-        if (b != null) layers.add(b, CONTROLS);
+        sync();
         relayout();
         layers.repaint();
     }
@@ -157,12 +163,48 @@ final class Overlay extends JComponent {
     void hidePalette(boolean on) {
         if (on == hidden) return;
         hidden = on;
-        for (JComponent c : new JComponent[] {bar, away ? null : panel}) {
-            if (c == null) continue;
-            if (on) layers.remove(c); else layers.add(c, CONTROLS);
-        }
+        sync();
         relayout();
         layers.repaint();
+    }
+
+    /**
+     * The agent is about to act on {@code area} (layered-pane coordinates) and the palette covers it: the bar (with its
+     * panel) and the question move to the first spot clear of it and stay there until the person drags the bar. With no
+     * such spot they leave the window until the agent's step ends ({@link #endYield}). True: nothing of the palette
+     * covers {@code area} any more.
+     */
+    boolean makeRoom(Rectangle area) {
+        avoid = new Rectangle(area);
+        movedAtAvoid = bar == null ? null : bar.moved;
+        relayout();
+        for (JComponent c : new JComponent[] {bar, ask, panel}) {
+            if (c != null && c.getParent() == layers && c.getBounds().intersects(area)) {
+                yielding = true;
+                sync();
+                relayout();
+                layers.repaint();
+                break;
+            }
+        }
+        return true;
+    }
+
+    /** The agent's step ended: a palette that left the window for it comes back. */
+    void endYield() {
+        if (!yielding) return;
+        yielding = false;
+        sync();
+        relayout();
+        layers.repaint();
+    }
+
+    /** {@code c} is the bar, the question or the panel, or inside one of them. */
+    boolean holds(Component c) {
+        for (JComponent k : new JComponent[] {bar, ask, panel}) {
+            if (k != null && SwingUtilities.isDescendingFrom(c, k)) return true;
+        }
+        return false;
     }
 
     Bar bar() {
@@ -173,7 +215,7 @@ final class Overlay extends JComponent {
     void panel(JComponent p) {
         if (panel != null) layers.remove(panel);
         panel = p;
-        if (p != null && !away && !hidden) layers.add(p, CONTROLS);
+        sync();
         relayout();
         layers.repaint();
     }
@@ -185,10 +227,7 @@ final class Overlay extends JComponent {
     void controlsAway(boolean on) {
         if (on == away) return;
         away = on;
-        for (JComponent c : new JComponent[] {hidden ? null : panel}) {
-            if (c == null) continue;
-            if (on) layers.remove(c); else layers.add(c, CONTROLS);
-        }
+        sync();
         relayout();
         layers.repaint();
     }
@@ -234,6 +273,7 @@ final class Overlay extends JComponent {
         clearMarks();
         away = false;
         hidden = false;
+        yielding = false;
         panel(null);
         bar(null);
         ask(null);
@@ -258,7 +298,28 @@ final class Overlay extends JComponent {
         return layers;
     }
 
-    private void relayout() {
+    /** Puts the bar, the panel and the question into the layered pane or takes them out, as the flags say. */
+    private void sync() {
+        show(bar, barIn());
+        show(panel, panelIn());
+        show(ask, !yielding);
+    }
+
+    private void show(JComponent c, boolean in) {
+        if (c == null) return;
+        if (in && c.getParent() != layers) layers.add(c, CONTROLS);
+        else if (!in && c.getParent() == layers) layers.remove(c);
+    }
+
+    private boolean barIn() {
+        return !hidden && !yielding;
+    }
+
+    private boolean panelIn() {
+        return barIn() && !away;
+    }
+
+    void relayout() {
         setBounds(0, 0, layers.getWidth(), layers.getHeight());
         if (catcher != null) catcher.setBounds(0, 0, layers.getWidth(), layers.getHeight());
         List<Rectangle> taken = new ArrayList<Rectangle>();
@@ -271,18 +332,17 @@ final class Overlay extends JComponent {
                 m.yes.setBounds(Math.min(r.x + r.width - 11, layers.getWidth() - 23), Math.max(r.y - 11, 0), 22, 22);
             }
         }
-        if (bar != null && !hidden) {
-            place(bar, taken);
+        // a drag by the person wins again: the bar forgets what the agent acted on
+        if (avoid != null && (bar == null || bar.moved != movedAtAvoid)) avoid = null;
+        if (avoid != null) taken.add(avoid);
+        boolean withPanel = panel != null && panelIn();
+        if (bar != null && barIn()) {
+            place(bar, taken, withPanel ? panel.getPreferredSize() : null);
             taken.add(bar.getBounds());
         }
-        if (ask != null) place(ask, taken);
-        if (panel != null && bar != null && !away && !hidden) {
-            Dimension ps = panel.getPreferredSize();
-            int pw = Math.min(ps.width, layers.getWidth() - 16);
-            int ph = Math.min(ps.height, Math.max(80, layers.getHeight() - bar.getHeight() - 30));
-            int px = Math.max(8, Math.min(bar.getX() + bar.getWidth() - pw, layers.getWidth() - pw - 8));
-            int py = bar.getY() - ph - 6 >= 8 ? bar.getY() - ph - 6 : Math.min(bar.getY() + bar.getHeight() + 6, layers.getHeight() - ph - 8);
-            Rectangle want = new Rectangle(px, Math.max(8, py), pw, ph);
+        if (ask != null && !yielding) place(ask, taken, null);
+        if (withPanel && bar != null) {
+            Rectangle want = panelBeside(bar.getBounds(), panel.getPreferredSize(), layers.getWidth(), layers.getHeight());
             if (!want.equals(panel.getBounds())) {
                 panel.setBounds(want);
                 panel.revalidate();
@@ -291,9 +351,9 @@ final class Overlay extends JComponent {
         repaint();
     }
 
-    private void place(Bar b, List<Rectangle> taken) {
+    private void place(Bar b, List<Rectangle> taken, Dimension panel) {
         Dimension size = b.getPreferredSize();
-        b.setBounds(placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), b.moved, taken));
+        b.setBounds(placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), b.moved, taken, panel));
     }
 
     /**
@@ -302,19 +362,40 @@ final class Overlay extends JComponent {
      * asks about. Always inside the window.
      */
     static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken) {
+        return placeBar(prefW, h, areaW, areaH, moved, taken, null);
+    }
+
+    /**
+     * {@link #placeBar(int, int, int, int, Point, List)} with a {@code panel} of that preferred size open beside the bar
+     * ({@link #panelBeside}): a spot is free only when the bar and the panel both are.
+     */
+    static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken, Dimension panel) {
         int w = Math.min(prefW, Math.max(120, areaW - 16));
         int maxX = Math.max(0, areaW - w - 8);
         int maxY = Math.max(0, areaH - h - 8);
         if (moved != null) {
             Rectangle at = new Rectangle(Math.max(0, Math.min(moved.x, maxX)), Math.max(0, Math.min(moved.y, maxY)), w, h);
-            if (free(at, taken)) return at;
+            if (free(at, panel, areaW, areaH, taken)) return at;
         }
         int[][] corners = {{maxX, maxY}, {8, maxY}, {maxX, 8}, {8, 8}, {maxX / 2, maxY}, {maxX / 2, 8}};
         for (int[] c : corners) {
             Rectangle at = new Rectangle(c[0], c[1], w, h);
-            if (free(at, taken)) return at;
+            if (free(at, panel, areaW, areaH, taken)) return at;
         }
         return new Rectangle(maxX, maxY, w, h);
+    }
+
+    /** Where a panel of preferred size {@code pref} sits beside {@code bar}: above it, else below; inside the window. */
+    static Rectangle panelBeside(Rectangle bar, Dimension pref, int areaW, int areaH) {
+        int pw = Math.min(pref.width, areaW - 16);
+        int ph = Math.min(pref.height, Math.max(80, areaH - bar.height - 30));
+        int px = Math.max(8, Math.min(bar.x + bar.width - pw, areaW - pw - 8));
+        int py = bar.y - ph - 6 >= 8 ? bar.y - ph - 6 : Math.min(bar.y + bar.height + 6, areaH - ph - 8);
+        return new Rectangle(px, Math.max(8, py), pw, ph);
+    }
+
+    private static boolean free(Rectangle bar, Dimension panel, int areaW, int areaH, List<Rectangle> taken) {
+        return free(bar, taken) && (panel == null || free(panelBeside(bar, panel, areaW, areaH), taken));
     }
 
     private static boolean free(Rectangle at, List<Rectangle> taken) {
