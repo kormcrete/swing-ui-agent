@@ -313,4 +313,39 @@ class SessionToolTest {
         assertThat(mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"renew\",\"token\":\"other\"}")))
                 .path("renewed").asBoolean()).isFalse();
     }
+
+    private McpToolDefinition toolOn(UiMcpSession session) {
+        Plugins none = new Plugins(null);
+        return new SessionTool(none, new Lease(System::currentTimeMillis), session, dialogs,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
+    }
+
+    @Test
+    void resetIsRefusedWhileARecordingRuns() throws Exception {
+        Plugins none = new Plugins(null);
+        UiMcpSession session = new UiMcpSession(none, none, mapper);
+        session.appReset(new UiMcpSession.AppReset() {
+            @Override public boolean defined() { return false; }
+            @Override public void run() { }
+        });
+        McpToolDefinition tool = toolOn(session);
+        session.recording(mapper.readTree("{\"op\":\"start\"}"));
+        assertThatThrownBy(() -> tool.invoke(mapper.readTree("{\"op\":\"reset\"}")))
+                .hasMessageContaining("busy:").hasMessageContaining("a recording is running");
+        session.recording(mapper.readTree("{\"op\":\"stop\"}"));
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"reset\"}"))).path("reset").asText())
+                .isEqualTo("dialogs");
+    }
+
+    @Test
+    void anImplicitRecordingNeverBlocksAReset() throws Exception {
+        Plugins none = new Plugins(null);
+        UiMcpSession session = new UiMcpSession(none, none, mapper);
+        McpToolDefinition tool = toolOn(session);
+        // a reset starts a recording of its own; the next reset replaces it, nobody is protected by it
+        tool.invoke(mapper.readTree("{\"op\":\"reset\"}"));
+        assertThat(session.recordingReason()).isNull();
+        tool.invoke(mapper.readTree("{\"op\":\"reset\"}"));
+        assertThat(session.recordingReason()).isNull();
+    }
 }

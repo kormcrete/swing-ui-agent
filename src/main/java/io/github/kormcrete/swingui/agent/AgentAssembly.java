@@ -36,13 +36,16 @@ final class AgentAssembly {
     static AgentAssembly build(AgentArgs args, Verbs verbs, Plugins plugins, AgentInfo info, long appStartedAt,
                                ObjectMapper mapper) {
         Lease lease = new Lease(System::currentTimeMillis);
-        // a test run must not start while a person records, picks or answers in the app
-        lease.blockedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::engagedReason);
         // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
         lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
         // while the person runs a flow or replays steps from the palette, no other call drives the app
         lease.drivenBy(io.github.kormcrete.swingui.driver.inspect.Inspector::drivingReason);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
+        // a test run must not start while a person records, picks or answers in the app, or a recording runs
+        lease.blockedBy(() -> {
+            String person = io.github.kormcrete.swingui.driver.inspect.Inspector.engagedReason();
+            return person != null ? person : session.recordingReason();
+        });
         String property = System.getProperty(FlowFiles.DIR_PROP);
         session.flowsDir(flowsDir(args, property, Paths.get("")),
                 args.flows != null || (property != null && !property.trim().isEmpty()));

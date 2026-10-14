@@ -194,4 +194,22 @@ class UiMcpRunFlowTest {
         assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
         assertThat(backend.verbs.calls).isEmpty();
     }
+
+    @Test
+    void whileARecordingRunsAFlowRunIsRefused() throws Exception {
+        save("place-order");
+        // the real reason, not the seam
+        session = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
+        session.flowsDir(flows, true);
+        session.appReset(new UiMcpSession.AppReset() {
+            @Override public boolean defined() { return false; }
+            @Override public void run() { backend.verbs.calls.add("reset"); }
+        });
+        session.recording(mapper.readTree("{\"op\":\"start\"}"));
+        DriverException e = catchThrowableOfType(() -> run("{\"name\":\"place-order\"}"), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BUSY);
+        assertThat(e.getMessage()).contains("a recording is running").contains("recording {\"op\":\"stop\"}");
+        session.recording(mapper.readTree("{\"op\":\"stop\"}"));
+        assertThat(run("{\"name\":\"place-order\"}").path("passed").asBoolean()).isTrue();
+    }
 }

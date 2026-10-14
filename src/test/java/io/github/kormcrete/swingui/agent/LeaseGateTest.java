@@ -20,7 +20,12 @@ class LeaseGateTest {
     private final List<String> seen = new ArrayList<String>();
 
     private McpToolDefinition tool(final String name, final boolean readOnly) {
+        return tool(name, readOnly, java.util.Collections.<String>emptySet());
+    }
+
+    private McpToolDefinition tool(final String name, final boolean readOnly, final java.util.Set<String> readOps) {
         return new McpToolDefinition() {
+            @Override public java.util.Set<String> readOnlyOps() { return readOps; }
             @Override public String name() { return name; }
             @Override public ObjectNode descriptor(ObjectMapper mapper) {
                 ObjectNode d = mapper.createObjectNode();
@@ -110,5 +115,50 @@ class LeaseGateTest {
         McpToolDefinition gated = LeaseGate.gate(Arrays.asList(boom), lease, m).get(0);
         assertThatThrownBy(() -> gated.invoke(m.createObjectNode())).isInstanceOf(IllegalStateException.class);
         assertThat(lease.acquire("next", null)).isNotNull();
+    }
+
+    private McpToolDefinition mixed() {
+        return LeaseGate.gate(Arrays.asList(tool("recording", false, java.util.Collections.singleton("list"))), lease, m).get(0);
+    }
+
+    @Test
+    void aToolsReadOpsRunForAnyoneAndItsOtherOpsNeedTheLease() throws Exception {
+        McpToolDefinition recording = mixed();
+        Lease.Grant g = lease.acquire("suite", null);
+        recording.invoke(m.readTree("{\"op\":\"list\"}"));
+        assertThatThrownBy(() -> recording.invoke(m.readTree("{\"op\":\"start\"}")))
+                .hasMessageContaining("busy: leased by suite");
+        recording.invoke(m.readTree("{\"op\":\"start\",\"_lease\":\"" + g.token + "\"}"));
+        assertThat(seen).containsExactly("recording {\"op\":\"list\"}", "recording {\"op\":\"start\"}");
+    }
+
+    @Test
+    void whileAPersonReplaysListPassesAndEditsAreBusy() throws Exception {
+        McpToolDefinition recording = mixed();
+        lease.drivenBy(() -> "a person is replaying their recording in the app");
+        recording.invoke(m.readTree("{\"op\":\"list\"}"));
+        assertThatThrownBy(() -> recording.invoke(m.readTree("{\"op\":\"stop\"}")))
+                .hasMessageContaining("busy: a person is replaying");
+        assertThat(seen).containsExactly("recording {\"op\":\"list\"}");
+    }
+
+    @Test
+    void aMixedToolAdvertisesTheLeaseArgument() {
+        assertThat(mixed().descriptor(m).path("inputSchema").path("properties").has("_lease")).isTrue();
+        assertThat(mixed().readOnlyOps()).containsExactly("list");
+    }
+
+    @Test
+    void aReadOpWithTheHoldersTokenRenewsTheLeaseAndIsStripped() throws Exception {
+        long[] now = {0L};
+        Lease clocked = new Lease(() -> now[0]);
+        McpToolDefinition recording = LeaseGate.gate(
+                Arrays.asList(tool("recording", false, java.util.Collections.singleton("list"))), clocked, m).get(0);
+        Lease.Grant g = clocked.acquire("polling test", null);
+        now[0] = 10_000L;
+        recording.invoke(m.readTree("{\"op\":\"list\",\"_lease\":\"" + g.token + "\"}"));
+        now[0] = 20_000L;
+        assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("busy: leased by polling test");
+        assertThat(seen).containsExactly("recording {\"op\":\"list\"}");
     }
 }

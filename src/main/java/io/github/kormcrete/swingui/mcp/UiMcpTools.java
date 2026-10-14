@@ -325,13 +325,13 @@ public final class UiMcpTools {
                 ObjectNode p = schema.with("properties");
                 ObjectNode op = p.putObject("op");
                 op.put("type", "string");
-                op.putArray("enum").add("highlight").add("pick").add("recording").add("steps").add("hover").add("clear");
+                op.putArray("enum").add("highlight").add("pick").add("hover").add("clear");
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("question").put("type", "string").put("description",
                         "highlight, pick: the question on the bar in the app window.");
                 p.putObject("wait").put("type", "integer").put("description",
                         "Milliseconds to wait for the person: highlight and pick default 60000, at most 300000 "
-                        + "(highlight with 0 only shows the boxes); recording default 0 (just read), at most 540000.");
+                        + "(highlight with 0 only shows the boxes).");
                 p.putObject("on").put("type", "boolean").put("description", "hover: true starts it, false stops it.");
                 schema.putArray("required").add("op");
                 return tool(m, "inspect",
@@ -340,16 +340,36 @@ public final class UiMcpTools {
                         + "match of 'target' (numbered when several) with 'question' on a bar; they click the check "
                         + "mark on the one they mean (outcome confirmed, chosen n, its locator) or 'None of these' "
                         + "(rejected). pick: they click the element they mean - the "
-                        + "click does not reach the app - and you get its locator. recording: what the person recorded. "
-                        + "THEY start it with ● Record in the palette in the app window and end it with Done - every "
-                        + "step they take is recorded as if you had run it, Check mode adds checks, Steps replays, redoes "
-                        + "or deletes - you only read it (outcome idle, recording or done; 'wait' waits for their Done) "
-                        + "and export it with export_test, unless they write it themselves with Export… after Done. "
-                        + "steps: the recording so far. hover: a box follows their pointer and names the locator under "
-                        + "it. clear: removes your boxes and question. While a person records, picks, answers or "
-                        + "replays, no test run can take the lease.", schema);
+                        + "click does not reach the app - and you get its locator. hover: a box follows their pointer "
+                        + "and names the locator under it. clear: removes your boxes and question. The recording itself: "
+                        + "the recording tool. While a person records, picks, answers or replays, no test run can take "
+                        + "the lease.", schema);
             }
             @Override public String invoke(JsonNode args) { return session.inspect(args); }
+        });
+
+        tools.add(new McpToolDefinition() {
+            @Override public String name() { return "recording"; }
+            @Override public java.util.Set<String> readOnlyOps() { return java.util.Collections.singleton("list"); }
+            @Override public ObjectNode descriptor(ObjectMapper m) {
+                ObjectNode schema = emptyObjectSchema(m);
+                ObjectNode p = schema.with("properties");
+                p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list");
+                p.putObject("reset").put("type", "boolean").put("description",
+                        "start: reset the app first, as a test starts (default false).");
+                p.putObject("wait").put("type", "integer").put("description",
+                        "list: milliseconds to wait until the recording stops (default 0: just read), at most 540000.");
+                schema.putArray("required").add("op");
+                return tool(m, "recording",
+                        "The recording the agent and the person at the app make together (works with the palette on or "
+                        + "off). start {reset?}: a fresh recording; with the palette on the person's steps join it and "
+                        + "the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the "
+                        + "person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, "
+                        + "and every step with n, author (person, agent, flow), line, java and its flow JSON; wait (ms) "
+                        + "waits until it stops. While one runs, session reset and test runs are refused; stop it first.",
+                        schema);
+            }
+            @Override public String invoke(JsonNode args) throws Exception { return session.recording(args); }
         });
 
         tools.add(new McpToolDefinition() {

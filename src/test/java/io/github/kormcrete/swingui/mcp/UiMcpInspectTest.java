@@ -52,7 +52,7 @@ class UiMcpInspectTest {
 
     @Test
     void withoutThePaletteTheToolRefusesAndSaysHowItIsTurnedOff() throws Exception {
-        DriverException e = catchThrowableOfType(() -> session.inspect(mapper.readTree("{\"op\":\"recording\"}")),
+        DriverException e = catchThrowableOfType(() -> session.inspect(mapper.readTree("{\"op\":\"pick\"}")),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
         assertThat(e.getMessage()).contains("the palette is off").contains("palette=off");
@@ -303,6 +303,8 @@ class UiMcpInspectTest {
                 + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"id\":\"save\"}}]}";
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));
         assertThat(sink.loadFlow(file).ok).isTrue();
+        // a loaded flow is stopped: the person goes on from its last step with a redo, which records on
+        sink.truncate(1);
         sink.done(step("click", Locator.ofId("new")));
 
         // the palette's Save gives no description: the file keeps its own, and its own name

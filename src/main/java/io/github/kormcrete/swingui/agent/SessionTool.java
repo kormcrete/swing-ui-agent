@@ -60,7 +60,8 @@ final class SessionTool implements McpToolDefinition {
                 + "lists every plugin with its state). lease {owner, ttlMs}: take the agent for one owner; pass the token "
                 + "as _lease on every mutating call. release {token}. renew {token}: keep the lease alive while the test makes no call; answers renewed: false once the lease is gone. reset {alias | user+password}: the start of every "
                 + "test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). "
-                + "Starts a fresh recording for export_test. login {alias | user+password | relogin:true}: switch users "
+                + "Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): "
+                + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
                 + "mid-test. edt: the client's event-thread stack.");
         ObjectNode schema = d.putObject("inputSchema");
         schema.put("type", "object");
@@ -102,8 +103,9 @@ final class SessionTool implements McpToolDefinition {
             }
             case "reset": {
                 String person = io.github.kormcrete.swingui.driver.inspect.Inspector.engagedReason();
+                if (person == null) person = session.recordingReason();
                 if (person != null) {
-                    // a reset starts a fresh recording: it must not wipe what the person is recording or answering
+                    // a reset starts a fresh recording: it must not wipe what is being recorded or what the person answers
                     throw new DriverException(Reason.BUSY, "busy: " + person);
                 }
                 final AppHooks app = resetHooks(a);

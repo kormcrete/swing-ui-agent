@@ -56,8 +56,8 @@ import java.util.function.Supplier;
  * Work between the agent and the person at the app, in the app window (while the palette is on, the agent's default):
  * <ul>
  *   <li>The person records: a palette in the main window (in the open modal dialog while one is open) starts a
- *       {@link Recording} with ● Record and ends it with Done. Only the person starts and ends one; the agent reads it
- *       ({@link #recording}) and exports it.</li>
+ *       {@link Recording} with ● Record and ends it with Done. The agent reads it, ends it and exports it
+ *       with the {@code recording} tool.</li>
  *   <li>The person loads a flow file (Load flow…) into the recording and runs it: the app reset, then every step
  *       replayed. While a run or replay goes on no other call drives the app ({@link #drivingReason}).</li>
  *   <li>{@link #highlight}: the agent shows what a locator matches - numbered boxes when several - with a question; the
@@ -77,17 +77,11 @@ public final class Inspector {
         public final String outcome;
         public final Integer chosen;
         public final Target target;
-        public final List<String> steps;
 
         Answer(String outcome, Integer chosen, Target target) {
-            this(outcome, chosen, target, null);
-        }
-
-        Answer(String outcome, Integer chosen, Target target, List<String> steps) {
             this.outcome = outcome;
             this.chosen = chosen;
             this.target = target;
-            this.steps = steps;
         }
     }
 
@@ -95,6 +89,9 @@ public final class Inspector {
     public interface Sink {
         /** The person pressed ● Record: a fresh recording starts here, on the screen they are on. */
         void begin();
+
+        /** The person pressed Done: the recording stops, the agent's steps no longer join it. */
+        void end();
 
         /** A step the person already did: record it. */
         Result done(Map<String, Object> step);
@@ -567,27 +564,6 @@ public final class Inspector {
     /** The person's recording - or the flow they loaded - or null before their first ● Record or load. EDT. */
     Recording recording() {
         return recording;
-    }
-
-    /**
-     * The person's recording, for the agent: {@code done} with its lines once they pressed Done, {@code recording}
-     * while they are still at it (after waiting up to {@code waitMs} for Done), {@code idle} when they never pressed
-     * ● Record. The agent never starts or ends one.
-     */
-    public Answer recording(long waitMs) {
-        Recording r = Edt.call(() -> recording);
-        if (r == null) return new Answer("idle", null, null);
-        if (!Edt.call(r::active)) return new Answer("done", null, null, new ArrayList<String>(r.lines));
-        try {
-            return new Answer("done", null, null, r.done.get(waitMs, TimeUnit.MILLISECONDS));
-        } catch (TimeoutException e) {
-            return new Answer("recording", null, null, new ArrayList<String>(r.lines));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new Answer("interrupted", null, null);
-        } catch (ExecutionException e) {
-            throw new IllegalStateException(e.getCause());
-        }
     }
 
     // ---- the agent asks -------------------------------------------------------------------------------------------

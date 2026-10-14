@@ -56,6 +56,18 @@ class RecordingTest {
     }
 
     @Test
+    void doneStopsTheSessionsRecording() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            recording = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });
+            recording.start();
+        });
+        assertThat(sink.log).doesNotContain("end");
+        SwingUtilities.invokeAndWait(recording::done);
+        recording.done.get(5, TimeUnit.SECONDS);
+        assertThat(sink.log).containsOnlyOnce("end");
+    }
+
+    @Test
     void afterDoneThePaletteSaysRecordedAndOffersANewRecording() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             recording = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });

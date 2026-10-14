@@ -50,10 +50,14 @@ import java.nio.file.Files;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.Map;
@@ -103,8 +107,32 @@ public class UiMcpSession {
     /** The folder the person last used in the palette, offered when no folder was set explicitly. */
     private FolderMemory folderMemory = FolderMemory.preferences(Paths.get("").toAbsolutePath());
 
-    /** Why a person is busy in the palette (recording, answering, replaying), or null; a seam for tests. */
-    Supplier<String> personBusy = Inspector::engagedReason;
+    /**
+     * Why a person is busy in the palette (recording, answering, replaying) or a recording runs, or null; a seam for
+     * tests.
+     */
+    Supplier<String> personBusy = () -> {
+        String person = Inspector.engagedReason();
+        return person != null ? person : recordingReason();
+    };
+
+    /** The recording as {@code recording list} answers it, rebuilt after every change; read without the session's lock. */
+    private static final class Published {
+        final String json;
+        final boolean recording;
+        /** Why a running explicit recording blocks a reset, a test run and another start, or null. */
+        final String reason;
+
+        Published(String json, boolean recording, String reason) {
+            this.json = json;
+            this.recording = recording;
+            this.reason = reason;
+        }
+    }
+
+    private volatile Published published = new Published("{}", false, null);
+    /** A list with {@code wait} waits here, never on the session: the session must stay free to record. */
+    private final Object stopSignal = new Object();
 
     private final Supplier<ExportDefaults> exportDefaults;
     /** The palette is on (the agent's default, with a screen): a person may record, check and answer in the app. */
@@ -119,6 +147,9 @@ public class UiMcpSession {
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
+        synchronized (this) {
+            publish();
+        }
     }
 
     /** How a flow starts (see {@link AppReset}); the agent sets the session's own reset. */
@@ -169,13 +200,6 @@ public class UiMcpSession {
         if (palette) Inspector.of(driver).enable(humanSink());
     }
 
-    /** The recording, one step per element, as export_test would read it. */
-    private synchronized ArrayNode recordingJson() {
-        ArrayNode out = mapper.createArrayNode();
-        for (Action a : model.actions()) out.add(stripNulls(mapper.valueToTree(a)));
-        return out;
-    }
-
     /** An unscoped snapshot over this many bytes carries a hint to scope the next one. */
     static final int LARGE_SNAPSHOT_BYTES = 16_000;
 
@@ -224,13 +248,16 @@ public class UiMcpSession {
 
     /**
      * The inspector, for a person at the app: {@code highlight} a target (numbered boxes; the person confirms one with its
-     * check mark, or says none), {@code pick} (the person clicks what they mean), {@code recording} (what the person
-     * recorded with the palette - they start and end it, the agent only reads it or waits for their Done; their steps go
-     * into THIS recording, as if the agent had run them), {@code steps} (the recording so far), {@code hover} on/off,
-     * {@code clear}. Only while the palette is on. Not synchronized: it waits for a person, and must not hold the
+     * check mark, or says none), {@code pick} (the person clicks what they mean), {@code hover} on/off,
+     * {@code clear}. The recording itself is the {@link #recording} tool's. Only while the palette is on. Not synchronized: it waits for a person, and must not hold the
      * session meanwhile.
      */
     public String inspect(JsonNode args) {
+        String movedOp = text(args, "op");
+        if ("recording".equals(movedOp) || "steps".equals(movedOp)) {
+            throw new DriverException(Reason.BAD_INPUT, "inspect '" + movedOp + "' moved to the recording tool: "
+                    + "recording {\"op\":\"list\"} returns the steps; with \"wait\" (ms) it waits for the person's Done");
+        }
         if (!palette) {
             throw new DriverException(Reason.CAPABILITY_GAP, "the palette is off (the app was started with palette=off, "
                     + "mode=background, or without a screen): there is no person at the app to work with");
@@ -242,7 +269,7 @@ public class UiMcpSession {
         }
         Inspector inspector = Inspector.of(driver);
         String op = text(args, "op");
-        if (op == null) throw new DriverException(Reason.BAD_INPUT, "inspect needs 'op': highlight, pick, recording, steps, hover or clear");
+        if (op == null) throw new DriverException(Reason.BAD_INPUT, "inspect needs 'op': highlight, pick, hover or clear");
         Integer wait = integer(args, "wait");
         String question = text(args, "question");
         ObjectNode r = mapper.createObjectNode();
@@ -277,12 +304,6 @@ public class UiMcpSession {
             case "pick":
                 answer = inspector.pick(question, wait == null ? 60_000L : Math.min(wait.longValue(), 300_000L));
                 break;
-            case "recording":
-                answer = inspector.recording(wait == null ? 0L : Math.min(wait.longValue(), 540_000L));
-                break;
-            case "steps":
-                r.set("recording", recordingJson());
-                return r.toString();
             case "hover":
                 inspector.hover(args.path("on").asBoolean(true));
                 r.put("outcome", args.path("on").asBoolean(true) ? "hoverOn" : "hoverOff");
@@ -292,7 +313,7 @@ public class UiMcpSession {
                 r.put("outcome", "cleared");
                 return r.toString();
             default:
-                throw new DriverException(Reason.BAD_INPUT, "unknown inspect op '" + op + "' (highlight, pick, recording, steps, hover, clear)");
+                throw new DriverException(Reason.BAD_INPUT, "unknown inspect op '" + op + "' (highlight, pick, hover, clear)");
         }
         r.put("outcome", answer.outcome);
         if (answer.chosen != null) r.put("chosen", answer.chosen);
@@ -300,11 +321,6 @@ public class UiMcpSession {
             r.put("element", answer.target.element);
             r.set("locator", locatorJson(answer.target.locator));
             if (answer.target.fragile) r.put("fragile", true);
-        }
-        if (answer.steps != null) {
-            ArrayNode steps = r.putArray("steps");
-            for (String line : answer.steps) steps.add(line);
-            r.set("recording", recordingJson());
         }
         return r.toString();
     }
@@ -319,7 +335,16 @@ public class UiMcpSession {
             @Override
             public void begin() {
                 // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
-                startRecording(false);
+                startRecording(false, RecordedStep.Author.PERSON, true);
+            }
+
+            @Override
+            public void end() {
+                synchronized (UiMcpSession.this) {
+                    if (model.state() != RecordingModel.State.RECORDING) return;
+                    model.stop();
+                    publish();
+                }
             }
 
             @Override
@@ -327,13 +352,19 @@ public class UiMcpSession {
                 JsonNode json = stripNulls(mapper.valueToTree(step));
                 try {
                     synchronized (UiMcpSession.this) {
+                        if (model.state() == RecordingModel.State.STOPPED) {
+                            return new Inspector.Result(false, "the recording is stopped");
+                        }
                         Action action = action(json);
                         List<String> problems = exportProblems(action);
                         if (!problems.isEmpty()) {
-                            return new Inspector.Result(false,
-                                    action.describe() + " - " + String.join("; ", problems));
+                            String line = action.describe() + " - " + String.join("; ", problems);
+                            model.refused(line);
+                            publish();
+                            return new Inspector.Result(false, line);
                         }
                         model.append(action, RecordedStep.Author.PERSON);
+                        publish();
                         return new Inspector.Result(true, action.describe());
                     }
                 } catch (RuntimeException e) {
@@ -394,6 +425,11 @@ public class UiMcpSession {
             public void truncate(int keep) {
                 synchronized (UiMcpSession.this) {
                     model.truncate(keep);
+                    // a redo records on, also after Done
+                    if (model.state() == RecordingModel.State.STOPPED) {
+                        model.resume(RecordedStep.Author.PERSON, true, palette, System.currentTimeMillis());
+                    }
+                    publish();
                 }
             }
 
@@ -401,6 +437,7 @@ public class UiMcpSession {
             public void remove(int index) {
                 synchronized (UiMcpSession.this) {
                     if (index >= 0 && index < model.size()) model.remove(index + 1);
+                    publish();
                 }
             }
 
@@ -810,14 +847,21 @@ public class UiMcpSession {
         if (step != null && step.details != null) r.set("details", mapper.valueToTree(step.details));
         r.put("ms", elapsed);
         if (passed && record) {
-            Action recordedAction = recordable(action, step.outcome);
-            List<String> problems = exportProblems(recordedAction);
-            if (problems.isEmpty()) {
-                model.append(recordedAction, author);
-                r.set("recorded", mapper.valueToTree(recordedAction));
+            if (model.state() == RecordingModel.State.STOPPED) {
+                r.put("notRecorded", "the recording is stopped (Done in the palette, or recording stop): recording redo "
+                        + "continues it, recording start begins a new one");
             } else {
-                r.put("notRecorded", "it ran, but export_test has no Java form for it (" + String.join("; ", problems)
-                        + "); write it by hand into the exported test with the app plugin's test helpers or the Client API");
+                Action recordedAction = recordable(action, step.outcome);
+                List<String> problems = exportProblems(recordedAction);
+                if (problems.isEmpty()) {
+                    model.append(recordedAction, author);
+                    r.set("recorded", mapper.valueToTree(recordedAction));
+                } else {
+                    model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
+                    r.put("notRecorded", "it ran, but export_test has no Java form for it (" + String.join("; ", problems)
+                            + "); write it by hand into the exported test with the app plugin's test helpers or the Client API");
+                }
+                publish();
             }
         }
         if (step != null && step.pending != null) r.set("pending", mapper.valueToTree(step.pending));
@@ -1112,6 +1156,7 @@ public class UiMcpSession {
             model.clear();
             recordingFromReset = false;
             forgetLoadedFlow();
+            publish();
         }
 
         ObjectNode result = mapper.createObjectNode();
@@ -1206,6 +1251,7 @@ public class UiMcpSession {
             loadedName = flow.name;
             loadedDescription = flow.description;
         }
+        publish();
         return result.toString();
     }
 
@@ -1333,11 +1379,13 @@ public class UiMcpSession {
         }
         Path abs = file.toAbsolutePath().normalize();
         model.load(flow.steps, RecordedStep.Author.FLOW);
+        model.loaded();
         recordingFromReset = true;
         definedStart = appReset.defined();
         loadedFlow = abs;
         loadedName = flow.name;
         loadedDescription = flow.description;
+        publish();
         ObjectNode result = mapper.createObjectNode();
         result.put("loaded", abs.toString());
         result.put("name", flow.name);
@@ -1373,10 +1421,150 @@ public class UiMcpSession {
      * state; otherwise only dialogs were closed and the app may be on any screen.
      */
     public synchronized void startRecording(boolean definedStart) {
+        startRecording(definedStart, RecordedStep.Author.AGENT, false);
+    }
+
+    /**
+     * As {@link #startRecording(boolean)}, started by {@code by}. An {@code explicit} recording (recording start, the
+     * person's Record) blocks a reset, a test run and another start until it stops ({@link #recordingReason}) and, with
+     * the palette on, is shared with the person; the implicit one of a session reset blocks nothing.
+     */
+    synchronized void startRecording(boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
+        model.start(by, explicit, explicit && palette, System.currentTimeMillis());
         recordingFromReset = true;
         this.definedStart = definedStart;
         forgetLoadedFlow();
+        publish();
+    }
+
+    /** Longest a {@code recording list} may wait for the stop, in milliseconds. */
+    private static final long MAX_RECORDING_WAIT_MS = 540_000L;
+
+    /**
+     * Why a recording that someone started on purpose is running, or null: the reset, test runs, another start and
+     * flow runs wait for it, since each would wipe or derail the steps being made. A recording that only follows a
+     * session reset never blocks anything. Read without the session's lock.
+     */
+    public String recordingReason() {
+        return published.reason;
+    }
+
+    /**
+     * The recording tool: {@code start {reset?}} begins a fresh recording the person's palette joins, {@code stop} ends
+     * it, {@code list {wait?}} says its state and every step. Not synchronized: {@code list} must answer while a step
+     * or a replay holds the session, and {@code wait} must not hold it.
+     */
+    public String recording(JsonNode args) throws Exception {
+        String op = text(args, "op");
+        if (op == null) throw new DriverException(Reason.BAD_INPUT, "recording needs 'op': start, stop or list");
+        switch (op) {
+            case "start": {
+                String busy = recordingReason();
+                if (busy == null) busy = Inspector.engagedReason();
+                if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy + "; stop it first");
+                boolean defined = false;
+                if (args.path("reset").asBoolean(false)) {
+                    Inspector.agentActing(true);
+                    try {
+                        appReset.run();
+                    } finally {
+                        Inspector.agentActing(false);
+                    }
+                    defined = appReset.defined();
+                }
+                startRecording(defined, RecordedStep.Author.AGENT, true);
+                return published.json;
+            }
+            case "stop": {
+                synchronized (this) {
+                    if (model.state() != RecordingModel.State.RECORDING) {
+                        throw new DriverException(Reason.BAD_INPUT,
+                                "no recording is running (it is " + model.state().json + ")");
+                    }
+                    model.stop();
+                    publish();
+                }
+                return published.json;
+            }
+            case "list": {
+                Integer wait = integer(args, "wait");
+                long waitMs = wait == null ? 0L : Math.max(0L, Math.min(wait.longValue(), MAX_RECORDING_WAIT_MS));
+                long deadline = System.currentTimeMillis() + waitMs;
+                synchronized (stopSignal) {
+                    long left;
+                    while (published.recording && (left = deadline - System.currentTimeMillis()) > 0) {
+                        stopSignal.wait(left);
+                    }
+                }
+                return published.json;
+            }
+            default:
+                throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op + "' (start, stop, list)");
+        }
+    }
+
+    /**
+     * Rebuilds what {@code recording list} answers from the model and tells the waiters when it is no longer recording.
+     * Call it under the session's lock (or from the constructor) after every change to the model.
+     */
+    private void publish() {
+        RecordingModel.Snapshot snap = model.snapshot();
+        List<Action> actions = new ArrayList<Action>(snap.steps.size());
+        for (RecordedStep s : snap.steps) actions.add(s.action);
+        List<String> java = null;
+        if (!actions.isEmpty()) {
+            try {
+                java = JavaTestWriter.lines(actions);
+                if (java.size() != actions.size()) java = null;
+            } catch (RuntimeException e) {
+                // the recording as a whole has no Java form (a step the writer refuses): list the steps without it
+                java = null;
+            }
+        }
+        ObjectNode r = mapper.createObjectNode();
+        r.put("state", snap.state.json);
+        if (snap.state != RecordingModel.State.IDLE) {
+            r.put("startedBy", snap.startedBy.json);
+            if (snap.startedAt > 0) {
+                r.put("startedAt", Instant.ofEpochMilli(snap.startedAt).truncatedTo(ChronoUnit.SECONDS).toString());
+            }
+        }
+        r.put("shared", snap.shared);
+        r.put("fromReset", recordingFromReset);
+        r.put("definedStart", definedStart);
+        if (loadedFlow != null) r.put("loadedFrom", loadedFlow.toString());
+        r.put("rev", snap.rev);
+        ArrayNode steps = r.putArray("steps");
+        for (int i = 0; i < snap.steps.size(); i++) {
+            RecordedStep s = snap.steps.get(i);
+            ObjectNode o = steps.addObject();
+            o.put("n", i + 1);
+            o.put("author", s.author.json);
+            o.put("line", s.action.describe());
+            if (java != null) o.put("java", java.get(i));
+            o.set("step", stripNulls(mapper.valueToTree(s.action)));
+            if (s.edited) o.put("edited", true);
+        }
+        if (!snap.notRecorded.isEmpty()) {
+            ArrayNode lines = r.putArray("notRecorded");
+            for (String line : snap.notRecorded) lines.add(line);
+        }
+        String warning = definedStart ? null : startWarning(actions);
+        if (warning != null) r.put("startWarning", warning);
+        boolean recording = snap.state == RecordingModel.State.RECORDING;
+        String reason = null;
+        if (recording && snap.explicit) {
+            reason = "a recording is running in the app (started by the " + snap.startedBy.json + " at "
+                    + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.startedAt))
+                    + "): Done in the palette or recording {\"op\":\"stop\"} ends it";
+        }
+        published = new Published(r.toString(), recording, reason);
+        if (!recording) {
+            synchronized (stopSignal) {
+                stopSignal.notifyAll();
+            }
+        }
     }
 
     private void forgetLoadedFlow() {

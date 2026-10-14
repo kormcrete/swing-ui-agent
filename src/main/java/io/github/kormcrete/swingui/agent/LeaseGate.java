@@ -7,10 +7,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Wraps every tool that is not read-only so it runs under the {@link Lease}; a read-only tool runs for anyone, and
- * renews the lease when it carries the holder's token. The token travels as the argument {@value #TOKEN_FIELD} and
+ * renews the lease when it carries the holder's token. A tool with read-only ops ({@link McpToolDefinition#readOnlyOps})
+ * does both, op by op. The token travels as the argument {@value #TOKEN_FIELD} and
  * is stripped before the tool sees its arguments.
  */
 final class LeaseGate {
@@ -23,7 +25,7 @@ final class LeaseGate {
         List<McpToolDefinition> out = new ArrayList<McpToolDefinition>();
         for (McpToolDefinition t : tools) {
             boolean readOnly = t.descriptor(mapper).path("annotations").path("readOnlyHint").asBoolean(false);
-            out.add(readOnly ? renewing(t, lease) : gated(t, lease));
+            out.add(readOnly ? renewing(t, lease) : !t.readOnlyOps().isEmpty() ? mixed(t, lease) : gated(t, lease));
         }
         return out;
     }
@@ -46,6 +48,8 @@ final class LeaseGate {
 
             @Override public ObjectNode descriptor(ObjectMapper mapper) { return tool.descriptor(mapper); }
 
+            @Override public Set<String> readOnlyOps() { return tool.readOnlyOps(); }
+
             @Override public String invoke(JsonNode args) throws Exception {
                 lease.renew(token(args));
                 return tool.invoke(strip(args));
@@ -53,9 +57,32 @@ final class LeaseGate {
         };
     }
 
+    /** A tool whose read ops run for anyone and renew the lease, and whose other ops are gated. */
+    private static McpToolDefinition mixed(final McpToolDefinition tool, final Lease lease) {
+        final McpToolDefinition gated = gated(tool, lease);
+        final Set<String> reads = tool.readOnlyOps();
+        return new McpToolDefinition() {
+            @Override public String name() { return tool.name(); }
+
+            @Override public ObjectNode descriptor(ObjectMapper mapper) { return gated.descriptor(mapper); }
+
+            @Override public Set<String> readOnlyOps() { return reads; }
+
+            @Override public String invoke(JsonNode args) throws Exception {
+                if (args != null && args.hasNonNull("op") && reads.contains(args.get("op").asText())) {
+                    lease.renew(token(args));
+                    return tool.invoke(strip(args));
+                }
+                return gated.invoke(args);
+            }
+        };
+    }
+
     private static McpToolDefinition gated(final McpToolDefinition tool, final Lease lease) {
         return new McpToolDefinition() {
             @Override public String name() { return tool.name(); }
+
+            @Override public Set<String> readOnlyOps() { return tool.readOnlyOps(); }
 
             @Override public ObjectNode descriptor(ObjectMapper mapper) {
                 ObjectNode d = tool.descriptor(mapper);

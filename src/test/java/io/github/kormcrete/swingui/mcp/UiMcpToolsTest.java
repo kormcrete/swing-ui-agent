@@ -350,7 +350,7 @@ class UiMcpToolsTest {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : tools) names.add(t.name());
         assertThat(names).containsExactlyInAnyOrder(
                 "describe_ui", "do_action", "do_actions", "batch",
-                "export_test", "export_flow", "run_flow", "snapshot", "read", "screenshot", "inspect", "read_clipboard", "read_file_chooser",
+                "export_test", "export_flow", "run_flow", "snapshot", "read", "screenshot", "inspect", "recording", "read_clipboard", "read_file_chooser",
                 "click", "type", "press", "check", "select", "pick", "menu", "context_menu",
                 "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard");
     }
@@ -471,5 +471,20 @@ class UiMcpToolsTest {
         assertThat(r.has("notRecorded")).isFalse();
         assertThatThrownBy(() -> s.exportTest("NothingUiIT", "nothing", "p", false))
                 .hasMessageContaining("nothing was recorded");
+    }
+
+    @Test
+    void theRecordingToolsListOpIsReadOnly() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (t.name().equals("recording")) {
+                assertThat(t.readOnlyOps()).containsExactly("list");
+                assertThat(t.descriptor(mapper).path("annotations").path("readOnlyHint").asBoolean()).isFalse();
+                List<String> ops = new ArrayList<String>();
+                for (JsonNode n : t.descriptor(mapper).path("inputSchema").path("properties").path("op").path("enum")) ops.add(n.asText());
+                assertThat(ops).containsExactly("start", "stop", "list");
+                return;
+            }
+        }
+        throw new AssertionError("no recording tool");
     }
 }

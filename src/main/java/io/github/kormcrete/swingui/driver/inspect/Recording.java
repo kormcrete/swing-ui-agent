@@ -168,6 +168,7 @@ final class Recording {
         // the steps already handed to the sink thread reach the session before anyone reads the recording
         CompletableFuture<List<String>> finished = done;
         sinkThread.submit(() -> {
+            sink.end();
             int n = sink.steps().size();
             SwingUtilities.invokeLater(() -> stoppedBar.text(n + (n == 1 ? " step" : " steps")
                     + " - Export… writes them as a test, or the agent does"));
