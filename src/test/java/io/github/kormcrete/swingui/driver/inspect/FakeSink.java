@@ -39,7 +39,13 @@ final class FakeSink implements Inspector.Sink {
     @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
     @Override public List<String> steps() { return new ArrayList<String>(steps); }
     @Override public Locator target(int index) { return null; }
-    @Override public Inspector.Result replay(int index) { log.add("replay " + index); return new Inspector.Result(true, "ok"); }
+    /** Thrown by {@link #replay}, when set: a replay that breaks. */
+    volatile RuntimeException replayThrows;
+    @Override public Inspector.Result replay(int index) {
+        log.add("replay " + index);
+        if (replayThrows != null) throw replayThrows;
+        return new Inspector.Result(true, "ok");
+    }
     @Override public void truncate(int keep) { while (steps.size() > keep) steps.remove(steps.size() - 1); }
     @Override public void remove(int index) { steps.remove(index); }
     @Override public String exportPackage() { return "com.example"; }

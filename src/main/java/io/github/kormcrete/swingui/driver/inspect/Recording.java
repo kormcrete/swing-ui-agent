@@ -424,14 +424,19 @@ final class Recording {
         home.bar(replayBar);
         // the flushed steps reach the recording before it is read
         sinkThread.submit(() -> {
-            if (reset) {
-                Inspector.Result r = resetApp();
-                if (!r.ok) {
-                    ended("✗ reset failed: " + r.line, -1, wasChecking, null);
-                    return;
+            try {
+                if (reset) {
+                    Inspector.Result r = resetApp();
+                    if (!r.ok) {
+                        ended("✗ reset failed: " + r.line, -1, wasChecking, null);
+                        return;
+                    }
                 }
+                runReplay(from, to, delay, wasChecking, after);
+            } catch (RuntimeException | Error e) {
+                // nobody reads this task's future: whatever broke, the replay ends and the app is the person's again
+                ended("✗ replay failed: " + e.getMessage(), -1, wasChecking, null);
             }
-            runReplay(from, to, delay, wasChecking, after);
         });
     }
 

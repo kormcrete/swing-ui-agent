@@ -591,6 +591,28 @@ class RecordingTest {
     }
 
     @Test
+    void aReplayThatBreaksEndsAndLetsEveryoneBackIn() throws Exception {
+        Recording r = loadAddToCart();
+        sink.replayThrows = new IllegalStateException("the session went away");
+        run(r, 0);
+        eventually(() -> !r.replaying ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(r.bar.text()).isEqualTo("✗ replay failed: the session went away");
+            assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(r.bar);
+            assertThat(scene.inspector.driving()).isNull();
+            assertThat(scene.inspector.engaged()).isNull();
+        });
+
+        // Run works again afterwards
+        sink.replayThrows = null;
+        sink.log.clear();
+        run(r, 0);
+        eventually(() -> !r.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+        SwingUtilities.invokeAndWait(() -> assertThat(r.bar.text()).isEqualTo("replayed steps 1-2: all passed"));
+    }
+
+    @Test
     void recordAfterALoadStartsFresh() throws Exception {
         Recording loaded = loadAddToCart();
         SwingUtilities.invokeAndWait(() -> loaded.bar.press("● Record"));
