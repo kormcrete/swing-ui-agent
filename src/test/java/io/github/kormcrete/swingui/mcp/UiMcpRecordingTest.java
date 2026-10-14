@@ -175,7 +175,82 @@ class UiMcpRecordingTest {
         for (String args : new String[] {"{}", "{\"op\":\"dance\"}"}) {
             DriverException e = catchThrowableOfType(() -> call(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).contains("start, stop");
+            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load");
+        }
+    }
+
+    @Test
+    void aStartWithoutResetDoesNotBeginAtAReset() throws Exception {
+        fakeReset();
+        JsonNode started = call("{\"op\":\"start\"}");
+        assertThat(started.path("fromReset").asBoolean()).isFalse();
+        assertThat(started.path("definedStart").asBoolean()).isFalse();
+        click("a");
+        // the app has a plugin: the warning must not say it has none
+        String warning = call("{\"op\":\"list\"}").path("startWarning").asText();
+        assertThat(warning).contains("did not begin at the app plugin's reset").doesNotContain("no app plugin");
+        call("{\"op\":\"stop\"}");
+        exportRefusedForNoReset();
+        // a passing replay from the reset shows that it starts there
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("fromReset").asBoolean()).isTrue();
+        assertThat(list.has("startWarning")).isFalse();
+        assertThat(session.exportFlow("second", quoted(dir), null, false)).contains("savedTo");
+    }
+
+    @Test
+    void withoutAPluginTheStartWarningSaysAResetOnlyClosesDialogs() throws Exception {
+        call("{\"op\":\"start\"}");
+        click("a");
+        assertThat(call("{\"op\":\"list\"}").path("startWarning").asText())
+                .contains("(no app plugin: a reset only closes dialogs)");
+    }
+
+    @Test
+    void listWaitReturnsAtOnceOnASessionResetsRecording() throws Exception {
+        // setUp's session reset started it: nobody but the agent could stop it
+        long t0 = System.currentTimeMillis();
+        JsonNode list = call("{\"op\":\"list\",\"wait\":5000}");
+        assertThat(System.currentTimeMillis() - t0).isLessThan(2000);
+        assertThat(list.path("state").asText()).isEqualTo("recording");
+    }
+
+    @Test
+    void aClearingExportIsRefusedWhileARecordingRuns() throws Exception {
+        Path tests = dir.resolve("tests");
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
+        try {
+            session.palette(true);
+            List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+            session.recordingView(hearing(heard));
+            fakeReset();
+            call("{\"op\":\"start\",\"reset\":true}");
+            click("a");
+            heard.clear();
+            List<org.assertj.core.api.ThrowableAssert.ThrowingCallable> clearing = java.util.Arrays.asList(
+                    () -> session.exportTest("ClearUiIT", null, "demo", true),
+                    () -> session.exportFlow("clear", quoted(dir), null, true),
+                    () -> call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"ClearUiIT\",\"package\":\"demo\",\"clear\":true}"),
+                    () -> call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"clear\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}"));
+            for (org.assertj.core.api.ThrowableAssert.ThrowingCallable export : clearing) {
+                DriverException e = catchThrowableOfType(export, DriverException.class);
+                assertThat(e.reason()).isEqualTo(Reason.BUSY);
+                assertThat(e.getMessage()).contains("a recording is running").contains("export without clear, or stop it first");
+            }
+            assertThat(Files.exists(tests.resolve("demo/ClearUiIT.java"))).isFalse();
+            assertThat(Files.exists(dir.resolve("clear.json"))).isFalse();
+            JsonNode list = call("{\"op\":\"list\"}");
+            assertThat(list.path("state").asText()).isEqualTo("recording");
+            assertThat(list.path("steps")).hasSize(1);
+            assertThat(heard).isEmpty();
+            // without clear it writes; once stopped, clear works too
+            assertThat(session.exportFlow("kept", quoted(dir), null, false)).contains("savedTo");
+            call("{\"op\":\"stop\"}");
+            assertThat(session.exportTest("ClearUiIT", null, "demo", true)).contains("savedTo");
+            assertThat(call("{\"op\":\"list\"}").path("steps")).isEmpty();
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
         }
     }
 
@@ -337,7 +412,12 @@ class UiMcpRecordingTest {
     // ---- editing --------------------------------------------------------------------------------
 
     private void four() throws Exception {
-        call("{\"op\":\"start\"}");
+        four(false);
+    }
+
+    /** A recording of four clicks the agent started, from a reset when {@code reset}. */
+    private void four(boolean reset) throws Exception {
+        call("{\"op\":\"start\",\"reset\":" + reset + "}");
         click("a");
         click("b");
         click("c");
@@ -939,12 +1019,101 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aRedoThatFailsOnARunningRecordingStopsIt() throws Exception {
+        fakeReset();
+        // an explicit recording the palette shares, and the implicit one of a session reset
+        for (boolean explicit : new boolean[] {true, false}) {
+            session.palette(explicit);
+            List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+            session.recordingView(hearing(heard));
+            if (explicit) call("{\"op\":\"start\",\"reset\":true}"); else session.startRecording(true);
+            click("a");
+            click("b");
+            click("c");
+            backend.verbs.calls.clear();
+            backend.verbs.during = () -> backend.verbs.failure =
+                    backend.verbs.calls.size() == 3 ? new DriverException(Reason.NOT_FOUND, "nothing matches") : null;
+            heard.clear();
+            JsonNode r = call("{\"op\":\"redo\",\"from\":3}");
+            backend.verbs.during = () -> { };
+            backend.verbs.failure = null;
+            assertThat(r.path("passed").asBoolean()).isFalse();
+            assertThat(r.path("recording").asBoolean()).isFalse();
+            assertThat(r.path("list").path("state").asText()).isEqualTo("stopped");
+            assertThat(call("{\"op\":\"list\"}").path("state").asText()).isEqualTo("stopped");
+            assertThat(session.recordingReason()).isNull();
+            if (explicit) assertThat(heard).endsWith("stopped"); else assertThat(heard).doesNotContain("stopped");
+            // the next step is on a screen the replay did not reach: it does not follow the cut
+            JsonNode ran = mapper.readTree(session.verb("click", mapper.readTree("{\"target\":{\"id\":\"z\"}}")));
+            assertThat(ran.has("recorded")).isFalse();
+            assertThat(ids(call("{\"op\":\"list\"}"))).isEqualTo("ab");
+        }
+    }
+
+    @Test
+    void aRedoThatBreaksOnARunningRecordingStopsIt() throws Exception {
+        // a harness error in a step, and a reset that throws before a redo from the first step
+        for (int from : new int[] {3, 1}) {
+            session.palette(true);
+            List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+            session.recordingView(hearing(heard));
+            fakeReset();
+            call("{\"op\":\"start\",\"reset\":true}");
+            click("a");
+            click("b");
+            click("c");
+            backend.verbs.calls.clear();
+            if (from == 1) {
+                session.appReset(new UiMcpSession.AppReset() {
+                    @Override public boolean defined() { return true; }
+                    @Override public void run() { throw new DriverException(Reason.CAPABILITY_GAP, "no reset today"); }
+                });
+            } else {
+                backend.verbs.during = () -> backend.verbs.failure =
+                        backend.verbs.calls.size() == 2 ? new DriverException(Reason.CAPABILITY_GAP, "no popup") : null;
+            }
+            heard.clear();
+            DriverException e = refused("{\"op\":\"redo\",\"from\":" + from + "}");
+            backend.verbs.during = () -> { };
+            backend.verbs.failure = null;
+            assertThat(e.getMessage()).contains(from == 1 ? "no reset today" : "no popup");
+            assertThat(call("{\"op\":\"list\"}").path("state").asText()).isEqualTo("stopped");
+            assertThat(session.recordingReason()).isNull();
+            assertThat(heard).endsWith("stopped");
+        }
+    }
+
+    @Test
+    void aPassingRedoBeginsTheRecordingAtTheReset() throws Exception {
+        // only the reset (from the first step), and the steps before the cut from the reset
+        for (int from : new int[] {1, 3}) {
+            fakeReset();
+            call("{\"op\":\"start\"}");
+            click("a");
+            click("b");
+            click("c");
+            call("{\"op\":\"stop\"}");
+            JsonNode before = call("{\"op\":\"list\"}");
+            assertThat(before.path("fromReset").asBoolean()).isFalse();
+            assertThat(before.path("definedStart").asBoolean()).isFalse();
+            JsonNode r = call("{\"op\":\"redo\",\"from\":" + from + "}");
+            assertThat(r.path("recording").asBoolean()).isTrue();
+            assertThat(r.path("list").path("fromReset").asBoolean()).isTrue();
+            assertThat(r.path("list").path("definedStart").asBoolean()).isTrue();
+            click("d");
+            call("{\"op\":\"stop\"}");
+            assertThat(session.exportFlow("redo-" + from, quoted(dir), null, false)).contains("savedTo");
+        }
+    }
+
+    @Test
     void exportWritesJavaOrAFlowAndKeepsTheRecording() throws Exception {
         Path tests = dir.resolve("tests");
         Path flows = dir.resolve("flows");
         System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
         try {
-            four();
+            fakeReset();
+            four(true);
             JsonNode java = call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"PlaceUiIT\",\"package\":\"demo\"}");
             assertThat(Files.exists(tests.resolve("demo/PlaceUiIT.java"))).isTrue();
             assertThat(java.path("steps").asInt()).isEqualTo(4);
@@ -954,6 +1123,7 @@ class UiMcpRecordingTest {
             assertThat(flow.path("steps").asInt()).isEqualTo(4);
             assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(4);
             assertThat(refused("{\"op\":\"export\",\"as\":\"xml\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+            call("{\"op\":\"stop\"}");
             call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"SecondUiIT\",\"package\":\"demo\",\"clear\":true}");
             assertThat(call("{\"op\":\"list\"}").path("steps")).isEmpty();
         } finally {
@@ -1054,7 +1224,8 @@ class UiMcpRecordingTest {
 
     private void clearedRecordingOfThree() throws Exception {
         fakeReset();
-        four();
+        four(true);
+        call("{\"op\":\"stop\"}");
         session.exportFlow("first", quoted(dir), null, true);
         for (int i = 1; i <= 3; i++) {
             call("{\"op\":\"insert\",\"at\":" + i + ",\"step\":{\"action\":\"click\",\"target\":{\"id\":\"s" + i + "\"}}}");

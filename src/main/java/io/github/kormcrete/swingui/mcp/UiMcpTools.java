@@ -153,7 +153,8 @@ public final class UiMcpTools {
                         .put("description", "Java package (default: the app plugin's export package, else 'recorded')");
                 p.putObject("clear").put("type", "boolean")
                         .put("description", "Empty the recording after exporting (default: true); reset before "
-                                + "recording the next test");
+                                + "recording the next test. Refused while a recording started by recording start or "
+                                + "the person's Record runs: export with clear false, or stop it first");
                 schema.putArray("required").add("class");
                 return tool(m, "export_test",
                         "Write the steps recorded since the last session reset as a JUnit @UiTest class under "
@@ -186,7 +187,8 @@ public final class UiMcpTools {
                 p.putObject("description").put("type", "string").put("description", "What the flow does, one sentence");
                 p.putObject("clear").put("type", "boolean").put("default", true)
                         .put("description", "Empty the recording after exporting (default: true); reset before "
-                                + "recording the next flow");
+                                + "recording the next flow. Refused while a recording started by recording start or "
+                                + "the person's Record runs: export with clear false, or stop it first");
                 schema.putArray("required").add("name");
                 return tool(m, "export_flow",
                         "Write the steps recorded since the last session reset as a flow file "
@@ -373,7 +375,8 @@ public final class UiMcpTools {
                 p.putObject("dir").put("type", "string").put("description", "export flow: the folder.");
                 p.putObject("description").put("type", "string").put("description", "export flow: what the flow does.");
                 p.putObject("clear").put("type", "boolean").put("description",
-                        "export: empty the recording afterwards (default false).");
+                        "export: empty the recording afterwards (default false); refused while a recording started "
+                        + "by start or the person's Record runs.");
                 p.putObject("path").put("type", "string").put("description", "load: a flow file.");
                 p.putObject("to").put("type", "integer").put("description",
                         "delete: last step of a range; move: the position the step has afterwards; replay: last step "
@@ -384,11 +387,14 @@ public final class UiMcpTools {
                 p.putObject("text").put("type", "string").put("description",
                         "edit: the new text of a type, expect, setClipboard or drop step.");
                 p.putObject("rev").put("type", "integer").put("description",
-                        "insert, delete, move, edit, undo: the rev of your last list; refused if the recording changed since.");
+                        "insert, delete, move, edit, undo, redo: the rev of your last list; refused if the recording "
+                        + "changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
-                        "start: reset the app first, as a test starts (default false).");
+                        "start: reset the app first, as a test starts (default false; without it an export waits "
+                        + "for a passing replay from step 1 or redo).");
                 p.putObject("wait").put("type", "integer").put("description",
-                        "list: milliseconds to wait until the recording stops (default 0: just read), at most 540000.");
+                        "list: milliseconds to wait until the recording stops (default 0: just read), at most "
+                        + "540000; a session reset's recording, which only you stop, is not waited for.");
                 schema.putArray("required").add("op");
                 return tool(m, "recording",
                         "The recording the agent and the person at the app make together (works with the palette on or "
@@ -396,8 +402,9 @@ public final class UiMcpTools {
                         + "the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the "
                         + "person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, "
                         + "and every step with n, author (person, agent, flow), line, java and its flow JSON; wait (ms) "
-                        + "waits until it stops. insert {at, step}: a step or check at position at, NOT run (marked edited until a "
-                        + "replay passes it). delete {n | from, to}. move {n, to}. edit {n, target | text | step}. undo: "
+                        + "waits until it stops (not for a session reset's). insert {at, step}: a step or check at "
+                        + "position at, NOT run (marked edited until a replay passes it). delete {n | from, to}. "
+                        + "move {n, to}. edit {n, target | text | step}. undo: "
                         + "takes back the last edit, by you or the person. Positions close up after a delete; pass rev "
                         + "from your last list so an edit is refused if the person changed the recording meanwhile. "
                         + "Every edit returns the new list. While one runs, session reset and test runs are refused; "

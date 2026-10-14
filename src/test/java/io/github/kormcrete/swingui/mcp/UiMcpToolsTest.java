@@ -482,6 +482,9 @@ class UiMcpToolsTest {
                 List<String> ops = new ArrayList<String>();
                 for (JsonNode n : t.descriptor(mapper).path("inputSchema").path("properties").path("op").path("enum")) ops.add(n.asText());
                 assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "undo", "replay", "redo", "export", "load");
+                JsonNode props = t.descriptor(mapper).path("inputSchema").path("properties");
+                assertThat(props.path("rev").path("description").asText()).contains("redo");
+                assertThat(props.path("wait").path("description").asText()).contains("session reset");
                 return;
             }
         }

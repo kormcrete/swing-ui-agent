@@ -109,6 +109,8 @@ class UiMcpExportFlowTest {
         // a loaded flow is stopped: the steps after it join through a redo (the palette's), which records on
         session.humanSink().resume();
         clickSave();
+        // a clearing export waits for the recording to stop (the person's Done)
+        session.humanSink().end();
         JsonNode out = export("save-order", true);
         assertThat(out.path("steps").asInt()).isEqualTo(2);
         assertThat(out.path("overwrote").asBoolean()).isTrue();
@@ -128,6 +130,7 @@ class UiMcpExportFlowTest {
         assertThat(FlowFiles.read(flows.resolve("save-order.json")).steps).hasSize(1);
         // the new file is now the one the recording came from
         clickSave();
+        session.humanSink().end();
         JsonNode again = export("save-order-2", true);
         assertThat(again.path("overwrote").asBoolean()).isTrue();
         assertThat(again.path("steps").asInt()).isEqualTo(3);

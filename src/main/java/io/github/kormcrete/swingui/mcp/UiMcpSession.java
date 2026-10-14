@@ -402,7 +402,7 @@ public class UiMcpSession {
                                 ? Inspector.AGENTS_RECORDING_RUNS : "a recording is running: Done ends it");
                     }
                     // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
-                    startRecording(false, RecordedStep.Author.PERSON, true);
+                    startRecording(true, false, RecordedStep.Author.PERSON, true);
                     return new Inspector.Result(true, "recording");
                 }
             }
@@ -1249,9 +1249,10 @@ public class UiMcpSession {
      * file already exists, so a hand-edited test is never overwritten. A step with no Java form never
      * reaches the recording ({@link #runAndRecord}), and a refusal leaves the recording as it was, so the
      * export can be retried with other names. {@code clear} empties the recording after a write; the next one
-     * needs a reset first.
+     * needs a reset first, and is refused while a recording someone started runs ({@link #refuseClearWhileRecording}).
      */
     public synchronized String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
+        if (clear) refuseClearWhileRecording();
         requireResetStart();
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
         ExportDefaults defaults = exportDefaults.get();
@@ -1270,7 +1271,7 @@ public class UiMcpSession {
 
         int steps = model.size();
         int fragile = fragileSteps();
-        String startWarning = definedStart ? null : startWarning(model.actions());
+        String startWarning = startWarning();
         if (clear) {
             model.clear();
             recordingFromReset = false;
@@ -1296,7 +1297,19 @@ public class UiMcpSession {
     private void requireResetStart() {
         if (!recordingFromReset) {
             throw new IllegalArgumentException("the recording did not begin at a session reset, where the test will "
-                    + "start: reset (session op reset), get to the starting screen, redo the steps, then export");
+                    + "start: reset (session op reset), get to the starting screen, redo the steps, then export; or "
+                    + "replay it from step 1 (recording replay) and export once that passes");
+        }
+    }
+
+    /**
+     * A clearing export would end a recording someone started on purpose (the person's ● Record, recording start)
+     * under them, as a session reset would: refused, nothing written.
+     */
+    private void refuseClearWhileRecording() {
+        String busy = recordingReason();
+        if (busy != null) {
+            throw new DriverException(Reason.BUSY, "busy: " + busy + "; export without clear, or stop it first");
         }
     }
 
@@ -1321,9 +1334,10 @@ public class UiMcpSession {
      * written ({@code FlowFolderNotWritable}); an existing file is refused unless it is the flow the recording came
      * from, which keeps its own {@code name} and, when no {@code description} is given, its description. A refusal
      * leaves the recording as it was. {@code clear} empties the recording; otherwise the written file becomes the one
-     * a further export saves over.
+     * a further export saves over; a clearing one is refused while a recording someone started runs.
      */
     public synchronized String exportFlow(String name, String dir, String description, boolean clear) throws Exception {
+        if (clear) refuseClearWhileRecording();
         requireResetStart();
         List<String> problems = new ArrayList<String>();
         if (model.size() == 0) problems.add("nothing was recorded");
@@ -1354,7 +1368,7 @@ public class UiMcpSession {
         String text = FlowFiles.write(flow);
         Files.write(file, text.getBytes(StandardCharsets.UTF_8));
 
-        String startWarning = definedStart ? null : startWarning(model.actions());
+        String startWarning = startWarning();
         ObjectNode result = mapper.createObjectNode();
         result.put("savedTo", file.toString());
         result.put("steps", model.size());
@@ -1551,19 +1565,21 @@ public class UiMcpSession {
      * state; otherwise only dialogs were closed and the app may be on any screen.
      */
     public synchronized void startRecording(boolean definedStart) {
-        startRecording(definedStart, RecordedStep.Author.AGENT, false);
+        startRecording(true, definedStart, RecordedStep.Author.AGENT, false);
         if (palette) view.replaced();
     }
 
     /**
-     * As {@link #startRecording(boolean)}, started by {@code by}. An {@code explicit} recording (recording start, the
-     * person's Record) blocks a reset, a test run and another start until it stops ({@link #recordingReason}) and, with
-     * the palette on, is shared with the person; the implicit one of a session reset blocks nothing.
+     * As {@link #startRecording(boolean)}, started by {@code by}; {@code fromReset}: it begins where an exported test
+     * starts (a reset ran, or the person's ● Record, whose screen counts as the start); without it an export waits for
+     * a passing replay or redo from the reset. An {@code explicit} recording (recording start, the person's Record)
+     * blocks a reset, a test run and another start until it stops ({@link #recordingReason}) and, with the palette on,
+     * is shared with the person; the implicit one of a session reset blocks nothing.
      */
-    synchronized void startRecording(boolean definedStart, RecordedStep.Author by, boolean explicit) {
+    synchronized void startRecording(boolean fromReset, boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
-        recordingFromReset = true;
+        recordingFromReset = fromReset;
         this.definedStart = definedStart;
         forgetLoadedFlow();
         publish();
@@ -1588,7 +1604,7 @@ public class UiMcpSession {
      */
     public String recording(JsonNode args) throws Exception {
         String op = text(args, "op");
-        if (op == null) throw new DriverException(Reason.BAD_INPUT, "recording needs 'op': start, stop or list");
+        if (op == null) throw new DriverException(Reason.BAD_INPUT, "recording needs 'op': " + OPS);
         if (EDIT_OPS.contains(op)) refuseWhileReplaying();
         switch (op) {
             case "start": {
@@ -1596,7 +1612,8 @@ public class UiMcpSession {
                 if (busy == null) busy = Inspector.engagedReason();
                 if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy + "; stop it first");
                 boolean defined = false;
-                if (args.path("reset").asBoolean(false)) {
+                boolean reset = args.path("reset").asBoolean(false);
+                if (reset) {
                     Inspector.agentActing(true);
                     try {
                         appReset.run();
@@ -1606,7 +1623,7 @@ public class UiMcpSession {
                     defined = appReset.defined();
                 }
                 synchronized (this) {
-                    startRecording(defined, RecordedStep.Author.AGENT, true);
+                    startRecording(reset, defined, RecordedStep.Author.AGENT, true);
                     if (model.shared()) view.agentStarted();
                 }
                 return published.json;
@@ -1630,7 +1647,8 @@ public class UiMcpSession {
                 long deadline = System.currentTimeMillis() + waitMs;
                 synchronized (stopSignal) {
                     long left;
-                    while (published.recording && (left = deadline - System.currentTimeMillis()) > 0) {
+                    // only an explicit recording (reason set) is waited for: a session reset's has nobody else to stop it
+                    while (published.reason != null && (left = deadline - System.currentTimeMillis()) > 0) {
                         stopSignal.wait(left);
                     }
                 }
@@ -1679,10 +1697,12 @@ public class UiMcpSession {
                 throw new DriverException(Reason.BAD_INPUT, "group (steps under one sentence) comes in a later version "
                         + "of swing-ui-agent, with sentences");
             default:
-                throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op
-                        + "' (start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load)");
+                throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op + "' (" + OPS + ")");
         }
     }
+
+    /** Every op of the recording tool, as its errors list them. */
+    private static final String OPS = "start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load";
 
     private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
             java.util.Arrays.asList("insert", "delete", "move", "edit", "undo"));
@@ -1842,9 +1862,16 @@ public class UiMcpSession {
             throw new DriverException(Reason.BAD_INPUT, "no step " + from + " to record from (the recording has " + size
                     + " steps; " + (size + 1) + " continues it)");
         }
+        boolean wasRecording = model.state() == RecordingModel.State.RECORDING;
         String cut = model.cutFrom(from, RecordedStep.Author.AGENT);
         publish(cut == null ? null : "the agent " + cut);
-        ObjectNode r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
+        ObjectNode r = null;
+        try {
+            r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
+        } finally {
+            // as the palette's redo: a running recording stops, its next steps would be on a screen the replay missed
+            if (wasRecording && (r == null || !r.path("passed").asBoolean())) stopAfterFailedRedo();
+        }
         boolean passed = r.path("passed").asBoolean();
         if (passed) {
             beginsAtReset(); // the steps before the cut just ran from the reset; the later ones follow live
@@ -1856,6 +1883,14 @@ public class UiMcpSession {
         r.put("rev", model.rev());
         r.set("list", readTree(published.json));
         return r.toString();
+    }
+
+    /** A redo that failed or broke while the recording ran stops it, like the palette's (and its Done). */
+    private void stopAfterFailedRedo() {
+        boolean shared = model.shared();
+        model.stop();
+        publish();
+        if (shared) view.agentStopped();
     }
 
     private void beginsAtReset() {
@@ -2063,7 +2098,7 @@ public class UiMcpSession {
             try {
                 java = JavaTestWriter.lines(actions);
                 if (java.size() != actions.size()) java = null;
-            } catch (RuntimeException e) {
+            } catch (ExportRefused e) {
                 // the recording as a whole has no Java form (a step the writer refuses): list the steps without it
                 java = null;
             }
@@ -2098,7 +2133,7 @@ public class UiMcpSession {
             ArrayNode lines = r.putArray("notRecorded");
             for (String line : snap.notRecorded) lines.add(line);
         }
-        String warning = definedStart ? null : startWarning(actions);
+        String warning = definedStart ? null : startWarning(actions, appReset.defined());
         if (warning != null) r.put("startWarning", warning);
         boolean recording = snap.state == RecordingModel.State.RECORDING;
         String reason = null;
@@ -2123,17 +2158,25 @@ public class UiMcpSession {
         loadedDescription = null;
     }
 
+    /** {@link #startWarning(List, boolean)} for the recording, null when it began at a defined start. */
+    private String startWarning() {
+        return definedStart ? null : startWarning(model.actions(), appReset.defined());
+    }
+
     /**
      * Without a defined start state the test must get to its starting screen from anywhere: null when its first step
-     * (after a leading loginAs) is navigate, menu or press, else why that step may not be there.
+     * (after a leading loginAs) is navigate, menu or press, else why that step may not be there. {@code plugin}: an app
+     * plugin could reset to a defined state, but the recording did not begin at its reset.
      */
-    static String startWarning(List<Action> steps) {
+    static String startWarning(List<Action> steps, boolean plugin) {
         for (Action a : steps) {
             if (a instanceof LoginAsAction) continue;
             if (a instanceof NavigateAction || a instanceof MenuVerb || a instanceof PressVerb) return null;
-            return "the test begins with '" + a.describe() + "', which works only on the screen the app happens to "
-                    + "show after a reset (no app plugin: a reset only closes dialogs); begin with a menu, a key "
-                    + "shortcut or navigate so the test gets to its own starting screen";
+            String where = plugin
+                    ? "the screen the recording began on (it did not begin at the app plugin's reset)"
+                    : "the screen the app happens to show after a reset (no app plugin: a reset only closes dialogs)";
+            return "the test begins with '" + a.describe() + "', which works only on " + where + "; begin with a "
+                    + "menu, a key shortcut or navigate so the test gets to its own starting screen";
         }
         return null;
     }
