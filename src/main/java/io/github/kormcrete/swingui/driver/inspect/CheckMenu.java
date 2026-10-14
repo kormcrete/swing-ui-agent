@@ -1,8 +1,8 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
-import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
+import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
 import javax.swing.AbstractButton;
 import javax.swing.JCheckBox;
@@ -16,9 +16,9 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JToggleButton;
 import javax.swing.text.JTextComponent;
-import java.awt.Graphics;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.Graphics;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,12 +34,6 @@ import java.util.function.BiConsumer;
  * express yet is listed greyed, so the gap is visible. EDT.
  */
 final class CheckMenu extends JPopupMenu {
-
-/** Not in a screenshot: the person's palette is never in an image. */
-@Override
-public void paint(Graphics g) {
-    if (!Screenshots.capturing()) super.paint(g);
-}
 
     static final class Choice {
         final String label;
@@ -155,5 +149,11 @@ public void paint(Graphics g) {
 
     private static List<String> list(String... s) {
         return s.length == 1 ? Collections.singletonList(s[0]) : Arrays.asList(s);
+    }
+
+    /** Not in a screenshot: a capture leaves the palette out. */
+    @Override
+    public void paint(Graphics g) {
+        if (!Screenshots.capturing()) super.paint(g);
     }
 }

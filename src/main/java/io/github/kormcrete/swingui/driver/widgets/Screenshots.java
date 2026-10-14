@@ -37,8 +37,8 @@ public final class Screenshots {
     private Screenshots() {}
 
     /**
-     * EDT: true while a capture paints; the inspector's own components paint nothing then, so the person's
-     * palette and boxes are never in an image.
+     * True while a capture paints (read and written on the EDT only); the inspector's own
+     * components paint nothing then, so the person's palette and boxes are never in an image.
      */
     public static boolean capturing() {
         return capturing;
