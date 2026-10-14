@@ -50,8 +50,10 @@ $UI export_test '{"class":"PlaceOrderUiIT"}'
 ```
 
 The quickest way to see all of it is [Order Desk](https://github.com/kormcrete/swing-order-desk-demo), a demo app
-made to be driven. Open it in IntelliJ: its run configurations start the app with the agent, run its UI tests, and
-start it with the palette for recording. See
+made to be driven. To just try it,
+[download it](https://kormcrete.github.io/swing-ui-agent/demo/tour/#download-and-run-it) for macOS or Windows (Java and
+the agent built in, nothing to build), connect your agent and ask it to place an order. To record tests, open its
+source in IntelliJ: its run configurations start the app with the agent and the palette, and run its UI tests. See
 [Record and run a UI test in IntelliJ](https://kormcrete.github.io/swing-ui-agent/start/intellij/) and
 [with Claude Code](https://kormcrete.github.io/swing-ui-agent/start/claude-code/).
 

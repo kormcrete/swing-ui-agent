@@ -11,9 +11,12 @@ hero:
     - text: Get started
       link: /swing-ui-agent/start/why/
       icon: right-arrow
+    - text: Download the demo app
+      link: /swing-ui-agent/#try-it-in-two-minutes
+      variant: secondary
     - text: See the demo
       link: /swing-ui-agent/demo/tour/
-      variant: secondary
+      variant: minimal
     - text: GitHub
       link: https://github.com/kormcrete/swing-ui-agent
       icon: external
@@ -21,6 +24,28 @@ hero:
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Try it in two minutes
+
+Download Order Desk, a small Swing order-entry app with Java and the agent built in. Nothing to build.
+
+1. **Download** it for
+   [Mac with Apple Silicon](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-arm64.dmg),
+   [Mac with Intel](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-x64.dmg)
+   or [Windows](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-windows-x64.zip),
+   and open it. The first launch takes one extra step:
+   [first launch](/swing-ui-agent/demo/tour/#download-and-run-it).
+2. **Connect your agent** while the app runs:
+
+   ```sh
+   claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
+   ```
+
+3. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
+   tell me the order number."*
+
+Then [take the tour](/swing-ui-agent/demo/tour/), or see how the same steps
+[become a test](/swing-ui-agent/start/record/).
 
 ## Two ways to write a test
 

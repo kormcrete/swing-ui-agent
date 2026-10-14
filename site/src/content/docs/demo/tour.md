@@ -16,9 +16,44 @@ MigLayout, Apache-2.0).
 
 ![Order Desk: the Orders tab with twelve orders, search and a status filter](../../../assets/order-desk/01-orders-light.png)
 
-## Get it and start it
+## Download and run it
 
-swing-ui-agent is not on Maven Central yet, so you build both projects.
+Order Desk is published ready to run, with Java (Zulu JRE 8) and the agent built in: it starts with the agent on port
+8770.
+
+| Your computer | Download |
+|---|---|
+| Mac with Apple Silicon (M1 and later) | [kormcrete-order-desk-macos-arm64.dmg](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-arm64.dmg) |
+| Mac with Intel | [kormcrete-order-desk-macos-x64.dmg](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-x64.dmg) |
+| Windows (x64) | [kormcrete-order-desk-windows-x64.zip](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-windows-x64.zip) |
+
+The downloads are not signed yet, so the first launch takes one extra step:
+
+- **macOS:** open the `.dmg` and drag **Kormcrete Order Desk** to Applications. The app is not notarized by Apple yet,
+  so macOS refuses to open it ("Apple could not verify…"). Clear the download mark once, in Terminal, then open it:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Kormcrete Order Desk.app"
+  ```
+
+- **Windows:** unzip, open the **Kormcrete Order Desk** folder and run **Kormcrete Order Desk.exe**. If SmartScreen
+  stops it, click **More info → Run anyway**.
+
+Then connect your coding agent while the app runs:
+
+```bash
+claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
+```
+
+Other clients: [MCP clients](/swing-ui-agent/agents/mcp-clients/). If your agent cannot connect, another app may be
+using port 8770; the agent's log says so: `~/Library/Logs/Kormcrete Order Desk/agent.log` (macOS),
+`%LOCALAPPDATA%\Kormcrete Order Desk\agent.log` (Windows). All releases:
+[swing-order-desk-demo releases](https://github.com/kormcrete/swing-order-desk-demo/releases).
+
+## Build it from source
+
+To record tests into the project, or change the app, build it yourself. swing-ui-agent is not on Maven Central yet, so
+you build both projects.
 
 1. Clone both repositories side by side and install swing-ui-agent:
 
