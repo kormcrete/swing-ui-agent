@@ -126,11 +126,11 @@ class, runs it from another screen and fixes the locators it flags, as in
 
 ```sh
 UI="java -jar target/swing-ui-agent-agent.jar --port 8770"
-$UI inspect '{"op":"recording","wait":540000}'       # returns at your Done: outcome done, with the steps
+$UI recording '{"op":"list","wait":540000}'          # returns at your Done: outcome done, with the steps
 $UI export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.orderdesk"}'
 ```
 
-Only you start and end a recording; the agent only reads it.
+You start and end a recording, or ask your agent to.
 
 Either way, run the new test once from another screen before you commit it. See
 [Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/) for that loop in the IDE.

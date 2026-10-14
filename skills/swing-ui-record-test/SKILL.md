@@ -62,7 +62,7 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
    $UI expect '{"target":{"role":"table","name":"Orders"},"rows":{"op":"gte","value":1}}'
    $UI expect '{"target":{"role":"button","name":"Save"},"state":["!disabled"]}'
    ```
-6. **A recorded step was wrong?** Do not patch it with more steps. Reset and redo from step 3.
+6. **A recorded step was wrong?** Do not patch it with more steps. `recording redo {"from":3}`.
 7. **Export, then verify** (below).
 
 ## When a person records with you
@@ -74,12 +74,14 @@ you instead of describing:
   Customer field?"}'` boxes every match in the app; the answer names the one they confirmed and its locator
   (`outcome` `confirmed` / `rejected`). `{"op":"pick","question":"Click the field that holds the customer"}` returns the
   locator of what they click.
-- **They record, you export.** The person presses ● Record in the palette in the app window, uses the app (every step
-  is recorded as if you had run it), adds checks in Check mode, replays or fixes steps, and presses Done. You never
-  start or end it: `$UI inspect '{"op":"recording","wait":540000}'` waits for their Done (`outcome` `done`, or
-  `recording` while they are still at it, `idle` before they started) and returns the recording. Then export as below
-  and verify as always: their steps were recorded, not re-run, until a replay. While they record, `session reset` is
-  refused (it would wipe their recording).
+- **They record, you export.** The person presses ● Record in the palette in the app window (or you start it when
+  they ask: `$UI recording '{"op":"start","reset":true}'`), uses the app (every step is recorded as if you had run
+  it), adds checks in Check mode, replays or fixes steps, and presses Done. `$UI recording '{"op":"list","wait":540000}'`
+  waits for their Done and returns the recording. Edit it with `insert`, `delete`, `move` and `edit`, passing the
+  `rev` from your last `list` so a change made meanwhile refuses yours; `undo` takes back the last edit, and
+  `replay` / `redo {"from":3}` run it again. Export with `recording export` or `export_test` / `export_flow`, then
+  verify as always: their steps were recorded, not re-run, until a replay. While a recording runs, `session reset`
+  is refused: stop it first.
 - **Or they export.** After Done the palette offers Export…: the person names the class and package and the file is
   written without you (the recording stays). When they ask you to check it, run it from another screen and fix what
   it flags, as in "Export, then verify".
