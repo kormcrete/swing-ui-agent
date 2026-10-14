@@ -355,12 +355,29 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
-                        .add("insert").add("delete").add("move").add("edit").add("undo");
+                        .add("insert").add("delete").add("move").add("edit").add("undo").add("replay").add("redo")
+                        .add("export").add("load");
                 p.putObject("at").put("type", "integer").put("description", "insert: the position the step gets (1 to size+1).");
                 p.putObject("n").put("type", "integer").put("description", "delete, move, edit: the step's position (1-based).");
-                p.putObject("from").put("type", "integer").put("description", "delete: first step of a range.");
+                p.putObject("from").put("type", "integer").put("description",
+                        "delete: first step of a range; replay: first step (default 1); redo: the step to record again.");
+                p.putObject("speed").put("type", "string").put("description",
+                        "replay: pauses for a person watching.").putArray("enum").add("fast").add("normal").add("slow");
+                p.putObject("as").put("type", "string").put("description", "export: the format.")
+                        .putArray("enum").add("java").add("flow");
+                p.putObject("class").put("type", "string").put("description", "export java: the test class name.");
+                p.putObject("method").put("type", "string").put("description", "export java: the test method (default recorded).");
+                p.putObject("package").put("type", "string").put("description", "export java: the package.");
+                p.putObject("name").put("type", "string").put("description",
+                        "export flow: the file name without .json; load: a flow in the flows folder.");
+                p.putObject("dir").put("type", "string").put("description", "export flow: the folder.");
+                p.putObject("description").put("type", "string").put("description", "export flow: what the flow does.");
+                p.putObject("clear").put("type", "boolean").put("description",
+                        "export: empty the recording afterwards (default false).");
+                p.putObject("path").put("type", "string").put("description", "load: a flow file.");
                 p.putObject("to").put("type", "integer").put("description",
-                        "delete: last step of a range; move: the position the step has afterwards.");
+                        "delete: last step of a range; move: the position the step has afterwards; replay: last step "
+                        + "(default: the last).");
                 p.putObject("step").put("type", "object").put("description",
                         "insert, edit: a flow step as do_action takes it.");
                 p.set("target", LocatorSchema.of(m));
@@ -384,7 +401,12 @@ public final class UiMcpTools {
                         + "takes back the last edit, by you or the person. Positions close up after a delete; pass rev "
                         + "from your last list so an edit is refused if the person changed the recording meanwhile. "
                         + "Every edit returns the new list. While one runs, session reset and test runs are refused; "
-                        + "stop it first.",
+                        + "stop it first. replay {from?, to?, speed?}: runs the steps again without recording them; from "
+                        + "step 1 it resets the app first, as the exported test starts. redo {from}: cuts the steps from "
+                        + "there, replays up to it from a reset, and records on (from = the number after the last step "
+                        + "continues a stopped recording). export {as: java|flow, ...}: as export_test / export_flow, but "
+                        + "keeps the recording. load {name | path}: a flow file becomes the recording (stopped; redo or "
+                        + "insert to add to it).",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception { return session.recording(args); }

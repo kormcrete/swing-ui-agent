@@ -423,6 +423,7 @@ public class UiMcpSession {
 
             @Override
             public void truncate(int keep) {
+                if (agentReplaying != null) return; // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
                     model.cutFrom(Math.max(0, keep) + 1, RecordedStep.Author.PERSON);
                     publish();
@@ -431,6 +432,7 @@ public class UiMcpSession {
 
             @Override
             public void resume() {
+                if (agentReplaying != null) return;
                 synchronized (UiMcpSession.this) {
                     if (model.state() != RecordingModel.State.STOPPED) return;
                     model.resume(RecordedStep.Author.PERSON, true, palette, System.currentTimeMillis());
@@ -440,6 +442,7 @@ public class UiMcpSession {
 
             @Override
             public void remove(int index) {
+                if (agentReplaying != null) return;
                 synchronized (UiMcpSession.this) {
                     if (index >= 0 && index < model.size()) model.delete(index + 1, index + 1, RecordedStep.Author.PERSON);
                     publish();
@@ -1280,18 +1283,10 @@ public class UiMcpSession {
         Flow flow;
         Path file = null;
         if (name != null && !name.isNull()) {
-            file = FlowFiles.file(flowsDir, name.asText()).toAbsolutePath().normalize();
-            if (!Files.isRegularFile(file)) {
-                List<String> there = new ArrayList<String>();
-                for (Path p : FlowFiles.list(flowsDir)) {
-                    String base = p.getFileName().toString();
-                    there.add(base.endsWith(FlowFiles.SUFFIX) ? base.substring(0, base.length() - FlowFiles.SUFFIX.length()) : base);
-                }
-                throw new DriverException(Reason.BAD_INPUT, "no flow '" + name.asText() + "' in " + flowsDir + "; the flows there: " + there);
-            }
+            file = flowFile(name.asText(), null);
             flow = FlowFiles.read(file);
         } else if (path != null && !path.isNull()) {
-            file = Paths.get("").toAbsolutePath().resolve(path.asText()).normalize();
+            file = flowFile(null, path.asText());
             flow = FlowFiles.read(file);
         } else {
             // the file's JSON object, or that JSON as text (agents often send it quoted)
@@ -1330,6 +1325,23 @@ public class UiMcpSession {
         for (StepResult s : result.steps) steps.add(stepJson(s));
         r.put("report", FlowReport.format(flow, result));
         return r.toString();
+    }
+
+    /** The flow file {@code name} (in the flows folder, which must have it) or {@code path} (relative to the working directory) names. */
+    private Path flowFile(String name, String path) {
+        if (name != null) {
+            Path file = FlowFiles.file(flowsDir, name).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(file)) {
+                List<String> there = new ArrayList<String>();
+                for (Path p : FlowFiles.list(flowsDir)) {
+                    String base = p.getFileName().toString();
+                    there.add(base.endsWith(FlowFiles.SUFFIX) ? base.substring(0, base.length() - FlowFiles.SUFFIX.length()) : base);
+                }
+                throw new DriverException(Reason.BAD_INPUT, "no flow '" + name + "' in " + flowsDir + "; the flows there: " + there);
+            }
+            return file;
+        }
+        return Paths.get("").toAbsolutePath().resolve(path).normalize();
     }
 
     private ObjectNode stepJson(StepResult s) {
@@ -1463,6 +1475,7 @@ public class UiMcpSession {
     public String recording(JsonNode args) throws Exception {
         String op = text(args, "op");
         if (op == null) throw new DriverException(Reason.BAD_INPUT, "recording needs 'op': start, stop or list");
+        if (EDIT_OPS.contains(op)) refuseWhileReplaying();
         switch (op) {
             case "start": {
                 String busy = recordingReason();
@@ -1526,13 +1539,222 @@ public class UiMcpSession {
             }
             case "undo":
                 return recordingUndo(integer(args, "rev"));
+            case "replay":
+                return recordingReplay(integer(args, "from"), integer(args, "to"), text(args, "speed"));
+            case "redo": {
+                Integer from = integer(args, "from");
+                if (from == null) throw new DriverException(Reason.BAD_INPUT, "redo needs 'from' (the step to record again)");
+                return recordingRedo(from, integer(args, "rev"));
+            }
+            case "export":
+                return recordingExport(args);
+            case "load": {
+                String name = text(args, "name");
+                String path = text(args, "path");
+                if ((name == null) == (path == null)) {
+                    throw new DriverException(Reason.BAD_INPUT, "load takes one of 'name' (a flow in the flows folder) or 'path'");
+                }
+                return recordingLoad(name, path);
+            }
             case "group":
                 throw new DriverException(Reason.BAD_INPUT, "group (steps under one sentence) comes in a later version "
                         + "of swing-ui-agent, with sentences");
             default:
                 throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op
-                        + "' (start, stop, list, insert, delete, move, edit, undo)");
+                        + "' (start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load)");
         }
+    }
+
+    private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
+            java.util.Arrays.asList("insert", "delete", "move", "edit", "undo"));
+
+    /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
+    private volatile String agentReplaying;
+
+    /** The agent's edits wait for no replay: they are refused, without taking the session's lock the replay holds. */
+    private void refuseWhileReplaying() {
+        String replaying = agentReplaying;
+        if (replaying != null) {
+            throw new DriverException(Reason.BUSY, "busy: the agent is replaying the recording (" + replaying + ")");
+        }
+    }
+
+    /** Pause before each action group, in milliseconds, for a person watching. */
+    private static long pauseFor(String speed) {
+        if (speed == null || speed.equals("fast")) return 0L;
+        if (speed.equals("normal")) return 700L;
+        if (speed.equals("slow")) return 1500L;
+        if (speed.startsWith("step")) {
+            throw new DriverException(Reason.BAD_INPUT,
+                    "step by step is the person's: Step by step in the palette's Steps panel");
+        }
+        throw new DriverException(Reason.BAD_INPUT, "unknown speed '" + speed + "' (fast, normal, slow)");
+    }
+
+    /**
+     * Runs steps {@code from} to {@code to} (default: all) again on the live app without recording them. From step 1 the
+     * app is reset first, as the exported test starts. Stops at the first failing step. A step that passes no longer
+     * counts as edited. Result: {@code passed, ran, total, reset, rev, steps:[{n, line, passed, ms, message?, reason?}]}.
+     */
+    public synchronized String recordingReplay(Integer from, Integer to, String speed) {
+        long pause = pauseFor(speed);
+        int size = model.size();
+        ObjectNode r;
+        if (size == 0) {
+            r = mapper.createObjectNode();
+            r.put("passed", true);
+            r.put("ran", 0);
+            r.put("total", 0);
+            r.put("reset", false);
+            r.put("message", "nothing to replay");
+            r.putArray("steps");
+        } else {
+            int a = from == null ? 1 : from;
+            int b = to == null ? size : to;
+            model.at(a);
+            model.at(b);
+            if (b < a) throw new DriverException(Reason.BAD_INPUT, "replay: 'to' (" + b + ") is before 'from' (" + a + ")");
+            r = replay(a, b, pause);
+        }
+        r.put("rev", model.rev());
+        return r.toString();
+    }
+
+    /** Replays steps {@code a} to {@code b} under the agent's hold (see {@link #agentReplaying}); resets first from step 1. */
+    private ObjectNode replay(int a, int b, long pause) {
+        boolean reset = a == 1;
+        ObjectNode r = mapper.createObjectNode();
+        ArrayNode results = mapper.createArrayNode();
+        agentReplaying = "steps " + a + "-" + b;
+        Inspector.agentActing(true);
+        try {
+            if (reset) {
+                appReset.run();
+                recordingFromReset = true;
+                definedStart = appReset.defined();
+                publish();
+            }
+            boolean passed = true;
+            int ran = 0;
+            for (int n = a; n <= b; n++) {
+                RecordedStep recorded = model.at(n);
+                if (pause > 0 && (n == a || !isCheck(recorded.action))) sleep(pause);
+                JsonNode json = stripNulls(mapper.valueToTree(recorded.action));
+                ObjectNode step;
+                try {
+                    step = runAndRecord(json, false, RecordedStep.Author.AGENT);
+                } catch (DriverException e) {
+                    throw new DriverException(e.reason(), "step " + n + ": "
+                            + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
+                }
+                ran++;
+                boolean ok = step.path("passed").asBoolean();
+                ObjectNode o = results.addObject();
+                o.put("n", n);
+                o.put("line", recorded.action.describe());
+                o.put("passed", ok);
+                o.put("ms", step.path("ms").asLong());
+                if (!ok) {
+                    o.put("message", step.path("message").asText(""));
+                    if (step.has("reason")) o.put("reason", step.path("reason").asText());
+                    passed = false;
+                    break;
+                }
+                model.markReplayed(recorded.id);
+                publish();
+            }
+            r.put("passed", passed);
+            r.put("ran", ran);
+            r.put("total", b - a + 1);
+            r.put("reset", reset);
+            r.set("steps", results);
+            return r;
+        } finally {
+            Inspector.agentActing(false);
+            agentReplaying = null;
+        }
+    }
+
+    private static boolean isCheck(Action a) {
+        return a.describe().startsWith("expect(");
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Cuts the steps from {@code from}, replays the ones before it from a reset and, when they pass, records on (the
+     * recording is running again, started by the agent). {@code from} may be the number after the last step: nothing is
+     * cut and a stopped recording continues. When the replay fails the cut stays (undo brings it back).
+     */
+    public synchronized String recordingRedo(int from, Integer rev) {
+        checkRev(rev);
+        int size = model.size();
+        if (from < 1 || from > size + 1) {
+            throw new DriverException(Reason.BAD_INPUT, "no step " + from + " to record from (the recording has " + size
+                    + " steps; " + (size + 1) + " continues it)");
+        }
+        model.cutFrom(from, RecordedStep.Author.AGENT);
+        publish();
+        ObjectNode r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
+        boolean passed = r.path("passed").asBoolean();
+        if (passed) {
+            model.resume(RecordedStep.Author.AGENT, true, palette, System.currentTimeMillis());
+        }
+        publish();
+        r.put("recording", passed);
+        r.put("rev", model.rev());
+        r.set("list", readTree(published.json));
+        return r.toString();
+    }
+
+    /** A redo from the first step has nothing to replay: only the reset. */
+    private ObjectNode resetOnly() {
+        agentReplaying = "reset";
+        Inspector.agentActing(true);
+        try {
+            appReset.run();
+            recordingFromReset = true;
+            definedStart = appReset.defined();
+        } finally {
+            Inspector.agentActing(false);
+            agentReplaying = null;
+        }
+        ObjectNode r = mapper.createObjectNode();
+        r.put("passed", true);
+        r.put("ran", 0);
+        r.put("total", 0);
+        r.put("reset", true);
+        r.putArray("steps");
+        return r;
+    }
+
+    /** As export_test / export_flow ({@code as} java | flow), but the recording stays unless {@code clear}. */
+    public String recordingExport(JsonNode args) throws Exception {
+        String as = text(args, "as");
+        boolean clear = args.path("clear").asBoolean(false);
+        if ("java".equals(as)) {
+            return exportTest(args.path("class").asText(""), args.path("method").asText(""),
+                    args.path("package").asText(""), clear);
+        }
+        if ("flow".equals(as)) {
+            return exportFlow(args.path("name").asText(""), args.path("dir").asText(""),
+                    args.path("description").asText(""), clear);
+        }
+        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': java (class, method?, package?) or flow (name, dir?, description?)");
+    }
+
+    /** Makes the flow file the recording (stopped); refused while a recording runs or a person is busy. */
+    public synchronized String recordingLoad(String name, String path) {
+        String busy = personBusy.get();
+        if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
+        loadFlow(flowFile(name, path));
+        return published.json;
     }
 
     /** Refuses an edit made on a recording that changed since the revision the caller listed. */

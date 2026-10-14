@@ -481,7 +481,7 @@ class UiMcpToolsTest {
                 assertThat(t.descriptor(mapper).path("annotations").path("readOnlyHint").asBoolean()).isFalse();
                 List<String> ops = new ArrayList<String>();
                 for (JsonNode n : t.descriptor(mapper).path("inputSchema").path("properties").path("op").path("enum")) ops.add(n.asText());
-                assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "undo");
+                assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "undo", "replay", "redo", "export", "load");
                 return;
             }
         }

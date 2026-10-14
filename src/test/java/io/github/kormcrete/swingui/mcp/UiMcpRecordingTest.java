@@ -562,4 +562,327 @@ class UiMcpRecordingTest {
         assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the cut from step 2 (redo) by the person");
         assertThat(sink.steps()).hasSize(3);
     }
+
+    // ---- replay, redo, export, load -------------------------------------------------------------
+
+    private void fakeReset() {
+        session.appReset(new UiMcpSession.AppReset() {
+            @Override public boolean defined() { return true; }
+            @Override public void run() { backend.verbs.calls.add("reset"); }
+        });
+    }
+
+    @Test
+    void replayRunsEveryStepFromAResetAndRecordsNothing() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"x\"}}}");
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"replay\"}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("ran").asInt()).isEqualTo(5);
+        assertThat(r.path("total").asInt()).isEqualTo(5);
+        assertThat(r.path("reset").asBoolean()).isTrue();
+        assertThat(backend.verbs.calls).hasSize(6);
+        assertThat(backend.verbs.calls.get(0)).isEqualTo("reset");
+        assertThat(r.path("steps")).hasSize(5);
+        assertThat(r.path("steps").get(1).path("n").asInt()).isEqualTo(2);
+        assertThat(r.path("steps").get(1).path("line").asText()).startsWith("click(");
+        assertThat(r.path("steps").get(1).path("passed").asBoolean()).isTrue();
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("steps")).hasSize(5);
+        assertThat(list.path("steps").get(1).has("edited")).isFalse();
+        assertThat(list.path("rev").asInt()).isEqualTo(r.path("rev").asInt());
+    }
+
+    @Test
+    void replayFromALaterStepDoesNotReset() throws Exception {
+        fakeReset();
+        four();
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"replay\",\"from\":2,\"to\":3}");
+        assertThat(r.path("reset").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
+        assertThat(r.path("total").asInt()).isEqualTo(2);
+        assertThat(backend.verbs.calls).hasSize(2).doesNotContain("reset");
+        assertThat(refused("{\"op\":\"replay\",\"from\":2,\"to\":9}").getMessage()).contains("no step 9");
+    }
+
+    @Test
+    void aFailingStepEndsTheReplayAndSaysWhich() throws Exception {
+        fakeReset();
+        four();
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> backend.verbs.failure =
+                backend.verbs.calls.size() == 3 ? new DriverException(Reason.NOT_FOUND, "nothing matches") : null;
+        JsonNode r = call("{\"op\":\"replay\"}");
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
+        assertThat(r.path("total").asInt()).isEqualTo(4);
+        assertThat(r.path("steps")).hasSize(2);
+        assertThat(r.path("steps").get(1).path("n").asInt()).isEqualTo(2);
+        assertThat(r.path("steps").get(1).path("passed").asBoolean()).isFalse();
+        assertThat(r.path("steps").get(1).path("reason").asText()).isEqualTo("NOT_FOUND");
+        assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(4);
+    }
+
+    @Test
+    void aHarnessErrorInAReplayNamesTheStep() throws Exception {
+        fakeReset();
+        four();
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> backend.verbs.failure =
+                backend.verbs.calls.size() == 3 ? new DriverException(Reason.CAPABILITY_GAP, "no popup") : null;
+        DriverException e = refused("{\"op\":\"replay\"}");
+        assertThat(e.getMessage()).contains("step 2").contains("no popup");
+    }
+
+    @Test
+    void stepByStepIsThePersons() throws Exception {
+        four();
+        DriverException e = refused("{\"op\":\"replay\",\"speed\":\"step by step\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step by step is the person's")
+                .contains("Step by step in the palette's Steps panel");
+        assertThat(refused("{\"op\":\"replay\",\"speed\":\"warp\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void replayingNothingSaysSo() throws Exception {
+        call("{\"op\":\"start\"}");
+        JsonNode r = call("{\"op\":\"replay\"}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("ran").asInt()).isZero();
+        assertThat(r.path("message").asText()).contains("nothing to replay");
+    }
+
+    @Test
+    void whileTheAgentReplaysThePalettesEditsAreRefused() throws Exception {
+        fakeReset();
+        four();
+        final java.util.concurrent.CountDownLatch inStep = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> {
+            if (backend.verbs.calls.size() == 2) {
+                inStep.countDown();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        final JsonNode[] out = new JsonNode[1];
+        Thread replay = new Thread(() -> {
+            try {
+                out[0] = call("{\"op\":\"replay\"}");
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        replay.start();
+        try {
+            assertThat(inStep.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+            sink.remove(0);
+            sink.truncate(1);
+            sink.resume();
+            DriverException e = refused("{\"op\":\"delete\",\"n\":1}");
+            assertThat(e.reason()).isEqualTo(Reason.BUSY);
+            assertThat(e.getMessage()).contains("the agent is replaying the recording (steps 1-4)");
+            assertThat(refused("{\"op\":\"undo\"}").reason()).isEqualTo(Reason.BUSY);
+            JsonNode list = call("{\"op\":\"list\"}");
+            assertThat(list.path("steps")).hasSize(4);
+            assertThat(list.path("rev").asInt()).isEqualTo(rev);
+        } finally {
+            release.countDown();
+            replay.join(10_000);
+        }
+        assertThat(out[0].path("passed").asBoolean()).isTrue();
+        // afterwards the person's edits work again
+        sink.remove(0);
+        assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(3);
+    }
+
+    @Test
+    void redoCutsReplaysUpToTheStepAndRecordsOn() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"stop\"}");
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"redo\",\"from\":3}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
+        assertThat(r.path("recording").asBoolean()).isTrue();
+        assertThat(r.path("list").path("state").asText()).isEqualTo("recording");
+        assertThat(r.path("list").path("steps")).hasSize(2);
+        assertThat(backend.verbs.calls).hasSize(3);
+        assertThat(backend.verbs.calls.get(0)).isEqualTo("reset");
+        JsonNode ran = mapper.readTree(session.verb("click", mapper.readTree("{\"target\":{\"id\":\"z\"}}")));
+        assertThat(ran.has("recorded")).isTrue();
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("steps")).hasSize(3);
+        assertThat(list.path("steps").get(2).path("n").asInt()).isEqualTo(3);
+        assertThat(ids(list)).isEqualTo("abz");
+        assertThat(list.path("startedBy").asText()).isEqualTo("agent");
+    }
+
+    @Test
+    void redoFromTheEndContinuesAStoppedRecording() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"stop\"}");
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"redo\",\"from\":5}");
+        assertThat(r.path("ran").asInt()).isEqualTo(4);
+        assertThat(r.path("recording").asBoolean()).isTrue();
+        assertThat(r.path("list").path("steps")).hasSize(4);
+        assertThat(backend.verbs.calls).hasSize(5);
+        assertThat(refused("{\"op\":\"redo\",\"from\":6}").getMessage()).contains("no step 6");
+        assertThat(refused("{\"op\":\"redo\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void redoFromTheFirstStepOnlyResets() throws Exception {
+        fakeReset();
+        four();
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"redo\",\"from\":1}");
+        assertThat(backend.verbs.calls).containsExactly("reset");
+        assertThat(r.path("list").path("steps")).isEmpty();
+        assertThat(r.path("recording").asBoolean()).isTrue();
+    }
+
+    @Test
+    void aRedoThatFailsKeepsTheCutAndUndoBringsItBack() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"stop\"}");
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> backend.verbs.failure =
+                backend.verbs.calls.size() == 3 ? new DriverException(Reason.NOT_FOUND, "nothing matches") : null;
+        JsonNode r = call("{\"op\":\"redo\",\"from\":4}");
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("recording").asBoolean()).isFalse();
+        assertThat(r.path("list").path("state").asText()).isEqualTo("stopped");
+        assertThat(r.path("list").path("steps")).hasSize(3);
+        backend.verbs.during = () -> { };
+        backend.verbs.failure = null;
+        assertThat(ids(call("{\"op\":\"undo\"}"))).isEqualTo("abcd");
+    }
+
+    @Test
+    void exportWritesJavaOrAFlowAndKeepsTheRecording() throws Exception {
+        Path tests = dir.resolve("tests");
+        Path flows = dir.resolve("flows");
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
+        try {
+            four();
+            JsonNode java = call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"PlaceUiIT\",\"package\":\"demo\"}");
+            assertThat(Files.exists(tests.resolve("demo/PlaceUiIT.java"))).isTrue();
+            assertThat(java.path("steps").asInt()).isEqualTo(4);
+            JsonNode flow = call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"place\",\"dir\":\""
+                    + flows.toString().replace("\\", "\\\\") + "\",\"description\":\"four clicks\"}");
+            assertThat(Files.exists(flows.resolve("place.json"))).isTrue();
+            assertThat(flow.path("steps").asInt()).isEqualTo(4);
+            assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(4);
+            assertThat(refused("{\"op\":\"export\",\"as\":\"xml\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+            call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"SecondUiIT\",\"package\":\"demo\",\"clear\":true}");
+            assertThat(call("{\"op\":\"list\"}").path("steps")).isEmpty();
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        }
+    }
+
+    private Path savedFlow(String name) throws Exception {
+        Flow flow = new Flow();
+        flow.version = FlowFiles.VERSION;
+        flow.name = name;
+        flow.start = FlowFiles.START_RESET;
+        for (String id : new String[] {"a", "b", "c"}) {
+            ClickVerb c = new ClickVerb();
+            c.target = Locator.ofId(id);
+            flow.steps.add(c);
+        }
+        Path file = dir.resolve(name + FlowFiles.SUFFIX);
+        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        return file;
+    }
+
+    private static String quoted(Path p) {
+        return p.toString().replace("\\", "\\\\");
+    }
+
+    @Test
+    void loadMakesAFlowTheRecordingAndRedoContinuesIt() throws Exception {
+        fakeReset();
+        Path file = savedFlow("three");
+        JsonNode list = call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
+        assertThat(list.path("state").asText()).isEqualTo("stopped");
+        assertThat(list.path("steps")).hasSize(3);
+        assertThat(list.path("steps").get(0).path("author").asText()).isEqualTo("flow");
+        assertThat(list.path("loadedFrom").asText()).isEqualTo(file.toAbsolutePath().normalize().toString());
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"redo\",\"from\":3}");
+        assertThat(r.path("recording").asBoolean()).isTrue();
+        click("z");
+        assertThat(ids(call("{\"op\":\"list\"}"))).isEqualTo("abz");
+    }
+
+    @Test
+    void aLoadByNameReadsTheFlowsFolderAndSaysWhenThereIsNone() throws Exception {
+        savedFlow("three");
+        UiMcpSession other = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
+        other.folderMemory(FolderMemory.inMemory());
+        other.flowsDir(dir, true);
+        JsonNode list = mapper.readTree(other.recording(mapper.readTree("{\"op\":\"load\",\"name\":\"three\"}")));
+        assertThat(list.path("steps")).hasSize(3);
+        DriverException e = catchThrowableOfType(
+                () -> other.recording(mapper.readTree("{\"op\":\"load\",\"name\":\"nope\"}")), DriverException.class);
+        assertThat(e.getMessage()).contains("no flow 'nope'");
+        assertThat(refused("{\"op\":\"load\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void theAgentsStepsAfterALoadDoNotJoinIt() throws Exception {
+        Path file = savedFlow("three");
+        call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
+        JsonNode ran = mapper.readTree(session.verb("click", mapper.readTree("{\"target\":{\"id\":\"z\"}}")));
+        assertThat(ran.has("recorded")).isFalse();
+        assertThat(ran.path("notRecorded").asText()).contains("recording redo");
+        assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(3);
+    }
+
+    @Test
+    void aLoadIsRefusedWhileARecordingRuns() throws Exception {
+        Path file = savedFlow("three");
+        call("{\"op\":\"start\"}");
+        click("a");
+        DriverException e = refused("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BUSY);
+        assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(1);
+    }
+
+    @Test
+    void withThePaletteOffTheAgentRecordsEditsAndExportsAlone() throws Exception {
+        fakeReset();
+        call("{\"op\":\"start\",\"reset\":true}");
+        click("a");
+        click("b");
+        click("c");
+        call("{\"op\":\"delete\",\"n\":2}");
+        assertThat(ids(call("{\"op\":\"undo\"}"))).isEqualTo("abc");
+        call("{\"op\":\"insert\",\"at\":4,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        JsonNode r = call("{\"op\":\"replay\"}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(call("{\"op\":\"list\"}").path("steps").get(3).has("edited")).isFalse();
+        assertThat(session.recordingReason()).isNotNull();
+        call("{\"op\":\"stop\"}");
+        assertThat(session.recordingReason()).isNull();
+        call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"alone\",\"dir\":\"" + quoted(dir) + "\"}");
+        Flow back = FlowFiles.read(dir.resolve("alone.json"));
+        assertThat(back.steps).hasSize(4);
+        assertThat(new String(Files.readAllBytes(dir.resolve("alone.json")), StandardCharsets.UTF_8)).doesNotContain("author");
+    }
 }
