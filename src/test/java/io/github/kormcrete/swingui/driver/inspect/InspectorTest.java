@@ -5,8 +5,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JDesktopPane;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
+import javax.swing.JInternalFrame;
 import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
@@ -151,6 +153,38 @@ class InspectorTest {
 
             assertThat(HitCheck.mouseTarget(layers, c.x, c.y)).isSameAs(archive);
             assertThat(bar.getBounds().intersects(archive.getBounds())).isFalse();
+            assertThat(bar.getParent()).isSameAs(layers);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void thePaletteStepsOffAButtonInAnInternalFrame() throws Exception {
+        onEdt(() -> {
+            JRootPane root = window(800, 600);
+            Overlay o = scene.inspector.overlay(root);
+            Bar bar = idleBar();
+            o.bar(bar);
+            JDesktopPane desktop = new JDesktopPane();
+            desktop.setBounds(0, 0, 800, 600);
+            root.getContentPane().add(desktop);
+            JInternalFrame order = new JInternalFrame("Order");
+            // over the bottom right corner, where the bar sits
+            order.setBounds(200, 200, 640, 440);
+            order.getContentPane().setLayout(null);
+            order.setVisible(true);
+            desktop.add(order);
+            JButton archiveOrder = new JButton("Archive");
+            order.getContentPane().add(archiveOrder);
+            layOut(root);
+            JLayeredPane layers = root.getLayeredPane();
+            archiveOrder.setBounds(SwingUtilities.convertRectangle(layers, bar.getBounds(), order.getContentPane()));
+            Point c = SwingUtilities.convertPoint(archiveOrder, inside(archiveOrder), layers);
+            assertThat(HitCheck.mouseTarget(layers, c.x, c.y)).isSameAs(bar);
+
+            assertThat(scene.inspector.stepOff(bar, archiveOrder, inside(archiveOrder))).isTrue();
+
+            assertThat(HitCheck.mouseTarget(layers, c.x, c.y)).isSameAs(archiveOrder);
             assertThat(bar.getParent()).isSameAs(layers);
             o.dispose();
         });

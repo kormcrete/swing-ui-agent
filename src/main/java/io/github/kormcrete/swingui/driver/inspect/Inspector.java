@@ -234,7 +234,8 @@ public final class Inspector {
      * own check-mark badges never move. EDT.
      */
     boolean stepOff(Component cover, Component target, Point p) {
-        Overlay o = overlays.get(SwingUtilities.getRootPane(target));
+        // the cover's window: a target in an internal frame has a root pane of its own, without an overlay
+        Overlay o = overlays.get(SwingUtilities.getRootPane(cover));
         if (o == null || !o.holds(cover)) return false;
         JLayeredPane layers = o.layers();
         Rectangle seen = target instanceof JComponent
@@ -375,10 +376,12 @@ public final class Inspector {
         if (recording != null && recording.replaying) return;
         if (recording != null) recording.dispose();
         recording = null;
-        Overlay home = paletteHome;
         sinkThread.submit(() -> {
             sink.begin();
             SwingUtilities.invokeLater(() -> {
+                // where the palette is now: an agent step may have opened or closed a dialog while begin() waited
+                Overlay home = paletteHome;
+                if (home == null) return;
                 recording = new Recording(this, sink, sinkThread, home, this::startRecording);
                 recording.start();
             });

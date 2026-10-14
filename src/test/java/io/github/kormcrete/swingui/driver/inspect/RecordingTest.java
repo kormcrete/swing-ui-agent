@@ -142,6 +142,25 @@ class RecordingTest {
     }
 
     @Test
+    void aRecordingStartedWhileThePaletteMovesStartsWhereThePaletteNowIs() throws Exception {
+        // ● Record pressed, then - while the session is busy with an agent step - a modal dialog opens
+        sink.onBegin = () -> {
+            try {
+                SwingUtilities.invokeAndWait(() -> showIn(dialog.getRootPane()));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        };
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inDialog = scene.inspector.overlay(dialog.getRootPane());
+            assertThat(recording.home).isSameAs(inDialog);
+            assertThat(inDialog.bar()).isSameAs(recording.bar);
+            assertThat(recording.bar.getParent()).isSameAs(dialog.getLayeredPane());
+        });
+    }
+
+    @Test
     void theRecordingFollowsThePaletteIntoTheDialogWithItsStepsPanel() throws Exception {
         recordInFrame();
         SwingUtilities.invokeAndWait(() -> {

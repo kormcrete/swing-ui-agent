@@ -108,16 +108,22 @@ final class Overlay extends JComponent {
     private Catcher catcher;
     /** Where a bar that has no spot yet goes in this window (null: where it goes by itself); set by the inspector. */
     Function<Bar, Point> spotFor;
-    /** Follows layout changes, scrolling and resizes while anything shows. */
+    /** Follows layout changes, scrolling and resizes while anything shows; stopped while nothing does. */
     private final Timer follow = new Timer(120, e -> relayout());
+    /** What the boxes looked like when last painted: a tick repaints the window only when that changed. */
+    private List<Object> drawn = new ArrayList<Object>();
 
     Overlay(JRootPane root) {
         this.root = root;
         this.layers = root.getLayeredPane();
         setOpaque(false);
         layers.add(this, BOXES);
-        follow.start();
         relayout();
+    }
+
+    /** Whether the follow timer runs. */
+    boolean following() {
+        return follow.isRunning();
     }
 
     /** A component of the inspector's own, or one inside a menu the inspector opened. */
@@ -144,7 +150,8 @@ final class Overlay extends JComponent {
 
     void hover(Mark m) {
         hover = m;
-        repaint();
+        repaintIfChanged();
+        followWhileShowing();
     }
 
     /**
@@ -280,6 +287,7 @@ final class Overlay extends JComponent {
         catcher = null;
         hover = null;
         layers.repaint();
+        followWhileShowing();
     }
 
     boolean empty() {
@@ -383,7 +391,35 @@ final class Overlay extends JComponent {
                 panel.revalidate();
             }
         }
+        repaintIfChanged();
+        followWhileShowing();
+    }
+
+    /**
+     * The box layer is as large as the window and not opaque: repainting it repaints the whole window, app included.
+     * So only when a box, its label, colour or result, or the hover changed; moving the bar or the window repaints by
+     * itself (setBounds).
+     */
+    private void repaintIfChanged() {
+        List<Object> now = new ArrayList<Object>();
+        List<Mark> all = new ArrayList<Mark>(marks);
+        if (hover != null) all.add(hover);
+        for (Mark m : all) {
+            now.add(rectOf(m));
+            now.add(m.label);
+            now.add(m.color);
+            now.add(m.dashed);
+            now.add(m.result);
+        }
+        if (now.equals(drawn)) return;
+        drawn = now;
         repaint();
+    }
+
+    /** The follow timer runs while anything shows here, so an overlay with nothing in it costs nothing. */
+    private void followWhileShowing() {
+        if (empty()) follow.stop();
+        else if (!follow.isRunning()) follow.start();
     }
 
     private void place(Bar b, List<Rectangle> taken, Dimension panel) {

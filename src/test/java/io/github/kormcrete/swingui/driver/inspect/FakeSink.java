@@ -12,8 +12,10 @@ final class FakeSink implements Inspector.Sink {
     final List<String> steps = Collections.synchronizedList(new ArrayList<String>());
     final List<String> exports = Collections.synchronizedList(new ArrayList<String>());
     volatile String refuse;
+    /** Runs at the start of {@link #begin}, on the inspector's thread: what happens while the session lock is awaited. */
+    volatile Runnable onBegin;
 
-    @Override public void begin() { steps.clear(); }
+    @Override public void begin() { if (onBegin != null) onBegin.run(); steps.clear(); }
     @Override public Inspector.Result done(Map<String, Object> step) { steps.add(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }
     @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
     @Override public List<String> steps() { return new ArrayList<String>(steps); }
