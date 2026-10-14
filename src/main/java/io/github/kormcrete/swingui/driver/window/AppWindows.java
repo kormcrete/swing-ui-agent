@@ -17,7 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.Supplier;
 
-/** The live {@link WindowSource}: every showing window of this process, plus showing popups. */
+/** The live {@link WindowSource}: every showing window of this process but the palette's own, plus showing popups. */
 public final class AppWindows implements WindowSource {
 
     private volatile Supplier<Window> main = AppWindows::firstShowingFrame;
@@ -39,7 +39,8 @@ public final class AppWindows implements WindowSource {
         if (focused != null && windows.remove(focused)) windows.add(0, focused);
         List<WindowRoot> out = new ArrayList<WindowRoot>();
         for (Window w : windows) {
-            if (!w.isShowing() || isPopupWindow(w)) continue;
+            // the palette's own windows (its folder dialog) are never the app's
+            if (!w.isShowing() || isPopupWindow(w) || Roles.agentOwn(w)) continue;
             Dialog blocker = Modality.blocker(w);
             boolean modal = w instanceof Dialog && ((Dialog) w).isModal();
             out.add(new WindowRoot(w, w instanceof Dialog ? "dialog" : "window", titleOf(w), modal,

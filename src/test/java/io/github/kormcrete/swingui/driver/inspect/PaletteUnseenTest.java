@@ -9,11 +9,13 @@ import io.github.kormcrete.swingui.driver.model.Visibility;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
+import java.nio.file.Paths;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +26,7 @@ class PaletteUnseenTest {
     private final Scene scene = new Scene();
 
     private ExportPanel exportPanel() {
-        ExportPanel panel = new ExportPanel("RecordedUiIT", "com.example", (c, p) -> { }, () -> { });
+        ExportPanel panel = new ExportPanel("RecordedUiIT", "com.example", Paths.get("uitest"), null, ExportPanel.JAVA, (c, p) -> { }, (n, f) -> { }, () -> { });
         panel.setBounds(10, 130, 300, 150);
         panel.validate();
         scene.content.add(panel);
@@ -99,6 +101,24 @@ class PaletteUnseenTest {
             List<Resolved> found = scene.resolver.matches(Locator.of("text", "Notes"));
             assertThat(found).hasSize(1);
             assertThat(found.get(0).component).isSameAs((Component) appField);
+        });
+    }
+
+    @Test
+    void theFolderDialogIsThePalettesOwn() throws Exception {
+        onEdt(() -> {
+            JFrame frame = new JFrame();
+            FolderDialog dialog = new FolderDialog(frame);
+            try {
+                assertThat(Roles.agentOwn(dialog)).isTrue();
+                assertThat(Overlay.ours(dialog)).isTrue();
+                assertThat(dialog.isModal()).isFalse();
+                assertThat(dialog.getOwner()).isSameAs(frame);
+                assertThat(dialog.isShowing()).isFalse();
+            } finally {
+                dialog.dispose();
+                frame.dispose();
+            }
         });
     }
 

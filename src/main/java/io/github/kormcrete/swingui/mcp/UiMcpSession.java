@@ -21,6 +21,7 @@ import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.FlowFolderNotWritable;
 import io.github.kormcrete.swingui.flow.FailureDiagnostics;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.FlowReport;
@@ -96,6 +97,8 @@ public class UiMcpSession {
     private boolean flowsDirExplicit;
     /** The flow file the recording came from (loaded, or exported without clear): the one file a save may replace. */
     private Path loadedFlow;
+    /** The folder the person last used in the palette, offered when no folder was set explicitly. */
+    private FolderMemory folderMemory = FolderMemory.preferences(Paths.get("").toAbsolutePath());
 
     /** Why a person is busy in the palette (recording, answering, replaying), or null; a seam for tests. */
     Supplier<String> personBusy = Inspector::engagedReason;
@@ -136,6 +139,11 @@ public class UiMcpSession {
 
     public boolean flowsDirExplicit() {
         return flowsDirExplicit;
+    }
+
+    /** Where the palette remembers the last folder the person used (tests: {@link FolderMemory#inMemory}). */
+    void folderMemory(FolderMemory memory) {
+        this.folderMemory = memory;
     }
 
     /** The flow file the recording came from; null when it came from no file. */
@@ -404,12 +412,35 @@ public class UiMcpSession {
             public Inspector.Result export(String className, String pkg) {
                 try {
                     // kept: the person may still replay, redo, or export again under another name
-                    JsonNode result = mapper.readTree(exportTest(className, null, pkg, false));
-                    Path saved = Paths.get(result.path("savedTo").asText());
-                    Path here = Paths.get("").toAbsolutePath();
-                    String line = "wrote " + (saved.startsWith(here) ? here.relativize(saved) : saved);
-                    if (result.has("startWarning")) line += " - " + result.path("startWarning").asText();
-                    return new Inspector.Result(true, line);
+                    return new Inspector.Result(true, wrote(mapper.readTree(exportTest(className, null, pkg, false))));
+                } catch (Exception e) {
+                    return new Inspector.Result(false, e.getMessage());
+                }
+            }
+
+            @Override
+            public Path flowsFolder() {
+                if (flowsDirExplicit) return flowsDir;
+                Path remembered = folderMemory.get();
+                return remembered != null ? remembered : flowsDir;
+            }
+
+            @Override
+            public Path loadedFlow() {
+                return UiMcpSession.this.loadedFlow();
+            }
+
+            @Override
+            public Inspector.Result exportFlow(String name, Path folder) {
+                try {
+                    // kept, like a test export; the file becomes the one a further export saves over
+                    JsonNode result = mapper.readTree(UiMcpSession.this.exportFlow(name, folder.toString(), null, false));
+                    folderMemory.put(Paths.get(result.path("savedTo").asText()).getParent());
+                    return new Inspector.Result(true, wrote(result));
+                } catch (FlowFolderNotWritable e) {
+                    return new Inspector.Result(false, "Cannot write to " + e.folder() + ": " + e.why(), true);
+                } catch (ExportRefused e) {
+                    return new Inspector.Result(false, String.join("; ", e.problems()));
                 } catch (Exception e) {
                     return new Inspector.Result(false, e.getMessage());
                 }
@@ -429,6 +460,15 @@ public class UiMcpSession {
                 }
             }
         };
+    }
+
+    /** The palette's line for a written export: where it went (relative to the working directory when below it). */
+    private static String wrote(JsonNode result) {
+        Path saved = Paths.get(result.path("savedTo").asText());
+        Path here = Paths.get("").toAbsolutePath();
+        String line = "wrote " + (saved.startsWith(here) ? here.relativize(saved) : saved);
+        if (result.has("startWarning")) line += " - " + result.path("startWarning").asText();
+        return line;
     }
 
     private static JsonNode stripNulls(JsonNode n) {

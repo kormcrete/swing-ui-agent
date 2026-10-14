@@ -7,6 +7,7 @@ import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.Color;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -18,8 +19,8 @@ import java.util.concurrent.Semaphore;
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
  * Done; after Done ● Record, Steps, Export…), the person's own steps (Record mode), the check catcher (Check mode), the
- * steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class. Only the
- * person starts and ends it. EDT, except where a method says otherwise.
+ * steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class or a flow
+ * file. Only the person starts and ends it. EDT, except where a method says otherwise.
  */
 final class Recording {
 
@@ -155,7 +156,7 @@ final class Recording {
         steps.active(false);
         if (panel != null || exportPanel != null) home.panel(null);
         panel = null;
-        exportPanel = null;
+        closeExportPanel();
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         if (!done.isDone()) done.complete(new ArrayList<String>(lines));
     }
@@ -196,7 +197,7 @@ final class Recording {
             live.stop();
             return;
         }
-        exportPanel = null;
+        closeExportPanel();
         panel = new StepsPanel(() -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom, this::delete,
                 this::toggleSteps);
         home.panel(panel);
@@ -204,30 +205,51 @@ final class Recording {
         live.start();
     }
 
-    /** Export…: opens (or closes) the panel where the person names the class; it replaces the steps panel. */
+    /**
+     * Export…: opens (or closes) the panel where the person names the JUnit class or the flow file; it replaces the
+     * steps panel. It opens on Flow when the recording came from a flow file, else on the kind they used last.
+     */
     void toggleExport() {
         if (exportPanel != null) {
             home.panel(null);
-            exportPanel = null;
+            closeExportPanel();
             return;
         }
         if (state != State.STOPPED) return;
         sinkThread.submit(() -> {
             String pkg = sink.exportPackage();
+            Path folder = sink.flowsFolder();
+            Path loaded = sink.loadedFlow();
             SwingUtilities.invokeLater(() -> {
                 if (state != State.STOPPED || exportPanel != null) return;
                 if (panel != null) {
                     panel = null;
                     live.stop();
                 }
-                exportPanel = new ExportPanel("RecordedUiIT", pkg, (c, p) -> export(c, p).thenAccept(r ->
-                        SwingUtilities.invokeLater(() -> {
-                            if (exportPanel == null) return;
-                            if (r.ok) toggleExport(); else exportPanel.refused(r.line);
-                        })), this::toggleExport);
+                exportPanel = new ExportPanel("RecordedUiIT", pkg, folder, loaded, inspector.exportKind, (c, p) -> {
+                    inspector.exportKind = ExportPanel.JAVA;
+                    exported(export(c, p));
+                }, (name, to) -> {
+                    inspector.exportKind = ExportPanel.FLOW;
+                    exported(exportFlow(name, to));
+                }, this::toggleExport);
                 home.panel(exportPanel);
             });
         });
+    }
+
+    /** An export from the panel ended: written closes the panel, refused keeps it open with the reason. */
+    private void exported(CompletableFuture<Inspector.Result> result) {
+        result.thenAccept(r -> SwingUtilities.invokeLater(() -> {
+            if (exportPanel == null) return;
+            if (r.ok) toggleExport(); else exportPanel.refused(r.line, r.folder);
+        }));
+    }
+
+    /** The export panel is gone (closed, or replaced): its folder dialog goes with it. */
+    private void closeExportPanel() {
+        if (exportPanel != null) exportPanel.closeChooser();
+        exportPanel = null;
     }
 
     /**
@@ -238,6 +260,20 @@ final class Recording {
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
         sinkThread.submit(() -> {
             Inspector.Result r = sink.export(className, pkg);
+            SwingUtilities.invokeLater(() -> stoppedBar.text((r.ok ? "exported: " : "✗ not exported: ") + r.line));
+            result.complete(r);
+        });
+        return result;
+    }
+
+    /**
+     * Writes the recording as the flow {@code <folder>/<name>.json} and says on the bar where it went, or why it did
+     * not; completes with the result after the bar is updated. Any thread.
+     */
+    CompletableFuture<Inspector.Result> exportFlow(String name, Path folder) {
+        CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
+        sinkThread.submit(() -> {
+            Inspector.Result r = sink.exportFlow(name, folder);
             SwingUtilities.invokeLater(() -> stoppedBar.text((r.ok ? "exported: " : "✗ not exported: ") + r.line));
             result.complete(r);
         });
@@ -280,7 +316,7 @@ final class Recording {
                 Runnable recordOn = () -> {
                     if (exportPanel != null) {
                         home.panel(null);
-                        exportPanel = null;
+                        closeExportPanel();
                     }
                     if (state == State.STOPPED) {
                         state = State.RECORDING;

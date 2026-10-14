@@ -22,6 +22,7 @@ import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -197,7 +198,7 @@ class InspectorTest {
             Overlay o = scene.inspector.overlay(root);
             Bar bar = idleBar();
             o.bar(bar);
-            ExportPanel panel = new ExportPanel("PlaceOrderUiIT", "com.example", (k, p) -> { }, () -> { });
+            ExportPanel panel = new ExportPanel("PlaceOrderUiIT", "com.example", Paths.get("uitest"), null, ExportPanel.JAVA, (k, p) -> { }, (n, f) -> { }, () -> { });
             o.panel(panel);
             layOut(panel);
             JLayeredPane layers = root.getLayeredPane();

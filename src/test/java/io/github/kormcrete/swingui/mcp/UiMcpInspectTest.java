@@ -30,11 +30,13 @@ class UiMcpInspectTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final UiMcpReadToolsTest.DriverHost backend = new UiMcpReadToolsTest.DriverHost();
     private final UiMcpSession session = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
+    private final FolderMemory memory = FolderMemory.inMemory();
     private Inspector.Sink sink;
     @TempDir Path testsDir;
 
     @BeforeEach
     void setUp() {
+        session.folderMemory(memory);
         session.startRecording(true);
         sink = session.humanSink();
         System.setProperty(UiMcpSession.TESTS_DIR_PROP, testsDir.toString());
@@ -169,6 +171,53 @@ class UiMcpInspectTest {
         assertThat(r.line).contains("1Save");
         assertThat(sink.steps()).hasSize(1);
         assertThat(Files.exists(testsDir.resolve("com/example"))).isFalse();
+    }
+
+    @Test
+    void thePersonExportsAFlowAndKeepsTheRecording(@TempDir Path flows) throws Exception {
+        session.flowsDir(flows, false);
+        sink.done(step("click", Locator.ofId("save")));
+        Inspector.Result r = sink.exportFlow("place-order", flows);
+        assertThat(r.ok).isTrue();
+        assertThat(r.folder).isFalse();
+        Path file = flows.resolve("place-order.json").toAbsolutePath().normalize();
+        assertThat(file).exists();
+        assertThat(r.line).startsWith("wrote ").contains("place-order.json");
+        assertThat(sink.steps()).containsExactly("click(#save)");
+        // the file is now the one the recording came from: the panel offers to save over it
+        assertThat(sink.loadedFlow()).isEqualTo(file);
+        assertThat(memory.get()).isEqualTo(file.getParent());
+    }
+
+    @Test
+    void anExplicitFlowsFolderWinsOverTheRememberedOne(@TempDir Path flows, @TempDir Path remembered) {
+        memory.put(remembered);
+        session.flowsDir(flows, true);
+        assertThat(sink.flowsFolder()).isEqualTo(flows);
+    }
+
+    @Test
+    void withoutOneThePaletteOffersTheLastFolderUsed(@TempDir Path flows, @TempDir Path other) throws Exception {
+        session.flowsDir(flows, false);
+        assertThat(sink.flowsFolder()).isEqualTo(flows);
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.exportFlow("place-order", other).ok).isTrue();
+        assertThat(sink.flowsFolder()).isEqualTo(other.toAbsolutePath().normalize());
+    }
+
+    @Test
+    void aFolderThatCannotBeWrittenIsAFolderProblem(@TempDir Path flows) throws Exception {
+        session.flowsDir(flows, false);
+        Path aFile = flows.resolve("orders.txt");
+        Files.write(aFile, "ORD-1640".getBytes(StandardCharsets.UTF_8));
+        sink.done(step("click", Locator.ofId("save")));
+        // a folder below a regular file cannot be made on any OS
+        Inspector.Result r = sink.exportFlow("place-order", aFile.resolve("flows"));
+        assertThat(r.ok).isFalse();
+        assertThat(r.folder).isTrue();
+        assertThat(r.line).contains("Cannot write to").contains("orders.txt");
+        assertThat(memory.get()).isNull();
+        assertThat(sink.steps()).containsExactly("click(#save)");
     }
 
     @Test

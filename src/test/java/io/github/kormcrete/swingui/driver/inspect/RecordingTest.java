@@ -116,6 +116,81 @@ class RecordingTest {
         assertThat(sink.exports).containsExactly("com.example.RecordedUiIT");
     }
 
+    /** Done, then Export…: the panel as the person sees it. */
+    private ExportPanel exportPanelAfterDone() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            recording = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });
+            recording.start();
+            recording.done();
+        });
+        recording.done.get(5, TimeUnit.SECONDS);
+        SwingUtilities.invokeAndWait(recording::toggleExport);
+        return eventually(() -> recording.exportPanel);
+    }
+
+    @Test
+    void exportOffersAJavaTestOrAFlow() throws Exception {
+        ExportPanel panel = exportPanelAfterDone();
+        assertThat(panel.kind()).isEqualTo(ExportPanel.JAVA);
+        assertThat(panel.names()).containsExactly("RecordedUiIT", "com.example");
+        assertThat(panel.actionLabel()).isEqualTo("Export");
+
+        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.FLOW));
+        assertThat(panel.kind()).isEqualTo(ExportPanel.FLOW);
+        assertThat(panel.flowFields()).containsExactly("recorded-flow", sink.flowsFolder.toString());
+        assertThat(panel.actionLabel()).isEqualTo("Export");
+
+        SwingUtilities.invokeAndWait(panel::submit);
+        eventually(() -> recording.exportPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.flowExports).containsExactly(sink.flowsFolder.resolve("recorded-flow.json").toString());
+        assertThat(sink.exports).isEmpty();
+        assertThat(recording.bar.text()).contains("exported").contains("recorded-flow.json");
+
+        // the kind used last is where the panel opens next time
+        SwingUtilities.invokeAndWait(recording::toggleExport);
+        ExportPanel again = eventually(() -> recording.exportPanel);
+        assertThat(again.kind()).isEqualTo(ExportPanel.FLOW);
+    }
+
+    @Test
+    void aFolderThatCannotBeWrittenSaysSoAndOpensChoose() throws Exception {
+        ExportPanel panel = exportPanelAfterDone();
+        List<java.nio.file.Path> asked = Collections.synchronizedList(new java.util.ArrayList<java.nio.file.Path>());
+        java.nio.file.Path other = sink.flowsFolder.resolveSibling("elsewhere");
+        SwingUtilities.invokeAndWait(() -> {
+            panel.kind(ExportPanel.FLOW);
+            panel.chooser((start, picked) -> asked.add(start));
+        });
+        sink.refuseFolder = true;
+        SwingUtilities.invokeAndWait(panel::submit);
+        String why = eventually(() -> panel.message().trim().isEmpty() ? null : panel.message());
+        assertThat(why).contains("Cannot write").contains("choose another folder");
+        assertThat(recording.exportPanel).isSameAs(panel);
+        assertThat(asked).containsExactly(sink.flowsFolder);
+        assertThat(sink.flowExports).isEmpty();
+
+        // the person picks another folder: the field takes it
+        SwingUtilities.invokeAndWait(() -> panel.chooser((start, picked) -> picked.accept(other)));
+        SwingUtilities.invokeAndWait(panel::choose);
+        assertThat(panel.flowFields()[1]).isEqualTo(other.toString());
+    }
+
+    @Test
+    void withAFlowLoadedThePanelOpensOnFlowAndSaysSave() throws Exception {
+        sink.loaded = sink.flowsFolder.resolve("place-order.json");
+        ExportPanel panel = exportPanelAfterDone();
+        assertThat(panel.kind()).isEqualTo(ExportPanel.FLOW);
+        assertThat(panel.flowFields()).containsExactly("place-order", sink.flowsFolder.toString());
+        assertThat(panel.actionLabel()).isEqualTo("Save");
+
+        SwingUtilities.invokeAndWait(() -> panel.flowName("add-to-cart"));
+        assertThat(panel.actionLabel()).isEqualTo("Export");
+        SwingUtilities.invokeAndWait(() -> panel.flowName("place-order.json"));
+        assertThat(panel.actionLabel()).isEqualTo("Save");
+        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.JAVA));
+        assertThat(panel.actionLabel()).isEqualTo("Export");
+    }
+
     // ---- the palette follows the open modal dialog --------------------------------------------------------------
 
     /** The inspector with the palette in the (unshown) frame, as the person sees it before a dialog opens. EDT. */

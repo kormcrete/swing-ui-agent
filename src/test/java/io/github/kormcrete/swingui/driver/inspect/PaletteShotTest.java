@@ -12,6 +12,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Paths;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,7 +34,7 @@ class PaletteShotTest {
             try {
                 Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
                 overlay.bar(bar);
-                ExportPanel panel = new ExportPanel("RecordedUiIT", "com.example", (c, p) -> { }, () -> { });
+                ExportPanel panel = new ExportPanel("RecordedUiIT", "com.example", Paths.get("uitest"), null, ExportPanel.JAVA, (c, p) -> { }, (n, f) -> { }, () -> { });
                 overlay.panel(panel);
                 body.run(root, bar, panel);
             } catch (Exception e) {

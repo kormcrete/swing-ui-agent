@@ -37,6 +37,7 @@ import java.awt.Window;
 import java.awt.event.AWTEventListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -122,15 +123,37 @@ public final class Inspector {
          * may replay, redo or export again). The result's line says where it went, or why nothing was written.
          */
         Result export(String className, String pkg);
+
+        /**
+         * The folder Export… offers for a flow: one set explicitly (agent option, system property), else the folder
+         * the person last used, else the default flows folder. Absolute.
+         */
+        Path flowsFolder();
+
+        /** The flow file the recording came from (loaded, or exported before), or null: the one a save goes over. */
+        Path loadedFlow();
+
+        /**
+         * Writes the recording as the flow {@code <folder>/<name>.json}, as {@code export_flow} does, and keeps it. A
+         * folder that cannot be written comes back with {@link Result#folder} set, so the palette asks for another.
+         */
+        Result exportFlow(String name, Path folder);
     }
 
     public static final class Result {
         public final boolean ok;
         public final String line;
+        /** Refused because of the folder: it cannot be created or written. */
+        public final boolean folder;
 
         public Result(boolean ok, String line) {
+            this(ok, line, false);
+        }
+
+        public Result(boolean ok, String line, boolean folder) {
             this.ok = ok;
             this.line = line;
+            this.folder = folder;
         }
     }
 
@@ -159,6 +182,8 @@ public final class Inspector {
     private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
     private Recording recording;
     private boolean testRun;
+    /** The kind Export… opens on when no flow is loaded: the one the person used last in this JVM. EDT. */
+    String exportKind = ExportPanel.JAVA;
     private Component snappedAt;
     private Integer snappedTab;
     private int snappedRow = -2;
@@ -791,7 +816,9 @@ public final class Inspector {
     /** The main window: the first showing frame. */
     private static JRootPane mainRoot() {
         for (Window w : Window.getWindows()) {
-            if (w.isShowing() && w instanceof JFrame && !isPopup(w)) return ((JFrame) w).getRootPane();
+            if (w.isShowing() && w instanceof JFrame && !isPopup(w) && !Overlay.ours(w)) {
+                return ((JFrame) w).getRootPane();
+            }
         }
         return null;
     }
@@ -799,24 +826,29 @@ public final class Inspector {
     /** The open modal dialog nothing blocks, else the main window. */
     private static JRootPane liveRoot() {
         Dialog top = Modality.top();
-        if (top instanceof RootPaneContainer && !isPopup(top)) return ((RootPaneContainer) top).getRootPane();
+        if (top instanceof RootPaneContainer && !isPopup(top) && !Overlay.ours(top)) {
+            return ((RootPaneContainer) top).getRootPane();
+        }
         return mainRoot();
     }
 
-    /** The focused app window's overlay; the main window's when none is focused. */
+    /** The focused app window's overlay; the main window's when none is. The palette's folder dialog is no app window. */
     private Overlay focusedOverlay() {
         for (Window w : Window.getWindows()) {
-            if (w.isShowing() && w.isFocused() && !isPopup(w) && w instanceof RootPaneContainer) {
+            if (w.isShowing() && w.isFocused() && !isPopup(w) && !Overlay.ours(w) && w instanceof RootPaneContainer) {
                 return overlay(((RootPaneContainer) w).getRootPane());
             }
         }
         return mainOverlay();
     }
 
+    /** The app's showing windows; never a popup or the palette's own (its folder dialog). */
     static List<JRootPane> appRoots() {
         List<JRootPane> out = new ArrayList<JRootPane>();
         for (Window w : Window.getWindows()) {
-            if (w.isShowing() && !isPopup(w) && w instanceof RootPaneContainer) out.add(((RootPaneContainer) w).getRootPane());
+            if (w.isShowing() && !isPopup(w) && !Overlay.ours(w) && w instanceof RootPaneContainer) {
+                out.add(((RootPaneContainer) w).getRootPane());
+            }
         }
         return out;
     }
