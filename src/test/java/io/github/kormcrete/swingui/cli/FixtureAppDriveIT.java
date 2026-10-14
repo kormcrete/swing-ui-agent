@@ -4,12 +4,24 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.fixture.FixtureApp;
+import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.junit.Client;
+import io.github.kormcrete.swingui.junit.UiFlows;
+import io.github.kormcrete.swingui.junit.UiTestExtension;
+import io.github.kormcrete.swingui.testing.FixtureClass;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
+import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
+import org.junit.platform.launcher.listeners.TestExecutionSummary;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -19,12 +31,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 /**
  * The whole product on this OS and Java: FixtureApp starts in its own JVM with the packaged agent jar
@@ -42,6 +57,7 @@ class FixtureAppDriveIT {
     private static Process app;
     private static int port;
     private static final StringBuffer appOutput = new StringBuffer();
+    private static Path flows;
 
     @BeforeAll
     static void startTheAppWithTheAgent() throws Exception {
@@ -75,6 +91,11 @@ class FixtureAppDriveIT {
 
     @AfterAll
     static void stopTheApp() throws Exception {
+        if (flows != null) {
+            try (Stream<Path> all = Files.walk(flows)) {
+                all.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+            }
+        }
         if (app == null) return;
         app.destroy();
         if (!app.waitFor(10, TimeUnit.SECONDS)) app.destroyForcibly();
@@ -192,6 +213,71 @@ class FixtureAppDriveIT {
         step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'12'}}");
     }
 
+    @Test
+    @Order(11)
+    void aRecordedFlowIsExportedAndRunsAgain() throws Exception {
+        flows = Files.createTempDirectory("swingui-flows-it");
+        String dir = flows.toString().replace('\\', '/');
+        call("session", "{'op':'reset'}");
+        step("click", "{'target':{'name':'new'}}");
+        step("type", "{'target':{'name':'customer'},'text':'Flow 1'}");
+        step("click", "{'target':{'name':'save'}}");
+        step("expect", "{'target':{'name':'status'},'text':'saved Flow 1'}");
+        JsonNode exported = call("export_flow", "{'name':'save-customer','dir':'" + dir + "'}");
+        Path file = Paths.get(exported.path("savedTo").asText());
+        assertThat(file).as(exported.path("why").asText()).isRegularFile();
+        assertThat(exported.path("steps").asInt()).as(exported.path("why").asText()).isEqualTo(4);
+        assertThat(exported.path("startWarning").asText()).as(exported.path("why").asText()).isNotEmpty();
+        assertThat(FlowFiles.read(file).steps).hasSize(4);
+
+        JsonNode ran = call("run_flow", "{'path':'" + file.toString().replace('\\', '/') + "'}");
+        assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
+        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
+    }
+
+    @Test
+    @Order(12)
+    void aFailingFlowExitsFourWithItsDiagnosis() throws Exception {
+        Path evidence = Files.createDirectory(flows.resolve("evidence"));
+        JsonNode result = callExpecting(4, "run_flow", "{'flow':{'version':1,'name':'never-saved','start':'reset',"
+                + "'steps':[{'action':'expect','target':{'name':'status'},'text':'never','timeout':500}]},"
+                + "'evidence':'" + evidence.toString().replace('\\', '/') + "'}");
+        String why = result.path("why").asText();
+        assertThat(result.path("passed").asBoolean()).as(why).isFalse();
+        JsonNode first = result.path("steps").path(0);
+        assertThat(first.path("passed").asBoolean()).as(why).isFalse();
+        Path png = Paths.get(first.path("diagnostics").path("screenshot").asText());
+        assertThat(png).as(why).isRegularFile();
+        assertThat(png.getFileName().toString()).endsWith(".png");
+        assertThat(result.path("stderr").asText()).as(why).contains("FAIL");
+    }
+
+    /** The folder holds only the exported flow when this runs: the failing one of the step before was inline. */
+    @FixtureClass
+    static class Runner {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension();
+
+        @TestFactory
+        Stream<DynamicTest> flows(Client ui) {
+            return UiFlows.tests(ui, flows);
+        }
+    }
+
+    @Test
+    @Order(13)
+    void theJUnitRunnerRunsTheExportedFlow() {
+        SummaryGeneratingListener listener = new SummaryGeneratingListener();
+        LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
+                .selectors(selectClass(Runner.class))
+                .configurationParameter("swingui.fixtures", "run")
+                .configurationParameter("swingui.agents", "127.0.0.1:" + port).build(), listener);
+        TestExecutionSummary summary = listener.getSummary();
+        assertThat(summary.getFailures()).as("failures: %s\napp output:\n%s", summary.getFailures(), appOutput).isEmpty();
+        assertThat(summary.getTestsFoundCount()).isEqualTo(1);
+        assertThat(summary.getTestsSucceededCount()).isEqualTo(1);
+    }
+
     /** Runs one CLI call, {@code args} in single quotes for readability, and requires it to pass. */
     private static void step(String tool, String args) throws Exception {
         JsonNode result = call(tool, args);
@@ -209,6 +295,11 @@ class FixtureAppDriveIT {
 
     /** The CLI's answer, which must exit 0, with a "why" for assertion messages. */
     private static JsonNode call(String tool, String args) throws Exception {
+        return callExpecting(0, tool, args);
+    }
+
+    /** Like {@link #call}, for a tool whose CLI exit code is {@code exit}; the report on stderr is "stderr". */
+    private static JsonNode callExpecting(int expected, String tool, String args) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int exit = UiCli.run(new String[] {"--port", String.valueOf(port), tool, args.replace('\'', '"')},
@@ -216,8 +307,9 @@ class FixtureAppDriveIT {
         String answer = new String(out.toByteArray(), StandardCharsets.UTF_8);
         String why = tool + " " + args + " -> exit " + exit + ": " + answer + new String(err.toByteArray(),
                 StandardCharsets.UTF_8) + "\napp output:\n" + appOutput;
-        assertThat(exit).as(why).isZero();
+        assertThat(exit).as(why).isEqualTo(expected);
         ObjectNode result = (ObjectNode) JSON.readTree(answer);
+        result.put("stderr", new String(err.toByteArray(), StandardCharsets.UTF_8));
         return result.put("why", why);
     }
 }
