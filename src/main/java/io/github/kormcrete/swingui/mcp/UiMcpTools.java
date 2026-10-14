@@ -174,6 +174,37 @@ public final class UiMcpTools {
         });
 
         tools.add(new McpToolDefinition() {
+            @Override public String name() { return "export_flow"; }
+            @Override public ObjectNode descriptor(ObjectMapper m) {
+                ObjectNode schema = emptyObjectSchema(m);
+                ObjectNode p = schema.with("properties");
+                p.putObject("name").put("type", "string")
+                        .put("description", "The file name without .json, e.g. place-order");
+                p.putObject("dir").put("type", "string")
+                        .put("description", "The folder; default the flows folder: agent option flows=, else "
+                                + "-Dswingui.flowsDir, else uitest in the app's working directory");
+                p.putObject("description").put("type", "string").put("description", "What the flow does, one sentence");
+                p.putObject("clear").put("type", "boolean").put("default", true)
+                        .put("description", "Empty the recording after exporting (default: true); reset before "
+                                + "recording the next flow");
+                schema.putArray("required").add("name");
+                return tool(m, "export_flow",
+                        "Write the steps recorded since the last session reset as a flow file "
+                        + "<flows folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it "
+                        + "with run_flow, from the palette, or in Maven with the JUnit runner (UiFlows). Same rules as "
+                        + "export_test: it must have begun at a reset, startWarning flags a flow that does not begin "
+                        + "with menu, press or navigate, an empty recording or a bad name is refused, and an existing "
+                        + "file is never overwritten - except the flow the recording came from (loaded in the "
+                        + "palette, or exported before without clear). A folder that cannot be written is refused, "
+                        + "naming it.", schema);
+            }
+            @Override public String invoke(JsonNode args) throws Exception {
+                return session.exportFlow(args.path("name").asText(""), args.path("dir").asText(""),
+                        args.path("description").asText(""), args.path("clear").asBoolean(true));
+            }
+        });
+
+        tools.add(new McpToolDefinition() {
             @Override public String name() { return "snapshot"; }
             @Override public ObjectNode descriptor(ObjectMapper m) {
                 ObjectNode schema = emptyObjectSchema(m);

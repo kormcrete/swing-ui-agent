@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.flow.FlowFiles;
 import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.mcp.HttpMcpEndpoint;
 import io.github.kormcrete.swingui.mcp.UiMcpDispatcher;
@@ -12,6 +13,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.awt.GraphicsEnvironment;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -38,17 +41,27 @@ final class AgentAssembly {
         // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
         lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
+        String property = System.getProperty(FlowFiles.DIR_PROP);
+        session.flowsDir(flowsDir(args, property, Paths.get("")),
+                args.flows != null || (property != null && !property.trim().isEmpty()));
         session.palette(paletteOn(args, GraphicsEnvironment.isHeadless()));
         ScreenshotVerb.moduleDir = () -> plugins.exportDefaults().moduleDir;
         List<McpToolDefinition> raw = new ArrayList<McpToolDefinition>(UiMcpTools.build(session, mapper));
         raw.add(pluginCallTool(session, plugins, mapper));
         List<McpToolDefinition> tools = new ArrayList<McpToolDefinition>(LeaseGate.gate(raw, lease, mapper));
         final AtomicReference<HttpMcpEndpoint> holder = new AtomicReference<HttpMcpEndpoint>();
-        tools.add(new SessionTool(plugins, lease, session, verbs, info, args,
-                () -> holder.get() == null ? args.port : holder.get().port(), appStartedAt));
+        SessionTool sessionTool = new SessionTool(plugins, lease, session, verbs, info, args,
+                () -> holder.get() == null ? args.port : holder.get().port(), appStartedAt);
+        tools.add(sessionTool);
+        session.appReset(sessionTool.appReset());
         HttpMcpEndpoint endpoint = new HttpMcpEndpoint(new UiMcpDispatcher(mapper, tools), mapper, args.bind, "/mcp", args.port);
         holder.set(endpoint);
         return new AgentAssembly(lease, session, endpoint);
+    }
+
+    /** The flows folder: agent option {@code flows=}, else the system property, else {@code uitest} under {@code cwd}. */
+    static Path flowsDir(AgentArgs a, String property, Path cwd) {
+        return FlowFiles.dir(a.flows, property, cwd);
     }
 
     /** The palette as asked for (on unless {@code palette=off} or {@code mode=background}), and never without a screen. */

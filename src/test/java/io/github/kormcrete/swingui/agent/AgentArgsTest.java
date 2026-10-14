@@ -34,7 +34,27 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, palette, plugins, log");
+                .hasMessageContaining("port, bind, mode, palette, flows, plugins, log");
+    }
+
+    @Test
+    void flowsNamesTheFlowsFolder() {
+        assertThat(AgentArgs.parse("flows=uitest/flows").flows).isEqualTo("uitest/flows");
+        assertThat(AgentArgs.parse("port=1").flows).isNull();
+    }
+
+    @Test
+    void aBlankFlowsIsRefused() {
+        assertThatThrownBy(() -> AgentArgs.parse("flows="))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("flows needs a folder, e.g. flows=uitest");
+    }
+
+    @Test
+    void theFlowsFolderIsTheOptionElseThePropertyElseUitest(@org.junit.jupiter.api.io.TempDir java.nio.file.Path cwd) {
+        assertThat(AgentAssembly.flowsDir(AgentArgs.parse("flows=mine"), "prop", cwd)).isEqualTo(cwd.resolve("mine"));
+        assertThat(AgentAssembly.flowsDir(AgentArgs.parse(null), "prop", cwd)).isEqualTo(cwd.resolve("prop"));
+        assertThat(AgentAssembly.flowsDir(AgentArgs.parse(null), null, cwd)).isEqualTo(cwd.resolve("uitest"));
     }
 
     @Test

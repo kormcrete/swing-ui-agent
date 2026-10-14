@@ -20,6 +20,7 @@ import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
+import io.github.kormcrete.swingui.flow.FlowFiles;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.FlowResult;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
@@ -69,6 +70,29 @@ public class UiMcpSession {
     /** That reset was an app plugin's, to a defined start state, not only dialogs closed. */
     private boolean definedStart;
 
+    /**
+     * The start of a flow: what {@code session reset} does to the app - dialogs closed, with an app plugin its reset -
+     * without touching the recording. {@link #defined()}: an app plugin resets the app to a defined state.
+     */
+    public interface AppReset {
+        boolean defined();
+
+        void run();
+    }
+
+    private AppReset appReset = new AppReset() {
+        @Override public boolean defined() { return false; }
+
+        @Override public void run() {
+            throw new DriverException(Reason.CAPABILITY_GAP, "this session has no reset");
+        }
+    };
+    private Path flowsDir = FlowFiles.dir(null, System.getProperty(FlowFiles.DIR_PROP), Paths.get(""));
+    /** The folder was chosen (agent option or system property), not the default. */
+    private boolean flowsDirExplicit;
+    /** The flow file the recording came from (loaded, or exported without clear): the one file a save may replace. */
+    private Path loadedFlow;
+
     private final Supplier<ExportDefaults> exportDefaults;
     /** The palette is on (the agent's default, with a screen): a person may record, check and answer in the app. */
     private volatile boolean palette;
@@ -82,6 +106,34 @@ public class UiMcpSession {
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
+    }
+
+    /** How a flow starts (see {@link AppReset}); the agent sets the session's own reset. */
+    public void appReset(AppReset reset) {
+        this.appReset = reset;
+    }
+
+    public AppReset appReset() {
+        return appReset;
+    }
+
+    /** Where flows are saved and loaded from; {@code explicit}: set by the agent option or the system property. */
+    public void flowsDir(Path dir, boolean explicit) {
+        this.flowsDir = dir;
+        this.flowsDirExplicit = explicit;
+    }
+
+    public Path flowsDir() {
+        return flowsDir;
+    }
+
+    public boolean flowsDirExplicit() {
+        return flowsDirExplicit;
+    }
+
+    /** The flow file the recording came from; null when it came from no file. */
+    public synchronized Path loadedFlow() {
+        return loadedFlow;
     }
 
     /** Lets {@code inspect} run: only while the palette is on. Off until the agent says so. */
@@ -933,10 +985,7 @@ public class UiMcpSession {
      * needs a reset first.
      */
     public synchronized String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
-        if (!recordingFromReset) {
-            throw new IllegalArgumentException("the recording did not begin at a session reset, where the test will "
-                    + "start: reset (session op reset), get to the starting screen, redo the steps, then export");
-        }
+        requireResetStart();
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
         ExportDefaults defaults = exportDefaults.get();
         String packageName = pkg == null || pkg.isEmpty() ? defaults.packageName : pkg;
@@ -953,14 +1002,12 @@ public class UiMcpSession {
         Files.write(file, source.getBytes(StandardCharsets.UTF_8));
 
         int steps = recorded.size();
-        int fragile = 0;
-        for (Action a : recorded) {
-            if (a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile)) fragile++;
-        }
+        int fragile = fragileSteps();
         String startWarning = definedStart ? null : startWarning(recorded);
         if (clear) {
             recorded.clear();
             recordingFromReset = false;
+            loadedFlow = null;
         }
 
         ObjectNode result = mapper.createObjectNode();
@@ -974,6 +1021,104 @@ public class UiMcpSession {
         }
         if (startWarning != null) result.put("startWarning", startWarning);
         result.put("source", source);
+        return result.toString();
+    }
+
+    private void requireResetStart() {
+        if (!recordingFromReset) {
+            throw new IllegalArgumentException("the recording did not begin at a session reset, where the test will "
+                    + "start: reset (session op reset), get to the starting screen, redo the steps, then export");
+        }
+    }
+
+    private int fragileSteps() {
+        int fragile = 0;
+        for (Action a : recorded) {
+            if (a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile)) fragile++;
+        }
+        return fragile;
+    }
+
+    /**
+     * Writes the steps recorded since the last {@link #startRecording} as a flow file {@code <folder>/<name>.json}
+     * ({@link FlowFiles}) and returns a JSON summary ({@code savedTo}, {@code steps}, {@code fragile},
+     * {@code overwrote}, {@code startWarning} when it applies, {@code flow}). The refusals are export_test's (no reset
+     * start; an empty recording and a bad name together, in one {@link ExportRefused}), plus a folder that cannot be
+     * written ({@code FlowFolderNotWritable}); an existing file is refused unless it is the flow the recording came
+     * from. A refusal leaves the recording as it was. {@code clear} empties the recording; otherwise the written
+     * file becomes the one a further export saves over.
+     */
+    public synchronized String exportFlow(String name, String dir, String description, boolean clear) throws Exception {
+        requireResetStart();
+        List<String> problems = new ArrayList<String>();
+        if (recorded.isEmpty()) problems.add("nothing was recorded");
+        try {
+            FlowFiles.checkName(name);
+        } catch (DriverException e) {
+            problems.add(e.getMessage());
+        }
+        if (!problems.isEmpty()) throw new ExportRefused(problems);
+
+        Path folder = dir == null || dir.trim().isEmpty() ? flowsDir
+                : Paths.get("").toAbsolutePath().resolve(dir.trim()).normalize();
+        folder = FlowFiles.writableDir(folder);
+        Path file = FlowFiles.file(folder, name).toAbsolutePath().normalize();
+        boolean exists = Files.exists(file);
+        if (exists && !file.equals(loadedFlow)) {
+            throw new IllegalArgumentException(file + " already exists; choose another name (only the flow the "
+                    + "recording came from is saved over)");
+        }
+        Flow flow = new Flow();
+        flow.version = FlowFiles.VERSION;
+        flow.name = FlowFiles.checkName(name);
+        flow.description = description == null || description.trim().isEmpty() ? null : description.trim();
+        flow.start = FlowFiles.START_RESET;
+        flow.steps = new ArrayList<Action>(recorded);
+        String text = FlowFiles.write(flow);
+        Files.write(file, text.getBytes(StandardCharsets.UTF_8));
+
+        String startWarning = definedStart ? null : startWarning(recorded);
+        ObjectNode result = mapper.createObjectNode();
+        result.put("savedTo", file.toString());
+        result.put("steps", recorded.size());
+        result.put("fragile", fragileSteps());
+        result.put("overwrote", exists);
+        if (startWarning != null) result.put("startWarning", startWarning);
+        result.set("flow", mapper.readTree(text));
+        if (clear) {
+            recorded.clear();
+            recordingFromReset = false;
+            loadedFlow = null;
+        } else {
+            loadedFlow = file;
+        }
+        return result.toString();
+    }
+
+    /**
+     * Makes the recording the steps of a flow file, as if they had just been run after a reset: every step needs a Java
+     * form (the recording stays exportable as a test), else this refuses and changes nothing. A broken file fails
+     * with {@link FlowFiles}' message. Returns {@code {loaded, name, description, steps}}.
+     */
+    public synchronized String loadFlow(Path file) {
+        Flow flow = FlowFiles.read(file);
+        try {
+            JavaTestWriter.write(new ArrayList<Action>(flow.steps), CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+        } catch (ExportRefused e) {
+            throw new IllegalArgumentException(flow.name + " cannot be loaded into the recording: "
+                    + String.join("; ", e.problems()) + "; run it with run_flow or the JUnit runner instead");
+        }
+        Path abs = file.toAbsolutePath().normalize();
+        recorded.clear();
+        recorded.addAll(flow.steps);
+        recordingFromReset = true;
+        definedStart = appReset.defined();
+        loadedFlow = abs;
+        ObjectNode result = mapper.createObjectNode();
+        result.put("loaded", abs.toString());
+        result.put("name", flow.name);
+        if (flow.description == null) result.putNull("description"); else result.put("description", flow.description);
+        result.put("steps", flow.steps.size());
         return result.toString();
     }
 
@@ -1007,6 +1152,7 @@ public class UiMcpSession {
         recorded.clear();
         recordingFromReset = true;
         this.definedStart = definedStart;
+        loadedFlow = null;
     }
 
     /**

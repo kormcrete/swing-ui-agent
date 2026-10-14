@@ -81,6 +81,40 @@ class SessionToolTest {
     }
 
     @Test
+    void infoSaysWhereFlowsGo(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) throws Exception {
+        Plugins none = new Plugins(null);
+        UiMcpSession session = new UiMcpSession(none, none, mapper);
+        session.flowsDir(tmp, true);
+        McpToolDefinition tool = new SessionTool(none, new Lease(System::currentTimeMillis), session, dialogs,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("flows").asText())
+                .isEqualTo(tmp.toAbsolutePath().normalize().toString());
+    }
+
+    @Test
+    void theFlowResetIsTheSessionResetWithoutANewRecording(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp)
+            throws Exception {
+        java.nio.file.Path flow = java.nio.file.Files.write(tmp.resolve("one.json"), ("{\"version\":1,"
+                + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"role\":\"button\","
+                + "\"name\":\"Save\"}}]}").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        UiMcpSession session = new UiMcpSession(fixture, fixture, mapper);
+        session.loadFlow(flow);
+        SessionTool tool = new SessionTool(fixture, new Lease(System::currentTimeMillis), session, dialogs,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
+        UiMcpSession.AppReset reset = tool.appReset();
+        assertThat(reset.defined()).isTrue();
+        reset.run();
+        assertThat(dialogs.calls).contains("resetPointer");
+        assertThat(app.calls).containsExactly("reset alias:default");
+        // the recording was not restarted (a restart forgets the loaded flow)
+        assertThat(session.loadedFlow()).isEqualTo(flow.toAbsolutePath().normalize());
+        assertThat(new SessionTool(none(), new Lease(System::currentTimeMillis), session, dialogs,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED).appReset().defined()).isFalse();
+    }
+
+    private Plugins none() { return new Plugins(null); }
+
+    @Test
     void infoListsTheClientClasspathDirectoriesOnly() throws Exception {
         java.io.File dir = java.nio.file.Files.createTempDirectory("cp").toFile();
         java.io.File jar = java.io.File.createTempFile("cpjar", ".jar");

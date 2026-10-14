@@ -152,6 +152,28 @@ final class SessionTool implements McpToolDefinition {
         }
     }
 
+    /**
+     * The flow start: what {@code session reset} does to the app, without a new recording. No lease handling here: the
+     * callers (run_flow, the palette) are already inside the lease gate or hold the person's engagement.
+     */
+    UiMcpSession.AppReset appReset() {
+        return new UiMcpSession.AppReset() {
+            @Override public boolean defined() {
+                try {
+                    return plugins.app() != null && plugins.app().app != null;
+                } catch (RuntimeException e) {
+                    return false;
+                }
+            }
+
+            @Override public void run() {
+                AppHooks hooks = resetHooks(null);
+                // as `session reset` without an alias: the plugin's default user
+                AgentReset.run(verbs, hooks, hooks == null ? null : ResetSpec.alias(null));
+            }
+        };
+    }
+
     private ObjectNode info() {
         ObjectNode r = m.createObjectNode();
         ObjectNode agent = r.putObject("agent");
@@ -168,6 +190,7 @@ final class SessionTool implements McpToolDefinition {
         r.putObject("endpoint").put("bind", args.bind).put("port", boundPort.getAsInt());
         r.put("mode", args.mode);
         r.put("palette", session.paletteOn());
+        r.put("flows", session.flowsDir().toAbsolutePath().normalize().toString());
         ObjectNode app = r.putObject("app");
         app.put("startedAtMillis", appStartedAt).put("startedAt", Instant.ofEpochMilli(appStartedAt).toString());
         ArrayNode classpath = app.putArray("classpath");

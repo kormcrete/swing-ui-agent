@@ -13,8 +13,10 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=on,plugins=a.jar:b/classes,log=agent.log}.
+ * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=on,flows=uitest,plugins=a.jar:b/classes,log=agent.log}.
  * <p>{@code plugins} is a list separated by {@link File#pathSeparator}; every entry gets its own {@link PluginSlot}.
+ * <p>{@code flows} names the folder of flow files ({@code export_flow} writes there, {@code run_flow} reads there); a
+ * relative one is under the app's working directory. Without it {@code -Dswingui.flowsDir} decides, else {@code uitest}.
  * <p>{@code log} also writes the agent's own lines to that file (see AgentLog); the path cannot contain a comma.
  * <p>{@code palette} is on by default, for a person at the screen: a small bar in the app window lets them record
  * steps and checks and answer the agent's questions there. {@code palette=off} is for agent-only and CI runs, where
@@ -28,15 +30,18 @@ public final class AgentArgs {
     public final String mode;
     public final List<Path> plugins;
     public final boolean palette;
+    /** The flows folder as given; null when absent. */
+    public final String flows;
     /** The file the agent's own lines also go to; null when absent. */
     public final Path log;
 
     private AgentArgs(int port, String bind, String mode, List<Path> plugins, boolean palette,
-                      Path log) {
+                      String flows, Path log) {
         this.port = port;
         this.bind = bind;
         this.mode = mode;
         this.palette = palette;
+        this.flows = flows;
         this.log = log;
         this.plugins = Collections.unmodifiableList(plugins);
     }
@@ -47,6 +52,7 @@ public final class AgentArgs {
         String mode = "normal";
         List<Path> plugins = new ArrayList<Path>();
         Boolean palette = null;
+        String flows = null;
         Path log = null;
         if (raw != null && !raw.trim().isEmpty()) {
             for (String pair : raw.split(",")) {
@@ -79,11 +85,14 @@ public final class AgentArgs {
                     for (String p : value.split(Pattern.quote(File.pathSeparator))) {
                         if (!p.trim().isEmpty()) plugins.add(Paths.get(p.trim()));
                     }
+                } else if ("flows".equals(key)) {
+                    if (value.isEmpty()) throw new IllegalArgumentException("flows needs a folder, e.g. flows=uitest");
+                    flows = value;
                 } else if ("log".equals(key)) {
                     if (value.isEmpty()) throw new IllegalArgumentException("log needs a file, for example log=agent.log");
                     log = Paths.get(value);
                 } else {
-                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, palette, plugins, log)");
+                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, palette, flows, plugins, log)");
                 }
             }
         }
@@ -92,7 +101,7 @@ public final class AgentArgs {
         if (Boolean.TRUE.equals(palette) && background) {
             throw new IllegalArgumentException("palette=on needs a person at the screen; it cannot run with mode=background");
         }
-        return new AgentArgs(port, bind, mode, plugins, palette == null ? !background : palette.booleanValue(), log);
+        return new AgentArgs(port, bind, mode, plugins, palette == null ? !background : palette.booleanValue(), flows, log);
     }
 
     /**
