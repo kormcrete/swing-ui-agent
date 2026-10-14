@@ -86,11 +86,39 @@ class InspectorTest {
 
     @Test
     void anActionAndTheChecksAfterItAreOneStep() {
-        List<String> steps = Arrays.asList("click(#save)", "expect(#status text 'saved')", "expect(#save !disabled)",
-                "click(#new)", "type(#customer 'Acme')");
+        List<Inspector.StepLine> steps = new java.util.ArrayList<Inspector.StepLine>();
+        for (String l : Arrays.asList("click(#save)", "expect(#status text 'saved')", "expect(#save !disabled)",
+                "click(#new)", "type(#customer 'Acme')")) {
+            steps.add(new Inspector.StepLine(steps.size() + 1, "person", l, false));
+        }
         assertThat(Inspector.checksAfter(steps, 0, steps.size())).isEqualTo(2);
         assertThat(Inspector.checksAfter(steps, 3, steps.size())).isEqualTo(0);
         assertThat(Inspector.checksAfter(steps, 0, 2)).isEqualTo(1);
+    }
+
+    @Test
+    void noticesNeverWaitForTheEdt() throws Exception {
+        Inspector before = Inspector.swap(scene.inspector);
+        java.util.concurrent.CountDownLatch blocked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        SwingUtilities.invokeLater(() -> {
+            blocked.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            assertThat(blocked.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            // the session tells the palette under its own lock: that call must return though the EDT is busy
+            java.util.concurrent.CompletableFuture.runAsync(() -> Inspector.recordingChanged("the agent deleted step 2"))
+                    .get(1, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            Inspector.swap(before);
+        }
+        SwingUtilities.invokeAndWait(() -> { });
     }
 
     // ---- the agent acts on what the palette covers -----------------------------------------------------------------

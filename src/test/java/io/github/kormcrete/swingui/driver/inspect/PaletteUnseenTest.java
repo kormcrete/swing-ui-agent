@@ -44,7 +44,7 @@ class PaletteUnseenTest {
     void theSnapshotHasNoNodeOfThePalette() throws Exception {
         onEdt(() -> {
             exportPanel();
-            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { });
+            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
             steps.setBounds(10, 290, 300, 100);
             steps.validate();
             scene.content.add(steps);

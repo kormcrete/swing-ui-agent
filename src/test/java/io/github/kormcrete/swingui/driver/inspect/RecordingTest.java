@@ -503,7 +503,7 @@ class RecordingTest {
             assertThat(r.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
             assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(r.bar);
             assertThat(r.panel.replayAllLabel()).isEqualTo("▶ Run");
-            assertThat(r.panel.rows()).containsExactly("click(button 'Add to cart')", "click(button 'Checkout…')");
+            assertThat(r.panel.rows()).containsExactly("1  ●  click(button 'Add to cart')", "2  ●  click(button 'Checkout…')");
             assertThat(scene.inspector.flowsPanel).isNull();
             assertThat(scene.inspector.engaged()).isNull();
         });
@@ -664,11 +664,178 @@ class RecordingTest {
             assertThat(empty.notice()).isNull();
             empty.cancel();
         });
-        sink.steps.addAll(Arrays.asList("click(#save)", "click(#new)", "type(#customer, Ada)"));
+        sink.person("click(#save)", "click(#new)", "type(#customer, Ada)");
         SwingUtilities.invokeAndWait(() -> scene.inspector.overlay(frame.getRootPane()).bar().press("Load flow…"));
         FlowsPanel panel = eventually(() -> scene.inspector.flowsPanel);
         SwingUtilities.invokeAndWait(() ->
                 assertThat(panel.notice()).isEqualTo("Loading replaces the current recording (3 steps)."));
+    }
+
+    // ---- the steps list by step id: who made each step, edits, undo, the agent's changes at once -------------------
+
+    /** A recording with its steps panel open in the frame and its live re-read off: the panel changes only when told. */
+    private Recording withSteps() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            recording = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });
+            recording.start();
+            recording.toggleSteps();
+            recording.live.stop();
+        });
+        settle();
+        return recording;
+    }
+
+    /** One round through the EDT, the sink thread and the EDT again: what a refresh of the panel takes. */
+    private void settle() throws Exception {
+        SwingUtilities.invokeAndWait(() -> { });
+        sinkThread.submit(() -> { }).get(5, TimeUnit.SECONDS);
+        SwingUtilities.invokeAndWait(() -> { });
+    }
+
+    private List<String> rows() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<List<String>> rows = new java.util.concurrent.atomic.AtomicReference<List<String>>();
+        SwingUtilities.invokeAndWait(() -> rows.set(recording.panel.rows()));
+        return rows.get();
+    }
+
+    @Test
+    void theAgentsStepsAreMarkedAsTheAgents() throws Exception {
+        sink.person("click(#new)");
+        sink.agent("click(#save)", "expect(#status text 'saved')");
+        withSteps();
+        List<String> rows = rows();
+        assertThat(rows).hasSize(3);
+        assertThat(rows.get(0)).isEqualTo("1  ●  click(#new)").doesNotContain("agent: ");
+        assertThat(rows.get(1)).isEqualTo("2  ●  agent: click(#save)");
+        // a check stays indented under its action, and says whose it is
+        assertThat(rows.get(2)).startsWith("3  ●  ").contains("└ agent: check: #status text 'saved'");
+    }
+
+    @Test
+    void anEditedStepShowsTheEditMarkUntilItIsReplayed() throws Exception {
+        sink.person("click(#new)");
+        sink.edited("click(#save)");
+        withSteps();
+        assertThat(rows()).containsExactly("1  ●  click(#new)", "2  ✎  agent: click(#save)");
+
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying && recording.panel.rows().get(1).startsWith("2  ✓") ? Boolean.TRUE : null);
+        assertThat(rows()).containsExactly("1  ✓  click(#new)", "2  ✓  agent: click(#save)");
+    }
+
+    @Test
+    void aDeleteHitsTheStepThePersonSawEvenWhenTheAgentInsertedBeforeIt() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        int b = sink.steps.get(1).id;
+        withSteps();
+        assertThat(rows()).hasSize(3);
+        // the agent inserts a step at the top; the panel has not shown it yet
+        sink.insert(0, "click(#x)");
+
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(1);
+            recording.panel.press("✕ Delete");
+        });
+        // the panel shows the result of the delete: the recording re-read after it
+        eventually(() -> recording.panel.rows().get(0).contains("#x") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("delete " + b);
+        assertThat(sink.lines()).containsExactly("click(#x)", "click(#a)", "click(#c)");
+        assertThat(rows()).containsExactly("1  ✎  agent: click(#x)", "2  ●  click(#a)", "3  ●  click(#c)");
+    }
+
+    @Test
+    void redoFromARowCutsAtThatStepsId() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        int b = sink.steps.get(1).id;
+        withSteps();
+        sink.insert(0, "click(#x)");
+
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(1);
+            recording.panel.press("↺ Redo from selected");
+        });
+        // the steps before the cut are replayed - x and a, as the recording now is - and the person records on
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut " + b, "replay 0", "replay 1", "resume");
+        assertThat(sink.lines()).containsExactly("click(#x)", "click(#a)");
+    }
+
+    @Test
+    void undoInThePanelUndoesAndSaysWhat() throws Exception {
+        sink.person("click(#a)", "click(#c)");
+        sink.undoLabel = "delete of step 2 by the person";
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.undoEnabled()).isTrue();
+            assertThat(recording.panel.undoTip()).isEqualTo("delete of step 2 by the person");
+            recording.panel.press("↶ Undo");
+        });
+        eventually(() -> !recording.panel.undoEnabled() ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("undo");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.bar.text()).isEqualTo("undid: delete of step 2 by the person");
+            // nothing left to undo
+            assertThat(recording.panel.undoEnabled()).isFalse();
+        });
+
+        // a refused undo says why on the bar
+        sink.undoLabel = "cut from step 2 (redo) by the person";
+        sink.refuseUndo = "the agent is replaying the recording";
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> recording.panel.press("↶ Undo"));
+        eventually(() -> recording.bar.text().contains("replaying") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() ->
+                assertThat(recording.bar.text()).isEqualTo("✗ not undone: the agent is replaying the recording"));
+    }
+
+    /** The panel re-reads the recording now, as the live timer would. */
+    private void settleRefresh() throws Exception {
+        SwingUtilities.invokeAndWait(() -> recording.changed(null));
+        settle();
+    }
+
+    @Test
+    void anAgentChangeShowsAtOnceWithItsNotice() throws Exception {
+        Inspector before = Inspector.swap(scene.inspector);
+        try {
+            recordInFrame();
+            sink.person("click(#a)", "click(#b)", "click(#c)");
+            SwingUtilities.invokeAndWait(() -> {
+                recording.toggleSteps();
+                recording.live.stop();
+            });
+            eventually(() -> recording.panel.rows().size() == 3 ? Boolean.TRUE : null);
+
+            // the agent deletes step 2: the session tells the palette, which re-reads at once (no timer runs)
+            sink.steps.remove(1);
+            Inspector.recordingChanged("the agent deleted step 2");
+            eventually(() -> recording.panel.rows().size() == 2 ? Boolean.TRUE : null);
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ●  click(#c)");
+                assertThat(recording.bar.text()).isEqualTo("the agent deleted step 2");
+            });
+        } finally {
+            Inspector.swap(before);
+        }
+    }
+
+    @Test
+    void anAgentsNoticeGivesTheBarBackAfterFourSeconds() throws Exception {
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.bar.text("Use the app: every step is recorded.");
+            recording.changed("the agent deleted step 2");
+            assertThat(recording.bar.text()).isEqualTo("the agent deleted step 2");
+            // a second notice while the first shows: the text before both comes back
+            recording.changed("the agent inserted at step 1");
+            assertThat(recording.noteTimer.getInitialDelay()).isEqualTo(Recording.NOTE_MS).isEqualTo(4000);
+            recording.noteTimer.getActionListeners()[0].actionPerformed(null);
+            assertThat(recording.bar.text()).isEqualTo("Use the app: every step is recorded.");
+        });
     }
 
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */

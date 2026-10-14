@@ -99,8 +99,11 @@ public final class Inspector {
         /** A check the person chose: run it, record it when it passes. */
         Result check(Map<String, Object> step);
 
-        /** Every step of the recording so far, agent's and person's, as one line each. */
-        List<String> steps();
+        /**
+         * Every step of the recording so far, agent's and person's, as one line each with its id and author. Never
+         * waits for a step or a replay the session is running.
+         */
+        List<StepLine> steps();
 
         /** Step {@code index}'s target, or null for a step without one (menu, press). */
         Locator target(int index);
@@ -108,14 +111,26 @@ public final class Inspector {
         /** Runs step {@code index} again, without recording it. */
         Result replay(int index);
 
-        /** Keeps the first {@code keep} steps and drops the rest. */
-        void truncate(int keep);
+        /**
+         * Drops the step with {@code id} and every step after it (a redo's cut). Refused when that step is gone or the
+         * agent is replaying the recording; the result's line says what was cut, or why not.
+         */
+        Result cutFrom(int id);
 
         /** The palette records on after a redo (also after Done): a stopped recording takes steps again. */
         void resume();
 
-        /** Drops step {@code index}. */
-        void remove(int index);
+        /** Deletes the step with {@code id}; refused when it is gone or the agent is replaying the recording. */
+        Result delete(int id);
+
+        /**
+         * Takes back the last edit, the agent's or the person's. The result's line is what was undone (as
+         * {@link #undoLabel} said), or why nothing was.
+         */
+        Result undo();
+
+        /** What {@link #undo} would take back, e.g. "delete of step 7 by the person"; null when nothing. */
+        String undoLabel();
 
         /** The package an export offers first: the app plugin's export package, else that of the app's main class. */
         String exportPackage();
@@ -152,6 +167,30 @@ public final class Inspector {
 
         /** Resets the app as a flow starts ({@code session reset} without touching the recording). */
         Result reset();
+    }
+
+    /**
+     * One step as the steps panel lists it: its id, which it keeps for the whole recording (the person's delete and
+     * redo name it, so a step the agent put in meanwhile never shifts them onto another step), who made it ("person",
+     * "agent" or "flow"), its line, and whether it was changed after it was recorded and no replay passed it since.
+     */
+    public static final class StepLine {
+        public final int id;
+        public final String author;
+        public final String line;
+        public final boolean edited;
+
+        public StepLine(int id, String author, String line, boolean edited) {
+            this.id = id;
+            this.author = author;
+            this.line = line;
+            this.edited = edited;
+        }
+
+        /** A check: it belongs to the action before it. */
+        boolean check() {
+            return line.startsWith("expect(");
+        }
     }
 
     /** A flow file as Load flow… lists it. */
@@ -346,6 +385,19 @@ public final class Inspector {
 
     void recordingBusy(String reason) {
         recordingBusy = reason;
+    }
+
+    /**
+     * The session's recording changed - a step, an edit, either author's: the person's recording re-reads it at once
+     * and shows {@code notice} (the agent's edit, e.g. "the agent deleted step 7"; null: nothing to say) on its bar
+     * for a few seconds. Returns at once: the session calls it under its lock, and the EDT may be waiting for that lock.
+     */
+    public static void recordingChanged(String notice) {
+        Inspector i = instance;
+        if (i == null) return;
+        SwingUtilities.invokeLater(() -> {
+            if (i.recording != null) i.recording.changed(notice);
+        });
     }
 
     // ---- the person records ---------------------------------------------------------------------------------------
@@ -991,9 +1043,9 @@ public final class Inspector {
      * How many checks follow step {@code i} before the next action (or {@code n}): an action and its checks are one step
      * for the person, one Next runs them all.
      */
-    static int checksAfter(List<String> steps, int i, int n) {
+    static int checksAfter(List<StepLine> steps, int i, int n) {
         int count = 0;
-        for (int j = i + 1; j < Math.min(n, steps.size()) && steps.get(j).startsWith("expect("); j++) count++;
+        for (int j = i + 1; j < Math.min(n, steps.size()) && steps.get(j).check(); j++) count++;
         return count;
     }
 

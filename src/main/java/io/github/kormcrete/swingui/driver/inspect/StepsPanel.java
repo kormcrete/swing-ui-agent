@@ -18,27 +18,34 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.IntConsumer;
 
 /**
- * The recording as the person sees it: every step, agent's and theirs, with what its last replay did
- * (● recorded, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all (for a loaded flow: run it, from a
- * reset), replay from a step, redo from a step (cut the recording there, replay up to it, record on) or delete one.
+ * The recording as the person sees it: every step, agent's ("agent: …") and theirs, with what its last replay did
+ * (● recorded, ✎ changed since and not replayed, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all (for
+ * a loaded flow: run it, from a reset), replay from a step, redo from a step (cut the recording there, replay up to
+ * it, record on), delete one, or undo the last edit - the agent's or the person's. Rows know their step's id: what the
+ * person deletes or redoes is the step they saw, even when the agent changed the recording since.
  */
 final class StepsPanel extends JPanel {
 
     private final DefaultListModel<String> model = new DefaultListModel<String>();
     private final JList<String> list = new JList<String>(model);
     private final JLabel title = new JLabel("Steps");
-    private List<String> marks;
+    /** Per row: its step's id and mark; the pending row has neither. */
+    private final List<Integer> ids = new ArrayList<Integer>();
+    private final List<String> rowMarks = new ArrayList<String>();
+    private final JButton undo;
     private final javax.swing.JComboBox<String> speed =
             new javax.swing.JComboBox<String>(new String[] {"Fast", "Normal", "Slow", "Step by step"});
     private final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 
     /** {@code replayAllLabel}: what the first button says - "▶ Replay all", or "▶ Run" for a loaded flow. */
     StepsPanel(String replayAllLabel, Runnable replayAll, IntConsumer replayFrom, IntConsumer redoFrom, IntConsumer delete,
-               Runnable close) {
+               Runnable undo, Runnable close) {
         super(new BorderLayout(0, 6));
         setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY, 2),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
@@ -61,13 +68,9 @@ final class StepsPanel extends JPanel {
         list.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean selected, boolean focus) {
-                boolean pending = marks != null && index >= marks.size();
-                String mark = pending ? "…" : marks != null ? marks.get(index) : "●";
-                String text = String.valueOf(value);
-                // a check belongs to the action before it: indented under it, replayed with it step by step
-                if (text.startsWith("expect(")) text = "      └ check: " + text.substring(7, text.length() - 1);
-                super.getListCellRendererComponent(l, (pending ? "   " : (index + 1) + "  ") + mark + "  " + text, index,
-                        selected, focus);
+                boolean pending = index >= rowMarks.size();
+                String mark = pending ? "…" : rowMarks.get(index);
+                super.getListCellRendererComponent(l, value, index, selected, focus);
                 if (pending) {
                     setForeground(Color.GRAY);
                     setFont(getFont().deriveFont(Font.ITALIC));
@@ -88,13 +91,31 @@ final class StepsPanel extends JPanel {
         buttons.add(small("▶ From selected", () -> { if (selected() >= 0) replayFrom.accept(selected()); }));
         buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(selected()); }));
         buttons.add(small("✕ Delete", () -> { if (selected() >= 0) delete.accept(selected()); }));
+        this.undo = small("↶ Undo", undo);
+        this.undo.setEnabled(false);
+        buttons.add(this.undo);
         add(buttons, BorderLayout.SOUTH);
     }
 
-    /** The selected step; -1 for none, or for the pending row, which is no step yet. */
+    /** The selected step's row; -1 for none, or for the pending row, which is no step yet. */
     int selected() {
         int i = list.getSelectedIndex();
-        return marks != null && i >= marks.size() ? -1 : i;
+        return i >= ids.size() ? -1 : i;
+    }
+
+    /** The id of the step in {@code row}, as last shown; -1 for the pending row or no row. */
+    int idAt(int row) {
+        return row >= 0 && row < ids.size() ? ids.get(row) : -1;
+    }
+
+    /** Whether Undo can be pressed: something can be taken back. */
+    boolean undoEnabled() {
+        return undo.isEnabled();
+    }
+
+    /** What Undo would take back, as its tooltip says; null when nothing. */
+    String undoTip() {
+        return undo.getToolTipText();
     }
 
     /** Selects step {@code i}, as if the person clicked it. */
@@ -118,9 +139,9 @@ final class StepsPanel extends JPanel {
         throw new IllegalArgumentException("no button '" + label + "' in the steps panel");
     }
 
-    /** The rows it lists now: the steps, then what is still pending. */
+    /** The rows it lists now, as the person reads them ("2  ✓  agent: click(…)"): the steps, then what is pending. */
     List<String> rows() {
-        List<String> out = new java.util.ArrayList<String>();
+        List<String> out = new ArrayList<String>();
         for (int i = 0; i < model.size(); i++) out.add(model.get(i));
         return out;
     }
@@ -134,12 +155,27 @@ final class StepsPanel extends JPanel {
         return speed.getSelectedIndex();
     }
 
-    /** The steps, then - greyed - what the person is still doing (typing not yet committed), when anything. */
-    void show(List<String> steps, List<String> marks, int select, String pending) {
-        this.marks = marks;
+    /**
+     * The steps, each with its replay mark from {@code marks} (by step id; none: ● or, for an edited step, ✎), then -
+     * greyed - what the person is still doing (typing not yet committed), when anything. {@code undoLabel}: what Undo
+     * would take back, null when nothing.
+     */
+    void show(List<Inspector.StepLine> steps, Map<Integer, String> marks, int select, String pending, String undoLabel) {
         int keep = select >= 0 ? select : list.getSelectedIndex();
-        List<String> rows = new java.util.ArrayList<String>(steps);
-        if (pending != null) rows.add(pending);
+        ids.clear();
+        rowMarks.clear();
+        List<String> rows = new ArrayList<String>();
+        for (int i = 0; i < steps.size(); i++) {
+            Inspector.StepLine s = steps.get(i);
+            String mark = marks.get(s.id);
+            if (mark == null) mark = s.edited ? "✎" : "●";
+            ids.add(s.id);
+            rowMarks.add(mark);
+            rows.add(row(i + 1, mark, s));
+        }
+        if (pending != null) rows.add("   …  " + pending);
+        undo.setEnabled(undoLabel != null);
+        undo.setToolTipText(undoLabel);
         boolean same = rows.size() == model.size();
         for (int i = 0; same && i < rows.size(); i++) same = rows.get(i).equals(model.get(i));
         title.setText("Steps (" + steps.size() + ")");
@@ -156,6 +192,14 @@ final class StepsPanel extends JPanel {
             list.ensureIndexIsVisible(rows.size() - 1);
         }
         list.repaint();
+    }
+
+    /** Row {@code n} as the person reads it; a check is indented under its action, an agent's step says so. */
+    static String row(int n, String mark, Inspector.StepLine s) {
+        String who = "agent".equals(s.author) ? "agent: " : "";
+        // a check belongs to the action before it: indented under it, replayed with it step by step
+        String text = s.check() ? "      └ " + who + "check: " + s.line.substring(7, s.line.length() - 1) : who + s.line;
+        return n + "  " + mark + "  " + text;
     }
 
     private static JButton small(String label, Runnable action) {

@@ -39,6 +39,18 @@ class UiMcpRecordingTest {
         sink = session.humanSink();
     }
 
+    /** The recording's lines, as the palette's steps list reads them. */
+    private List<String> lines() {
+        List<String> out = new java.util.ArrayList<String>();
+        for (Inspector.StepLine s : sink.steps()) out.add(s.line);
+        return out;
+    }
+
+    /** The id of the step in row {@code row} (0-based). */
+    private int id(int row) {
+        return sink.steps().get(row).id;
+    }
+
     private static Map<String, Object> step(String action, Locator target) {
         Map<String, Object> s = new LinkedHashMap<String, Object>();
         s.put("action", action);
@@ -286,10 +298,10 @@ class UiMcpRecordingTest {
         sink.done(step("click", Locator.ofId("a")));
         sink.done(step("click", Locator.ofId("b")));
         sink.end();
-        sink.truncate(1);
+        assertThat(sink.cutFrom(id(1)).ok).isTrue();
         sink.resume();
         assertThat(sink.done(step("click", Locator.ofId("c"))).ok).isTrue();
-        assertThat(sink.steps()).containsExactly("click(#a)", "click(#c)");
+        assertThat(lines()).containsExactly("click(#a)", "click(#c)");
     }
 
     @Test
@@ -297,7 +309,7 @@ class UiMcpRecordingTest {
         sink.begin();
         sink.done(step("click", Locator.ofId("a")));
         sink.end();
-        sink.truncate(0);
+        assertThat(sink.cutFrom(id(0)).ok).isTrue();
         // the replay failed: the palette never recorded on
         assertThat(call("{\"op\":\"list\"}").path("state").asText()).isEqualTo("stopped");
         assertThat(session.recordingReason()).isNull();
@@ -500,7 +512,7 @@ class UiMcpRecordingTest {
         four();
         call("{\"op\":\"delete\",\"n\":3}");
         assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the delete of step 3 by the agent");
-        sink.remove(0);
+        assertThat(sink.delete(id(0)).ok).isTrue();
         JsonNode r = call("{\"op\":\"undo\"}");
         assertThat(r.path("did").asText()).isEqualTo("undid the delete of step 1 by the person");
         assertThat(ids(r)).isEqualTo("abcd");
@@ -558,9 +570,70 @@ class UiMcpRecordingTest {
         sink.done(step("click", Locator.ofId("b")));
         sink.done(step("click", Locator.ofId("c")));
         sink.end();
-        sink.truncate(1);
+        assertThat(sink.cutFrom(id(1)).ok).isTrue();
         assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the cut from step 2 (redo) by the person");
         assertThat(sink.steps()).hasSize(3);
+    }
+
+    @Test
+    void thePaletteHearsEveryChangeWithTheAgentsNotice() throws Exception {
+        List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        session.recordingView(notice -> heard.add(String.valueOf(notice)));
+        four();
+        assertThat(heard).isNotEmpty().containsOnly("null");
+
+        heard.clear();
+        call("{\"op\":\"delete\",\"n\":2}");
+        assertThat(heard).containsExactly("the agent deleted step 2");
+
+        // the person's own steps and edits come with no notice: the palette made them
+        heard.clear();
+        sink.done(step("click", Locator.ofId("e")));
+        assertThat(sink.delete(id(0)).ok).isTrue();
+        assertThat(heard).containsExactly("null", "null");
+
+        heard.clear();
+        call("{\"op\":\"undo\"}");
+        assertThat(heard).containsExactly("the agent undid the delete of step 1 by the person");
+        // the history says who undid it
+        DriverException stale = refused("{\"op\":\"delete\",\"n\":1,\"rev\":0}");
+        assertThat(stale.getMessage()).contains("last change: the agent undid the delete of step 1 by the person");
+
+        heard.clear();
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"x\"}}}");
+        call("{\"op\":\"move\",\"n\":1,\"to\":2}");
+        call("{\"op\":\"edit\",\"n\":2,\"target\":{\"id\":\"y\"}}");
+        assertThat(heard).containsExactly("the agent inserted at step 1", "the agent moved step 1 to 2",
+                "the agent edited step 2");
+    }
+
+    @Test
+    void anAgentEditNeverWaitsForTheEdt() throws Exception {
+        four();
+        session.recordingView(UiMcpSession.PALETTE);
+        java.util.concurrent.CountDownLatch blocked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            blocked.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            assertThat(blocked.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try {
+                    call("{\"op\":\"delete\",\"n\":1}");
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            }).get(1, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
     }
 
     // ---- replay, redo, export, load -------------------------------------------------------------
@@ -685,8 +758,11 @@ class UiMcpRecordingTest {
         try {
             assertThat(inStep.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             int rev = call("{\"op\":\"list\"}").path("rev").asInt();
-            sink.remove(0);
-            sink.truncate(1);
+            Inspector.Result delete = sink.delete(id(0));
+            assertThat(delete.ok).isFalse();
+            assertThat(delete.line).isEqualTo("the agent is replaying the recording");
+            assertThat(sink.cutFrom(id(1)).ok).isFalse();
+            assertThat(sink.undo().ok).isFalse();
             sink.resume();
             DriverException e = refused("{\"op\":\"delete\",\"n\":1}");
             assertThat(e.reason()).isEqualTo(Reason.BUSY);
@@ -701,7 +777,7 @@ class UiMcpRecordingTest {
         }
         assertThat(out[0].path("passed").asBoolean()).isTrue();
         // afterwards the person's edits work again
-        sink.remove(0);
+        assertThat(sink.delete(id(0)).ok).isTrue();
         assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(3);
     }
 

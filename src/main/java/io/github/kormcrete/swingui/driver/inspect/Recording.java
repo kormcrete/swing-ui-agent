@@ -10,8 +10,11 @@ import java.awt.Color;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -22,7 +25,9 @@ import java.util.concurrent.Semaphore;
  * mode), the steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class
  * or a flow file. Only the person starts and ends it. A flow file the person loads is one too, already stopped
  * ({@link #loaded}): its steps panel runs it - the app reset, then every step. While a replay or run goes on, no other
- * call drives the app ({@link Inspector#drivingReason}). EDT, except where a method says otherwise.
+ * call drives the app ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the
+ * panel shows each change at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a
+ * method says otherwise.
  */
 final class Recording {
 
@@ -43,16 +48,26 @@ final class Recording {
     private final Bar activeBar;
     private final Bar stoppedBar;
     Bar bar;
-    /** Per step: ● recorded, ▶ running, ✓ replayed, ✗ failed. */
-    private final List<String> marks = new ArrayList<String>();
+    /** By step id, what its last replay did: ▶ running, ✓ replayed, ✗ failed. None: ● recorded, ✎ edited. */
+    private final Map<Integer, String> marks = new HashMap<Integer, String>();
     StepsPanel panel;
     ExportPanel exportPanel;
     State state = State.RECORDING;
     boolean replaying;
     /** Completes at the person's Done; a redo that records on starts a new one. */
     volatile CompletableFuture<List<String>> done = new CompletableFuture<List<String>>();
-    /** Re-reads the recording while the panel is open, so it never lags (typing shows as it happens). */
-    private final Timer live = new Timer(500, e -> refresh(-1));
+    /**
+     * Re-reads the recording while the panel is open, so it never lags (typing shows as it happens); a backstop, as the
+     * session tells of every change ({@link #changed}).
+     */
+    final Timer live = new Timer(500, e -> refresh(-1));
+
+    /** How long the agent's note stays on the bar before the text it covered comes back. */
+    static final int NOTE_MS = 4000;
+    /** Puts back what the bar said before the agent's note; running while a note shows. */
+    Timer noteTimer;
+    private Bar noted;
+    private String beforeNote;
 
     /** Replay controls, read by the replay thread. */
     volatile boolean paused;
@@ -181,6 +196,7 @@ final class Recording {
         stopped = true;
         next.release();
         live.stop();
+        if (noteTimer != null) noteTimer.stop();
         steps.active(false);
         if (panel != null || exportPanel != null) home.panel(null);
         panel = null;
@@ -229,9 +245,10 @@ final class Recording {
         inspector.closeFlows();
         // a loaded flow runs as it will in a test: from a reset
         panel = flow != null
-                ? new StepsPanel("▶ Run", this::run, i -> replay(i, -1, null), this::redoFrom, this::delete, this::toggleSteps)
+                ? new StepsPanel("▶ Run", this::run, i -> replay(i, -1, null), this::redoFrom, this::delete, this::undo,
+                        this::toggleSteps)
                 : new StepsPanel("▶ Replay all", () -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom,
-                        this::delete, this::toggleSteps);
+                        this::delete, this::undo, this::toggleSteps);
         home.panel(panel);
         refresh(-1);
         live.start();
@@ -322,13 +339,55 @@ final class Recording {
         return result;
     }
 
-    private void delete(int i) {
+    /**
+     * The session's recording changed: the panel re-reads it now, and {@code notice} - the agent's edit - shows on the
+     * bar (null: nothing to say).
+     */
+    void changed(String notice) {
+        if (notice != null) note(notice);
+        refresh(-1);
+    }
+
+    /**
+     * Shows {@code text} on the bar for {@link #NOTE_MS}, then what the bar said before; a note that comes while
+     * another shows replaces it, and the text before both comes back.
+     */
+    private void note(String text) {
+        boolean showing = noteTimer != null && noteTimer.isRunning() && noted == bar;
+        if (noteTimer != null) noteTimer.stop();
+        if (!showing) beforeNote = bar.text();
+        Bar on = bar;
+        noted = on;
+        on.text(text);
+        noteTimer = new Timer(NOTE_MS, e -> {
+            // a newer line (a step recorded, a replay's outcome) stays
+            if (text.equals(on.text())) on.text(beforeNote);
+        });
+        noteTimer.setRepeats(false);
+        noteTimer.start();
+    }
+
+    /** ✕ Delete on row {@code row}: deletes the step the person saw there, by its id. */
+    private void delete(int row) {
+        int id = panel == null ? -1 : panel.idAt(row);
+        if (id < 0) return;
         sinkThread.submit(() -> {
-            sink.remove(i);
+            Inspector.Result r = sink.delete(id);
             SwingUtilities.invokeLater(() -> {
-                if (i < marks.size()) marks.remove(i);
-                bar.text("deleted step " + (i + 1));
-                refresh(Math.min(i, marks.size() - 1));
+                if (r.ok) marks.remove(id);
+                bar.text(r.ok ? r.line : "✗ not deleted: " + r.line);
+                refresh(row);
+            });
+        });
+    }
+
+    /** ↶ Undo: takes back the last edit, whoever made it, and says what. */
+    private void undo() {
+        sinkThread.submit(() -> {
+            Inspector.Result r = sink.undo();
+            SwingUtilities.invokeLater(() -> {
+                bar.text(r.ok ? "undid: " + r.line : "✗ not undone: " + r.line);
+                refresh(-1);
             });
         });
     }
@@ -336,25 +395,38 @@ final class Recording {
     /** Re-reads the recording into the panel; {@code select} picks a row (-1 keeps the selection). */
     private void refresh(int select) {
         sinkThread.submit(() -> {
-            List<String> all = sink.steps();
+            List<Inspector.StepLine> all = sink.steps();
+            String undoLabel = sink.undoLabel();
             SwingUtilities.invokeLater(() -> {
-                while (marks.size() < all.size()) marks.add("●");
-                while (marks.size() > all.size()) marks.remove(marks.size() - 1);
-                if (panel != null) panel.show(all, marks, select, replaying || !active() ? null : steps.pending());
+                Set<Integer> ids = new HashSet<Integer>();
+                for (Inspector.StepLine s : all) ids.add(s.id);
+                marks.keySet().retainAll(ids);
+                int row = Math.min(select, all.size() - 1);
+                if (panel != null) {
+                    panel.show(all, marks, row, replaying || !active() ? null : steps.pending(), undoLabel);
+                }
             });
         });
     }
 
     /**
-     * Cuts the recording before step {@code i}, replays what is left to get the app back there, and records on - also
-     * after Done: redo always means recording the rest.
+     * Cuts the recording at the step the person saw in row {@code row} (by its id), replays what is left to get the app
+     * back there, and records on - also after Done: redo always means recording the rest.
      */
-    private void redoFrom(int i) {
+    private void redoFrom(int row) {
+        int id = panel == null ? -1 : panel.idAt(row);
+        if (id < 0) return;
         steps.flush();
         sinkThread.submit(() -> {
-            sink.truncate(i);
+            Inspector.Result cut = sink.cutFrom(id);
+            // the steps before the cut, as the recording is now: the agent may have changed it since the person looked
+            int i = cut.ok ? sink.steps().size() : 0;
             SwingUtilities.invokeLater(() -> {
-                while (marks.size() > i) marks.remove(marks.size() - 1);
+                if (!cut.ok) {
+                    bar.text("✗ no redo: " + cut.line);
+                    refresh(-1);
+                    return;
+                }
                 Runnable recordOn = () -> {
                     if (exportPanel != null) {
                         home.panel(null);
@@ -461,28 +533,29 @@ final class Recording {
 
     /** The replay loop, on the sink thread. */
     private void runReplay(int from, int to, long delay, boolean wasChecking, Runnable after) {
-        List<String> all = sink.steps();
+        List<Inspector.StepLine> all = sink.steps();
         int n = to < 0 ? all.size() : Math.min(to, all.size());
         String outcome = n <= from ? "nothing to replay" : "replayed steps " + (from + 1) + "-" + n + ": all passed";
         int failed = -1;
         Inspector.onEdt(() -> {
-            while (marks.size() < all.size()) marks.add("●");
             // marks from an earlier run must not mix with this one
-            for (int i = from; i < n; i++) marks.set(i, "●");
+            for (int i = from; i < n; i++) marks.remove(all.get(i).id);
             home.controlsAway(true);
         });
         for (int i = from; i < n; i++) {
             final int k = i;
+            final int id = all.get(i).id;
+            final String line = all.get(i).line;
             final Locator target = sink.target(i);
-            final boolean check = all.get(i).startsWith("expect(");
-            final String what = check ? "check: " + all.get(i).substring(7, all.get(i).length() - 1) : all.get(i);
+            final boolean check = all.get(i).check();
+            final String what = check ? "check: " + line.substring(7, line.length() - 1) : line;
             final String label = (i + 1) + "/" + n + "  " + what;
             // an action and the checks right after it are one step for the person: one Next runs them all
             final boolean starts = i == from || !check;
             final int group = starts ? Inspector.checksAfter(all, i, n) : 0;
             final Overlay.Mark[] mine = new Overlay.Mark[1];
             Inspector.onEdt(() -> {
-                marks.set(k, "▶");
+                marks.put(id, "▶");
                 // while paused the last step's results stay in view beside this one, until Next
                 mine[0] = boxStep(target, label, check, starts && !paused);
                 if (mine[0] != null && starts && paused) mine[0].label = label + "   (up next)";
@@ -491,7 +564,7 @@ final class Recording {
             });
             if (starts) {
                 if (!waitTurn(delay)) {
-                    Inspector.onEdt(() -> marks.set(k, "●"));
+                    Inspector.onEdt(() -> marks.remove(id));
                     outcome = "■ stopped before step " + (i + 1);
                     failed = i;
                     break;
@@ -507,7 +580,7 @@ final class Recording {
             }
             Inspector.Result r = sink.replay(i);
             Inspector.onEdt(() -> {
-                marks.set(k, r.ok ? "✓" : "✗");
+                marks.put(id, r.ok ? "✓" : "✗");
                 Overlay.Mark m = mine[0];
                 if (m != null) {
                     m.result = r.ok;

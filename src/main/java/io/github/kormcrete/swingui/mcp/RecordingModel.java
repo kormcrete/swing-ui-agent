@@ -197,21 +197,6 @@ final class RecordingModel {
         return 0;
     }
 
-    /** Removes the step at position {@code n} (1-based); the palette's positional edit. */
-    void remove(int n) {
-        if (n < 1 || n > steps.size()) throw outOfRange(n);
-        steps.remove(n - 1);
-        changed("step " + n + " was removed");
-    }
-
-    /** Keeps the first {@code keep} steps (the palette's positional redo). */
-    void truncate(int keep) {
-        int k = Math.max(0, keep);
-        if (k >= steps.size()) return;
-        while (steps.size() > k) steps.remove(steps.size() - 1);
-        changed("the steps after " + k + " were cut");
-    }
-
     /** Longest history of edits kept. */
     static final int HISTORY = 50;
 
@@ -305,16 +290,17 @@ final class RecordingModel {
         return edited("cut from step " + n + " (redo)", "cut from step " + n, author, before, true);
     }
 
-    /** A replay passed the step with {@code id}: it no longer counts as edited. */
-    void markReplayed(int id) {
+    /** A replay passed the step with {@code id}: it no longer counts as edited. Whether that changed anything. */
+    boolean markReplayed(int id) {
         for (int i = 0; i < steps.size(); i++) {
             RecordedStep s = steps.get(i);
             if (s.id == id && s.edited) {
                 steps.set(i, s.with(s.action, false));
                 changed("step " + (i + 1) + " passed a replay");
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     /** The steps after the last edit is taken back, or null when there is nothing to undo. */
@@ -345,9 +331,10 @@ final class RecordingModel {
 
     /**
      * Takes back the last edit, keeping steps recorded since (a redo's cut instead drops the steps recorded after
-     * it, which followed the cut). Returns what it did, or null when there is nothing to undo.
+     * it, which followed the cut); {@code by} undid it, as {@link #lastChange} then says. Returns what it did ("undid
+     * the delete of step 7 by the person"), or null when there is nothing to undo.
      */
-    String undo() {
+    String undo(RecordedStep.Author by) {
         Edit e = history.peekFirst();
         List<RecordedStep> after = undone();
         if (e == null) return null;
@@ -360,7 +347,7 @@ final class RecordingModel {
         steps.addAll(after);
         String did = "undid the " + e.label;
         if (dropped > 0) did += " (" + dropped + " step" + (dropped == 1 ? "" : "s") + " recorded after it dropped)";
-        changed(did);
+        changed(by(by) + " " + did);
         return did;
     }
 

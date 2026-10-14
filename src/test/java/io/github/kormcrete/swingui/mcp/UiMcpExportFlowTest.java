@@ -107,7 +107,6 @@ class UiMcpExportFlowTest {
         assertThat(loaded.path("steps").asInt()).isEqualTo(1);
         assertThat(loaded.path("name").asText()).isEqualTo("save-order");
         // a loaded flow is stopped: the steps after it join through a redo (the palette's), which records on
-        session.humanSink().truncate(1);
         session.humanSink().resume();
         clickSave();
         JsonNode out = export("save-order", true);
@@ -122,7 +121,6 @@ class UiMcpExportFlowTest {
         export("save-order", true);
         session.startRecording(true);
         session.loadFlow(flows.resolve("save-order.json"));
-        session.humanSink().truncate(1);
         session.humanSink().resume();
         clickSave();
         JsonNode copy = export("save-order-2", false);

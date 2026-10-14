@@ -116,21 +116,46 @@ public class UiMcpSession {
         return person != null ? person : recordingReason();
     };
 
-    /** The recording as {@code recording list} answers it, rebuilt after every change; read without the session's lock. */
+    /**
+     * The recording as {@code recording list} answers it and the palette's steps list shows it, rebuilt after every
+     * change; read without the session's lock.
+     */
     private static final class Published {
         final String json;
         final boolean recording;
         /** Why a running explicit recording blocks a reset, a test run and another start, or null. */
         final String reason;
+        /** The steps as the palette lists them. */
+        final List<Inspector.StepLine> lines;
+        /** What undo would take back, or null. */
+        final String undoLabel;
 
-        Published(String json, boolean recording, String reason) {
+        Published(String json, boolean recording, String reason, List<Inspector.StepLine> lines, String undoLabel) {
             this.json = json;
             this.recording = recording;
             this.reason = reason;
+            this.lines = lines;
+            this.undoLabel = undoLabel;
         }
     }
 
-    private volatile Published published = new Published("{}", false, null);
+    private volatile Published published =
+            new Published("{}", false, null, Collections.<Inspector.StepLine>emptyList(), null);
+
+    /** Who shows the recording besides the agent: the person's palette. */
+    interface RecordingView {
+        /**
+         * The recording changed; {@code notice} is the agent's edit as the person should read it ("the agent deleted
+         * step 7"), null for a step recorded and for the person's own edits. Called under the session's lock: it must
+         * return at once, never waiting for the EDT.
+         */
+        void changed(String notice);
+    }
+
+    /** The palette's view: each change reaches the person's recording through {@code invokeLater}. */
+    static final RecordingView PALETTE = Inspector::recordingChanged;
+
+    private volatile RecordingView view = notice -> { };
     /** A list with {@code wait} waits here, never on the session: the session must stay free to record. */
     private final Object stopSignal = new Object();
 
@@ -197,7 +222,14 @@ public class UiMcpSession {
 
     /** Puts the person's palette into the app (● Record), its recordings going into this session. */
     public void startPalette(Driver driver) {
-        if (palette) Inspector.of(driver).enable(humanSink());
+        if (!palette) return;
+        view = PALETTE;
+        Inspector.of(driver).enable(humanSink());
+    }
+
+    /** Who hears of every change to the recording; a seam for tests. */
+    void recordingView(RecordingView view) {
+        this.view = view;
     }
 
     /** An unscoped snapshot over this many bytes carries a hint to scope the next one. */
@@ -373,12 +405,14 @@ public class UiMcpSession {
             }
 
             @Override
-            public List<String> steps() {
-                synchronized (UiMcpSession.this) {
-                    List<String> out = new ArrayList<String>();
-                    for (Action a : model.actions()) out.add(a.describe());
-                    return out;
-                }
+            public List<Inspector.StepLine> steps() {
+                // the published copy: the steps panel must list during the agent's replay, which holds the session
+                return published.lines;
+            }
+
+            @Override
+            public String undoLabel() {
+                return published.undoLabel;
             }
 
             @Override
@@ -404,17 +438,26 @@ public class UiMcpSession {
             @Override
             public Inspector.Result replay(int index) {
                 JsonNode json;
+                int id;
                 synchronized (UiMcpSession.this) {
                     if (index < 0 || index >= model.size()) {
                         return new Inspector.Result(false, "no step " + (index + 1));
                     }
-                    json = stripNulls(mapper.valueToTree(model.at(index + 1).action));
+                    RecordedStep step = model.at(index + 1);
+                    id = step.id;
+                    json = stripNulls(mapper.valueToTree(step.action));
                 }
                 try {
                     JsonNode result = mapper.readTree(doAction(json, false));
                     boolean passed = result.path("passed").asBoolean(false);
                     String line = result.path("action").asText(json.toString());
                     if (!passed) line += " - " + result.path("message").asText("");
+                    // a step the agent inserted or edited is proven by passing a replay: its edit mark goes
+                    if (passed) {
+                        synchronized (UiMcpSession.this) {
+                            if (model.markReplayed(id)) publish();
+                        }
+                    }
                     return new Inspector.Result(passed, line);
                 } catch (Exception e) {
                     return new Inspector.Result(false, e.getMessage());
@@ -422,11 +465,16 @@ public class UiMcpSession {
             }
 
             @Override
-            public void truncate(int keep) {
-                if (agentReplaying != null) return; // read before the monitor: the agent's replay holds it
+            public Inspector.Result cutFrom(int id) {
+                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
-                    model.cutFrom(Math.max(0, keep) + 1, RecordedStep.Author.PERSON);
+                    int n = model.positionOf(id);
+                    if (n == 0) return gone("nothing cut");
+                    Inspector.Result refused = refusedEdit(model.actions().subList(0, n - 1));
+                    if (refused != null) return refused;
+                    String did = model.cutFrom(n, RecordedStep.Author.PERSON);
                     publish();
+                    return new Inspector.Result(true, did);
                 }
             }
 
@@ -441,11 +489,34 @@ public class UiMcpSession {
             }
 
             @Override
-            public void remove(int index) {
-                if (agentReplaying != null) return;
+            public Inspector.Result delete(int id) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
                 synchronized (UiMcpSession.this) {
-                    if (index >= 0 && index < model.size()) model.delete(index + 1, index + 1, RecordedStep.Author.PERSON);
+                    int n = model.positionOf(id);
+                    if (n == 0) return gone("nothing deleted");
+                    List<Action> after = model.actions();
+                    after.remove(n - 1);
+                    Inspector.Result refused = refusedEdit(after);
+                    if (refused != null) return refused;
+                    String did = model.delete(n, n, RecordedStep.Author.PERSON);
                     publish();
+                    return new Inspector.Result(true, did);
+                }
+            }
+
+            @Override
+            public Inspector.Result undo() {
+                if (agentReplaying != null) return AGENT_REPLAYING;
+                synchronized (UiMcpSession.this) {
+                    List<Action> after = model.undoPreview();
+                    if (after == null) return new Inspector.Result(false, "nothing to undo in this recording");
+                    Inspector.Result refused = refusedEdit(after);
+                    if (refused != null) return refused;
+                    String did = model.undo(RecordedStep.Author.PERSON);
+                    publish();
+                    // what was taken back, as Undo's tooltip named it (and how many steps a cut's undo dropped)
+                    String undid = "undid the ";
+                    return new Inspector.Result(true, did.startsWith(undid) ? did.substring(undid.length()) : did);
                 }
             }
 
@@ -1571,6 +1642,25 @@ public class UiMcpSession {
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
 
+    /** The palette's edits while the agent replays: refused, like the agent's own (see {@link #agentReplaying}). */
+    private static final Inspector.Result AGENT_REPLAYING =
+            new Inspector.Result(false, "the agent is replaying the recording");
+
+    /** The palette's edit of a step that is no longer in the recording (the agent deleted it, or an undo took it). */
+    private static Inspector.Result gone(String what) {
+        return new Inspector.Result(false, "that step is gone: the recording changed since (" + what + ")");
+    }
+
+    /** Why the palette's edit, leaving {@code after}, is refused - export_test could not write it - or null. */
+    private Inspector.Result refusedEdit(List<Action> after) {
+        try {
+            validateEdit(after);
+            return null;
+        } catch (DriverException e) {
+            return new Inspector.Result(false, DriverException.stripReason(e.getMessage(), e.reason()));
+        }
+    }
+
     /** The agent's edits wait for no replay: they are refused, without taking the session's lock the replay holds. */
     private void refuseWhileReplaying() {
         String replaying = agentReplaying;
@@ -1696,8 +1786,8 @@ public class UiMcpSession {
             throw new DriverException(Reason.BAD_INPUT, "no step " + from + " to record from (the recording has " + size
                     + " steps; " + (size + 1) + " continues it)");
         }
-        model.cutFrom(from, RecordedStep.Author.AGENT);
-        publish();
+        String cut = model.cutFrom(from, RecordedStep.Author.AGENT);
+        publish(cut == null ? null : "the agent " + cut);
         ObjectNode r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
         boolean passed = r.path("passed").asBoolean();
         if (passed) {
@@ -1777,8 +1867,9 @@ public class UiMcpSession {
         }
     }
 
+    /** The agent's edit {@code did} is made: published, the palette told, and the list returned with it. */
     private String edited(String did) {
-        publish();
+        publish("the agent " + did);
         ObjectNode r = (ObjectNode) readTree(published.json);
         r.put("did", did);
         return r.toString();
@@ -1890,14 +1981,20 @@ public class UiMcpSession {
         List<Action> after = model.undoPreview();
         if (after == null) throw new DriverException(Reason.BAD_INPUT, "nothing to undo in this recording");
         validateEdit(after);
-        return edited(model.undo());
+        return edited(model.undo(RecordedStep.Author.AGENT));
+    }
+
+    /** {@link #publish(String)} for a change the palette needs no note about. */
+    private void publish() {
+        publish(null);
     }
 
     /**
-     * Rebuilds what {@code recording list} answers from the model and tells the waiters when it is no longer recording.
-     * Call it under the session's lock (or from the constructor) after every change to the model.
+     * Rebuilds what {@code recording list} answers and the palette lists from the model, tells the waiters when it is
+     * no longer recording, and tells the palette, with {@code notice} for the person when the agent edited the steps
+     * (null otherwise). Call it under the session's lock (or from the constructor) after every change to the model.
      */
-    private void publish() {
+    private void publish(String notice) {
         RecordingModel.Snapshot snap = model.snapshot();
         List<Action> actions = new ArrayList<Action>(snap.steps.size());
         for (RecordedStep s : snap.steps) actions.add(s.action);
@@ -1925,8 +2022,10 @@ public class UiMcpSession {
         if (loadedFlow != null) r.put("loadedFrom", loadedFlow.toString());
         r.put("rev", snap.rev);
         ArrayNode steps = r.putArray("steps");
+        List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
+            listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited));
             ObjectNode o = steps.addObject();
             o.put("n", i + 1);
             o.put("author", s.author.json);
@@ -1948,12 +2047,14 @@ public class UiMcpSession {
                     + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.startedAt))
                     + "): Done in the palette or recording {\"op\":\"stop\"} ends it";
         }
-        published = new Published(r.toString(), recording, reason);
+        published = new Published(r.toString(), recording, reason, Collections.unmodifiableList(listed),
+                model.undoLabel());
         if (!recording) {
             synchronized (stopSignal) {
                 stopSignal.notifyAll();
             }
         }
+        view.changed(notice);
     }
 
     private void forgetLoadedFlow() {

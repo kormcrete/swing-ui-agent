@@ -62,7 +62,7 @@ class UiMcpInspectTest {
     void aStepThePersonDidIsRecordedWithoutRunningAgain() {
         Inspector.Result r = sink.done(step("click", Locator.ofId("save")));
         assertThat(r.ok).isTrue();
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
         assertThat(backend.verbs.calls).isEmpty();
     }
 
@@ -74,7 +74,7 @@ class UiMcpInspectTest {
         at.point.put("y", 0.5);
         Inspector.Result r = sink.done(step("click", at));
         assertThat(r.ok).isFalse();
-        assertThat(sink.steps()).isEmpty();
+        assertThat(lines()).isEmpty();
     }
 
     @Test
@@ -98,7 +98,7 @@ class UiMcpInspectTest {
         Inspector.Result r = sink.replay(0);
         assertThat(r.ok).isTrue();
         assertThat(backend.verbs.calls).anyMatch(c -> c.startsWith("click"));
-        assertThat(sink.steps()).hasSize(1);
+        assertThat(lines()).hasSize(1);
     }
 
     @Test
@@ -106,10 +106,64 @@ class UiMcpInspectTest {
         sink.done(step("click", Locator.ofId("new")));
         sink.done(step("click", Locator.ofId("save")));
         sink.done(step("click", Locator.ofId("delete")));
-        sink.remove(1);
-        assertThat(sink.steps()).containsExactly("click(#new)", "click(#delete)");
-        sink.truncate(1);
-        assertThat(sink.steps()).containsExactly("click(#new)");
+        assertThat(sink.delete(id(1)).line).isEqualTo("deleted step 2");
+        assertThat(lines()).containsExactly("click(#new)", "click(#delete)");
+        assertThat(sink.cutFrom(id(1)).line).isEqualTo("cut from step 2");
+        assertThat(lines()).containsExactly("click(#new)");
+    }
+
+    @Test
+    void thePersonsDeleteAndRedoAreUndoable() {
+        sink.done(step("click", Locator.ofId("new")));
+        sink.done(step("click", Locator.ofId("save")));
+        sink.done(step("click", Locator.ofId("delete")));
+        assertThat(sink.undoLabel()).isNull();
+
+        assertThat(sink.delete(id(1)).ok).isTrue();
+        assertThat(sink.undoLabel()).isEqualTo("delete of step 2 by the person");
+        Inspector.Result undone = sink.undo();
+        assertThat(undone.ok).isTrue();
+        assertThat(undone.line).isEqualTo("delete of step 2 by the person");
+        assertThat(lines()).containsExactly("click(#new)", "click(#save)", "click(#delete)");
+
+        assertThat(sink.cutFrom(id(1)).ok).isTrue();
+        assertThat(sink.undoLabel()).endsWith("by the person");
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(lines()).containsExactly("click(#new)", "click(#save)", "click(#delete)");
+        // the steps keep their ids through the undo
+        assertThat(sink.steps()).extracting(s -> s.author).containsOnly("person");
+
+        Inspector.Result nothing = sink.undo();
+        assertThat(nothing.ok).isFalse();
+        assertThat(nothing.line).contains("nothing to undo");
+    }
+
+    @Test
+    void aDeleteOfAStepThatIsGoneSaysSo() {
+        sink.done(step("click", Locator.ofId("save")));
+        int id = id(0);
+        assertThat(sink.delete(id).ok).isTrue();
+        Inspector.Result again = sink.delete(id);
+        assertThat(again.ok).isFalse();
+        assertThat(again.line).contains("gone");
+        Inspector.Result cut = sink.cutFrom(id);
+        assertThat(cut.ok).isFalse();
+        assertThat(cut.line).contains("gone");
+        assertThat(lines()).isEmpty();
+    }
+
+    @Test
+    void theStepsListSaysWhoMadeEachStepAndWhichWereEdited() throws Exception {
+        sink.done(step("click", Locator.ofId("new")));
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"save\"}}"));
+        session.recording(mapper.readTree("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"x\"}}}"));
+        List<Inspector.StepLine> steps = sink.steps();
+        assertThat(steps).extracting(s -> s.author).containsExactly("agent", "person", "agent");
+        assertThat(steps).extracting(s -> s.edited).containsExactly(true, false, false);
+        assertThat(steps.get(0).line).isEqualTo("click(#x)");
+        // a replay from the palette that passes the edited step takes its edit mark away
+        assertThat(sink.replay(0).ok).isTrue();
+        assertThat(sink.steps().get(0).edited).isFalse();
     }
 
     @Test
@@ -118,8 +172,20 @@ class UiMcpInspectTest {
         s.put("text", "saved");
         Inspector.Result r = sink.check(s);
         assertThat(r.ok).isTrue();
-        assertThat(sink.steps()).hasSize(1);
+        assertThat(lines()).hasSize(1);
         assertThat(backend.verbs.calls).anyMatch(c -> c.startsWith("expect"));
+    }
+
+    /** The recording's lines, as the palette's steps list reads them. */
+    private List<String> lines() {
+        List<String> out = new java.util.ArrayList<String>();
+        for (Inspector.StepLine s : sink.steps()) out.add(s.line);
+        return out;
+    }
+
+    /** The id of the step in row {@code row} (0-based). */
+    private int id(int row) {
+        return sink.steps().get(row).id;
     }
 
     private static Map<String, Object> step(String action, Locator target) {
@@ -133,9 +199,9 @@ class UiMcpInspectTest {
     void thePersonsRecordStartsAFreshRecordingFromWhereTheAppIs() {
         sink.done(step("click", Locator.ofId("save")));
         sink.begin();
-        assertThat(sink.steps()).isEmpty();
+        assertThat(lines()).isEmpty();
         assertThat(sink.done(step("click", Locator.ofId("new"))).ok).isTrue();
-        assertThat(sink.steps()).containsExactly("click(#new)");
+        assertThat(lines()).containsExactly("click(#new)");
         assertThat(backend.verbs.calls).isEmpty();
     }
 
@@ -149,7 +215,7 @@ class UiMcpInspectTest {
         assertThat(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)).contains("class SaveUiIT");
         assertThat(r.line).contains("SaveUiIT.java");
         // the recording stays: replay, redo or another export are still possible
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
     }
 
     @Test
@@ -172,7 +238,7 @@ class UiMcpInspectTest {
         Inspector.Result r = sink.export("1Save", "com.example");
         assertThat(r.ok).isFalse();
         assertThat(r.line).contains("1Save");
-        assertThat(sink.steps()).hasSize(1);
+        assertThat(lines()).hasSize(1);
         assertThat(Files.exists(testsDir.resolve("com/example"))).isFalse();
     }
 
@@ -186,7 +252,7 @@ class UiMcpInspectTest {
         Path file = flows.resolve("place-order.json").toAbsolutePath().normalize();
         assertThat(file).exists();
         assertThat(r.line).startsWith("wrote ").contains("place-order.json");
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
         // the file is now the one the recording came from: the panel offers to save over it
         assertThat(sink.loadedFlow()).isEqualTo(file);
         assertThat(memory.get()).isEqualTo(file.getParent());
@@ -220,7 +286,7 @@ class UiMcpInspectTest {
         assertThat(r.folder).isTrue();
         assertThat(r.line).contains("Cannot write to").contains("orders.txt");
         assertThat(memory.get()).isNull();
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
     }
 
     @Test
@@ -277,7 +343,7 @@ class UiMcpInspectTest {
 
         assertThat(r.ok).isTrue();
         assertThat(r.line).isEqualTo("place-order");
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
         assertThat(sink.loadedFlow()).isEqualTo(file);
         // the folder the person loaded from is offered next time
         assertThat(memory.get()).isEqualTo(other.toAbsolutePath().normalize());
@@ -292,7 +358,7 @@ class UiMcpInspectTest {
         Inspector.Result refused = sink.loadFlow(broken);
         assertThat(refused.ok).isFalse();
         assertThat(refused.line).contains("broken.json");
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
         assertThat(sink.loadedFlow()).isEqualTo(file);
     }
 
@@ -304,7 +370,6 @@ class UiMcpInspectTest {
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));
         assertThat(sink.loadFlow(file).ok).isTrue();
         // a loaded flow is stopped: the person goes on from its last step with a redo, which records on
-        sink.truncate(1);
         sink.resume();
         sink.done(step("click", Locator.ofId("new")));
 
@@ -354,7 +419,7 @@ class UiMcpInspectTest {
         assertThat(r.ok).isTrue();
         assertThat(resets[0]).isEqualTo(1);
         // the reset leaves the recording alone: the run replays it next
-        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(lines()).containsExactly("click(#save)");
         assertThat(backend.verbs.calls).isEmpty();
     }
 }

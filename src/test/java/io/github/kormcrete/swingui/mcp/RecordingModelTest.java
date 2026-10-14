@@ -28,7 +28,7 @@ class RecordingModelTest {
     @Test
     void idsAreNeverReusedAfterARemove() {
         three();
-        model.remove(3);
+        model.delete(3, 3, RecordedStep.Author.AGENT);
         assertThat(model.append(click("d"), RecordedStep.Author.AGENT).id).isEqualTo(4);
         model.clear();
         assertThat(model.append(click("e"), RecordedStep.Author.AGENT).id).isEqualTo(5);
@@ -41,10 +41,10 @@ class RecordingModelTest {
         assertThat(model.rev()).isGreaterThan(rev);
         rev = model.rev();
         model.append(click("b"), RecordedStep.Author.AGENT);
-        model.truncate(1);
+        model.cutFrom(2, RecordedStep.Author.PERSON);
         assertThat(model.rev()).isGreaterThan(rev + 1);
         rev = model.rev();
-        model.remove(1);
+        model.delete(1, 1, RecordedStep.Author.PERSON);
         assertThat(model.rev()).isGreaterThan(rev);
         rev = model.rev();
         model.load(java.util.Collections.<io.github.kormcrete.swingui.flow.Action>singletonList(click("c")),
@@ -71,7 +71,7 @@ class RecordingModelTest {
     void positionOfFollowsTheStepAfterAnotherIsRemoved() {
         three();
         assertThat(model.positionOf(3)).isEqualTo(3);
-        model.remove(1);
+        model.delete(1, 1, RecordedStep.Author.AGENT);
         assertThat(model.positionOf(3)).isEqualTo(2);
         assertThat(model.positionOf(1)).isEqualTo(0);
         assertThat(model.at(1).author).isEqualTo(RecordedStep.Author.PERSON);
@@ -89,27 +89,38 @@ class RecordingModelTest {
         model.insert(2, click("x"), RecordedStep.Author.AGENT);
         assertThat(names()).containsExactly("a", "x", "b", "c");
         assertThat(model.undoLabel()).isEqualTo("insert at step 2 by the agent");
-        assertThat(model.undo()).isEqualTo("undid the insert at step 2 by the agent");
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isEqualTo("undid the insert at step 2 by the agent");
         assertThat(names()).containsExactly("a", "b", "c");
 
         assertThat(model.delete(1, 2, RecordedStep.Author.PERSON)).isEqualTo("deleted steps 1-2");
         assertThat(names()).containsExactly("c");
-        assertThat(model.undo()).isEqualTo("undid the delete of steps 1-2 by the person");
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isEqualTo("undid the delete of steps 1-2 by the person");
         assertThat(names()).containsExactly("a", "b", "c");
 
         assertThat(model.move(3, 1, RecordedStep.Author.AGENT)).isEqualTo("moved step 3 to 1");
         assertThat(names()).containsExactly("c", "a", "b");
-        model.undo();
+        model.undo(RecordedStep.Author.AGENT);
         assertThat(names()).containsExactly("a", "b", "c");
 
         model.replace(2, click("y"), RecordedStep.Author.AGENT);
         assertThat(model.at(2).edited).isTrue();
         assertThat(model.at(2).id).isEqualTo(2);
-        model.undo();
+        model.undo(RecordedStep.Author.AGENT);
         assertThat(names()).containsExactly("a", "b", "c");
         assertThat(model.at(2).edited).isFalse();
-        assertThat(model.undo()).isNull();
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isNull();
         assertThat(model.undoLabel()).isNull();
+    }
+
+    @Test
+    void anUndoSaysWhoUndidIt() {
+        three();
+        model.delete(2, 2, RecordedStep.Author.PERSON);
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isEqualTo("undid the delete of step 2 by the person");
+        assertThat(model.lastChange()).isEqualTo("the agent undid the delete of step 2 by the person");
+        model.delete(1, 1, RecordedStep.Author.AGENT);
+        model.undo(RecordedStep.Author.PERSON);
+        assertThat(model.lastChange()).isEqualTo("the person undid the delete of step 1 by the agent");
     }
 
     @Test
@@ -118,7 +129,7 @@ class RecordingModelTest {
         for (int i = 0; i < 55; i++) model.delete(1, 1, RecordedStep.Author.AGENT);
         assertThat(model.size()).isEqualTo(5);
         int undone = 0;
-        while (model.undo() != null) undone++;
+        while (model.undo(RecordedStep.Author.AGENT) != null) undone++;
         assertThat(undone).isEqualTo(50);
         assertThat(model.size()).isEqualTo(55);
     }
@@ -129,7 +140,7 @@ class RecordingModelTest {
         assertThat(model.cutFrom(2, RecordedStep.Author.PERSON)).isEqualTo("cut from step 2");
         model.append(click("d"), RecordedStep.Author.PERSON);
         model.append(click("e"), RecordedStep.Author.PERSON);
-        assertThat(model.undo()).contains("undid the cut from step 2 (redo) by the person")
+        assertThat(model.undo(RecordedStep.Author.AGENT)).contains("undid the cut from step 2 (redo) by the person")
                 .contains("2 steps recorded after it dropped");
         assertThat(names()).containsExactly("a", "b", "c");
         assertThat(model.cutFrom(9, RecordedStep.Author.PERSON)).isNull();
@@ -140,7 +151,7 @@ class RecordingModelTest {
         three();
         model.delete(2, 2, RecordedStep.Author.AGENT);
         model.append(click("d"), RecordedStep.Author.AGENT);
-        model.undo();
+        model.undo(RecordedStep.Author.AGENT);
         assertThat(names()).containsExactly("a", "b", "c", "d");
     }
 
@@ -161,15 +172,15 @@ class RecordingModelTest {
         three();
         model.delete(1, 1, RecordedStep.Author.AGENT);
         model.start(RecordedStep.Author.AGENT, false, false, 1L);
-        assertThat(model.undo()).isNull();
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isNull();
         three();
         model.delete(1, 1, RecordedStep.Author.AGENT);
         model.load(java.util.Collections.<io.github.kormcrete.swingui.flow.Action>singletonList(click("z")),
                 RecordedStep.Author.FLOW);
-        assertThat(model.undo()).isNull();
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isNull();
         model.delete(1, 1, RecordedStep.Author.AGENT);
         model.clear();
-        assertThat(model.undo()).isNull();
+        assertThat(model.undo(RecordedStep.Author.AGENT)).isNull();
     }
 
     @Test
