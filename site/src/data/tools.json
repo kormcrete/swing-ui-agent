@@ -173,7 +173,7 @@
     },
     {
       "name": "export_test",
-      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a recording that did not begin at a reset, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording.",
+      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a recording that did not begin at a reset or a recording start, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -205,7 +205,7 @@
     },
     {
       "name": "export_flow",
-      "description": "Write the steps recorded since the last session reset as a flow file <flows folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_flow, from the palette, or in Maven with the JUnit runner (UiFlows). Same rules as export_test: it must have begun at a reset, startWarning flags a flow that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the flow the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it.",
+      "description": "Write the steps recorded since the last session reset as a flow file <flows folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_flow, from the palette, or in Maven with the JUnit runner (UiFlows). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a flow that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the flow the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -992,7 +992,7 @@
           },
           "reset": {
             "type": "boolean",
-            "description": "start: reset the app first, as a test starts (default false; without it an export waits for a passing replay from step 1 or redo)."
+            "description": "start: reset the app first, as a test starts (default false)."
           },
           "wait": {
             "type": "integer",

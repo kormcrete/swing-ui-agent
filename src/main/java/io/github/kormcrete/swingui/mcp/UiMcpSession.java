@@ -74,8 +74,14 @@ public class UiMcpSession {
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
     private final RecordingModel model = new RecordingModel();
-    /** The recording began at a session reset, where an exported test starts too; export_test refuses it otherwise. */
+    /** The recording began at a reset of the app (or was shown to by a passing replay from it); {@code list} says so. */
     private boolean recordingFromReset;
+    /**
+     * The recording began fresh - a session reset, a recording start, the person's ● Record, a load, or a passing replay
+     * or redo from the reset - where an exported test starts too; false after a clearing export until one of those.
+     * export_test and export_flow refuse it otherwise.
+     */
+    private boolean freshStart;
     /** That reset was an app plugin's, to a defined start state, not only dialogs closed. */
     private boolean definedStart;
 
@@ -402,7 +408,7 @@ public class UiMcpSession {
                                 ? Inspector.AGENTS_RECORDING_RUNS : "a recording is running: Done ends it");
                     }
                     // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
-                    startRecording(true, false, RecordedStep.Author.PERSON, true);
+                    startRecording(false, false, RecordedStep.Author.PERSON, true);
                     return new Inspector.Result(true, "recording");
                 }
             }
@@ -1275,6 +1281,7 @@ public class UiMcpSession {
         if (clear) {
             model.clear();
             recordingFromReset = false;
+            freshStart = false;
             forgetLoadedFlow();
             publish();
             if (palette) view.replaced();
@@ -1295,10 +1302,10 @@ public class UiMcpSession {
     }
 
     private void requireResetStart() {
-        if (!recordingFromReset) {
-            throw new IllegalArgumentException("the recording did not begin at a session reset, where the test will "
-                    + "start: reset (session op reset), get to the starting screen, redo the steps, then export; or "
-                    + "replay it from step 1 (recording replay) and export once that passes");
+        if (!freshStart) {
+            throw new IllegalArgumentException("the recording did not begin at a session reset or a recording start, "
+                    + "where the test will start: reset (session op reset), get to the starting screen, redo the steps, "
+                    + "then export; or replay it from step 1 (recording replay) and export once that passes");
         }
     }
 
@@ -1379,6 +1386,7 @@ public class UiMcpSession {
         if (clear) {
             model.clear();
             recordingFromReset = false;
+            freshStart = false;
             forgetLoadedFlow();
         } else {
             loadedFlow = file;
@@ -1525,6 +1533,7 @@ public class UiMcpSession {
         model.load(flow.steps, RecordedStep.Author.FLOW);
         model.loaded();
         recordingFromReset = true;
+        freshStart = true;
         definedStart = appReset.defined();
         loadedFlow = abs;
         loadedName = flow.name;
@@ -1570,9 +1579,9 @@ public class UiMcpSession {
     }
 
     /**
-     * As {@link #startRecording(boolean)}, started by {@code by}; {@code fromReset}: it begins where an exported test
-     * starts (a reset ran, or the person's ● Record, whose screen counts as the start); without it an export waits for
-     * a passing replay or redo from the reset. An {@code explicit} recording (recording start, the person's Record)
+     * As {@link #startRecording(boolean)}, started by {@code by}; {@code fromReset}: a reset of the app ran just before.
+     * Every start is a fresh one an export may write, reset or not (without one the test must get to its screen
+     * itself: startWarning). An {@code explicit} recording (recording start, the person's Record)
      * blocks a reset, a test run and another start until it stops ({@link #recordingReason}) and, with the palette on,
      * is shared with the person; the implicit one of a session reset blocks nothing.
      */
@@ -1580,6 +1589,7 @@ public class UiMcpSession {
         model.clear();
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
         recordingFromReset = fromReset;
+        freshStart = true;
         this.definedStart = definedStart;
         forgetLoadedFlow();
         publish();
@@ -1895,6 +1905,7 @@ public class UiMcpSession {
 
     private void beginsAtReset() {
         recordingFromReset = true;
+        freshStart = true;
         definedStart = appReset.defined();
         publish();
     }

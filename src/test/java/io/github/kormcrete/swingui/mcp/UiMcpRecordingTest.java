@@ -180,9 +180,10 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aStartWithoutResetDoesNotBeginAtAReset() throws Exception {
+    void aStartWithoutResetIsAFreshStartThatExportsWithAStartWarning() throws Exception {
         fakeReset();
         JsonNode started = call("{\"op\":\"start\"}");
+        // no reset ran, and the list says so; the start is still a fresh one an export writes
         assertThat(started.path("fromReset").asBoolean()).isFalse();
         assertThat(started.path("definedStart").asBoolean()).isFalse();
         click("a");
@@ -190,6 +191,11 @@ class UiMcpRecordingTest {
         String warning = call("{\"op\":\"list\"}").path("startWarning").asText();
         assertThat(warning).contains("did not begin at the app plugin's reset").doesNotContain("no app plugin");
         call("{\"op\":\"stop\"}");
+        JsonNode exported = mapper.readTree(session.exportFlow("first", quoted(dir), null, true));
+        assertThat(exported.path("startWarning").asText()).isEqualTo(warning);
+        // after a clearing export the steps that follow have no start of their own
+        click("b");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"b\"}}}");
         exportRefusedForNoReset();
         // a passing replay from the reset shows that it starts there
         assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
@@ -197,6 +203,17 @@ class UiMcpRecordingTest {
         assertThat(list.path("fromReset").asBoolean()).isTrue();
         assertThat(list.has("startWarning")).isFalse();
         assertThat(session.exportFlow("second", quoted(dir), null, false)).contains("savedTo");
+    }
+
+    @Test
+    void thePersonsRecordIsAFreshStartWithoutAReset() throws Exception {
+        sink.begin();
+        assertThat(sink.done(step("click", Locator.ofId("save"))).ok).isTrue();
+        sink.end();
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("fromReset").asBoolean()).isFalse();
+        assertThat(list.path("startWarning").asText()).contains("(no app plugin: a reset only closes dialogs)");
+        assertThat(session.exportFlow("shown", quoted(dir), null, false)).contains("savedTo");
     }
 
     @Test

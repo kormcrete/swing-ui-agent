@@ -164,8 +164,9 @@ public final class UiMcpTools {
                         + "screen: without an app plugin a reset only closes dialogs, and startWarning flags a test "
                         + "that does not begin with menu, press or navigate. Only steps with a Java form are recorded "
                         + "(verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a "
-                        + "recording that did not begin at a reset, a bad class/method/package name, an existing "
-                        + "file, or an empty recording, naming each problem; a refusal keeps the recording.",
+                        + "recording that did not begin at a reset or a recording start, a bad class/method/package "
+                        + "name, an existing file, or an empty recording, naming each problem; a refusal keeps the "
+                        + "recording.",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
@@ -194,8 +195,8 @@ public final class UiMcpTools {
                         "Write the steps recorded since the last session reset as a flow file "
                         + "<flows folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it "
                         + "with run_flow, from the palette, or in Maven with the JUnit runner (UiFlows). Same rules as "
-                        + "export_test: it must have begun at a reset, startWarning flags a flow that does not begin "
-                        + "with menu, press or navigate, an empty recording or a bad name is refused, and an existing "
+                        + "export_test: it must have begun at a reset or a recording start, startWarning flags a flow "
+                        + "that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing "
                         + "file is never overwritten - except the flow the recording came from (loaded in the "
                         + "palette, or exported before without clear). A folder that cannot be written is refused, "
                         + "naming it.", schema);
@@ -390,8 +391,7 @@ public final class UiMcpTools {
                         "insert, delete, move, edit, undo, redo: the rev of your last list; refused if the recording "
                         + "changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
-                        "start: reset the app first, as a test starts (default false; without it an export waits "
-                        + "for a passing replay from step 1 or redo).");
+                        "start: reset the app first, as a test starts (default false).");
                 p.putObject("wait").put("type", "integer").put("description",
                         "list: milliseconds to wait until the recording stops (default 0: just read), at most "
                         + "540000; a session reset's recording, which only you stop, is not waited for.");
