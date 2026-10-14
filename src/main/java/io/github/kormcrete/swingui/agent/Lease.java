@@ -15,7 +15,8 @@ import java.util.function.Supplier;
  * call without a token runs only while nobody holds the lease (the CLI's one-call lease). A lease ends on release,
  * after {@code ttl} without a call, or when another owner leases an agent idle for {@link #TAKEOVER_IDLE_MS} with
  * no call running: a test JVM stopped mid-test must not lock the client for the whole TTL. A running call keeps
- * the lease alive however long it takes.
+ * the lease alive however long it takes. While a person runs a flow or replays steps from the palette, every mutating
+ * call is BUSY ({@link #drivenBy}).
  */
 final class Lease {
 
@@ -43,6 +44,8 @@ final class Lease {
     private final Clock clock;
     /** Why no owner may lease the agent right now though nobody holds it - a person busy in the app - or null. */
     private volatile Supplier<String> blocker = () -> null;
+    /** Why no mutating call may run right now - a person runs or replays steps in the app - or null. */
+    private volatile Supplier<String> driver = () -> null;
     /** Told when the lease is taken (true) and when it ends (false): released, expired or never renewed. */
     private volatile Consumer<Boolean> watcher = held -> { };
     private final SecureRandom random = new SecureRandom();
@@ -63,6 +66,15 @@ final class Lease {
     /** {@code reason} answers why a lease must wait, or null; asked on every {@link #acquire}. */
     void blockedBy(Supplier<String> reason) {
         blocker = reason == null ? () -> null : reason;
+    }
+
+    /**
+     * {@code reason} answers why a mutating call must wait though it may hold the lease - a person runs a flow or
+     * replays their recording through the palette, whose steps do not pass the lease - or null; asked on every
+     * {@link #enter}. Reads and renewals are not affected.
+     */
+    void drivenBy(Supplier<String> reason) {
+        driver = reason == null ? () -> null : reason;
     }
 
     synchronized Grant acquire(String owner, Long ttlMs) {
@@ -99,6 +111,8 @@ final class Lease {
     synchronized void enter(String token) {
         long now = clock.now();
         expire(now);
+        String driving = driver.get();
+        if (driving != null) throw new DriverException(Reason.BUSY, "busy: " + driving);
         if (token == null) {
             if (held != null) throw busy();
             tokenlessInFlight++;

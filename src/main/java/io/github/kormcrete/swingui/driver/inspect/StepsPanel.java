@@ -23,8 +23,8 @@ import java.util.function.IntConsumer;
 
 /**
  * The recording as the person sees it: every step, agent's and theirs, with what its last replay did
- * (● recorded, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all, replay from a step, redo from a step
- * (cut the recording there, replay up to it, record on) or delete one.
+ * (● recorded, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all (for a loaded flow: run it, from a
+ * reset), replay from a step, redo from a step (cut the recording there, replay up to it, record on) or delete one.
  */
 final class StepsPanel extends JPanel {
 
@@ -34,8 +34,11 @@ final class StepsPanel extends JPanel {
     private List<String> marks;
     private final javax.swing.JComboBox<String> speed =
             new javax.swing.JComboBox<String>(new String[] {"Fast", "Normal", "Slow", "Step by step"});
+    private final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 
-    StepsPanel(Runnable replayAll, IntConsumer replayFrom, IntConsumer redoFrom, IntConsumer delete, Runnable close) {
+    /** {@code replayAllLabel}: what the first button says - "▶ Replay all", or "▶ Run" for a loaded flow. */
+    StepsPanel(String replayAllLabel, Runnable replayAll, IntConsumer replayFrom, IntConsumer redoFrom, IntConsumer delete,
+               Runnable close) {
         super(new BorderLayout(0, 6));
         setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY, 2),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
@@ -80,9 +83,8 @@ final class StepsPanel extends JPanel {
         JScrollPane scroll = new JScrollPane(list);
         scroll.setPreferredSize(new Dimension(460, 200));
         add(scroll, BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         buttons.setOpaque(false);
-        buttons.add(small("▶ Replay all", replayAll));
+        buttons.add(small(replayAllLabel, replayAll));
         buttons.add(small("▶ From selected", () -> { if (selected() >= 0) replayFrom.accept(selected()); }));
         buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(selected()); }));
         buttons.add(small("✕ Delete", () -> { if (selected() >= 0) delete.accept(selected()); }));
@@ -93,6 +95,34 @@ final class StepsPanel extends JPanel {
     int selected() {
         int i = list.getSelectedIndex();
         return marks != null && i >= marks.size() ? -1 : i;
+    }
+
+    /** Selects step {@code i}, as if the person clicked it. */
+    void select(int i) {
+        list.setSelectedIndex(i);
+    }
+
+    /** The first button's label: what replaying all is called here. */
+    String replayAllLabel() {
+        return ((JButton) buttons.getComponent(0)).getText();
+    }
+
+    /** Presses the button labelled {@code label}, as the person would. */
+    void press(String label) {
+        for (Component c : buttons.getComponents()) {
+            if (c instanceof JButton && label.equals(((JButton) c).getText())) {
+                ((JButton) c).doClick();
+                return;
+            }
+        }
+        throw new IllegalArgumentException("no button '" + label + "' in the steps panel");
+    }
+
+    /** The rows it lists now: the steps, then what is still pending. */
+    List<String> rows() {
+        List<String> out = new java.util.ArrayList<String>();
+        for (int i = 0; i < model.size(); i++) out.add(model.get(i));
+        return out;
     }
 
     void speed(int index) {

@@ -40,6 +40,8 @@ final class AgentAssembly {
         lease.blockedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::engagedReason);
         // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
         lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
+        // while the person runs a flow or replays steps from the palette, no other call drives the app
+        lease.drivenBy(io.github.kormcrete.swingui.driver.inspect.Inspector::drivingReason);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
         String property = System.getProperty(FlowFiles.DIR_PROP);
         session.flowsDir(flowsDir(args, property, Paths.get("")),

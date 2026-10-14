@@ -376,6 +376,249 @@ class RecordingTest {
         });
     }
 
+    // ---- Load flow…, Run -------------------------------------------------------------------------------------------
+
+    private static final String ADD_TO_CART = "add-to-cart";
+
+    /** Two flows in the fake folder - one that cannot be read - and the steps the readable one loads. */
+    private void twoFlows() {
+        java.nio.file.Path folder = sink.flowsFolder;
+        sink.flows = Arrays.asList(
+                new Inspector.FlowEntry(ADD_TO_CART, "Adds a product to the cart", 2, null, folder.resolve("add-to-cart.json")),
+                new Inspector.FlowEntry("broken", null, 0, folder.resolve("broken.json") + ": line 1: unexpected end",
+                        folder.resolve("broken.json")));
+        sink.flowSteps = Arrays.asList("click(button 'Add to cart')", "click(button 'Checkout…')");
+    }
+
+    /** Load flow… pressed on the idle palette in the frame: the panel as the person sees it. */
+    private FlowsPanel openFlows() throws Exception {
+        SwingUtilities.invokeAndWait(() -> paletteInFrame().bar().press("Load flow…"));
+        return eventually(() -> scene.inspector.flowsPanel);
+    }
+
+    /** add-to-cart loaded from the panel: the loaded recording. */
+    private Recording loadAddToCart() throws Exception {
+        twoFlows();
+        FlowsPanel panel = openFlows();
+        SwingUtilities.invokeAndWait(() -> {
+            panel.select(0);
+            panel.load();
+        });
+        recording = eventually(() -> scene.inspector.recording() != null && scene.inspector.recording().panel != null
+                && scene.inspector.recording().panel.rows().size() == 2 ? scene.inspector.recording() : null);
+        return recording;
+    }
+
+    /** Presses ▶ Run in the steps panel at {@code speed} (0 fast … 3 step by step). */
+    private void run(Recording r, int speed) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            r.panel.speed(speed);
+            r.panel.press("▶ Run");
+        });
+    }
+
+    @Test
+    void loadFlowOpensTheFolderWithItsFlows() throws Exception {
+        twoFlows();
+        FlowsPanel panel = openFlows();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(panel.title()).isEqualTo("Load a flow");
+            assertThat(panel.folder()).isEqualTo(sink.flowsFolder.toString());
+            assertThat(scene.inspector.overlay(frame.getRootPane()).holds(panel)).isTrue();
+            assertThat(panel.rows()).hasSize(2);
+            assertThat(panel.rows().get(0)).contains(ADD_TO_CART).contains("Adds a product to the cart").contains("2 steps");
+            assertThat(panel.rows().get(1)).contains("broken").contains("unexpected end");
+            assertThat(panel.loadable(0)).isTrue();
+            assertThat(panel.loadable(1)).isFalse();
+            // the unreadable one cannot be loaded
+            panel.select(1);
+            panel.load();
+        });
+        assertThat(sink.listed).containsExactly(sink.flowsFolder);
+        Thread.sleep(100);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(scene.inspector.flowsPanel).isSameAs(panel);
+            assertThat(scene.inspector.recording()).isNull();
+        });
+        assertThat(sink.loaded).isNull();
+
+        // Choose… lists the flows of another folder
+        java.nio.file.Path other = sink.flowsFolder.resolveSibling("other-flows");
+        SwingUtilities.invokeAndWait(() -> {
+            panel.chooser((start, picked) -> picked.accept(other));
+            panel.choose();
+        });
+        eventually(() -> sink.listed.contains(other) ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> assertThat(panel.folder()).isEqualTo(other.toString()));
+
+        // Cancel closes it
+        SwingUtilities.invokeAndWait(panel::cancel);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(scene.inspector.flowsPanel).isNull();
+            assertThat(scene.inspector.overlay(frame.getRootPane()).holds(panel)).isFalse();
+        });
+    }
+
+    @Test
+    void theFlowsPanelFollowsThePaletteIntoTheDialog() throws Exception {
+        twoFlows();
+        FlowsPanel panel = openFlows();
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inDialog = showIn(dialog.getRootPane());
+            assertThat(inDialog.holds(panel)).isTrue();
+            assertThat(panel.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(scene.inspector.overlay(frame.getRootPane()).holds(panel)).isFalse();
+        });
+    }
+
+    @Test
+    void loadFlowIsOfferedOnlyWhileNothingIsRecordedOrReplayed() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
+            recording.done();
+            assertThat(recording.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+        });
+    }
+
+    @Test
+    void loadingAFlowShowsItsStepsReadyToRun() throws Exception {
+        Recording r = loadAddToCart();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(r.state).isEqualTo(Recording.State.STOPPED);
+            assertThat(r.bar.title()).isEqualTo("Flow");
+            assertThat(r.bar.text()).isEqualTo("add-to-cart - 2 steps");
+            assertThat(r.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+            assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(r.bar);
+            assertThat(r.panel.replayAllLabel()).isEqualTo("▶ Run");
+            assertThat(r.panel.rows()).containsExactly("click(button 'Add to cart')", "click(button 'Checkout…')");
+            assertThat(scene.inspector.flowsPanel).isNull();
+            assertThat(scene.inspector.engaged()).isNull();
+        });
+        assertThat(sink.loaded).isEqualTo(sink.flowsFolder.resolve("add-to-cart.json"));
+    }
+
+    @Test
+    void aRefusedLoadSaysWhyAndKeepsThePanel() throws Exception {
+        twoFlows();
+        sink.refuseLoad = "add-to-cart cannot be loaded into the recording: loginAs is not the first step";
+        FlowsPanel panel = openFlows();
+        SwingUtilities.invokeAndWait(() -> {
+            panel.select(0);
+            panel.load();
+        });
+        String why = eventually(() -> panel.message().trim().isEmpty() ? null : panel.message());
+        assertThat(why).contains("cannot be loaded").contains("loginAs");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(scene.inspector.flowsPanel).isSameAs(panel);
+            assertThat(scene.inspector.recording()).isNull();
+        });
+    }
+
+    @Test
+    void runResetsFirstThenReplaysEveryStep() throws Exception {
+        Recording r = loadAddToCart();
+        run(r, 0);
+        eventually(() -> !r.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(r.bar.text()).isEqualTo("replayed steps 1-2: all passed");
+            assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(r.bar);
+            assertThat(r.panel.replayAllLabel()).isEqualTo("▶ Run");
+        });
+    }
+
+    @Test
+    void aFailedResetRunsNoStep() throws Exception {
+        Recording r = loadAddToCart();
+        sink.reset = new Inspector.Result(false, "this session has no reset");
+        run(r, 0);
+        eventually(() -> !r.replaying && !sink.log.isEmpty() ? Boolean.TRUE : null);
+        Thread.sleep(100);
+        assertThat(sink.log).containsExactly("reset");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(r.bar.text()).isEqualTo("✗ reset failed: this session has no reset");
+            assertThat(scene.inspector.driving()).isNull();
+            assertThat(scene.inspector.engaged()).isNull();
+        });
+    }
+
+    @Test
+    void stepByStepWaitsForNext() throws Exception {
+        Recording r = loadAddToCart();
+        run(r, 3);
+        eventually(() -> sink.log.contains("reset") ? Boolean.TRUE : null);
+        Thread.sleep(200);
+        assertThat(sink.log).containsExactly("reset");
+        r.next.release();
+        eventually(() -> sink.log.contains("replay 0") ? Boolean.TRUE : null);
+        Thread.sleep(200);
+        assertThat(sink.log).containsExactly("reset", "replay 0");
+        r.next.release();
+        eventually(() -> !r.replaying ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+    }
+
+    @Test
+    void whileAFlowRunsOtherDriversAreBusy() throws Exception {
+        Recording r = loadAddToCart();
+        SwingUtilities.invokeAndWait(() -> assertThat(scene.inspector.driving()).isNull());
+        run(r, 3);
+        eventually(() -> sink.log.contains("reset") ? Boolean.TRUE : null);
+        assertThat(scene.inspector.driving()).isEqualTo("a person is running add-to-cart in the app");
+        // no test run takes the agent meanwhile either
+        assertThat(scene.inspector.engaged()).isEqualTo("a person is running add-to-cart in the app");
+        r.next.release();
+        r.next.release();
+        eventually(() -> !r.replaying ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(scene.inspector.driving()).isNull();
+            assertThat(scene.inspector.engaged()).isNull();
+        });
+
+        // a replay of the person's own recording keeps them out too
+        SwingUtilities.invokeAndWait(() -> {
+            r.panel.speed(3);
+            r.panel.select(0);
+            r.panel.press("▶ From selected");
+        });
+        eventually(() -> r.replaying ? Boolean.TRUE : null);
+        assertThat(scene.inspector.driving()).isEqualTo("a person is replaying their recording in the app");
+        r.next.release();
+        r.next.release();
+        eventually(() -> !r.replaying ? Boolean.TRUE : null);
+        assertThat(scene.inspector.driving()).isNull();
+    }
+
+    @Test
+    void recordAfterALoadStartsFresh() throws Exception {
+        Recording loaded = loadAddToCart();
+        SwingUtilities.invokeAndWait(() -> loaded.bar.press("● Record"));
+        recording = eventually(() -> scene.inspector.recording() != loaded ? scene.inspector.recording() : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.bar.title()).isEqualTo("Recording");
+            assertThat(loaded.panel).isNull();
+        });
+        assertThat(sink.steps).isEmpty();
+        assertThat(sink.loaded).isNull();
+    }
+
+    @Test
+    void loadingSaysItReplacesTheRecording() throws Exception {
+        twoFlows();
+        FlowsPanel empty = openFlows();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(empty.notice()).isNull();
+            empty.cancel();
+        });
+        sink.steps.addAll(Arrays.asList("click(#save)", "click(#new)", "type(#customer, Ada)"));
+        SwingUtilities.invokeAndWait(() -> scene.inspector.overlay(frame.getRootPane()).bar().press("Load flow…"));
+        FlowsPanel panel = eventually(() -> scene.inspector.flowsPanel);
+        SwingUtilities.invokeAndWait(() ->
+                assertThat(panel.notice()).isEqualTo("Loading replaces the current recording (3 steps)."));
+    }
+
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */
     private static <T> T eventually(java.util.concurrent.Callable<T> read) throws Exception {
         long end = System.currentTimeMillis() + 5000;

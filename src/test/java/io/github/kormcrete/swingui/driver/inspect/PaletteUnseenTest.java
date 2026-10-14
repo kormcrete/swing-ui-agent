@@ -41,10 +41,16 @@ class PaletteUnseenTest {
     void theSnapshotHasNoNodeOfThePalette() throws Exception {
         onEdt(() -> {
             exportPanel();
-            StepsPanel steps = new StepsPanel(() -> { }, i -> { }, i -> { }, i -> { }, () -> { });
+            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { });
             steps.setBounds(10, 290, 300, 100);
             steps.validate();
             scene.content.add(steps);
+            FlowsPanel flows = new FlowsPanel(Paths.get("uitest"), java.util.Collections.singletonList(
+                    new Inspector.FlowEntry("place-order", "Places an order", 4, null, Paths.get("uitest/place-order.json"))),
+                    2, f -> { }, f -> { }, () -> { });
+            flows.setBounds(10, 400, 300, 150);
+            flows.validate();
+            scene.content.add(flows);
             Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
             bar.setBounds(320, 10, 200, 30);
             scene.content.add(bar);
@@ -53,7 +59,8 @@ class PaletteUnseenTest {
                         scene.refs, scene).build(null, null, 400, 20));
                 assertThat(json).contains("Save")
                         .doesNotContain("RecordedUiIT").doesNotContain("Export as a JUnit test")
-                        .doesNotContain("Replay speed").doesNotContain("Record");
+                        .doesNotContain("Replay speed").doesNotContain("Record")
+                        .doesNotContain("Load a flow").doesNotContain("place-order");
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

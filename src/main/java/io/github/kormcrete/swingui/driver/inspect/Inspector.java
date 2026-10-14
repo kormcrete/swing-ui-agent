@@ -58,6 +58,8 @@ import java.util.function.Supplier;
  *   <li>The person records: a palette in the main window (in the open modal dialog while one is open) starts a
  *       {@link Recording} with ● Record and ends it with Done. Only the person starts and ends one; the agent reads it
  *       ({@link #recording}) and exports it.</li>
+ *   <li>The person loads a flow file (Load flow…) into the recording and runs it: the app reset, then every step
+ *       replayed. While a run or replay goes on no other call drives the app ({@link #drivingReason}).</li>
  *   <li>{@link #highlight}: the agent shows what a locator matches - numbered boxes when several - with a question; the
  *       person answers with the check mark on a box, or "None of these" on the question bar.</li>
  *   <li>{@link #pick}: the agent asks the person to click what they mean; the click goes to the inspector, not the app,
@@ -138,6 +140,37 @@ public final class Inspector {
          * folder that cannot be written comes back with {@link Result#folder} set, so the palette asks for another.
          */
         Result exportFlow(String name, Path folder);
+
+        /** The flow files in {@code folder}, sorted; one that cannot be read comes with its problem. */
+        List<FlowEntry> flows(Path folder);
+
+        /**
+         * Makes the flow file the recording, as if its steps had just been run after a reset, and remembers its folder.
+         * The result's line is the flow's name, or why it was not loaded (the recording is then unchanged).
+         */
+        Result loadFlow(Path file);
+
+        /** Resets the app as a flow starts ({@code session reset} without touching the recording). */
+        Result reset();
+    }
+
+    /** A flow file as Load flow… lists it. */
+    public static final class FlowEntry {
+        public final String name;
+        /** Null when it has none. */
+        public final String description;
+        public final int steps;
+        /** Why the file cannot be read, or null; a file with a problem cannot be loaded. */
+        public final String problem;
+        public final Path file;
+
+        public FlowEntry(String name, String description, int steps, String problem, Path file) {
+            this.name = name;
+            this.description = description;
+            this.steps = steps;
+            this.problem = problem;
+            this.file = file;
+        }
     }
 
     public static final class Result {
@@ -166,6 +199,8 @@ public final class Inspector {
     private volatile String asking;
     /** Why a test run must wait: the person records or replays. */
     private volatile String recordingBusy;
+    /** Why no other call may drive the app: the person runs a flow or replays steps from the palette. */
+    private volatile String driving;
 
     /** EDT only. */
     private final Map<JRootPane, Overlay> overlays = new WeakHashMap<JRootPane, Overlay>();
@@ -181,6 +216,8 @@ public final class Inspector {
     /** Where the bar sat in each window it left (null: where it goes by itself); outlives the window's overlay. */
     private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
     private Recording recording;
+    /** Load flow…'s panel while it is open. EDT. */
+    FlowsPanel flowsPanel;
     private boolean testRun;
     /** The kind Export… opens on when no flow is loaded: the one the person used last in this JVM. EDT. */
     String exportKind = ExportPanel.JAVA;
@@ -217,6 +254,25 @@ public final class Inspector {
     String engaged() {
         String a = asking;
         return a != null ? a : recordingBusy;
+    }
+
+    /**
+     * Why every mutating call from elsewhere must wait - a person runs a flow or replays steps from the palette, whose
+     * own steps go to the session directly - or null; null too when no inspector was ever made.
+     */
+    public static String drivingReason() {
+        Inspector i = instance;
+        return i == null ? null : i.driving();
+    }
+
+    /** {@link #drivingReason} of this inspector. */
+    String driving() {
+        return driving;
+    }
+
+    /** Set when a palette replay or run starts, cleared (null) when it ends. */
+    void driving(String reason) {
+        driving = reason;
     }
 
     /** How many of the agent's own steps are running now: the person's recorder ignores input meanwhile. */
@@ -308,7 +364,8 @@ public final class Inspector {
      */
     void install(Sink sink) {
         this.sink = sink;
-        idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording);
+        idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording)
+                .button("Load flow…", Overlay.HOVER, this::toggleFlows);
         HitCheck.cover((c, t, p) -> instance != null && instance.stepOff(c, t, p));
         Toolkit.getDefaultToolkit().addAWTEventListener(e -> {
             int id = e.getID();
@@ -354,6 +411,11 @@ public final class Inspector {
         to.hidePalette(testRun);
         paletteHome = to;
         if (recording != null) recording.rehome(to); else to.bar(idle);
+        if (flowsPanel != null) {
+            // out of the old window first: while it still holds the panel, any change there would take it back
+            if (from != null) from.panel(null);
+            to.panel(flowsPanel);
+        }
         if (from == null) return;
         from.bar(null);
         from.panel(null);
@@ -399,6 +461,7 @@ public final class Inspector {
     private void startRecording() {
         if (sink == null || paletteHome == null) return;
         if (recording != null && recording.replaying) return;
+        closeFlows();
         if (recording != null) recording.dispose();
         recording = null;
         sinkThread.submit(() -> {
@@ -407,13 +470,94 @@ public final class Inspector {
                 // where the palette is now: an agent step may have opened or closed a dialog while begin() waited
                 Overlay home = paletteHome;
                 if (home == null) return;
+                // a flow loaded while begin() waited goes: this ● Record came after it
+                if (recording != null) recording.dispose();
                 recording = new Recording(this, sink, sinkThread, home, this::startRecording);
                 recording.start();
             });
         });
     }
 
-    /** The person's recording, or null before their first ● Record. EDT. */
+    /**
+     * Load flow…: opens (or closes) the panel with the flows in the flows folder; it replaces the steps or export panel.
+     * Not while the person records or replays. EDT.
+     */
+    void toggleFlows() {
+        if (flowsPanel != null) {
+            closeFlows();
+            return;
+        }
+        if (sink == null || paletteHome == null || busyRecording()) return;
+        if (recording != null) recording.closePanels();
+        sinkThread.submit(() -> {
+            Path folder = sink.flowsFolder();
+            List<FlowEntry> flows = listed(folder);
+            int current = sink.steps().size();
+            SwingUtilities.invokeLater(() -> {
+                if (flowsPanel != null || paletteHome == null || busyRecording()) return;
+                flowsPanel = new FlowsPanel(folder, flows, current, this::listFlows, this::loadFlow, this::closeFlows);
+                paletteHome.panel(flowsPanel);
+            });
+        });
+    }
+
+    /** The person records or replays: no flow is loaded meanwhile. EDT. */
+    private boolean busyRecording() {
+        return recording != null && (recording.active() || recording.replaying);
+    }
+
+    /** Load flow…'s panel goes, with its folder dialog. EDT. */
+    void closeFlows() {
+        if (flowsPanel == null) return;
+        flowsPanel.closeChooser();
+        if (paletteHome != null && paletteHome.holds(flowsPanel)) paletteHome.panel(null);
+        flowsPanel = null;
+    }
+
+    /** The flows in {@code folder}; none when it cannot be listed. Sink thread. */
+    private List<FlowEntry> listed(Path folder) {
+        try {
+            return sink.flows(folder);
+        } catch (RuntimeException e) {
+            return new ArrayList<FlowEntry>();
+        }
+    }
+
+    /** The person picked another folder in the panel: its flows. EDT. */
+    private void listFlows(Path folder) {
+        FlowsPanel panel = flowsPanel;
+        if (panel == null) return;
+        sinkThread.submit(() -> {
+            List<FlowEntry> flows = listed(folder);
+            SwingUtilities.invokeLater(() -> { if (flowsPanel == panel) panel.show(folder, flows); });
+        });
+    }
+
+    /**
+     * Load: the flow becomes the recording, shown as a loaded {@link Recording} with its steps ready to run; the
+     * previous recording goes. A refused load says why in the panel and changes nothing. EDT.
+     */
+    private void loadFlow(Path file) {
+        FlowsPanel panel = flowsPanel;
+        if (panel == null || busyRecording()) return;
+        sinkThread.submit(() -> {
+            Result r = sink.loadFlow(file);
+            int n = r.ok ? sink.steps().size() : 0;
+            SwingUtilities.invokeLater(() -> {
+                if (!r.ok) {
+                    if (flowsPanel == panel) panel.refused(r.line);
+                    return;
+                }
+                closeFlows();
+                Overlay home = paletteHome;
+                if (home == null) return;
+                if (recording != null) recording.dispose();
+                recording = Recording.loaded(this, sink, sinkThread, home, this::startRecording, r.line, n);
+            });
+        });
+    }
+
+    /** The person's recording - or the flow they loaded - or null before their first ● Record or load. EDT. */
     Recording recording() {
         return recording;
     }

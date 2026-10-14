@@ -18,9 +18,11 @@ import java.util.concurrent.Semaphore;
 
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
- * Done; after Done ● Record, Steps, Export…), the person's own steps (Record mode), the check catcher (Check mode), the
- * steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class or a flow
- * file. Only the person starts and ends it. EDT, except where a method says otherwise.
+ * Done; after Done ● Record, Load flow…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
+ * mode), the steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class
+ * or a flow file. Only the person starts and ends it. A flow file the person loads is one too, already stopped
+ * ({@link #loaded}): its steps panel runs it - the app reset, then every step. While a replay or run goes on, no other
+ * call drives the app ({@link Inspector#drivingReason}). EDT, except where a method says otherwise.
  */
 final class Recording {
 
@@ -33,6 +35,8 @@ final class Recording {
     private final Inspector.Sink sink;
     private final ExecutorService sinkThread;
     private final Runnable recordAgain;
+    /** The name of the flow file this recording was loaded from; null for one the person recorded. */
+    final String flow;
     Overlay home;
     final List<String> lines = Collections.synchronizedList(new ArrayList<String>());
     private final HumanSteps steps;
@@ -57,7 +61,13 @@ final class Recording {
     private Bar replayBar;
 
     Recording(Inspector inspector, Inspector.Sink sink, ExecutorService sinkThread, Overlay home, Runnable recordAgain) {
+        this(inspector, sink, sinkThread, home, recordAgain, null);
+    }
+
+    private Recording(Inspector inspector, Inspector.Sink sink, ExecutorService sinkThread, Overlay home,
+                      Runnable recordAgain, String flow) {
         this.inspector = inspector;
+        this.flow = flow;
         this.sink = sink;
         this.sinkThread = sinkThread;
         this.home = home;
@@ -68,11 +78,28 @@ final class Recording {
                 .button("Check", Overlay.YES, () -> mode(true))
                 .button("Steps", STEPS, this::toggleSteps)
                 .button("Done", Overlay.HOVER, this::done);
-        this.stoppedBar = new Bar("Recorded", "").dot(new Color(0x8A, 0x96, 0xAD), false)
+        this.stoppedBar = new Bar(flow != null ? "Flow" : "Recorded", "").dot(new Color(0x8A, 0x96, 0xAD), false)
                 .button("● Record", Overlay.NO, recordAgain)
+                .button("Load flow…", Overlay.HOVER, inspector::toggleFlows)
                 .button("Steps", STEPS, this::toggleSteps)
                 .button("Export…", Overlay.YES, this::toggleExport);
         this.bar = activeBar;
+    }
+
+    /**
+     * The flow {@code name} (its {@code steps} steps already in the session's recording) shown loaded: stopped, the
+     * bar titled "Flow", the steps panel open with ▶ Run. EDT.
+     */
+    static Recording loaded(Inspector inspector, Inspector.Sink sink, ExecutorService sinkThread, Overlay home,
+                            Runnable recordAgain, String name, int steps) {
+        Recording r = new Recording(inspector, sink, sinkThread, home, recordAgain, name);
+        r.state = State.STOPPED;
+        r.bar = r.stoppedBar;
+        r.done.complete(new ArrayList<String>());
+        r.stoppedBar.text(name + " - " + steps + (steps == 1 ? " step" : " steps"));
+        home.bar(r.bar);
+        r.toggleSteps();
+        return r;
     }
 
     void start() {
@@ -198,8 +225,12 @@ final class Recording {
             return;
         }
         closeExportPanel();
-        panel = new StepsPanel(() -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom, this::delete,
-                this::toggleSteps);
+        inspector.closeFlows();
+        // a loaded flow runs as it will in a test: from a reset
+        panel = flow != null
+                ? new StepsPanel("▶ Run", this::run, i -> replay(i, -1, null), this::redoFrom, this::delete, this::toggleSteps)
+                : new StepsPanel("▶ Replay all", () -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom,
+                        this::delete, this::toggleSteps);
         home.panel(panel);
         refresh(-1);
         live.start();
@@ -226,6 +257,7 @@ final class Recording {
                     panel = null;
                     live.stop();
                 }
+                inspector.closeFlows();
                 exportPanel = new ExportPanel("RecordedUiIT", pkg, folder, loaded, inspector.exportKind, (c, p) -> {
                     inspector.exportKind = ExportPanel.JAVA;
                     exported(export(c, p));
@@ -244,6 +276,15 @@ final class Recording {
             if (exportPanel == null) return;
             if (r.ok) toggleExport(); else exportPanel.refused(r.line, r.folder);
         }));
+    }
+
+    /** The steps or export panel goes: Load flow… opens its own in their place. */
+    void closePanels() {
+        if (panel == null && exportPanel == null) return;
+        home.panel(null);
+        panel = null;
+        live.stop();
+        closeExportPanel();
     }
 
     /** The export panel is gone (closed, or replaced): its folder dialog goes with it. */
@@ -346,6 +387,19 @@ final class Recording {
      * Stop are on the bar, which moves off the box. The first failure stops the replay.
      */
     private void replay(int from, int to, Runnable after) {
+        replay(from, to, after, false);
+    }
+
+    /**
+     * ▶ Run, for a loaded flow: the app reset as the flow starts, then every step replayed; a reset that fails runs
+     * nothing and says why.
+     */
+    void run() {
+        replay(0, -1, null, true);
+    }
+
+    /** {@link #replay(int, int, Runnable)}; {@code reset}: the app is reset first (a run). */
+    private void replay(int from, int to, Runnable after, boolean reset) {
         if (replaying) return;
         replaying = true;
         boolean wasChecking = state == State.CHECKING;
@@ -356,9 +410,12 @@ final class Recording {
         next.drainPermits();
         steps.flush();
         steps.active(false);
-        inspector.recordingBusy("a person is replaying their recording in the app");
+        String why = reset ? "a person is running " + flow + " in the app" : "a person is replaying their recording in the app";
+        inspector.recordingBusy(why);
+        // the palette's steps go to the session directly: the agent's lease keeps every other call out meanwhile
+        inspector.driving(why);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
-        replayBar = new Bar("Replaying", "").dot(Overlay.HOVER, false)
+        replayBar = new Bar(reset ? "Running" : "Replaying", reset ? "resetting the app …" : "").dot(Overlay.HOVER, false)
                 .button("Pause", Overlay.NAVY.brighter(), () -> { paused = true; replayBar.active("Pause"); })
                 .button("Resume", Overlay.YES, () -> { paused = false; replayBar.active(""); next.release(); })
                 .button("Next", Overlay.HOVER, next::release)
@@ -366,7 +423,25 @@ final class Recording {
         if (paused) replayBar.active("Pause");
         home.bar(replayBar);
         // the flushed steps reach the recording before it is read
-        sinkThread.submit(() -> runReplay(from, to, delay, wasChecking, after));
+        sinkThread.submit(() -> {
+            if (reset) {
+                Inspector.Result r = resetApp();
+                if (!r.ok) {
+                    ended("✗ reset failed: " + r.line, -1, wasChecking, null);
+                    return;
+                }
+            }
+            runReplay(from, to, delay, wasChecking, after);
+        });
+    }
+
+    /** The run's reset; one that throws is a failed one. Sink thread. */
+    private Inspector.Result resetApp() {
+        try {
+            return sink.reset();
+        } catch (RuntimeException e) {
+            return new Inspector.Result(false, String.valueOf(e.getMessage()));
+        }
     }
 
     /** The replay loop, on the sink thread. */
@@ -435,12 +510,19 @@ final class Recording {
             // a check's outcome stays in view long enough to be seen, at any speed; step by step keeps it until Next
             if (!paused) Inspector.pause(check ? Math.max(delay, 600) : delay / 2);
         }
-        final String text = outcome;
-        final int stop = failed;
+        ended(outcome, failed, wasChecking, after);
+    }
+
+    /**
+     * The replay or run ended with {@code text} on the bar ({@code stop}: the step it stopped at, -1 none): the palette
+     * comes back, other calls may drive the app again, and {@code after} runs when nothing stopped it. Sink thread.
+     */
+    private void ended(String text, int stop, boolean wasChecking, Runnable after) {
         SwingUtilities.invokeLater(() -> {
             for (Overlay o : inspector.overlays()) o.clearMarks();
             home.controlsAway(false);
             replaying = false;
+            inspector.driving(null);
             home.bar(bar);
             if (active()) {
                 inspector.recordingBusy("a person is recording in the app (they end it with Done in its palette)");

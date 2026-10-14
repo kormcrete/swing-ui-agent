@@ -169,4 +169,46 @@ class LeaseTest {
         assertThat(lease.holder()).isNull();
         assertThat(heard).containsExactly(true, false, true, false);
     }
+
+    @Test
+    void aMutatingCallWhileAPersonRunsIsBusy() {
+        lease.drivenBy(() -> "a person is running place-order in the app");
+        assertThatThrownBy(() -> lease.enter(null))
+                .isInstanceOf(DriverException.class)
+                .hasMessage("BUSY: busy: a person is running place-order in the app");
+        assertThat(lease.holder()).isNull();
+        // the holder's own calls wait too: the person's run owns the app until it ends
+        lease.drivenBy(() -> null);
+        Lease.Grant g = lease.acquire("suite", null);
+        lease.drivenBy(() -> "a person is replaying their recording in the app");
+        assertThatThrownBy(() -> lease.enter(g.token))
+                .isInstanceOf(DriverException.class)
+                .hasMessage("BUSY: busy: a person is replaying their recording in the app");
+    }
+
+    @Test
+    void readsAndRenewsStillWork() {
+        Lease.Grant g = lease.acquire("suite", 5_000L);
+        lease.drivenBy(() -> "a person is running place-order in the app");
+        now += 4_000L;
+        lease.renew(g.token);
+        assertThat(lease.renewHeld(g.token)).isTrue();
+        now += 4_000L;
+        assertThat(lease.holder().token).isEqualTo(g.token);
+        assertThat(lease.release(g.token)).isTrue();
+    }
+
+    @Test
+    void afterTheRunCallsGoThroughAgain() {
+        String[] reason = {"a person is running place-order in the app"};
+        lease.drivenBy(() -> reason[0]);
+        assertThatThrownBy(() -> lease.enter(null)).hasMessageContaining("busy: a person is running");
+        reason[0] = null;
+        assertThatCode(() -> {
+            lease.enter(null);
+            lease.exit(null);
+        }).doesNotThrowAnyException();
+        // a refused call left no count behind: a lease may be taken
+        assertThat(lease.acquire("suite", null).owner).isEqualTo("suite");
+    }
 }

@@ -447,6 +447,56 @@ public class UiMcpSession {
             }
 
             @Override
+            public List<Inspector.FlowEntry> flows(Path folder) {
+                List<Inspector.FlowEntry> out = new ArrayList<Inspector.FlowEntry>();
+                for (Path file : FlowFiles.list(folder)) {
+                    Path abs = file.toAbsolutePath().normalize();
+                    String base = abs.getFileName().toString();
+                    String name = base.substring(0, base.length() - FlowFiles.SUFFIX.length());
+                    try {
+                        Flow flow = FlowFiles.read(abs);
+                        out.add(new Inspector.FlowEntry(name, flow.description, flow.steps.size(), null, abs));
+                    } catch (RuntimeException e) {
+                        out.add(new Inspector.FlowEntry(name, null, 0, message(e), abs));
+                    }
+                }
+                return out;
+            }
+
+            @Override
+            public Inspector.Result loadFlow(Path file) {
+                try {
+                    JsonNode loaded = mapper.readTree(UiMcpSession.this.loadFlow(file));
+                    // the folder the person loaded from is the one Load flow… and Export… offer next
+                    folderMemory.put(Paths.get(loaded.path("loaded").asText()).getParent());
+                    return new Inspector.Result(true, loaded.path("name").asText());
+                } catch (Exception e) {
+                    return new Inspector.Result(false, message(e));
+                }
+            }
+
+            @Override
+            public Inspector.Result reset() {
+                try {
+                    // a step of the person's run: one at a time with the agent's, the recording untouched
+                    synchronized (UiMcpSession.this) {
+                        appReset.run();
+                    }
+                    return new Inspector.Result(true, "reset");
+                } catch (RuntimeException e) {
+                    return new Inspector.Result(false, message(e));
+                }
+            }
+
+            /** The message the palette shows: without the reason prefix the agent's errors carry. */
+            private String message(Exception e) {
+                if (e instanceof DriverException) {
+                    return DriverException.stripReason(e.getMessage(), ((DriverException) e).reason());
+                }
+                return String.valueOf(e.getMessage());
+            }
+
+            @Override
             public Inspector.Result check(Map<String, Object> step) {
                 JsonNode json = stripNulls(mapper.valueToTree(step));
                 try {

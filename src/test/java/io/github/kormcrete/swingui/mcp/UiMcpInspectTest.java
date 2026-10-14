@@ -19,6 +19,7 @@ import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -233,5 +234,84 @@ class UiMcpInspectTest {
         assertThat(UiMcpSession.mainPackage("Main")).isEqualTo("recorded");
         assertThat(UiMcpSession.mainPackage(jars.resolve("missing.jar").toString())).isEqualTo("recorded");
         assertThat(UiMcpSession.mainPackage(null)).isEqualTo("recorded");
+    }
+
+    // ---- Load flow… and Run ---------------------------------------------------------------------------------------
+
+    @Test
+    void thePaletteListsTheFlowsWithTheirSteps(@TempDir Path flows) throws Exception {
+        session.flowsDir(flows, false);
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
+        Files.write(flows.resolve("broken.json"), "{".getBytes(StandardCharsets.UTF_8));
+        Files.write(flows.resolve("notes.txt"), "ORD-1640".getBytes(StandardCharsets.UTF_8));
+
+        List<Inspector.FlowEntry> listed = sink.flows(flows);
+
+        assertThat(listed).hasSize(2);
+        Inspector.FlowEntry broken = listed.get(0);
+        assertThat(broken.name).isEqualTo("broken");
+        assertThat(broken.problem).contains("broken.json").doesNotStartWith("BAD_INPUT");
+        assertThat(broken.file).isEqualTo(flows.resolve("broken.json").toAbsolutePath().normalize());
+        Inspector.FlowEntry placeOrder = listed.get(1);
+        assertThat(placeOrder.name).isEqualTo("place-order");
+        assertThat(placeOrder.problem).isNull();
+        assertThat(placeOrder.steps).isEqualTo(1);
+        // a folder that does not exist (yet) has no flows
+        assertThat(sink.flows(flows.resolve("missing"))).isEmpty();
+    }
+
+    @Test
+    void thePaletteLoadsAFlowIntoTheRecording(@TempDir Path flows, @TempDir Path other) throws Exception {
+        session.flowsDir(flows, false);
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.exportFlow("place-order", other).ok).isTrue();
+        Path file = other.resolve("place-order.json").toAbsolutePath().normalize();
+        memory.put(flows);
+        session.startRecording(false);
+        sink.done(step("click", Locator.ofId("new")));
+
+        Inspector.Result r = sink.loadFlow(file);
+
+        assertThat(r.ok).isTrue();
+        assertThat(r.line).isEqualTo("place-order");
+        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(sink.loadedFlow()).isEqualTo(file);
+        // the folder the person loaded from is offered next time
+        assertThat(memory.get()).isEqualTo(other.toAbsolutePath().normalize());
+        assertThat(sink.flowsFolder()).isEqualTo(other.toAbsolutePath().normalize());
+        // the loaded recording exports as Java like any other
+        Inspector.Result java = sink.export("PlaceOrderUiIT", "com.example");
+        assertThat(java.ok).isTrue();
+        assertThat(testsDir.resolve("com/example/PlaceOrderUiIT.java")).exists();
+
+        // a broken file is refused with the reason and changes nothing
+        Path broken = Files.write(other.resolve("broken.json"), "{".getBytes(StandardCharsets.UTF_8));
+        Inspector.Result refused = sink.loadFlow(broken);
+        assertThat(refused.ok).isFalse();
+        assertThat(refused.line).contains("broken.json");
+        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(sink.loadedFlow()).isEqualTo(file);
+    }
+
+    @Test
+    void theRunsResetIsTheAppReset() {
+        sink.done(step("click", Locator.ofId("save")));
+        // without one the session cannot reset: the run says why and runs nothing
+        Inspector.Result none = sink.reset();
+        assertThat(none.ok).isFalse();
+        assertThat(none.line).contains("this session has no reset").doesNotStartWith("CAPABILITY_GAP");
+
+        int[] resets = {0};
+        session.appReset(new UiMcpSession.AppReset() {
+            @Override public boolean defined() { return false; }
+            @Override public void run() { resets[0]++; }
+        });
+        Inspector.Result r = sink.reset();
+        assertThat(r.ok).isTrue();
+        assertThat(resets[0]).isEqualTo(1);
+        // the reset leaves the recording alone: the run replays it next
+        assertThat(sink.steps()).containsExactly("click(#save)");
+        assertThat(backend.verbs.calls).isEmpty();
     }
 }
