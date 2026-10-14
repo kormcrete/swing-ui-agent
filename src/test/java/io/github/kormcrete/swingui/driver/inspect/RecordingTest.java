@@ -1002,6 +1002,33 @@ class RecordingTest {
     }
 
     @Test
+    void theStopDuringTheResetOfARedoFromTheFirstStepStopsTheRecording() throws Exception {
+        recordingWith("click(#a)", "click(#b)");
+        int a = sink.steps.get(0).id;
+        CountDownLatch inReset = new CountDownLatch(1);
+        CountDownLatch goOn = new CountDownLatch(1);
+        sink.onReset = () -> {
+            inReset.countDown();
+            try { goOn.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        };
+        redo(0);
+        assertThat(inReset.await(5, TimeUnit.SECONDS)).isTrue();
+        Bar replayBar = eventually(() -> scene.inspector.overlay(frame.getRootPane()).bar() != recording.bar
+                ? scene.inspector.overlay(frame.getRootPane()).bar() : null);
+        SwingUtilities.invokeAndWait(() -> replayBar.press("Stop"));
+        goOn.countDown();
+        eventually(() -> !recording.replaying && sink.log.contains("end") ? Boolean.TRUE : null);
+        settle();
+        Thread.sleep(100);
+        // nothing was replayed, yet the person's Stop counts: the cut stays and nothing records on
+        assertThat(sink.log).containsExactly("cut " + a, "reset", "end");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+            assertThat(recording.bar.text()).isEqualTo("■ stopped after the reset - recording stopped");
+        });
+    }
+
+    @Test
     void aPassingRedoOfALiveRecordingRecordsOn() throws Exception {
         recordingWith("click(#a)", "click(#b)");
         int b = sink.steps.get(1).id;

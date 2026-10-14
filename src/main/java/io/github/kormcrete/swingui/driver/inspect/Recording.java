@@ -23,13 +23,13 @@ import java.util.concurrent.Semaphore;
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
  * Done; after Done ● Record, Load flow…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
  * mode), the steps panel with replay, redo and delete (a replay of everything and every redo begin at the app reset,
- * as the exported test does), and the export panel that writes the recording as a JUnit class or a flow file. The person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
+ * as the exported test does), and the export panel that writes the recording as a JUnit class or a flow file. The
+ * person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
  * {@link #stoppedByAgent}); while the agent replays, its bar stands in for the palette's ({@link #agentReplay}). A
- * flow file the person or the agent loads is one too, already stopped
- * ({@link #loaded}): its steps panel runs it - the app reset, then every step. While a replay or run goes on, no other
- * call drives the app ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the
- * panel shows each change at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a
- * method says otherwise.
+ * flow file the person or the agent loads is one too, already stopped ({@link #loaded}): its steps panel runs it - the
+ * app reset, then every step. While a replay or run goes on, no other call drives the app
+ * ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the panel shows each change
+ * at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a method says otherwise.
  */
 final class Recording {
 
@@ -536,9 +536,10 @@ final class Recording {
     /**
      * Replays steps {@code from} up to {@code to} (exclusive; -1 all) the way the exported test will: from the first
      * step the app is reset first (no step of its own: the bar says so), each step runs as the agent's would, nothing is
-     * recorded, the person's own input is not listened to, the catcher and the steps panel are out of the way. At the panel's speed each target is boxed for a moment BEFORE its step runs; an action and the
-     * checks after it are one step, and step by step waits for Next with the last results still in view. Pause, Next and
-     * Stop are on the bar, which moves off the box. The first failure stops the replay.
+     * recorded, the person's own input is not listened to, the catcher and the steps panel are out of the way. At the
+     * panel's speed each target is boxed for a moment BEFORE its step runs; an action and the checks after it are one
+     * step, and step by step waits for Next with the last results still in view. Pause, Next and Stop are on the bar,
+     * which moves off the box. The first failure, or the person's Stop, ends the replay.
      */
     private void replay(int from, int to, Runnable after) {
         replay(from, to, after, false);
@@ -683,7 +684,9 @@ final class Recording {
             // a check's outcome stays in view long enough to be seen, at any speed; step by step keeps it until Next
             if (!paused) Inspector.pause(check ? Math.max(delay, 600) : delay / 2);
         }
-        ended(outcome, failed, failed < 0, wasChecking, after);
+        // a Stop the loop never saw (during the reset of a redo from the first step, or after the last step) counts too
+        if (failed < 0 && stopped) outcome = n <= from ? "■ stopped after the reset" : "■ stopped after step " + n;
+        ended(outcome, failed, failed < 0 && !stopped, wasChecking, after);
     }
 
     /**
