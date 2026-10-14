@@ -36,8 +36,7 @@ Then tell it once, in the project's `CLAUDE.md`, how to reach the app:
 
 ```markdown
 ## UI tests
-- Order Desk runs with swing-ui-agent on port 8770 (run configuration "Order Desk", or "Order Desk · record" with the
-  palette). Drive it with `java -jar target/swing-ui-agent-agent.jar --port 8770 <tool> '<json>'`.
+- Order Desk runs with swing-ui-agent on port 8770 (run configuration "Order Desk", with the palette). Drive it with `java -jar target/swing-ui-agent-agent.jar --port 8770 <tool> '<json>'`.
 - Export UI tests to the package io.github.kormcrete.orderdesk. Run them with `mvn -B -Pui verify`.
 ```
 
@@ -61,7 +60,7 @@ You review the class like any other change and commit it.
 
 ## 3. Record it yourself and let it export
 
-Start **Order Desk · record** instead, then tell Claude Code:
+Start **Order Desk** (the palette is on), then tell Claude Code:
 
 > I'll record a test for cancelling an order in the app. Wait for me, then export it as CancelOrderUiIT and check it.
 
