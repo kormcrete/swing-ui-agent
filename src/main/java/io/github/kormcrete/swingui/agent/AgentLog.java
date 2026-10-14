@@ -1,10 +1,12 @@
 package io.github.kormcrete.swingui.agent;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 /**
  * The agent's own lines (listening, cannot listen, failed to start, plugin errors): on the console as always, and with
@@ -13,19 +15,23 @@ import java.nio.file.Path;
  */
 final class AgentLog {
 
-    private final PrintStream file;
+    private final Path file;
 
-    private AgentLog(PrintStream file) {
+    private AgentLog(Path file) {
         this.file = file;
     }
 
-    /** No file: {@code path} null. Creates the parent folders and empties the file. Never throws. */
+    /**
+     * No file: {@code path} null. Creates the parent folders and empties the file. Never throws. The file is not kept
+     * open (each line is appended and closed), so it can be deleted at any time, also on Windows.
+     */
     static AgentLog open(Path path) {
         if (path == null) return new AgentLog(null);
         try {
             Path absolute = path.toAbsolutePath();
             if (absolute.getParent() != null) Files.createDirectories(absolute.getParent());
-            return new AgentLog(new PrintStream(new FileOutputStream(absolute.toFile(), false), true, "UTF-8"));
+            Files.write(absolute, new byte[0]);
+            return new AgentLog(absolute);
         } catch (IOException | RuntimeException e) {
             System.err.println("swing-ui-agent: cannot write the log " + path + " (" + e + ")");
             return new AgentLog(null);
@@ -34,16 +40,29 @@ final class AgentLog {
 
     void out(String line) {
         System.out.println(line);
-        if (file != null) file.println(line);
+        append(line);
     }
 
     void err(String line) {
         System.err.println(line);
-        if (file != null) file.println(line);
+        append(line);
     }
 
     void err(Throwable t) {
         t.printStackTrace();
-        if (file != null) t.printStackTrace(file);
+        StringWriter text = new StringWriter();
+        t.printStackTrace(new PrintWriter(text));
+        append(text.toString().trim());
+    }
+
+    /** A failing write is ignored: the console has the line, and the agent must never throw. */
+    private void append(String line) {
+        if (file == null) return;
+        try {
+            Files.write(file, (line + System.lineSeparator()).getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException | RuntimeException e) {
+            // ignored on purpose
+        }
     }
 }
