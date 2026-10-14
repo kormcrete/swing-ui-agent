@@ -36,10 +36,6 @@ import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
-import io.github.kormcrete.swingui.flow.verb.DropVerb;
-import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
-import io.github.kormcrete.swingui.flow.verb.SetClipboardVerb;
-import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.UiInventory;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -1651,8 +1647,7 @@ public class UiMcpSession {
                 if (!target.hasNonNull("nth")) tree.remove("fragile");
             }
             if (text != null) {
-                if (!(old instanceof TypeVerb || old instanceof ExpectVerb || old instanceof SetClipboardVerb
-                        || old instanceof DropVerb)) {
+                if (!tree.hasNonNull("text")) {
                     throw new DriverException(Reason.BAD_INPUT, "step " + n + " (" + tree.path("action").asText() + ") has no text");
                 }
                 tree.put("text", text);

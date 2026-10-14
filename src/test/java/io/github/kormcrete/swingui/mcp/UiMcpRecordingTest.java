@@ -464,6 +464,17 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void editTextOfACheckOrDropThatHasNoTextIsRefused() throws Exception {
+        call("{\"op\":\"start\"}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"total\"},\"value\":\"42.00\"}}");
+        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"drop\",\"target\":{\"id\":\"zone\"},\"files\":[\"/tmp/a.txt\"]}}");
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        assertThat(refused("{\"op\":\"edit\",\"n\":1,\"text\":\"x\"}").getMessage()).contains("step 1 (expect) has no text");
+        assertThat(refused("{\"op\":\"edit\",\"n\":2,\"text\":\"x\"}").getMessage()).contains("step 2 (drop) has no text");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+    }
+
+    @Test
     void sayAndGroupWaitForTheSentencesVersion() throws Exception {
         four();
         assertThat(refused("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\"}").getMessage())
