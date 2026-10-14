@@ -425,10 +425,15 @@ public class UiMcpSession {
             public void truncate(int keep) {
                 synchronized (UiMcpSession.this) {
                     model.truncate(keep);
-                    // a redo records on, also after Done
-                    if (model.state() == RecordingModel.State.STOPPED) {
-                        model.resume(RecordedStep.Author.PERSON, true, palette, System.currentTimeMillis());
-                    }
+                    publish();
+                }
+            }
+
+            @Override
+            public void resume() {
+                synchronized (UiMcpSession.this) {
+                    if (model.state() != RecordingModel.State.STOPPED) return;
+                    model.resume(RecordedStep.Author.PERSON, true, palette, System.currentTimeMillis());
                     publish();
                 }
             }
@@ -936,7 +941,7 @@ public class UiMcpSession {
         return runAndRecord(actionJson, record, RecordedStep.Author.AGENT).toString();
     }
 
-    private String doAction(JsonNode actionJson, boolean record, RecordedStep.Author author) {
+    private synchronized String doAction(JsonNode actionJson, boolean record, RecordedStep.Author author) {
         return runAndRecord(actionJson, record, author).toString();
     }
 

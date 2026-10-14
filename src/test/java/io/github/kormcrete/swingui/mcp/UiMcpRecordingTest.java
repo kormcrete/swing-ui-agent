@@ -287,8 +287,20 @@ class UiMcpRecordingTest {
         sink.done(step("click", Locator.ofId("b")));
         sink.end();
         sink.truncate(1);
+        sink.resume();
         assertThat(sink.done(step("click", Locator.ofId("c"))).ok).isTrue();
         assertThat(sink.steps()).containsExactly("click(#a)", "click(#c)");
+    }
+
+    @Test
+    void aRedoThatNeverRecordsOnLeavesTheRecordingStopped() throws Exception {
+        sink.begin();
+        sink.done(step("click", Locator.ofId("a")));
+        sink.end();
+        sink.truncate(0);
+        // the replay failed: the palette never recorded on
+        assertThat(call("{\"op\":\"list\"}").path("state").asText()).isEqualTo("stopped");
+        assertThat(session.recordingReason()).isNull();
     }
 
     @Test

@@ -35,6 +35,7 @@ final class FakeSink implements Inspector.Sink {
     volatile Inspector.Result reset = new Inspector.Result(true, "reset");
 
     @Override public void begin() { if (onBegin != null) onBegin.run(); steps.clear(); loaded = null; }
+    @Override public void resume() { log.add("resume"); }
     @Override public void end() { log.add("end"); }
     @Override public Inspector.Result done(Map<String, Object> step) { steps.add(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }
     @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }

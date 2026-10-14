@@ -305,6 +305,7 @@ class UiMcpInspectTest {
         assertThat(sink.loadFlow(file).ok).isTrue();
         // a loaded flow is stopped: the person goes on from its last step with a redo, which records on
         sink.truncate(1);
+        sink.resume();
         sink.done(step("click", Locator.ofId("new")));
 
         // the palette's Save gives no description: the file keeps its own, and its own name

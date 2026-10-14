@@ -111,6 +111,9 @@ public final class Inspector {
         /** Keeps the first {@code keep} steps and drops the rest. */
         void truncate(int keep);
 
+        /** The palette records on after a redo (also after Done): a stopped recording takes steps again. */
+        void resume();
+
         /** Drops step {@code index}. */
         void remove(int index);
 

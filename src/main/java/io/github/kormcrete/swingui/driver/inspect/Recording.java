@@ -360,6 +360,7 @@ final class Recording {
                         home.panel(null);
                         closeExportPanel();
                     }
+                    sinkThread.submit(sink::resume);
                     if (state == State.STOPPED) {
                         state = State.RECORDING;
                         done = new CompletableFuture<List<String>>();
