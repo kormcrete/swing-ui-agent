@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
@@ -7,6 +8,8 @@ import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
+import io.github.kormcrete.swingui.flow.verb.HoverVerb;
+import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import org.junit.jupiter.api.Test;
@@ -262,5 +265,44 @@ class JavaTestWriterTest {
         assertThat(src).contains("ui.button(\"OK\").hover();", "ui.button(\"OK\").unhover();",
                 ".resizeColumn(-40);", "ui.main().resizeTo(1200, 800);", "ui.dialog(\"Notice\").close();",
                 "ui.focusFileChooserName();");
+    }
+
+    @Test
+    void oneJavaLinePerStep() {
+        LoginAsAction login = new LoginAsAction(); login.as = "ada";
+        MenuVerb menu = new MenuVerb(); menu.path = Arrays.asList("File", "New order");
+        Locator next = Locator.of("button", "Next"); next.nth = 1;
+        ClickVerb fragile = click(next); fragile.fragile = true;
+        TypeVerb type = new TypeVerb(); type.target = Locator.of("textbox", "Customer"); type.text = "Ada";
+        ExpectVerb cell = new ExpectVerb(); cell.target = Locator.of("table", "Orders");
+        cell.cell = new Expectation.Cell();
+        cell.cell.row = Collections.<String, Object>singletonMap("Order no.", "ORD-1640");
+        cell.cell.column = "Customer"; cell.cell.expected = "Ada";
+        List<Action> steps = Arrays.<Action>asList(login, menu, fragile, type, cell);
+
+        List<String> lines = JavaTestWriter.lines(steps);
+
+        assertThat(lines).hasSize(5);
+        assertThat(lines.get(0)).isEqualTo("@LoginAs(\"ada\")");
+        assertThat(lines.get(2)).endsWith("  // FRAGILE: the recorder needed nth to make this target unique");
+        String java = JavaTestWriter.write(steps, "com.example.uitest.recorded", "SmokeUiIT", "walk");
+        for (int i = 1; i < lines.size(); i++) {
+            String statement = lines.get(i).replace("  // FRAGILE: the recorder needed nth to make this target unique", "");
+            assertThat(java).contains("        " + statement + "\n");
+        }
+    }
+
+    @Test
+    void linesRefuseWhatWriteRefuses() {
+        Locator point = Locator.of("clickable", "Canvas");
+        point.point = new LinkedHashMap<String, Double>();
+        point.point.put("x", 0.5);
+        point.point.put("y", 0.5);
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.lines(Arrays.<Action>asList(click(point))),
+                ExportRefused.class);
+        assertThat(e.problems().get(0)).contains("step 1");
+
+        HoverVerb hover = new HoverVerb(); hover.target = Locator.of("button", "Save");
+        assertThat(JavaTestWriter.lines(Arrays.<Action>asList(hover))).containsExactly("ui.button(\"Save\").hover();");
     }
 }

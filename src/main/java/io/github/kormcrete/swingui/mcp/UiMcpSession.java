@@ -69,7 +69,7 @@ public class UiMcpSession {
     private final UiInventory inventory;
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
-    private final List<Action> recorded = new ArrayList<Action>();
+    private final RecordingModel model = new RecordingModel();
     /** The recording began at a session reset, where an exported test starts too; export_test refuses it otherwise. */
     private boolean recordingFromReset;
     /** That reset was an app plugin's, to a defined start state, not only dialogs closed. */
@@ -172,7 +172,7 @@ public class UiMcpSession {
     /** The recording, one step per element, as export_test would read it. */
     private synchronized ArrayNode recordingJson() {
         ArrayNode out = mapper.createArrayNode();
-        for (Action a : recorded) out.add(stripNulls(mapper.valueToTree(a)));
+        for (Action a : model.actions()) out.add(stripNulls(mapper.valueToTree(a)));
         return out;
     }
 
@@ -333,7 +333,7 @@ public class UiMcpSession {
                             return new Inspector.Result(false,
                                     action.describe() + " - " + String.join("; ", problems));
                         }
-                        recorded.add(action);
+                        model.append(action, RecordedStep.Author.PERSON);
                         return new Inspector.Result(true, action.describe());
                     }
                 } catch (RuntimeException e) {
@@ -345,7 +345,7 @@ public class UiMcpSession {
             public List<String> steps() {
                 synchronized (UiMcpSession.this) {
                     List<String> out = new ArrayList<String>();
-                    for (Action a : recorded) out.add(a.describe());
+                    for (Action a : model.actions()) out.add(a.describe());
                     return out;
                 }
             }
@@ -353,8 +353,8 @@ public class UiMcpSession {
             @Override
             public Locator target(int index) {
                 synchronized (UiMcpSession.this) {
-                    if (index < 0 || index >= recorded.size()) return null;
-                    JsonNode step = mapper.valueToTree(recorded.get(index));
+                    if (index < 0 || index >= model.size()) return null;
+                    JsonNode step = mapper.valueToTree(model.at(index + 1).action);
                     JsonNode t = step.get("target");
                     if (t == null || !t.isObject()) return null;
                     Locator l = locator(stripNulls(t));
@@ -374,10 +374,10 @@ public class UiMcpSession {
             public Inspector.Result replay(int index) {
                 JsonNode json;
                 synchronized (UiMcpSession.this) {
-                    if (index < 0 || index >= recorded.size()) {
+                    if (index < 0 || index >= model.size()) {
                         return new Inspector.Result(false, "no step " + (index + 1));
                     }
-                    json = stripNulls(mapper.valueToTree(recorded.get(index)));
+                    json = stripNulls(mapper.valueToTree(model.at(index + 1).action));
                 }
                 try {
                     JsonNode result = mapper.readTree(doAction(json, false));
@@ -393,14 +393,14 @@ public class UiMcpSession {
             @Override
             public void truncate(int keep) {
                 synchronized (UiMcpSession.this) {
-                    while (recorded.size() > Math.max(0, keep)) recorded.remove(recorded.size() - 1);
+                    model.truncate(keep);
                 }
             }
 
             @Override
             public void remove(int index) {
                 synchronized (UiMcpSession.this) {
-                    if (index >= 0 && index < recorded.size()) recorded.remove(index);
+                    if (index >= 0 && index < model.size()) model.remove(index + 1);
                 }
             }
 
@@ -503,7 +503,7 @@ public class UiMcpSession {
             public Inspector.Result check(Map<String, Object> step) {
                 JsonNode json = stripNulls(mapper.valueToTree(step));
                 try {
-                    JsonNode result = mapper.readTree(doAction(json, true));
+                    JsonNode result = mapper.readTree(doAction(json, true, RecordedStep.Author.PERSON));
                     boolean passed = result.path("passed").asBoolean(false) && result.has("recorded");
                     String line = result.path("action").asText(json.toString());
                     if (!passed) line += " - " + result.path("message").asText(result.path("notRecorded").asText(""));
@@ -779,7 +779,7 @@ public class UiMcpSession {
      * every later {@code export_test} refuse, and nothing else ever empties the recording. So the
      * recording is always exportable, and such steps stay usable for exploring.
      */
-    private ObjectNode runAndRecord(JsonNode actionJson, boolean record) {
+    private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author) {
         Action action = action(actionJson);
         Flow flow = new Flow();
         flow.name = "step";
@@ -813,7 +813,7 @@ public class UiMcpSession {
             Action recordedAction = recordable(action, step.outcome);
             List<String> problems = exportProblems(recordedAction);
             if (problems.isEmpty()) {
-                recorded.add(recordedAction);
+                model.append(recordedAction, author);
                 r.set("recorded", mapper.valueToTree(recordedAction));
             } else {
                 r.put("notRecorded", "it ran, but export_test has no Java form for it (" + String.join("; ", problems)
@@ -854,7 +854,7 @@ public class UiMcpSession {
      * when it would write it. The recording itself is always exportable, so every problem is {@code next}'s.
      */
     private List<String> exportProblems(Action next) {
-        List<Action> steps = new ArrayList<Action>(recorded);
+        List<Action> steps = model.actions();
         steps.add(next);
         try {
             JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
@@ -889,7 +889,11 @@ public class UiMcpSession {
 
     /** As {@link #doAction(JsonNode)}; with {@code record} false the step runs and nothing is recorded or reported as such. */
     public synchronized String doAction(JsonNode actionJson, boolean record) {
-        return runAndRecord(actionJson, record).toString();
+        return runAndRecord(actionJson, record, RecordedStep.Author.AGENT).toString();
+    }
+
+    private String doAction(JsonNode actionJson, boolean record, RecordedStep.Author author) {
+        return runAndRecord(actionJson, record, author).toString();
     }
 
     /**
@@ -913,7 +917,7 @@ public class UiMcpSession {
             String label = (ran + 1) + "/" + actionsJson.size();
             StepClock clock = new StepClock();
             try {
-                step = runAndRecord(node, true);
+                step = runAndRecord(node, true, RecordedStep.Author.AGENT);
             } catch (DriverException e) {
                 clock.log("do_actions." + node.path("action").asText("?"), label, "error:" + ToolErrors.typeOf(e.reason()), node);
                 throw new DriverException(e.reason(), "step " + (ran + 1) + " of " + actionsJson.size() + ": "
@@ -945,7 +949,7 @@ public class UiMcpSession {
         boolean withSnapshot = step.path("snapshot").asBoolean(false);
         step.remove("snapshot");
         step.put("action", action);
-        ObjectNode result = runAndRecord(step, true);
+        ObjectNode result = runAndRecord(step, true, RecordedStep.Author.AGENT);
         if (withSnapshot) result.set("snapshot", mapper.valueToTree(driver().snapshot(null, null, null, null)));
         return result;
     }
@@ -1037,7 +1041,7 @@ public class UiMcpSession {
             throw new DriverException(Reason.BAD_INPUT, "a batch step names its action in 'verb', not 'action'");
         }
         args.put("action", verb);
-        return runAndRecord(args, true);
+        return runAndRecord(args, true, RecordedStep.Author.AGENT);
     }
 
     /** Times one batched step against the EDT clock and logs its {@link UiMcpTiming#stepLine}. */
@@ -1089,7 +1093,7 @@ public class UiMcpSession {
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
         ExportDefaults defaults = exportDefaults.get();
         String packageName = pkg == null || pkg.isEmpty() ? defaults.packageName : pkg;
-        String source = JavaTestWriter.write(new ArrayList<Action>(recorded), packageName, className, methodName);
+        String source = JavaTestWriter.write(model.actions(), packageName, className, methodName);
 
         String configured = System.getProperty(TESTS_DIR_PROP);
         boolean genericLocation = defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty()) && configured == null;
@@ -1101,11 +1105,11 @@ public class UiMcpSession {
         Files.createDirectories(file.getParent());
         Files.write(file, source.getBytes(StandardCharsets.UTF_8));
 
-        int steps = recorded.size();
+        int steps = model.size();
         int fragile = fragileSteps();
-        String startWarning = definedStart ? null : startWarning(recorded);
+        String startWarning = definedStart ? null : startWarning(model.actions());
         if (clear) {
-            recorded.clear();
+            model.clear();
             recordingFromReset = false;
             forgetLoadedFlow();
         }
@@ -1131,9 +1135,14 @@ public class UiMcpSession {
         }
     }
 
+    /** The recording with ids and authors, for tests. */
+    synchronized List<RecordedStep> recordedSteps() {
+        return model.steps();
+    }
+
     private int fragileSteps() {
         int fragile = 0;
-        for (Action a : recorded) {
+        for (Action a : model.actions()) {
             if (a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile)) fragile++;
         }
         return fragile;
@@ -1152,7 +1161,7 @@ public class UiMcpSession {
     public synchronized String exportFlow(String name, String dir, String description, boolean clear) throws Exception {
         requireResetStart();
         List<String> problems = new ArrayList<String>();
-        if (recorded.isEmpty()) problems.add("nothing was recorded");
+        if (model.size() == 0) problems.add("nothing was recorded");
         try {
             FlowFiles.checkName(name);
         } catch (DriverException e) {
@@ -1175,21 +1184,21 @@ public class UiMcpSession {
         flow.description = description != null && !description.trim().isEmpty() ? description.trim()
                 : exists ? loadedDescription : null;
         flow.start = FlowFiles.START_RESET;
-        flow.steps = new ArrayList<Action>(recorded);
+        flow.steps = model.actions();
         flow.version = FlowFiles.versionFor(flow);
         String text = FlowFiles.write(flow);
         Files.write(file, text.getBytes(StandardCharsets.UTF_8));
 
-        String startWarning = definedStart ? null : startWarning(recorded);
+        String startWarning = definedStart ? null : startWarning(model.actions());
         ObjectNode result = mapper.createObjectNode();
         result.put("savedTo", file.toString());
-        result.put("steps", recorded.size());
+        result.put("steps", model.size());
         result.put("fragile", fragileSteps());
         result.put("overwrote", exists);
         if (startWarning != null) result.put("startWarning", startWarning);
         result.set("flow", mapper.readTree(text));
         if (clear) {
-            recorded.clear();
+            model.clear();
             recordingFromReset = false;
             forgetLoadedFlow();
         } else {
@@ -1323,8 +1332,7 @@ public class UiMcpSession {
                     + String.join("; ", e.problems()) + "; run it with run_flow or the JUnit runner instead");
         }
         Path abs = file.toAbsolutePath().normalize();
-        recorded.clear();
-        recorded.addAll(flow.steps);
+        model.load(flow.steps, RecordedStep.Author.FLOW);
         recordingFromReset = true;
         definedStart = appReset.defined();
         loadedFlow = abs;
@@ -1365,7 +1373,7 @@ public class UiMcpSession {
      * state; otherwise only dialogs were closed and the app may be on any screen.
      */
     public synchronized void startRecording(boolean definedStart) {
-        recorded.clear();
+        model.clear();
         recordingFromReset = true;
         this.definedStart = definedStart;
         forgetLoadedFlow();

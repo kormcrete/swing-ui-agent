@@ -51,6 +51,17 @@ public final class JavaTestWriter {
         return new Writer(steps, packageName, className, methodName).build();
     }
 
+    /**
+     * One Java entry per step, without indent: the statement the step becomes in {@link #write}'s class body (a
+     * leading {@code loginAs} is the {@code @LoginAs} annotation; a fragile step carries the writer's comment after
+     * its statement). Refuses exactly what {@code write} refuses.
+     */
+    public static List<String> lines(List<Action> steps) {
+        Writer w = new Writer(steps, "lines", "LinesUiIT", "lines");
+        w.build();
+        return new ArrayList<String>(w.stepLines);
+    }
+
     /** One export: holds the state a single {@link #write} call accumulates. */
     private static final class Writer {
 
@@ -61,6 +72,8 @@ public final class JavaTestWriter {
 
         private final List<String> problems = new ArrayList<String>();
         private final List<String> statements = new ArrayList<String>();
+        /** The Java entry of each step, by step index, as {@link #lines} reports it. */
+        private final List<String> stepLines = new ArrayList<String>();
         /** Whether the last statement checked (true) or acted (false); null before the first. */
         private Boolean checking;
 
@@ -119,11 +132,13 @@ public final class JavaTestWriter {
                 } else {
                     loginAlias = as;
                 }
+                stepLines.add(as == null ? "" : "@LoginAs(" + quote(as) + ")");
                 start = 1;
             }
             for (int i = start; i < steps.size(); i++) {
                 int stepNum = i + 1;
                 Action a = steps.get(i);
+                stepLines.add(null);
 
                 if (a instanceof LoginAsAction) {
                     problems.add("step " + stepNum + ": loginAs is only exportable as the first step");
@@ -137,12 +152,14 @@ public final class JavaTestWriter {
                     } else {
                         group(false);
                         statements.add(indent("ui.navigate(" + quote(target) + ");"));
+                        stepLines.set(i, "ui.navigate(" + quote(target) + ");");
                     }
                     continue;
                 }
                 if (a instanceof CloseAction) {
                     group(false);
                     statements.add(indent("ui.closeActiveTab();"));
+                    stepLines.set(i, "ui.closeActiveTab();");
                     continue;
                 }
                 if (!(a instanceof VerbAction) || (a instanceof ContextMenuAction && ((ContextMenuAction) a).target == null)) {
@@ -168,6 +185,8 @@ public final class JavaTestWriter {
                     statements.add(indent("// FRAGILE: the recorder needed nth to make this target unique"));
                 }
                 statements.add(indent(stmt));
+                stepLines.set(i, Boolean.TRUE.equals(v.fragile)
+                        ? stmt + "  // FRAGILE: the recorder needed nth to make this target unique" : stmt);
             }
         }
 
