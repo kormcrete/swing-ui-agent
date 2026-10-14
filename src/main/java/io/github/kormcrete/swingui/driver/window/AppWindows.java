@@ -1,5 +1,7 @@
 package io.github.kormcrete.swingui.driver.window;
 
+import io.github.kormcrete.swingui.driver.model.Roles;
+
 import javax.swing.AbstractButton;
 import javax.swing.JPopupMenu;
 import javax.swing.MenuElement;
@@ -79,6 +81,7 @@ public final class AppWindows implements WindowSource {
     }
 
     private static void collectPopups(Component c, List<JPopupMenu> out) {
+        if (Roles.agentOwn(c)) return;
         if (c instanceof JPopupMenu) {
             if (c.isShowing() && !out.contains(c)) out.add((JPopupMenu) c);
             return;

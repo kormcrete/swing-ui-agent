@@ -131,7 +131,7 @@ public final class LabelProximity {
     }
 
     private static <T> void collect(Component c, Class<T> type, List<? super T> out, Visibility visibility) {
-        if (!c.isVisible()) return;
+        if (!c.isVisible() || Roles.agentOwn(c)) return;
         if (type.isInstance(c) && visibility.isVisible(c)) {
             out.add(type.cast(c));
         }

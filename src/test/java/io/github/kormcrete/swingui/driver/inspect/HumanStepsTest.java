@@ -293,6 +293,28 @@ class HumanStepsTest {
         assertThat(parsed.modifiers).isEqualTo(menu | InputEvent.SHIFT_DOWN_MASK);
     }
 
+    @Test
+    void aClickOnThePaletteIsNoStep() {
+        Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
+        bar.setBounds(320, 10, 100, 30);
+        scene.content.add(bar);
+        click(bar, 1);
+        human.flush();
+        assertThat(steps).isEmpty();
+    }
+
+    @Test
+    void typingInAPaletteFieldIsNoStep() {
+        javax.swing.JTextField field = new javax.swing.JTextField() { };
+        field.setBounds(320, 50, 100, 24);
+        scene.content.add(field);
+        focus(field, FocusEvent.FOCUS_GAINED);
+        typeInto(field, "Mine");
+        focus(field, FocusEvent.FOCUS_LOST);
+        human.flush();
+        assertThat(steps).isEmpty();
+    }
+
     private void click(Component c, int count) {
         click(c, 3, 3, count);
     }
