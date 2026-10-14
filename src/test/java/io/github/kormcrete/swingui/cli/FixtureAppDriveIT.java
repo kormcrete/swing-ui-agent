@@ -321,8 +321,14 @@ class FixtureAppDriveIT {
             assertThat(replayed.path("passed").asBoolean()).as(why).isTrue();
             assertThat(replayed.path("ran").asInt()).as(why).isEqualTo(4);
             assertThat(replayed.path("reset").asBoolean()).as(why).isTrue();
-        } finally {
+            // a passing replay clears the edit marks
+            JsonNode after = call("recording", "{'op':'list'}");
+            for (JsonNode s : after.path("steps")) {
+                assertThat(s.path("edited").asBoolean()).as(after.path("why").asText()).isFalse();
+            }
             call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
         }
 
         JsonNode exported = call("recording", "{'op':'export','as':'flow','name':'together','dir':'" + dir + "'}");
@@ -333,6 +339,17 @@ class FixtureAppDriveIT {
         JsonNode ran = call("run_flow", "{'path':'" + file.toString().replace('\\', '/') + "'}");
         assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
         assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
+    }
+
+    /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
+    private static void stopIfStillRecording() {
+        try {
+            if ("recording".equals(call("recording", "{'op':'list'}").path("state").asText())) {
+                call("recording", "{'op':'stop'}");
+            }
+        } catch (Throwable ignored) {
+            // the test's own failure is the one to report
+        }
     }
 
     /** Exit code and stderr of a CLI call that is refused as a tool error (empty stdout). */
