@@ -1,4 +1,7 @@
-# Swing UI Agent
+<!-- TODO: product letter (none drawn yet); 96 px image above the title -->
+# swing-ui-agent
+
+[by kormcrete](https://github.com/kormcrete)
 
 **Let a coding agent drive your real Swing application and write its UI tests.**
 
