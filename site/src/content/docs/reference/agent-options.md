@@ -8,7 +8,7 @@ sidebar:
 Agent options go after `=`, comma-separated:
 
 ```sh
-java -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=off,plugins=a.jar:b/classes -jar my-app.jar
+java -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=off,plugins=a.jar:b/classes,log=agent.log -jar my-app.jar
 ```
 
 | Option | Default | What it does |
@@ -18,8 +18,9 @@ java -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=
 | `mode` | `normal` | `normal` or `background`. On macOS, `background` keeps the app out of the Dock so it never takes the foreground; elsewhere both behave the same. On every platform the app can be driven while other windows are in front. |
 | `palette` | `on` (`off` with `mode=background`) | A small palette in the app window for a person at the screen: they press ● Record, use the app, add checks and replay, and the agent reads and exports the recording. The agent can also box what it means and let them confirm or pick. `palette=off` for agent-only and CI runs: no palette, nothing listens to input. `palette=on` with `mode=background` is refused. No palette in a headless run. `session` shows `"palette": true` or `false`. The old name `inspector` is refused. See [Record a test by showing it](/swing-ui-agent/start/show/). |
 | `plugins` | none | Plugin jars or class folders, separated by `:` (`;` on Windows). See [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/). |
+| `log` | none | A file the agent also writes its own lines to: listening, cannot listen, plugin errors. Emptied when the app starts, folders created. For an app started without a console, such as a packaged download. The path cannot contain a comma. |
 
-On start the agent prints `swing-ui-agent listening on http://127.0.0.1:8765/mcp`. A bad option is printed on stderr instead, and the app runs without the agent.
+On start the agent prints `swing-ui-agent listening on http://127.0.0.1:8765/mcp` (also into the log file, with `log`). A bad option is printed on stderr instead, and the app runs without the agent.
 
 ## System properties
 

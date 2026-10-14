@@ -50,10 +50,11 @@ public final class SwingUiAgent {
             System.err.println("swing-ui-agent: " + e.getMessage() + " - agent not started, the app runs without it");
             return null;
         }
+        AgentLog log = AgentLog.open(args.log);
         try {
             LaunchMode mode = LaunchMode.apply(args.mode);
             String closed = ModuleAccess.open(inst);
-            if (closed != null) System.err.println("swing-ui-agent: " + closed);
+            if (closed != null) log.err("swing-ui-agent: " + closed);
             Driver driver = Driver.install(DriverSettings.defaults(mode));
             Plugins plugins = new Plugins(driver.verbs());
 
@@ -63,23 +64,24 @@ public final class SwingUiAgent {
             try {
                 endpoint.start();
             } catch (IOException e) {
-                System.err.println("swing-ui-agent: cannot listen on " + args.bind + ":" + args.port + " (" + e
+                log.err("swing-ui-agent: cannot listen on " + args.bind + ":" + args.port + " (" + e
                         + ") - agent not started, the app runs without it");
                 return null;
             }
-            System.out.println("swing-ui-agent listening on http://" + args.bind + ":" + endpoint.port() + "/mcp");
+            log.out("swing-ui-agent listening on http://" + args.bind + ":" + endpoint.port() + "/mcp");
             assembly.session.startPalette(driver);
 
-            watchPlugins(args.plugins, driver, plugins, inst);
+            watchPlugins(args.plugins, driver, plugins, inst, log);
             return endpoint;
         } catch (Throwable t) {
-            System.err.println("swing-ui-agent: failed to start (" + t + ") - the app runs without it");
-            t.printStackTrace();
+            log.err("swing-ui-agent: failed to start (" + t + ") - the app runs without it");
+            log.err(t);
             return null;
         }
     }
 
-    private static void watchPlugins(List<Path> paths, Driver driver, Plugins plugins, Instrumentation inst) {
+    private static void watchPlugins(List<Path> paths, Driver driver, Plugins plugins, Instrumentation inst,
+                                     AgentLog log) {
         if (paths.isEmpty()) return;
         PluginWatch watch = new PluginWatch(inst);
         for (Path p : paths) {
@@ -89,11 +91,11 @@ public final class SwingUiAgent {
                 watch.watch(d.appClass, new PluginHost(driver, slot, d));
             } catch (IOException e) {
                 plugins.add(String.valueOf(p.getFileName()), p).failed(p + ": " + e.getMessage());
-                System.err.println("swing-ui-agent: " + e.getMessage());
+                log.err("swing-ui-agent: " + e.getMessage());
             } catch (RuntimeException e) {
                 // Properties.load refuses a malformed unicode escape with IllegalArgumentException
                 plugins.add(String.valueOf(p.getFileName()), p).failed(p + ": " + e);
-                System.err.println("swing-ui-agent: " + p + ": " + e);
+                log.err("swing-ui-agent: " + p + ": " + e);
             }
         }
         if (watch.isEmpty()) return;
@@ -102,7 +104,7 @@ public final class SwingUiAgent {
             watch.scanLoaded();
         } catch (Throwable t) {
             for (PluginSlot slot : plugins.slots()) slot.failed("cannot watch class loading: " + t);
-            System.err.println("swing-ui-agent: cannot watch class loading (" + t + ")");
+            log.err("swing-ui-agent: cannot watch class loading (" + t + ")");
         }
     }
 }

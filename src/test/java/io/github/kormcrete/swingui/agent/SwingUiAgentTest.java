@@ -49,6 +49,30 @@ class SwingUiAgentTest {
     }
 
     @Test
+    void theListeningLineIsInTheLog(@TempDir Path dir) throws Exception {
+        Path log = dir.resolve("Kormcrete Order Desk").resolve("agent.log");
+        HttpMcpEndpoint endpoint = SwingUiAgent.start("mode=background,port=0,log=" + log, mock(Instrumentation.class));
+        try {
+            assertThat(endpoint).isNotNull();
+            assertThat(new String(Files.readAllBytes(log), StandardCharsets.UTF_8))
+                    .contains("swing-ui-agent listening on http://127.0.0.1:" + endpoint.port() + "/mcp");
+        } finally {
+            if (endpoint != null) endpoint.stop();
+        }
+    }
+
+    @Test
+    void aBusyPortIsInTheLog(@TempDir Path dir) throws Exception {
+        Path log = dir.resolve("agent.log");
+        try (ServerSocket busy = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            captureErr(() -> assertThat(SwingUiAgent.start(
+                    "mode=background,port=" + busy.getLocalPort() + ",log=" + log, mock(Instrumentation.class))).isNull());
+            assertThat(new String(Files.readAllBytes(log), StandardCharsets.UTF_8))
+                    .contains("swing-ui-agent: cannot listen on 127.0.0.1:" + busy.getLocalPort());
+        }
+    }
+
+    @Test
     void aNonLoopbackBindLeavesTheAppRunning(@TempDir Path dir) throws Exception {
         Path plugin = pluginDir(dir);
         Instrumentation inst = mock(Instrumentation.class);
@@ -162,7 +186,7 @@ class SwingUiAgentTest {
         return new String(buf.toByteArray(), StandardCharsets.UTF_8);
     }
 
-    private static String captureErr(Runnable r) {
+    static String captureErr(Runnable r) {
         PrintStream saved = System.err;
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         System.setErr(new PrintStream(buf, true));

@@ -17,6 +17,7 @@ class AgentArgsTest {
         assertThat(a.bind).isEqualTo("127.0.0.1");
         assertThat(a.mode).isEqualTo("normal");
         assertThat(a.plugins).isEmpty();
+        assertThat(a.log).isNull();
     }
 
     @Test
@@ -33,7 +34,7 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, palette, plugins");
+                .hasMessageContaining("port, bind, mode, palette, plugins, log");
     }
 
     @Test
@@ -126,5 +127,17 @@ class AgentArgsTest {
         assertThat(AgentAssembly.paletteOn(AgentArgs.parse(null), true)).isFalse();
         assertThat(AgentAssembly.paletteOn(AgentArgs.parse(null), false)).isTrue();
         assertThat(AgentAssembly.paletteOn(AgentArgs.parse("palette=off"), false)).isFalse();
+    }
+
+    @Test
+    void theLogFileIsKeptAsGiven() {
+        assertThat(AgentArgs.parse("port=8770,log=/tmp/Kormcrete Order Desk/agent.log").log)
+                .isEqualTo(Paths.get("/tmp/Kormcrete Order Desk/agent.log"));
+    }
+
+    @Test
+    void anEmptyLogIsRefused() {
+        assertThatThrownBy(() -> AgentArgs.parse("log= "))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("log");
     }
 }
