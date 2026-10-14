@@ -21,7 +21,11 @@ import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.FailureDiagnostics;
 import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.FlowReport;
+import io.github.kormcrete.swingui.flow.StepDiagnostics;
+import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.flow.FlowResult;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
@@ -92,6 +96,9 @@ public class UiMcpSession {
     private boolean flowsDirExplicit;
     /** The flow file the recording came from (loaded, or exported without clear): the one file a save may replace. */
     private Path loadedFlow;
+
+    /** Why a person is busy in the palette (recording, answering, replaying), or null; a seam for tests. */
+    Supplier<String> personBusy = Inspector::engagedReason;
 
     private final Supplier<ExportDefaults> exportDefaults;
     /** The palette is on (the agent's default, with a screen): a person may record, check and answer in the app. */
@@ -1093,6 +1100,111 @@ public class UiMcpSession {
             loadedFlow = file;
         }
         return result.toString();
+    }
+
+    /**
+     * Runs a flow file on the live app and reports it ({@code passed}, {@code flow}, {@code file}, {@code ran},
+     * {@code total}, {@code ms}, {@code steps}, {@code report}). Exactly one of {@code name} (in the flows folder),
+     * {@code path} or {@code flow} (the file's JSON inline). It begins with the app reset, runs every step as
+     * {@code do_action} would but records nothing, and stops at the first failing step, which carries its diagnosis
+     * (picture under {@code evidence}). A flow that fails is a result; one that cannot start (bad file, no reset) is an
+     * error. Refused (BUSY) while a person records, answers or replays in the palette.
+     */
+    public synchronized String runFlow(JsonNode args) {
+        JsonNode name = args == null ? null : args.get("name");
+        JsonNode path = args == null ? null : args.get("path");
+        JsonNode inline = args == null ? null : args.get("flow");
+        int given = (name != null && !name.isNull() ? 1 : 0) + (path != null && !path.isNull() ? 1 : 0)
+                + (inline != null && !inline.isNull() ? 1 : 0);
+        if (given != 1) {
+            throw new DriverException(Reason.BAD_INPUT, "run_flow takes one of 'name', 'path' or 'flow'");
+        }
+        Flow flow;
+        Path file = null;
+        if (name != null && !name.isNull()) {
+            file = FlowFiles.file(flowsDir, name.asText()).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(file)) {
+                List<String> there = new ArrayList<String>();
+                for (Path p : FlowFiles.list(flowsDir)) {
+                    String base = p.getFileName().toString();
+                    there.add(base.endsWith(FlowFiles.SUFFIX) ? base.substring(0, base.length() - FlowFiles.SUFFIX.length()) : base);
+                }
+                throw new DriverException(Reason.BAD_INPUT, "no flow '" + name.asText() + "' in " + flowsDir + "; the flows there: " + there);
+            }
+            flow = FlowFiles.read(file);
+        } else if (path != null && !path.isNull()) {
+            file = Paths.get("").toAbsolutePath().resolve(path.asText()).normalize();
+            flow = FlowFiles.read(file);
+        } else {
+            flow = FlowFiles.parse(inline.toString(), "the 'flow' argument");
+            if (flow.name == null || flow.name.isEmpty()) flow.name = "flow";
+        }
+        String busy = personBusy.get();
+        if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
+        if (host.verbs() == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed: nothing to run the flow on");
+        JsonNode ev = args.get("evidence");
+        Path evidence = ev != null && ev.isTextual() && !ev.asText().trim().isEmpty()
+                ? Paths.get("").toAbsolutePath().resolve(ev.asText().trim()).normalize()
+                : ScreenshotVerb.screenshotDir(Paths.get("")).resolve("failures");
+
+        long started = System.nanoTime();
+        appReset.run();
+        FlowResult result;
+        Inspector.agentActing(true);
+        try {
+            result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).run(flow, host);
+        } finally {
+            Inspector.agentActing(false);
+        }
+
+        ObjectNode r = mapper.createObjectNode();
+        r.put("passed", result.passed());
+        r.put("flow", flow.name);
+        if (file != null) r.put("file", file.toString());
+        r.put("ran", result.steps.size());
+        r.put("total", flow.steps.size());
+        r.put("ms", (System.nanoTime() - started) / 1_000_000L);
+        ArrayNode steps = r.putArray("steps");
+        for (StepResult s : result.steps) steps.add(stepJson(s));
+        r.put("report", FlowReport.format(flow, result));
+        return r.toString();
+    }
+
+    private ObjectNode stepJson(StepResult s) {
+        ObjectNode o = mapper.createObjectNode();
+        o.put("index", s.index);
+        o.put("action", s.action);
+        o.put("passed", s.passed);
+        o.put("ms", s.ms);
+        if (s.message != null && !s.message.isEmpty()) o.put("message", s.message);
+        if (s.reason != null) o.put("reason", s.reason);
+        if (s.details != null && !s.details.isEmpty()) {
+            ArrayNode a = o.putArray("details");
+            for (String d : s.details) a.add(d);
+        }
+        if (s.warning != null) o.put("warning", s.warning);
+        StepDiagnostics d = s.diagnostics;
+        if (d != null) {
+            ObjectNode dj = o.putObject("diagnostics");
+            ArrayNode matches = dj.putArray("matches");
+            for (StepDiagnostics.Match m : d.matches) {
+                ObjectNode mj = matches.addObject();
+                mj.put("field", m.field);
+                mj.put("locator", m.locator);
+                if (m.candidates == null) mj.putNull("candidates");
+                else {
+                    ArrayNode c = mj.putArray("candidates");
+                    for (String x : m.candidates) c.add(x);
+                }
+            }
+            if (d.scope != null) dj.put("scope", d.scope);
+            ArrayNode tree = dj.putArray("tree");
+            for (String line : d.tree) tree.add(line);
+            if (d.screenshot != null) dj.put("screenshot", d.screenshot);
+            ArrayNode problems = dj.putArray("problems");
+            for (String p : d.problems) problems.add(p);
+        }
+        return o;
     }
 
     /**

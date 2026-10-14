@@ -205,6 +205,35 @@ public final class UiMcpTools {
         });
 
         tools.add(new McpToolDefinition() {
+            @Override public String name() { return "run_flow"; }
+            @Override public ObjectNode descriptor(ObjectMapper m) {
+                ObjectNode schema = emptyObjectSchema(m);
+                ObjectNode p = schema.with("properties");
+                p.putObject("name").put("type", "string")
+                        .put("description", "A flow in the flows folder, without .json, e.g. place-order");
+                p.putObject("path").put("type", "string")
+                        .put("description", "A flow file, absolute or relative to the app's working directory");
+                p.putObject("flow").put("type", "object")
+                        .put("description", "The flow file's JSON inline (what export_flow writes)");
+                p.putObject("evidence").put("type", "string")
+                        .put("description", "The folder for the failing step's picture; default "
+                                + "target/flow-screenshots/failures");
+                return tool(m, "run_flow",
+                        "Run a flow file on the live app and report it: one of 'name' (in the flows folder), "
+                        + "'path', or 'flow' (the file's JSON inline). It begins as every flow does, with a reset "
+                        + "(dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT "
+                        + "recording, and stops at the first that fails; that step carries what its locators match "
+                        + "now, a scoped tree and a picture of the window (written under 'evidence', default "
+                        + "target/flow-screenshots/failures). Returns {passed, ran, total, steps, report}. After a "
+                        + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
+                        + "answers or replays in the palette. From a shell the CLI exits 4 when the flow fails.", schema);
+            }
+            @Override public String invoke(JsonNode args) throws Exception {
+                return session.runFlow(args);
+            }
+        });
+
+        tools.add(new McpToolDefinition() {
             @Override public String name() { return "snapshot"; }
             @Override public ObjectNode descriptor(ObjectMapper m) {
                 ObjectNode schema = emptyObjectSchema(m);

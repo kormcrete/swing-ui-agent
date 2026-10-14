@@ -350,7 +350,7 @@ class UiMcpToolsTest {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : tools) names.add(t.name());
         assertThat(names).containsExactlyInAnyOrder(
                 "describe_ui", "do_action", "do_actions", "batch",
-                "export_test", "export_flow", "snapshot", "read", "screenshot", "inspect", "read_clipboard", "read_file_chooser",
+                "export_test", "export_flow", "run_flow", "snapshot", "read", "screenshot", "inspect", "read_clipboard", "read_file_chooser",
                 "click", "type", "press", "check", "select", "pick", "menu", "context_menu",
                 "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard");
     }

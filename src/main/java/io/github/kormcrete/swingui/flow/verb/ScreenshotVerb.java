@@ -90,7 +90,7 @@ public class ScreenshotVerb extends VerbAction {
         return screenshotDir(Paths.get("")).resolve(p);
     }
 
-    static Path screenshotDir(Path workingDir) {
+    public static Path screenshotDir(Path workingDir) {
         String configured = System.getProperty(DIR_PROP);
         if (configured != null && !configured.trim().isEmpty()) return Paths.get(configured.trim());
         String moduleName = moduleDir.get();
