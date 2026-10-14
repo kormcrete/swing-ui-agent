@@ -3,10 +3,15 @@ package io.github.kormcrete.swingui.driver.inspect;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
+import javax.swing.JLayeredPane;
 import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
+import java.awt.Container;
+import java.awt.Dimension;
+import java.awt.Rectangle;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -209,6 +214,70 @@ class RecordingTest {
             // the steps panel stays out of the way until the replay ends
             assertThat(inDialog.holds(recording.panel)).isTrue();
             assertThat(recording.panel.getParent()).isNull();
+            recording.replaying = false;
+        });
+    }
+
+    /** A "Next" button where the bar goes by default in the dialog: its bottom right corner. EDT. */
+    private Rectangle nextInDialog(Bar bar) {
+        JLayeredPane layers = dialog.getLayeredPane();
+        Container content = dialog.getContentPane();
+        content.setLayout(null);
+        Dimension size = bar.getPreferredSize();
+        Rectangle corner = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+                Collections.<Rectangle>emptyList());
+        JButton next = new JButton("Next");
+        next.setBounds(SwingUtilities.convertRectangle(layers, corner, content));
+        content.add(next);
+        return corner;
+    }
+
+    @Test
+    void barsThatAppearInTheDialogStayOffItsButtonsToo() throws Exception {
+        Rectangle[] next = new Rectangle[1];
+        SwingUtilities.invokeAndWait(() -> {
+            Bar idle = paletteInFrame().bar();
+            next[0] = nextInDialog(idle);
+            showIn(dialog.getRootPane()).bar().press("● Record");
+        });
+        recording = eventually(scene.inspector::recording);
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inDialog = scene.inspector.overlay(dialog.getRootPane());
+            assertThat(inDialog.bar()).isSameAs(recording.bar);
+            assertThat(recording.bar.getBounds().intersects(next[0])).isFalse();
+
+            recording.done();
+
+            assertThat(inDialog.bar()).isSameAs(recording.bar);
+            assertThat(recording.bar.labels()).contains("Export…");
+            assertThat(recording.bar.getBounds().intersects(next[0])).isFalse();
+        });
+    }
+
+    @Test
+    void aReplayFollowsTheDialogThroughTheInspector() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
+            recording.toggleSteps();
+            // as a replay starts: its own bar, the steps panel out of the way
+            Bar replayBar = new Bar("Replaying", "").button("Stop", Overlay.NO, () -> { });
+            inFrame.bar(replayBar);
+            inFrame.controlsAway(true);
+            recording.replaying = true;
+            // a box of the replay keeps the frame's overlay alive after the palette leaves
+            inFrame.mark(new Overlay.Mark(frame.getContentPane(), null, -1, -1, "1/2", Overlay.HOVER, false), null);
+
+            Overlay inDialog = showIn(dialog.getRootPane());
+
+            assertThat(recording.home).isSameAs(inDialog);
+            assertThat(inDialog.bar()).isSameAs(replayBar);
+            assertThat(replayBar.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(inDialog.controlsAreAway()).isTrue();
+            assertThat(inDialog.holds(recording.panel)).isTrue();
+            assertThat(recording.panel.getParent()).isNull();
+            assertThat(inFrame.bar()).isNull();
+            assertThat(inFrame.controlsAreAway()).isFalse();
             recording.replaying = false;
         });
     }

@@ -317,14 +317,14 @@ public final class Inspector {
 
     /**
      * Moves the palette from its window to {@code to}, with the person's recording - its panel and a running replay's
-     * bar too. The bar takes the spot it had in {@code to} before; in a dialog it was never in, the first corner where
-     * it covers none of the dialog's buttons. A test run's palette moves in hidden. EDT.
+     * bar too. The bar takes the spot it had in {@code to} before ({@link #spotIn}): in a dialog, never over its
+     * buttons. A test run's palette moves in hidden. EDT.
      */
     private void movePalette(Overlay to, Bar want) {
         Overlay from = paletteHome;
         Bar shown = from != null && from.bar() != null ? from.bar() : want;
         if (from != null) spots.put(from.root, shown.moved);
-        shown.moved = spots.containsKey(to.root) ? spots.get(to.root) : firstSpot(to, shown);
+        shown.moved = spotIn(to, shown);
         to.hidePalette(testRun);
         paletteHome = to;
         if (recording != null) recording.rehome(to); else to.bar(idle);
@@ -338,14 +338,19 @@ public final class Inspector {
         }
     }
 
-    /** Where the bar first goes in {@code o}'s window: in a dialog, clear of its buttons (Next, OK); else null. */
-    private static Point firstSpot(Overlay o, Bar bar) {
-        if (!(SwingUtilities.getWindowAncestor(o.root) instanceof Dialog)) return null;
+    /**
+     * Where {@code bar} goes in {@code o}'s window: where the palette sat when it last left that window (null: where it
+     * goes by itself). In a dialog only where it covers none of the dialog's buttons (Next, OK) at its own size; else
+     * the first corner clear of them.
+     */
+    private Point spotIn(Overlay o, Bar bar) {
+        Point left = spots.get(o.root);
+        if (!(SwingUtilities.getWindowAncestor(o.root) instanceof Dialog)) return left;
         JLayeredPane layers = o.layers();
         List<Rectangle> buttons = new ArrayList<Rectangle>();
         buttonsIn(layers, layers, buttons);
         Dimension size = bar.getPreferredSize();
-        Rectangle at = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null, buttons);
+        Rectangle at = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), left, buttons);
         return at.getLocation();
     }
 
@@ -766,8 +771,10 @@ public final class Inspector {
     Overlay overlay(JRootPane root) {
         Overlay o = overlays.get(root);
         if (o == null) {
-            o = new Overlay(root);
-            overlays.put(root, o);
+            Overlay made = new Overlay(root);
+            made.spotFor = b -> spotIn(made, b);
+            overlays.put(root, made);
+            o = made;
         }
         return o;
     }

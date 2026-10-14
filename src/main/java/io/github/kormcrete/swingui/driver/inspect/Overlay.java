@@ -29,6 +29,7 @@ import java.awt.geom.Path2D;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Everything the inspector shows in one window, all of it INSIDE that window's layered pane so it stays
@@ -105,6 +106,8 @@ final class Overlay extends JComponent {
     /** The bar's {@link Bar#moved} when {@link #avoid} was filled: a drag replaces it. */
     private Point movedAtAvoid;
     private Catcher catcher;
+    /** Where a bar that has no spot yet goes in this window (null: where it goes by itself); set by the inspector. */
+    Function<Bar, Point> spotFor;
     /** Follows layout changes, scrolling and resizes while anything shows. */
     private final Timer follow = new Timer(120, e -> relayout());
 
@@ -144,9 +147,14 @@ final class Overlay extends JComponent {
         repaint();
     }
 
+    /**
+     * The person's palette; null removes it. A bar without a spot of its own (the one Done, ● Record or a replay puts
+     * up) takes this window's ({@link #spotFor}): in a dialog, clear of its buttons.
+     */
     void bar(Bar b) {
         if (b == bar) return;
         if (bar != null) layers.remove(bar);
+        if (b != null && b.moved == null && spotFor != null) b.moved = spotFor.apply(b);
         bar = b;
         sync();
         relayout();
@@ -247,6 +255,11 @@ final class Overlay extends JComponent {
         sync();
         relayout();
         layers.repaint();
+    }
+
+    /** Whether the steps panel is out for a replay. */
+    boolean controlsAreAway() {
+        return away;
     }
 
     /** One transparent sheet over the window that takes the mouse, so no click reaches the app. */

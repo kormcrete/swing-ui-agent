@@ -2,6 +2,8 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JRootPane;
+import javax.swing.SwingUtilities;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -58,5 +60,25 @@ class OverlayTest {
                 .isEqualTo(new Rectangle(492, 44, 300, 200));
         assertThat(Overlay.panelBeside(new Rectangle(592, 562, 200, 30), new Dimension(1000, 1000), 800, 600))
                 .isEqualTo(new Rectangle(8, 16, 784, 540));
+    }
+
+    @Test
+    void aBarWithoutASpotTakesTheWindowsAndOneWithASpotKeepsIt() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = new JRootPane();
+            root.setSize(800, 600);
+            root.doLayout();
+            Overlay o = new Overlay(root);
+            o.spotFor = b -> new Point(40, 50);
+            Bar fresh = new Bar("Recording", "").button("Done", Overlay.HOVER, () -> { });
+            o.bar(fresh);
+            assertThat(fresh.getLocation()).isEqualTo(new Point(40, 50));
+
+            Bar dragged = new Bar("Recorded", "").button("Steps", Overlay.HOVER, () -> { });
+            dragged.moved = new Point(300, 200);
+            o.bar(dragged);
+            assertThat(dragged.getLocation()).isEqualTo(new Point(300, 200));
+            o.dispose();
+        });
     }
 }
