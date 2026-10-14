@@ -885,4 +885,34 @@ class UiMcpRecordingTest {
         assertThat(back.steps).hasSize(4);
         assertThat(new String(Files.readAllBytes(dir.resolve("alone.json")), StandardCharsets.UTF_8)).doesNotContain("author");
     }
+
+    private void clearedRecordingOfThree() throws Exception {
+        fakeReset();
+        four();
+        session.exportFlow("first", quoted(dir), null, true);
+        for (int i = 1; i <= 3; i++) {
+            call("{\"op\":\"insert\",\"at\":" + i + ",\"step\":{\"action\":\"click\",\"target\":{\"id\":\"s" + i + "\"}}}");
+        }
+    }
+
+    private void exportRefusedForNoReset() {
+        assertThat(catchThrowableOfType(() -> session.exportFlow("second", quoted(dir), null, false), IllegalArgumentException.class)
+                .getMessage()).contains("did not begin at a session reset");
+    }
+
+    @Test
+    void aFailingOrPartialReplayFromTheFirstStepDoesNotMakeTheRecordingExportable() throws Exception {
+        clearedRecordingOfThree();
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> backend.verbs.failure =
+                backend.verbs.calls.size() == 3 ? new DriverException(Reason.NOT_FOUND, "nothing matches") : null;
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isFalse();
+        exportRefusedForNoReset();
+        backend.verbs.during = () -> { };
+        backend.verbs.failure = null;
+        assertThat(call("{\"op\":\"replay\",\"from\":1,\"to\":2}").path("passed").asBoolean()).isTrue();
+        exportRefusedForNoReset();
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        assertThat(session.exportFlow("second", quoted(dir), null, false)).contains("savedTo");
+    }
 }

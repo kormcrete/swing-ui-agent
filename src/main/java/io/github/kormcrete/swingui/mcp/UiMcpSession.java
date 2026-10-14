@@ -1615,6 +1615,8 @@ public class UiMcpSession {
             model.at(b);
             if (b < a) throw new DriverException(Reason.BAD_INPUT, "replay: 'to' (" + b + ") is before 'from' (" + a + ")");
             r = replay(a, b, pause);
+            // only a replay of the whole recording from the reset shows that it starts there
+            if (a == 1 && b == size && r.path("passed").asBoolean()) beginsAtReset();
         }
         r.put("rev", model.rev());
         return r.toString();
@@ -1628,12 +1630,7 @@ public class UiMcpSession {
         agentReplaying = "steps " + a + "-" + b;
         Inspector.agentActing(true);
         try {
-            if (reset) {
-                appReset.run();
-                recordingFromReset = true;
-                definedStart = appReset.defined();
-                publish();
-            }
+            if (reset) appReset.run();
             boolean passed = true;
             int ran = 0;
             for (int n = a; n <= b; n++) {
@@ -1704,6 +1701,7 @@ public class UiMcpSession {
         ObjectNode r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
         boolean passed = r.path("passed").asBoolean();
         if (passed) {
+            beginsAtReset(); // the steps before the cut just ran from the reset; the later ones follow live
             model.resume(RecordedStep.Author.AGENT, true, palette, System.currentTimeMillis());
         }
         publish();
@@ -1713,14 +1711,18 @@ public class UiMcpSession {
         return r.toString();
     }
 
+    private void beginsAtReset() {
+        recordingFromReset = true;
+        definedStart = appReset.defined();
+        publish();
+    }
+
     /** A redo from the first step has nothing to replay: only the reset. */
     private ObjectNode resetOnly() {
         agentReplaying = "reset";
         Inspector.agentActing(true);
         try {
             appReset.run();
-            recordingFromReset = true;
-            definedStart = appReset.defined();
         } finally {
             Inspector.agentActing(false);
             agentReplaying = null;
