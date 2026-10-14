@@ -257,6 +257,11 @@ final class Overlay extends JComponent {
         relayout();
     }
 
+    /** Whether the catcher is up here: the person picks or checks. */
+    boolean catching() {
+        return catcher != null;
+    }
+
     void removeCatcher() {
         if (catcher != null) layers.remove(catcher);
         catcher = null;

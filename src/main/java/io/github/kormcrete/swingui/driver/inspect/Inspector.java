@@ -12,7 +12,9 @@ import io.github.kormcrete.swingui.driver.model.Resolver;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
+import io.github.kormcrete.swingui.driver.window.Modality;
 
+import javax.swing.AbstractButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
@@ -25,12 +27,16 @@ import javax.swing.Timer;
 import javax.swing.table.JTableHeader;
 import java.awt.AWTEvent;
 import java.awt.Component;
+import java.awt.Container;
+import java.awt.Dialog;
+import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.AWTEventListener;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -43,12 +49,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /**
  * Work between the agent and the person at the app, in the app window (an app started with {@code inspector=on}):
  * <ul>
- *   <li>The person records: a palette in the main window starts a {@link Recording} with ● Record and ends it with Done.
- *       Only the person starts and ends one; the agent reads it ({@link #recording}) and exports it.</li>
+ *   <li>The person records: a palette in the main window (in the open modal dialog while one is open) starts a
+ *       {@link Recording} with ● Record and ends it with Done. Only the person starts and ends one; the agent reads it
+ *       ({@link #recording}) and exports it.</li>
  *   <li>{@link #highlight}: the agent shows what a locator matches - numbered boxes when several - with a question; the
  *       person answers with the check mark on a box, or "None of these" on the question bar.</li>
  *   <li>{@link #pick}: the agent asks the person to click what they mean; the click goes to the inspector, not the app,
@@ -143,6 +151,12 @@ public final class Inspector {
     private Sink sink;
     private Bar idle;
     private Overlay paletteHome;
+    /** The palette's window: the open modal dialog nothing blocks, else the main window ({@link #attachPalette}). */
+    Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
+    /** The app's windows, which Check mode covers. */
+    Supplier<List<JRootPane>> roots = Inspector::appRoots;
+    /** Where the bar sat in each window it left (null: where it goes by itself); outlives the window's overlay. */
+    private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
     private Recording recording;
     private boolean testRun;
     private Component snappedAt;
@@ -205,10 +219,13 @@ public final class Inspector {
     public static void testRun(boolean on) {
         Inspector i = instance;
         if (i == null) return;
-        SwingUtilities.invokeLater(() -> {
-            i.testRun = on;
-            for (Overlay o : i.overlays.values()) o.hidePalette(on);
-        });
+        SwingUtilities.invokeLater(() -> i.testRunNow(on));
+    }
+
+    /** {@link #testRun} on this inspector. EDT. */
+    void testRunNow(boolean on) {
+        testRun = on;
+        for (Overlay o : overlays.values()) o.hidePalette(on);
     }
 
     /**
@@ -245,37 +262,106 @@ public final class Inspector {
     // ---- the person records ---------------------------------------------------------------------------------------
 
     /**
-     * Puts the palette (● Record) into the app's main window, now and whenever that window changes. The person's
-     * recordings go to {@code sink}. Call once, for an app started with {@code inspector=on}.
+     * Puts the palette (● Record) into the app's main window - into the open modal dialog while one is open - now and
+     * whenever the windows change. The person's recordings go to {@code sink}. Call once, for an app started with
+     * {@code inspector=on}.
      */
     public void enable(Sink sink) {
         SwingUtilities.invokeLater(() -> {
             if (this.sink != null) return;
-            this.sink = sink;
-            idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording);
-            HitCheck.cover((c, t, p) -> instance != null && instance.stepOff(c, t, p));
+            install(sink);
+            // a backstop: a window that changes without an event (hidden, resized) is followed within a second
             new Timer(1000, e -> attachPalette()).start();
             attachPalette();
         });
     }
 
     /**
-     * The palette lives in the main window: the first showing frame. Not while the agent acts: a move between its hit
-     * check and its posted press could put a palette button under the press. EDT.
+     * Everything {@link #enable} sets up but the timer: the sink, the idle palette, the palette stepping off what the
+     * agent acts on, and a window that opens, closes or comes to the front moving the palette at once. EDT.
      */
-    private void attachPalette() {
+    void install(Sink sink) {
+        this.sink = sink;
+        idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording);
+        HitCheck.cover((c, t, p) -> instance != null && instance.stepOff(c, t, p));
+        Toolkit.getDefaultToolkit().addAWTEventListener(e -> {
+            int id = e.getID();
+            if (id == WindowEvent.WINDOW_OPENED || id == WindowEvent.WINDOW_CLOSED
+                    || id == WindowEvent.WINDOW_ACTIVATED) {
+                SwingUtilities.invokeLater(this::attachPalette);
+            }
+        }, AWTEvent.WINDOW_EVENT_MASK);
+    }
+
+    /**
+     * The palette lives where the person can press it: in the open modal dialog nothing blocks ({@link #paletteRoot})
+     * when that has room for it, else in the main window (the first showing frame). It follows as dialogs open and
+     * close, during a replay too. Not while the agent acts: a move between its hit check and its posted press could put
+     * a palette button under the press. EDT.
+     */
+    void attachPalette() {
         if (sink == null || agentIsActing()) return;
-        Overlay o = mainOverlay();
-        if (o == null) return;
-        if (recording != null && recording.replaying) return;
         Bar want = recording != null ? recording.bar : idle;
-        if (paletteHome != o) {
-            if (paletteHome != null) paletteHome.bar(null);
-            paletteHome = o;
-            if (recording != null) recording.home = o;
+        JRootPane root = paletteRoot.get();
+        if (root != null && !fits(root, want)) {
+            JRootPane main = mainRoot();
+            root = main != null ? main : paletteHome != null ? paletteHome.root : root;
         }
+        if (root == null) return;
+        Overlay o = overlay(root);
+        if (paletteHome != o) movePalette(o, want);
         o.hidePalette(testRun);
-        o.bar(want);
+        // a replay shows its own bar until it ends
+        if (recording == null || !recording.replaying) o.bar(want);
+    }
+
+    /**
+     * Moves the palette from its window to {@code to}, with the person's recording - its panel and a running replay's
+     * bar too. The bar takes the spot it had in {@code to} before; in a dialog it was never in, the first corner where
+     * it covers none of the dialog's buttons. A test run's palette moves in hidden. EDT.
+     */
+    private void movePalette(Overlay to, Bar want) {
+        Overlay from = paletteHome;
+        Bar shown = from != null && from.bar() != null ? from.bar() : want;
+        if (from != null) spots.put(from.root, shown.moved);
+        shown.moved = spots.containsKey(to.root) ? spots.get(to.root) : firstSpot(to, shown);
+        to.hidePalette(testRun);
+        paletteHome = to;
+        if (recording != null) recording.rehome(to); else to.bar(idle);
+        if (from == null) return;
+        from.bar(null);
+        from.panel(null);
+        from.endYield();
+        if (from.empty()) {
+            from.dispose();
+            if (overlays.get(from.root) == from) overlays.remove(from.root);
+        }
+    }
+
+    /** Where the bar first goes in {@code o}'s window: in a dialog, clear of its buttons (Next, OK); else null. */
+    private static Point firstSpot(Overlay o, Bar bar) {
+        if (!(SwingUtilities.getWindowAncestor(o.root) instanceof Dialog)) return null;
+        JLayeredPane layers = o.layers();
+        List<Rectangle> buttons = new ArrayList<Rectangle>();
+        buttonsIn(layers, layers, buttons);
+        Dimension size = bar.getPreferredSize();
+        Rectangle at = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null, buttons);
+        return at.getLocation();
+    }
+
+    /** The app's visible buttons under {@code c}, in layered-pane coordinates. */
+    private static void buttonsIn(Container c, JLayeredPane layers, List<Rectangle> out) {
+        for (Component k : c.getComponents()) {
+            if (!k.isVisible() || Overlay.ours(k)) continue;
+            if (k instanceof AbstractButton) out.add(SwingUtilities.convertRectangle(c, k.getBounds(), layers));
+            if (k instanceof Container) buttonsIn((Container) k, layers, out);
+        }
+    }
+
+    /** Whether {@code root} has room for the palette: its buttons in a row, and three bars' height. */
+    private static boolean fits(JRootPane root, Bar bar) {
+        JLayeredPane layers = root.getLayeredPane();
+        return layers.getWidth() >= bar.minimumWidth() + 16 && layers.getHeight() >= 3 * bar.getPreferredSize().height;
     }
 
     /** ● Record: a fresh recording, from the screen the person is on. EDT. */
@@ -292,6 +378,11 @@ public final class Inspector {
                 recording.start();
             });
         });
+    }
+
+    /** The person's recording, or null before their first ● Record. EDT. */
+    Recording recording() {
+        return recording;
     }
 
     /**
@@ -683,10 +774,23 @@ public final class Inspector {
 
     /** The main window's overlay: the first showing frame. */
     private Overlay mainOverlay() {
+        JRootPane root = mainRoot();
+        return root == null ? null : overlay(root);
+    }
+
+    /** The main window: the first showing frame. */
+    private static JRootPane mainRoot() {
         for (Window w : Window.getWindows()) {
-            if (w.isShowing() && w instanceof JFrame && !isPopup(w)) return overlay(((JFrame) w).getRootPane());
+            if (w.isShowing() && w instanceof JFrame && !isPopup(w)) return ((JFrame) w).getRootPane();
         }
         return null;
+    }
+
+    /** The open modal dialog nothing blocks, else the main window. */
+    private static JRootPane liveRoot() {
+        Dialog top = Modality.top();
+        if (top instanceof RootPaneContainer && !isPopup(top)) return ((RootPaneContainer) top).getRootPane();
+        return mainRoot();
     }
 
     /** The focused app window's overlay; the main window's when none is focused. */

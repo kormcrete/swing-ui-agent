@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.model.Locator;
 
+import javax.swing.JComponent;
 import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -39,7 +40,7 @@ final class Recording {
     Bar bar;
     /** Per step: ● recorded, ▶ running, ✓ replayed, ✗ failed. */
     private final List<String> marks = new ArrayList<String>();
-    private StepsPanel panel;
+    StepsPanel panel;
     ExportPanel exportPanel;
     State state = State.RECORDING;
     boolean replaying;
@@ -90,7 +91,7 @@ final class Recording {
         state = check ? State.CHECKING : State.RECORDING;
         activeBar.active(check ? "Check" : "Record");
         steps.active(!check);
-        for (JRootPane root : Inspector.appRoots()) {
+        for (JRootPane root : inspector.roots.get()) {
             Overlay o = inspector.overlay(root);
             if (check) {
                 o.catcher(e -> inspector.hoverIn(o, e), e -> {
@@ -102,6 +103,28 @@ final class Recording {
             }
         }
         activeBar.text(check ? "Click what to check, then choose the check." : "Use the app: every step is recorded.");
+    }
+
+    /**
+     * The palette moved to {@code to} (a modal dialog opened or closed): the bar its old window shows - a replay's
+     * too - and the steps or export panel go with it; during a replay the panel stays out of the way there as well. In
+     * Check mode the new window gets a catcher too. EDT.
+     */
+    void rehome(Overlay to) {
+        Overlay from = home;
+        if (to == from) return;
+        Bar shown = from.bar() != null ? from.bar() : bar;
+        JComponent open = panel != null ? panel : exportPanel;
+        from.bar(null);
+        if (open != null) from.panel(null);
+        if (replaying) {
+            from.controlsAway(false);
+            to.controlsAway(true);
+        }
+        home = to;
+        to.bar(shown);
+        if (open != null) to.panel(open);
+        if (state == State.CHECKING && !replaying) mode(true);
     }
 
     /** The person's Done: stop listening, keep the recording for the agent, offer Steps and a new ● Record. */

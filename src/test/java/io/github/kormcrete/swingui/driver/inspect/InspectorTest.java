@@ -1,19 +1,25 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.input.HitCheck;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.Window;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -270,6 +276,141 @@ class InspectorTest {
             scene.inspector.stepOff(bar, next, inside(next));
             assertThat(bar.getBounds()).isEqualTo(home);
             o.dispose();
+        });
+    }
+
+    // ---- the palette follows the open modal dialog ----------------------------------------------------------------
+
+    private final FakeSink sink = new FakeSink();
+    private final JFrame frame = new JFrame();
+    private final JDialog dialog = new JDialog(frame, true);
+
+    @AfterEach
+    void closeWindows() {
+        dialog.dispose();
+        frame.dispose();
+    }
+
+    /** The palette (idle) in the unshown 800 x 600 frame; the dialog is 500 x 300. EDT. */
+    private Bar paletteInFrame() {
+        Scene.size(frame, 800, 600);
+        Scene.size(dialog, 500, 300);
+        scene.inspector.install(sink);
+        return showIn(frame).bar();
+    }
+
+    /** The palette's window is now {@code w}, as when it opened or closed. EDT. */
+    private Overlay showIn(Window w) {
+        JRootPane root = ((RootPaneContainer) w).getRootPane();
+        scene.inspector.paletteRoot = () -> root;
+        scene.inspector.attachPalette();
+        return scene.inspector.overlay(root);
+    }
+
+    @Test
+    void thePaletteMovesIntoTheOpenModalDialogAndBackWhenItCloses() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
+            assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+
+            Overlay inDialog = showIn(dialog);
+            assertThat(inDialog.bar()).isSameAs(bar);
+            assertThat(bar.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(inFrame.bar()).isNull();
+
+            showIn(frame);
+            assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+            assertThat(inDialog.bar()).isNull();
+        });
+    }
+
+    @Test
+    void aDialogTooNarrowForItsButtonsKeepsThePaletteWhereItWas() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Scene.size(dialog, 120, 80);
+
+            showIn(dialog);
+
+            assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+        });
+    }
+
+    @Test
+    void inADialogThePaletteStartsOffTheDialogsButtons() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            JLayeredPane layers = dialog.getLayeredPane();
+            Container content = dialog.getContentPane();
+            content.setLayout(null);
+            Dimension size = bar.getPreferredSize();
+            // where the bar would go by default: the bottom right corner
+            Rectangle corner = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+                    Collections.<Rectangle>emptyList());
+            JButton next = new JButton("Next");
+            next.setBounds(SwingUtilities.convertRectangle(layers, corner, content));
+            content.add(next);
+
+            showIn(dialog);
+
+            assertThat(bar.getParent()).isSameAs(layers);
+            Rectangle nextInLayers = SwingUtilities.convertRectangle(content, next.getBounds(), layers);
+            assertThat(bar.getBounds().intersects(nextInLayers)).isFalse();
+        });
+    }
+
+    @Test
+    void thePersonsSpotIsRememberedPerWindow() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Point inFrame = new Point(100, 120);
+            bar.moved = inFrame;
+            scene.inspector.overlay(frame.getRootPane()).relayout();
+
+            Overlay o = showIn(dialog);
+            Point inDialog = new Point(40, 50);
+            bar.moved = inDialog;
+            o.relayout();
+
+            showIn(frame);
+            assertThat(bar.getLocation()).isEqualTo(inFrame);
+            showIn(dialog);
+            assertThat(bar.getLocation()).isEqualTo(inDialog);
+        });
+    }
+
+    @Test
+    void whileTheAgentActsThePaletteStays() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Inspector.agentActing(true);
+            try {
+                showIn(dialog);
+                assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+            } finally {
+                Inspector.agentActing(false);
+            }
+
+            scene.inspector.agentDone();
+
+            assertThat(bar.getParent()).isSameAs(dialog.getLayeredPane());
+        });
+    }
+
+    @Test
+    void aTestRunTakesItOutAndItMovesHidden() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            scene.inspector.testRunNow(true);
+            assertThat(bar.getParent()).isNull();
+
+            Overlay inDialog = showIn(dialog);
+            assertThat(inDialog.bar()).isSameAs(bar);
+            assertThat(bar.getParent()).isNull();
+
+            scene.inspector.testRunNow(false);
+            assertThat(bar.getParent()).isSameAs(dialog.getLayeredPane());
         });
     }
 }

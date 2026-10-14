@@ -1,15 +1,15 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
-import io.github.kormcrete.swingui.driver.model.Locator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JDialog;
 import javax.swing.JFrame;
+import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -23,12 +23,14 @@ class RecordingTest {
     private final FakeSink sink = new FakeSink();
     private final ExecutorService sinkThread = Executors.newSingleThreadExecutor();
     private final JFrame frame = new JFrame();
+    private final JDialog dialog = new JDialog(frame, true);
     private Recording recording;
 
     @AfterEach
     void tearDown() throws Exception {
         SwingUtilities.invokeAndWait(() -> { if (recording != null) recording.dispose(); });
         sinkThread.shutdownNow();
+        dialog.dispose();
         frame.dispose();
     }
 
@@ -109,6 +111,108 @@ class RecordingTest {
         assertThat(sink.exports).containsExactly("com.example.RecordedUiIT");
     }
 
+    // ---- the palette follows the open modal dialog --------------------------------------------------------------
+
+    /** The inspector with the palette in the (unshown) frame, as the person sees it before a dialog opens. EDT. */
+    private Overlay paletteInFrame() {
+        Scene.size(frame, 800, 600);
+        Scene.size(dialog, 500, 300);
+        scene.inspector.install(sink);
+        scene.inspector.roots = () -> Collections.singletonList(frame.getRootPane());
+        return showIn(frame.getRootPane());
+    }
+
+    /** The palette's window is now {@code root}. EDT. */
+    private Overlay showIn(JRootPane root) {
+        scene.inspector.paletteRoot = () -> root;
+        scene.inspector.attachPalette();
+        return scene.inspector.overlay(root);
+    }
+
+    /** ● Record pressed in the frame's palette: the recording the inspector started. */
+    private Recording recordInFrame() throws Exception {
+        SwingUtilities.invokeAndWait(() -> paletteInFrame().bar().press("● Record"));
+        recording = eventually(scene.inspector::recording);
+        return recording;
+    }
+
+    @Test
+    void theRecordingFollowsThePaletteIntoTheDialogWithItsStepsPanel() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
+            recording.toggleSteps();
+            Bar active = recording.bar;
+            assertThat(inFrame.bar()).isSameAs(active);
+            assertThat(inFrame.holds(recording.panel)).isTrue();
+
+            Overlay inDialog = showIn(dialog.getRootPane());
+
+            assertThat(recording.home).isSameAs(inDialog);
+            assertThat(inDialog.bar()).isSameAs(active);
+            assertThat(active.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(recording.panel.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(inFrame.bar()).isNull();
+            assertThat(inFrame.holds(recording.panel)).isFalse();
+        });
+    }
+
+    @Test
+    void checkPressedInTheDialogCoversTheDialog() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            scene.inspector.roots = () -> Arrays.asList(frame.getRootPane(), dialog.getRootPane());
+            Overlay inDialog = showIn(dialog.getRootPane());
+
+            inDialog.bar().press("Check");
+
+            assertThat(recording.state).isEqualTo(Recording.State.CHECKING);
+            assertThat(scene.inspector.overlay(frame.getRootPane()).catching()).isTrue();
+            assertThat(inDialog.catching()).isTrue();
+        });
+    }
+
+    @Test
+    void aDialogThatOpensInCheckModeIsCoveredToo() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.mode(true);
+            assertThat(scene.inspector.overlay(frame.getRootPane()).catching()).isTrue();
+
+            scene.inspector.roots = () -> Arrays.asList(frame.getRootPane(), dialog.getRootPane());
+            Overlay inDialog = showIn(dialog.getRootPane());
+
+            assertThat(recording.home).isSameAs(inDialog);
+            assertThat(inDialog.catching()).isTrue();
+        });
+    }
+
+    @Test
+    void theReplayBarFollowsTheDialog() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
+            Overlay inDialog = scene.inspector.overlay(dialog.getRootPane());
+            recording = new Recording(scene.inspector, sink, sinkThread, inFrame, () -> { });
+            recording.start();
+            recording.toggleSteps();
+            Bar replayBar = new Bar("Replaying", "").button("Stop", Overlay.NO, () -> { });
+            inFrame.bar(replayBar);
+            inFrame.controlsAway(true);
+            recording.replaying = true;
+
+            recording.rehome(inDialog);
+
+            assertThat(recording.home).isSameAs(inDialog);
+            assertThat(inDialog.bar()).isSameAs(replayBar);
+            assertThat(replayBar.getParent()).isSameAs(dialog.getLayeredPane());
+            assertThat(inFrame.bar()).isNull();
+            // the steps panel stays out of the way until the replay ends
+            assertThat(inDialog.holds(recording.panel)).isTrue();
+            assertThat(recording.panel.getParent()).isNull();
+            recording.replaying = false;
+        });
+    }
+
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */
     private static <T> T eventually(java.util.concurrent.Callable<T> read) throws Exception {
         long end = System.currentTimeMillis() + 5000;
@@ -124,27 +228,5 @@ class RecordingTest {
             Thread.sleep(20);
         }
         throw new AssertionError("nothing within 5 s");
-    }
-
-    /** A recording kept in a list: what the session does, without a session. */
-    private static final class FakeSink implements Inspector.Sink {
-        final List<String> steps = Collections.synchronizedList(new ArrayList<String>());
-        final List<String> exports = Collections.synchronizedList(new ArrayList<String>());
-        volatile String refuse;
-
-        @Override public void begin() { steps.clear(); }
-        @Override public Inspector.Result done(Map<String, Object> step) { steps.add(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }
-        @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
-        @Override public List<String> steps() { return new ArrayList<String>(steps); }
-        @Override public Locator target(int index) { return null; }
-        @Override public Inspector.Result replay(int index) { return new Inspector.Result(true, "ok"); }
-        @Override public void truncate(int keep) { while (steps.size() > keep) steps.remove(steps.size() - 1); }
-        @Override public void remove(int index) { steps.remove(index); }
-        @Override public String exportPackage() { return "com.example"; }
-        @Override public Inspector.Result export(String className, String pkg) {
-            if (refuse != null) return new Inspector.Result(false, refuse);
-            exports.add(pkg + "." + className);
-            return new Inspector.Result(true, "wrote src/test/java/" + pkg.replace('.', '/') + "/" + className + ".java");
-        }
     }
 }

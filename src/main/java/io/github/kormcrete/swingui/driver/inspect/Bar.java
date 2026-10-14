@@ -131,18 +131,35 @@ final class Bar extends JComponent {
         return out;
     }
 
+    /** Runs the button labelled {@code label}, as if the person pressed it. */
+    void press(String label) {
+        for (Button b : buttons) {
+            if (b.label.equals(label)) {
+                b.action.run();
+                return;
+            }
+        }
+        throw new IllegalArgumentException("no button '" + label + "' on the bar");
+    }
+
     private Button buttonAt(Point p) {
         for (Button b : buttons) if (b.at.contains(p)) return b;
         return null;
     }
 
+    /** Its width without the line of text: grip, dot, title and buttons. */
+    int minimumWidth() {
+        FontMetrics fm = getFontMetrics(getFont());
+        FontMetrics bold = getFontMetrics(getFont().deriveFont(Font.BOLD));
+        int w = GRIP + 10 + (dot == null ? 0 : 16) + (title == null ? 0 : bold.stringWidth(title) + 10) + 12;
+        for (Button b : buttons) w += fm.stringWidth(b.label) + 22;
+        return w;
+    }
+
     @Override
     public Dimension getPreferredSize() {
         FontMetrics fm = getFontMetrics(getFont());
-        FontMetrics bold = getFontMetrics(getFont().deriveFont(Font.BOLD));
-        int w = GRIP + 10 + (dot == null ? 0 : 16) + (title == null ? 0 : bold.stringWidth(title) + 10) + Math.min(fm.stringWidth(text), 420) + 12;
-        for (Button b : buttons) w += fm.stringWidth(b.label) + 22;
-        return new Dimension(w, fm.getHeight() + 16);
+        return new Dimension(minimumWidth() + Math.min(fm.stringWidth(text), 420), fm.getHeight() + 16);
     }
 
     /** Not in a screenshot: a capture leaves the palette out. */

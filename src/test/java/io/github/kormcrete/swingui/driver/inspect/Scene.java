@@ -12,9 +12,11 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.JTable;
+import javax.swing.RootPaneContainer;
 import javax.swing.JTextField;
 import javax.swing.table.JTableHeader;
 import java.awt.Component;
+import java.awt.Window;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,6 +49,13 @@ final class Scene implements WindowSource {
         place(orders, 10, 70, 300, 48);
         orders.doLayout();
         roots.add(new WindowRoot(content, "window", "Orders", false, null, true));
+    }
+
+    /** Sizes an unshown window and lays out its root pane, as showing it would. EDT. */
+    static void size(Window w, int width, int height) {
+        w.setSize(width, height);
+        w.doLayout();
+        ((RootPaneContainer) w).getRootPane().doLayout();
     }
 
     private void place(Component c, int x, int y, int w, int h) {
