@@ -42,7 +42,17 @@ Download Order Desk, a small Swing order-entry app with Java and the agent built
    ```
 
 3. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
-   tell me the order number."*
+   tell me the order number."* Ada Shop Ltd pays by invoice, so if it asks for a PO number, give it any.
+4. **Ask again**, for another customer or other products. The first time takes longer: the agent reads the screens
+   and learns the order form. Now it knows them and can send all the steps in one `batch` call: the whole order runs
+   in about half a second.
+
+:::tip[Let it remember]
+What the agent learns lasts only for the conversation. Ask it to save what it learned about the app (the screens,
+the field names, that invoice customers need a PO number) to its memory or project notes, such as your
+`CLAUDE.md`, so the next session starts fast. To keep the steps themselves, let it
+[export them as a test](/swing-ui-agent/start/record/).
+:::
 
 Then [take the tour](/swing-ui-agent/demo/tour/), or see how the same steps
 [become a test](/swing-ui-agent/start/record/).
