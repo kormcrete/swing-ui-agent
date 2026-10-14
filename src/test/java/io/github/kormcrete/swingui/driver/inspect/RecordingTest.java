@@ -15,6 +15,7 @@ import java.awt.Rectangle;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -802,10 +803,174 @@ class RecordingTest {
             recording.panel.select(1);
             recording.panel.press("↺ Redo from selected");
         });
-        // the steps before the cut are replayed - x and a, as the recording now is - and the person records on
+        // the steps before the cut are replayed from a reset - x and a, as the recording now is - and the person records on
         eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
-        assertThat(sink.log).containsExactly("cut " + b, "replay 0", "replay 1", "resume");
+        assertThat(sink.log).containsExactly("cut " + b, "reset", "replay 0", "replay 1", "resume");
         assertThat(sink.lines()).containsExactly("click(#x)", "click(#a)");
+    }
+
+    @Test
+    void replayAllResetsFirstLikeTheTestWill() throws Exception {
+        sink.person("click(#a)", "click(#b)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.replayAllTip()).isEqualTo("from a reset, as the exported test runs");
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("replayed steps 1-2: all passed"));
+    }
+
+    @Test
+    void replayAllShowsTheResetOnTheBarAndStepByStepWaitsAfterIt() throws Exception {
+        sink.person("click(#a)", "click(#b)");
+        withSteps();
+        CountDownLatch inReset = new CountDownLatch(1);
+        CountDownLatch goOn = new CountDownLatch(1);
+        sink.onReset = () -> {
+            inReset.countDown();
+            try { goOn.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        };
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(3);
+            recording.panel.press("▶ Replay all");
+        });
+        assertThat(inReset.await(5, TimeUnit.SECONDS)).isTrue();
+        Bar replayBar = eventually(() -> scene.inspector.overlay(frame.getRootPane()).bar() != recording.bar
+                ? scene.inspector.overlay(frame.getRootPane()).bar() : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(replayBar.title()).isEqualTo("Replaying");
+            assertThat(replayBar.text()).isEqualTo("resetting the app …");
+            // the reset is no step: no row is marked for it
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ●  click(#b)");
+        });
+        goOn.countDown();
+        // step by step: the reset ran, the first step waits for Next
+        eventually(() -> replayBar.text().startsWith("1/2") ? Boolean.TRUE : null);
+        Thread.sleep(200);
+        assertThat(sink.log).containsExactly("reset");
+        recording.next.release();
+        eventually(() -> sink.log.contains("replay 0") ? Boolean.TRUE : null);
+        recording.next.release();
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+    }
+
+    @Test
+    void fromSelectedOnALaterStepDoesNotReset() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(1);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 2 ? Boolean.TRUE : null);
+        Thread.sleep(100);
+        assertThat(sink.log).containsExactly("replay 1", "replay 2");
+    }
+
+    @Test
+    void fromSelectedOnTheFirstStepResetsToo() throws Exception {
+        sink.person("click(#a)", "click(#b)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(0);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+    }
+
+    /** A recording of {@code lines} the person ended with Done; the sink's log starts empty. */
+    private void doneWith(String... lines) throws Exception {
+        sink.person(lines);
+        withSteps();
+        SwingUtilities.invokeAndWait(recording::done);
+        recording.done.get(5, TimeUnit.SECONDS);
+        settle();
+        sink.log.clear();
+    }
+
+    @Test
+    void redoResetsReplaysUpToTheStepAndRecordsOn() throws Exception {
+        doneWith("click(#a)", "click(#b)", "click(#c)");
+        int c = sink.steps.get(2).id;
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+            recording.panel.speed(0);
+            recording.panel.select(2);
+            recording.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut " + c, "reset", "replay 0", "replay 1", "resume");
+        assertThat(sink.lines()).containsExactly("click(#a)", "click(#b)");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.bar.text()).isEqualTo("Back at step 2: record the rest.");
+        });
+    }
+
+    @Test
+    void redoFromTheFirstStepResetsAndRecordsFromThere() throws Exception {
+        doneWith("click(#a)", "click(#b)");
+        int a = sink.steps.get(0).id;
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(0);
+            recording.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut " + a, "reset", "resume");
+        assertThat(sink.lines()).isEmpty();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.bar.text()).isEqualTo("Recording cleared: record from here.");
+        });
+    }
+
+    @Test
+    void redoOnALoadedFlowResetsToo() throws Exception {
+        Recording r = loadAddToCart();
+        int second = sink.steps.get(1).id;
+        SwingUtilities.invokeAndWait(() -> {
+            r.panel.speed(0);
+            r.panel.select(1);
+            r.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut " + second, "reset", "replay 0", "resume");
+        assertThat(sink.lines()).containsExactly("click(button 'Add to cart')");
+        SwingUtilities.invokeAndWait(() -> assertThat(r.state).isEqualTo(Recording.State.RECORDING));
+    }
+
+    @Test
+    void aFailedResetBeforeARedoKeepsTheCutAndRecordsNothing() throws Exception {
+        doneWith("click(#a)", "click(#b)", "click(#c)");
+        int b = sink.steps.get(1).id;
+        sink.reset = new Inspector.Result(false, "this session has no reset");
+        sink.undoLabel = "cut from step 2 (redo) by the person";
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(1);
+            recording.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.contains("reset") ? Boolean.TRUE : null);
+        settle();
+        Thread.sleep(100);
+        assertThat(sink.log).containsExactly("cut " + b, "reset");
+        // the cut stays, and Undo is there to bring it back
+        assertThat(sink.lines()).containsExactly("click(#a)");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+            assertThat(recording.bar.text()).isEqualTo("✗ reset failed: this session has no reset");
+            assertThat(recording.panel.undoEnabled()).isTrue();
+            assertThat(scene.inspector.driving()).isNull();
+            assertThat(scene.inspector.engaged()).isNull();
+        });
     }
 
     @Test

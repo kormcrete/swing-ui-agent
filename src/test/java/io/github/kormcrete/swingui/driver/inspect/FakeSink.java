@@ -40,6 +40,8 @@ final class FakeSink implements Inspector.Sink {
     volatile String refuseLoad;
     /** What the run's reset does. */
     volatile Inspector.Result reset = new Inspector.Result(true, "reset");
+    /** Runs inside the reset, on the inspector's thread: what happens while the app resets. */
+    volatile Runnable onReset;
 
     /** Adds steps the person made, at the end; the agent's; one the agent edited (not replayed since). */
     void person(String... lines) { for (String l : lines) steps.add(line("person", l, false)); }
@@ -146,5 +148,9 @@ final class FakeSink implements Inspector.Sink {
         String name = file.getFileName().toString();
         return new Inspector.Result(true, name.substring(0, name.length() - ".json".length()));
     }
-    @Override public Inspector.Result reset() { log.add("reset"); return reset; }
+    @Override public Inspector.Result reset() {
+        log.add("reset");
+        if (onReset != null) onReset.run();
+        return reset;
+    }
 }

@@ -22,8 +22,8 @@ import java.util.concurrent.Semaphore;
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
  * Done; after Done ● Record, Load flow…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
- * mode), the steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class
- * or a flow file. The person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
+ * mode), the steps panel with replay, redo and delete (a replay of everything and every redo begin at the app reset,
+ * as the exported test does), and the export panel that writes the recording as a JUnit class or a flow file. The person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
  * {@link #stoppedByAgent}); while the agent replays, its bar stands in for the palette's ({@link #agentReplay}). A
  * flow file the person or the agent loads is one too, already stopped
  * ({@link #loaded}): its steps panel runs it - the app reset, then every step. While a replay or run goes on, no other
@@ -319,7 +319,7 @@ final class Recording {
         }
         closeExportPanel();
         inspector.closeFlows();
-        // a loaded flow runs as it will in a test: from a reset
+        // a replay of everything - a loaded flow's Run too - begins at the reset, as the test will
         panel = flow != null
                 ? new StepsPanel("▶ Run", this::run, i -> replay(i, -1, null), this::redoFrom, this::delete, this::undo,
                         this::toggleSteps)
@@ -486,8 +486,9 @@ final class Recording {
     }
 
     /**
-     * Cuts the recording at the step the person saw in row {@code row} (by its id), replays what is left to get the app
-     * back there, and records on - also after Done: redo always means recording the rest.
+     * Cuts the recording at the step the person saw in row {@code row} (by its id), resets the app and replays what is
+     * left to get it back there, as the test will, and records on - also after Done: redo always means recording the
+     * rest. A reset or step that fails leaves the cut (Undo brings it back) and records nothing.
      */
     private void redoFrom(int row) {
         int id = panel == null ? -1 : panel.idAt(row);
@@ -520,20 +521,16 @@ final class Recording {
                     mode(false);
                     activeBar.text(i == 0 ? "Recording cleared: record from here." : "Back at step " + i + ": record the rest.");
                 };
-                if (i == 0) {
-                    refresh(-1);
-                    recordOn.run();
-                } else {
-                    replay(0, i, recordOn);
-                }
+                // from the first step only the reset runs before the person records
+                replay(0, i, recordOn);
             });
         });
     }
 
     /**
-     * Replays steps {@code from} up to {@code to} (exclusive; -1 all) the way the exported test will: each runs as the
-     * agent's step would, nothing is recorded, the person's own input is not listened to, the catcher and the steps panel
-     * are out of the way. At the panel's speed each target is boxed for a moment BEFORE its step runs; an action and the
+     * Replays steps {@code from} up to {@code to} (exclusive; -1 all) the way the exported test will: from the first
+     * step the app is reset first (no step of its own: the bar says so), each step runs as the agent's would, nothing is
+     * recorded, the person's own input is not listened to, the catcher and the steps panel are out of the way. At the panel's speed each target is boxed for a moment BEFORE its step runs; an action and the
      * checks after it are one step, and step by step waits for Next with the last results still in view. Pause, Next and
      * Stop are on the bar, which moves off the box. The first failure stops the replay.
      */
@@ -549,9 +546,13 @@ final class Recording {
         replay(0, -1, null, true);
     }
 
-    /** {@link #replay(int, int, Runnable)}; {@code reset}: the app is reset first (a run). */
-    private void replay(int from, int to, Runnable after, boolean reset) {
+    /**
+     * {@link #replay(int, int, Runnable)}; {@code run}: a loaded flow's ▶ Run, which says so. A replay from the first
+     * step resets the app first; a reset that fails runs nothing and says why.
+     */
+    private void replay(int from, int to, Runnable after, boolean run) {
         if (replaying || agentReplay != null) return;
+        boolean reset = from == 0;
         replaying = true;
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
@@ -561,12 +562,12 @@ final class Recording {
         next.drainPermits();
         steps.flush();
         steps.active(false);
-        String why = reset ? "a person is running " + flow + " in the app" : "a person is replaying their recording in the app";
+        String why = run ? "a person is running " + flow + " in the app" : "a person is replaying their recording in the app";
         inspector.recordingBusy(why);
         // the palette's steps go to the session directly: the agent's lease keeps every other call out meanwhile
         inspector.driving(why);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
-        replayBar = new Bar(reset ? "Running" : "Replaying", reset ? "resetting the app …" : "").dot(Overlay.HOVER, false)
+        replayBar = new Bar(run ? "Running" : "Replaying", reset ? "resetting the app …" : "").dot(Overlay.HOVER, false)
                 .button("Pause", Overlay.NAVY.brighter(), () -> { paused = true; replayBar.active("Pause"); })
                 .button("Resume", Overlay.YES, () -> { paused = false; replayBar.active(""); next.release(); })
                 .button("Next", Overlay.HOVER, next::release)
@@ -576,7 +577,8 @@ final class Recording {
         // the flushed steps reach the recording before it is read
         sinkThread.submit(() -> {
             try {
-                if (reset) {
+                // an empty recording has nothing to get back to; a redo from the first step records from the reset
+                if (reset && (after != null || !sink.steps().isEmpty())) {
                     Inspector.Result r = resetApp();
                     if (!r.ok) {
                         ended("✗ reset failed: " + r.line, -1, wasChecking, null);
@@ -593,7 +595,7 @@ final class Recording {
         });
     }
 
-    /** The run's reset; one that throws is a failed one. Sink thread. */
+    /** The replay's reset; one that throws is a failed one. Sink thread. */
     private Inspector.Result resetApp() {
         try {
             return sink.reset();

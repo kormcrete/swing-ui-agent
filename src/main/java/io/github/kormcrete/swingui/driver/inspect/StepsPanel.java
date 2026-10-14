@@ -25,10 +25,11 @@ import java.util.function.IntConsumer;
 
 /**
  * The recording as the person sees it: every step, agent's ("agent: …") and theirs, with what its last replay did
- * (● recorded, ✎ changed since and not replayed, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all (for
- * a loaded flow: run it, from a reset), replay from a step, redo from a step (cut the recording there, replay up to
- * it, record on), delete one, or undo the last edit - the agent's or the person's. Rows know their step's id: what the
- * person deletes or redoes is the step they saw, even when the agent changed the recording since.
+ * (● recorded, ✎ changed since and not replayed, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all
+ * from a reset, as the exported test runs (for a loaded flow: run it), replay from a step, redo from a step (cut the
+ * recording there, replay up to it from a reset, record on), delete one, or undo the last edit - the agent's or the
+ * person's. Rows know their step's id: what the person deletes or redoes is the step they saw, even when the agent
+ * changed the recording since.
  */
 final class StepsPanel extends JPanel {
 
@@ -87,9 +88,11 @@ final class StepsPanel extends JPanel {
         scroll.setPreferredSize(new Dimension(460, 200));
         add(scroll, BorderLayout.CENTER);
         buttons.setOpaque(false);
-        buttons.add(small(replayAllLabel, replayAll));
-        buttons.add(small("▶ From selected", () -> { if (selected() >= 0) replayFrom.accept(selected()); }));
-        buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(selected()); }));
+        buttons.add(small(replayAllLabel, replayAll, "from a reset, as the exported test runs"));
+        buttons.add(small("▶ From selected", () -> { if (selected() >= 0) replayFrom.accept(selected()); },
+                "from the selected step on; from the first one, after a reset"));
+        buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(selected()); },
+                "cut the recording at the selected step, replay the steps before it from a reset, record on"));
         buttons.add(small("✕ Delete", () -> { if (selected() >= 0) delete.accept(selected()); }));
         this.undo = small("↶ Undo", undo);
         this.undo.setEnabled(false);
@@ -126,6 +129,11 @@ final class StepsPanel extends JPanel {
     /** The first button's label: what replaying all is called here. */
     String replayAllLabel() {
         return ((JButton) buttons.getComponent(0)).getText();
+    }
+
+    /** What the first button's tooltip says it does. */
+    String replayAllTip() {
+        return ((JButton) buttons.getComponent(0)).getToolTipText();
     }
 
     /** Presses the button labelled {@code label}, as the person would. */
@@ -208,6 +216,12 @@ final class StepsPanel extends JPanel {
         // a check belongs to the action before it: indented under it, replayed with it step by step
         String text = s.check() ? "      └ " + who + "check: " + s.line.substring(7, s.line.length() - 1) : who + s.line;
         return n + "  " + mark + "  " + text;
+    }
+
+    private static JButton small(String label, Runnable action, String tip) {
+        JButton b = small(label, action);
+        b.setToolTipText(tip);
+        return b;
     }
 
     private static JButton small(String label, Runnable action) {
