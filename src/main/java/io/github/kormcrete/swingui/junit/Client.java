@@ -65,6 +65,11 @@ public final class Client {
         return app("hooks").hooks(type);
     }
 
+    /** The app side of this client (flow runs); package-private for {@link UiFlows}. */
+    ClientApp app() {
+        return app("run flows");
+    }
+
     private ClientApp app(String what) {
         if (app == null) throw new UnsupportedOperationException(what + " needs a UI session; this Client has none");
         return app;

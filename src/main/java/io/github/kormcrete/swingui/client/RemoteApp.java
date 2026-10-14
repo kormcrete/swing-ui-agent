@@ -1,5 +1,7 @@
 package io.github.kormcrete.swingui.client;
 
+import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.junit.ClientApp;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -39,5 +41,16 @@ public final class RemoteApp implements ClientApp {
 
     @Override public <T> T hooks(Class<T> type) {
         return RemoteHooks.of(agent, type, null);
+    }
+
+    @Override public String runFlow(String flowJson, String evidenceDir) {
+        ObjectNode a = agent.args();
+        try {
+            a.set("flow", agent.json().readTree(flowJson));
+        } catch (java.io.IOException e) {
+            throw new DriverException(Reason.BAD_INPUT, "the flow is not JSON: " + e.getMessage());
+        }
+        if (evidenceDir != null) a.put("evidence", evidenceDir);
+        return AgentClient.firstText(agent.call("run_flow", a));
     }
 }
