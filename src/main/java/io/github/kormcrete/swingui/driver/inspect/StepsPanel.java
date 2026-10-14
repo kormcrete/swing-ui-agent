@@ -158,10 +158,14 @@ final class StepsPanel extends JPanel {
     /**
      * The steps, each with its replay mark from {@code marks} (by step id; none: ● or, for an edited step, ✎), then -
      * greyed - what the person is still doing (typing not yet committed), when anything. {@code undoLabel}: what Undo
-     * would take back, null when nothing.
+     * would take back, null when nothing. {@code select} picks a row; -1 keeps the selected step - by its id, so a step
+     * the agent put in or took out above it never moves the selection onto another step; a step that is gone leaves
+     * nothing selected.
      */
     void show(List<Inspector.StepLine> steps, Map<Integer, String> marks, int select, String pending, String undoLabel) {
-        int keep = select >= 0 ? select : list.getSelectedIndex();
+        int was = list.getSelectedIndex();
+        int keptId = select < 0 ? idAt(was) : -1;
+        boolean pendingSelected = select < 0 && was >= 0 && was >= ids.size();
         ids.clear();
         rowMarks.clear();
         List<String> rows = new ArrayList<String>();
@@ -174,12 +178,15 @@ final class StepsPanel extends JPanel {
             rows.add(row(i + 1, mark, s));
         }
         if (pending != null) rows.add("   …  " + pending);
+        int keep = select >= 0 ? select
+                : keptId >= 0 ? ids.indexOf(keptId)
+                : pendingSelected && pending != null ? rows.size() - 1 : -1;
         undo.setEnabled(undoLabel != null);
         undo.setToolTipText(undoLabel);
         boolean same = rows.size() == model.size();
         for (int i = 0; same && i < rows.size(); i++) same = rows.get(i).equals(model.get(i));
         title.setText("Steps (" + steps.size() + ")");
-        if (same && select < 0) {
+        if (same && select < 0 && keep == was) {
             list.repaint();
             return;
         }
@@ -188,8 +195,9 @@ final class StepsPanel extends JPanel {
         if (keep >= 0 && keep < rows.size()) {
             list.setSelectedIndex(keep);
             list.ensureIndexIsVisible(keep);
-        } else if (!rows.isEmpty()) {
-            list.ensureIndexIsVisible(rows.size() - 1);
+        } else {
+            list.clearSelection();
+            if (!rows.isEmpty()) list.ensureIndexIsVisible(rows.size() - 1);
         }
         list.repaint();
     }

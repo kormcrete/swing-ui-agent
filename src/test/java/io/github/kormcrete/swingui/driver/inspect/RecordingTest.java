@@ -747,6 +747,50 @@ class RecordingTest {
     }
 
     @Test
+    void theSelectionStaysOnTheStepWhenTheAgentChangesTheRecordingAboveIt() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        int b = sink.steps.get(1).id;
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> recording.panel.select(1));
+
+        // the agent inserts a step at the top and the panel re-reads it before the person presses Delete
+        sink.insert(0, "click(#x)");
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.selected()).isEqualTo(2);
+            assertThat(recording.panel.idAt(recording.panel.selected())).isEqualTo(b);
+        });
+        // the 500 ms backstop's refresh changes nothing either
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.selected()).isEqualTo(2);
+            recording.panel.press("✕ Delete");
+        });
+        eventually(() -> recording.panel.rows().size() == 3 && !recording.panel.rows().get(2).contains("#b")
+                ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("delete " + b);
+        assertThat(sink.lines()).containsExactly("click(#x)", "click(#a)", "click(#c)");
+    }
+
+    @Test
+    void aSelectedStepTheAgentDeletesLeavesNothingSelected() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> recording.panel.select(1));
+
+        sink.steps.remove(1);
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ●  click(#c)");
+            assertThat(recording.panel.selected()).isEqualTo(-1);
+            // Delete with nothing selected deletes nothing
+            recording.panel.press("✕ Delete");
+        });
+        settle();
+        assertThat(sink.log).isEmpty();
+    }
+
+    @Test
     void redoFromARowCutsAtThatStepsId() throws Exception {
         sink.person("click(#a)", "click(#b)", "click(#c)");
         int b = sink.steps.get(1).id;
