@@ -21,7 +21,8 @@ import java.io.IOException;
  *
  * <p>Not a screen grab: the app runs in the background, so a desktop capture would show whatever is in
  * front of it. Painting needs no permissions, but anything drawn in a window of its own (an open popup
- * menu, a combo's dropdown, a tooltip) is not in the image: capture that window instead.
+ * menu, a combo's dropdown, a tooltip) is not in the image: capture that window instead. The inspector's
+ * palette and boxes are left out too (see {@link #capturing()}).
  */
 public final class Screenshots {
 
@@ -31,7 +32,17 @@ public final class Screenshots {
     /** The largest {@code scale}: a 4x image of a big window is already tens of megabytes in memory. */
     public static final double MAX_SCALE = 4;
 
+    private static boolean capturing;
+
     private Screenshots() {}
+
+    /**
+     * EDT: true while a capture paints; the inspector's own components paint nothing then, so the person's
+     * palette and boxes are never in an image.
+     */
+    public static boolean capturing() {
+        return capturing;
+    }
 
     /**
      * @param c      the component or window to paint; a window must be showing (a closed one keeps its size but
@@ -99,7 +110,13 @@ public final class Screenshots {
             g.scale(scale, scale);
             g.translate(-shown.x, -shown.y);
             g.setClip(shown.x, shown.y, shown.width, shown.height);
-            c.paint(g);
+            boolean before = capturing;
+            capturing = true;
+            try {
+                c.paint(g);
+            } finally {
+                capturing = before;
+            }
         } finally {
             g.dispose();
         }

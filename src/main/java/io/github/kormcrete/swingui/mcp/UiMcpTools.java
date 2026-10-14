@@ -248,7 +248,8 @@ public final class UiMcpTools {
                         + "another application's window. Give a 'target' for one dialog, panel, table or toolbar, "
                         + "and 'region' for a snippet inside it. Anything drawn in a window of its own (an open "
                         + "popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window "
-                        + "instead. A read: nothing is recorded; to capture screens in a recorded test, use the "
+                        + "instead. The person's palette and any boxes shown in the app are not in the image. "
+                        + "A read: nothing is recorded; to capture screens in a recorded test, use the "
                         + "'screenshot' step in a batch, which writes a file. Use it for an "
                         + "aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for "
                         + "anything that is really a number or a boolean.",

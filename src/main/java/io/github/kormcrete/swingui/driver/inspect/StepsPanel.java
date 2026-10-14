@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
@@ -9,6 +10,7 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ListSelectionModel;
+import java.awt.Graphics;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -24,6 +26,12 @@ import java.util.function.IntConsumer;
  * (cut the recording there, replay up to it, record on) or delete one.
  */
 final class StepsPanel extends JPanel {
+
+/** Not in a screenshot: the person's palette is never in an image. */
+@Override
+public void paint(Graphics g) {
+    if (!Screenshots.capturing()) super.paint(g);
+}
 
     private final DefaultListModel<String> model = new DefaultListModel<String>();
     private final JList<String> list = new JList<String>(model);

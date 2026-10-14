@@ -1,11 +1,13 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import java.awt.Graphics;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.FlowLayout;
@@ -20,6 +22,12 @@ import java.util.function.BiConsumer;
  * export keeps the panel open with the reason, so they can fix the name and try again.
  */
 final class ExportPanel extends JPanel {
+
+/** Not in a screenshot: the person's palette is never in an image. */
+@Override
+public void paint(Graphics g) {
+    if (!Screenshots.capturing()) super.paint(g);
+}
 
     private final JTextField className = new JTextField(22);
     private final JTextField packageName = new JTextField(22);

@@ -48,6 +48,21 @@ class ScreenshotsTest {
     }
 
     @Test
+    void capturingIsOnOnlyWhileACapturePaints() {
+        java.util.List<Boolean> seen = new java.util.ArrayList<>();
+        JPanel panel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                seen.add(Screenshots.capturing());
+            }
+        };
+        panel.setSize(new Dimension(20, 20));
+        Screenshots.of(panel, null, null, null);
+        assertThat(seen).contains(true).doesNotContain(false);
+        assertThat(Screenshots.capturing()).isFalse();
+    }
+
+    @Test
     void capturesTheComponentAtItsOwnSize() throws IOException {
         Shot shot = Screenshots.of(twoTone(200, 100), null, null, null);
 

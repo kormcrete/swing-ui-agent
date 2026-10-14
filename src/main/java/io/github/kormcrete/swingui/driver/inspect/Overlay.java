@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 import javax.swing.JComponent;
 import javax.swing.JLayeredPane;
 import javax.swing.JPopupMenu;
@@ -36,6 +37,12 @@ import java.util.function.Consumer;
  * takes no mouse input; the rest is added and removed, never hidden. EDT only.
  */
 final class Overlay extends JComponent {
+
+/** Not in a screenshot: the person's palette is never in an image. */
+@Override
+public void paint(Graphics g) {
+    if (!Screenshots.capturing()) super.paint(g);
+}
 
     static final String PACKAGE = Overlay.class.getPackage().getName() + ".";
     private static final Integer BOXES = JLayeredPane.DRAG_LAYER;
@@ -408,6 +415,12 @@ final class Overlay extends JComponent {
 
     /** A round check mark on a box's top right corner: "yes, this one". */
     static final class Badge extends JComponent {
+
+    /** Not in a screenshot: the person's palette is never in an image. */
+    @Override
+    public void paint(Graphics g) {
+        if (!Screenshots.capturing()) super.paint(g);
+    }
         private boolean over;
 
         Badge(Runnable onYes) {
@@ -440,6 +453,12 @@ final class Overlay extends JComponent {
 
     /** Transparent; takes the mouse while the person picks or checks, so the click names a component instead of using it. */
     final class Catcher extends JComponent {
+
+    /** Not in a screenshot: the person's palette is never in an image. */
+    @Override
+    public void paint(Graphics g) {
+        if (!Screenshots.capturing()) super.paint(g);
+    }
         Catcher(Consumer<MouseEvent> moved, Consumer<MouseEvent> clicked) {
             setOpaque(false);
             setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));

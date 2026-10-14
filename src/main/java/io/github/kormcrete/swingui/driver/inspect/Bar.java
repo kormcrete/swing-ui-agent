@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 import javax.swing.JComponent;
 import java.awt.Color;
 import java.awt.Cursor;
@@ -21,6 +22,12 @@ import java.util.List;
  * question, or what was recorded last) and buttons. Painted by hand, so the app's look and feel cannot restyle it.
  */
 final class Bar extends JComponent {
+
+/** Not in a screenshot: the person's palette is never in an image. */
+@Override
+public void paint(Graphics g) {
+    if (!Screenshots.capturing()) super.paint(g);
+}
 
     static final class Button {
         final String label;
