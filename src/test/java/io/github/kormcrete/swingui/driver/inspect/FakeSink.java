@@ -97,9 +97,12 @@ final class FakeSink implements Inspector.Sink {
     @Override public Locator target(int index) { return null; }
     /** Thrown by {@link #replay}, when set: a replay that breaks. */
     volatile RuntimeException replayThrows;
+    /** The step (0-based) whose replay fails, -1 none. */
+    volatile int failStep = -1;
     @Override public Inspector.Result replay(int index) {
         log.add("replay " + index);
         if (replayThrows != null) throw replayThrows;
+        if (index == failStep) return new Inspector.Result(false, "no button 'b'");
         return new Inspector.Result(true, "ok");
     }
     @Override public Inspector.Result delete(int id) {

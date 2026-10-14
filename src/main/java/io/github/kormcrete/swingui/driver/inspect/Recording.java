@@ -210,6 +210,11 @@ final class Recording {
 
     /** Stops listening and shows the stopped bar; {@code person}: their Done, which the session hears of. */
     private void stop(boolean person) {
+        stop(person, null);
+    }
+
+    /** {@link #stop(boolean)}; {@code why}: what the stopped bar says instead of the step count, null for the count. */
+    private void stop(boolean person, String why) {
         steps.flush();
         steps.active(false);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
@@ -223,7 +228,7 @@ final class Recording {
             if (person) sink.end();
             int n = sink.steps().size();
             String count = n + (n == 1 ? " step" : " steps");
-            SwingUtilities.invokeLater(() -> stoppedBar.text(person
+            SwingUtilities.invokeLater(() -> stoppedBar.text(why != null ? why : person
                     ? count + " - Export… writes them as a test, or the agent does"
                     : "The agent ended the recording - " + count));
             finished.complete(new ArrayList<String>(lines));
@@ -488,7 +493,8 @@ final class Recording {
     /**
      * Cuts the recording at the step the person saw in row {@code row} (by its id), resets the app and replays what is
      * left to get it back there, as the test will, and records on - also after Done: redo always means recording the
-     * rest. A reset or step that fails leaves the cut (Undo brings it back) and records nothing.
+     * rest. A reset or step that fails, or the person's Stop, leaves the cut (Undo brings it back) and the recording
+     * stopped - a live one too, as at Done: the screen is not where the steps before the cut leave it.
      */
     private void redoFrom(int row) {
         int id = panel == null ? -1 : panel.idAt(row);
@@ -581,7 +587,7 @@ final class Recording {
                 if (reset && (after != null || !sink.steps().isEmpty())) {
                     Inspector.Result r = resetApp();
                     if (!r.ok) {
-                        ended("✗ reset failed: " + r.line, -1, wasChecking, null);
+                        ended("✗ reset failed: " + r.line, -1, false, wasChecking, after);
                         return;
                     }
                 }
@@ -590,7 +596,7 @@ final class Recording {
                 // nobody reads this task's future: whatever broke, the replay ends and the app is the person's again
                 System.err.println("swing-ui-agent inspector: replay failed");
                 e.printStackTrace();
-                ended("✗ replay failed: " + why(e), -1, wasChecking, null);
+                ended("✗ replay failed: " + why(e), -1, false, wasChecking, after);
             }
         });
     }
@@ -677,19 +683,27 @@ final class Recording {
             // a check's outcome stays in view long enough to be seen, at any speed; step by step keeps it until Next
             if (!paused) Inspector.pause(check ? Math.max(delay, 600) : delay / 2);
         }
-        ended(outcome, failed, wasChecking, after);
+        ended(outcome, failed, failed < 0, wasChecking, after);
     }
 
     /**
-     * The replay or run ended with {@code text} on the bar ({@code stop}: the step it stopped at, -1 none): the palette
-     * comes back, other calls may drive the app again, and {@code after} runs when nothing stopped it. Sink thread.
+     * The replay or run ended with {@code text} on the bar ({@code stop}: the step it stopped at, -1 none; {@code passed}:
+     * the reset and every step passed): the palette comes back and other calls may drive the app again. {@code after}
+     * (a redo's record-on) runs when it passed; when it did not, a live recording stops as at Done, so the person's
+     * steps on a screen the replay did not reach never follow the cut. Sink thread.
      */
-    private void ended(String text, int stop, boolean wasChecking, Runnable after) {
+    private void ended(String text, int stop, boolean passed, boolean wasChecking, Runnable after) {
         SwingUtilities.invokeLater(() -> {
             for (Overlay o : inspector.overlays()) o.clearMarks();
             home.controlsAway(false);
             replaying = false;
             inspector.driving(null);
+            if (!passed && after != null && active()) {
+                stop(true, text + " - recording stopped");
+                bar.text(text + " - recording stopped");
+                refresh(stop);
+                return;
+            }
             home.bar(bar);
             if (active()) {
                 inspector.recordingBusy(busy);
@@ -699,7 +713,7 @@ final class Recording {
             }
             bar.text(text);
             refresh(stop);
-            if (stop < 0 && after != null) after.run();
+            if (passed && after != null) after.run();
         });
     }
 

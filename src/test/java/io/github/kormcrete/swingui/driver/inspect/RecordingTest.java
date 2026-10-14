@@ -947,6 +947,74 @@ class RecordingTest {
         SwingUtilities.invokeAndWait(() -> assertThat(r.state).isEqualTo(Recording.State.RECORDING));
     }
 
+    /** A live recording of {@code lines}, its steps panel open; the sink's log starts empty. */
+    private void recordingWith(String... lines) throws Exception {
+        sink.person(lines);
+        withSteps();
+        sink.log.clear();
+    }
+
+    /** Presses ↺ Redo from selected on {@code row} at Fast. */
+    private void redo(int row) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(row);
+            recording.panel.press("↺ Redo from selected");
+        });
+    }
+
+    @Test
+    void aFailedResetDuringARedoOfALiveRecordingStopsIt() throws Exception {
+        recordingWith("click(#a)", "click(#b)", "click(#c)");
+        int b = sink.steps.get(1).id;
+        sink.reset = new Inspector.Result(false, "this session has no reset");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.state).isEqualTo(Recording.State.RECORDING));
+        redo(1);
+        eventually(() -> !recording.replaying && sink.log.contains("end") ? Boolean.TRUE : null);
+        settle();
+        Thread.sleep(100);
+        // the cut stays; the person's clicks on a screen nobody reset do not join the recording after it
+        assertThat(sink.log).containsExactly("cut " + b, "reset", "end");
+        assertThat(sink.lines()).containsExactly("click(#a)");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+            assertThat(recording.bar.text()).isEqualTo("✗ reset failed: this session has no reset - recording stopped");
+            assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
+            assertThat(scene.inspector.engaged()).isNull();
+        });
+    }
+
+    @Test
+    void aFailedStepDuringARedoOfALiveRecordingStopsIt() throws Exception {
+        recordingWith("click(#a)", "click(#b)", "click(#c)");
+        int c = sink.steps.get(2).id;
+        sink.failStep = 1;
+        redo(2);
+        eventually(() -> !recording.replaying && sink.log.contains("end") ? Boolean.TRUE : null);
+        settle();
+        Thread.sleep(100);
+        assertThat(sink.log).containsExactly("cut " + c, "reset", "replay 0", "replay 1", "end");
+        assertThat(sink.lines()).containsExactly("click(#a)", "click(#b)");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+            assertThat(recording.bar.text()).isEqualTo("✗ step 2 failed: no button 'b' - recording stopped");
+        });
+    }
+
+    @Test
+    void aPassingRedoOfALiveRecordingRecordsOn() throws Exception {
+        recordingWith("click(#a)", "click(#b)");
+        int b = sink.steps.get(1).id;
+        redo(1);
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        settle();
+        assertThat(sink.log).containsExactly("cut " + b, "reset", "replay 0", "resume");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.bar.text()).isEqualTo("Back at step 1: record the rest.");
+        });
+    }
+
     @Test
     void aFailedResetBeforeARedoKeepsTheCutAndRecordsNothing() throws Exception {
         doneWith("click(#a)", "click(#b)", "click(#c)");
