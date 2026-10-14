@@ -18,6 +18,7 @@ import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellEditor;
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -31,7 +32,8 @@ import java.util.function.Consumer;
 /**
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
  * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
- * an attachments drop target with a context menu, a lines table and a status label that tells what happened.
+ * an attachments drop target with a context menu, a lines table, a status label that tells what happened and an
+ * Archive button bottom right, under where the palette sits by default.
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
  */
@@ -113,8 +115,17 @@ public final class FixtureApp {
 
             JPanel form = new JPanel(new FlowLayout());
             for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status, linesPane}) form.add(c);
-            frame.setContentPane(form);
-            frame.setSize(760, 190);
+            // Archive sits bottom right, where the person's palette sits by default
+            JButton archive = new JButton("Archive");
+            archive.setName("archive");
+            archive.addActionListener(e -> status.setText("archived"));
+            JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            south.add(archive);
+            JPanel content = new JPanel(new BorderLayout());
+            content.add(form, BorderLayout.CENTER);
+            content.add(south, BorderLayout.SOUTH);
+            frame.setContentPane(content);
+            frame.setSize(760, 230);
             frame.setLocation(40, 40);
             frame.setVisible(true);
         });

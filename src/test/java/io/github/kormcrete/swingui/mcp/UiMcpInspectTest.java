@@ -46,11 +46,11 @@ class UiMcpInspectTest {
     }
 
     @Test
-    void withoutInspectorOnTheToolRefusesAndSaysHowToTurnItOn() throws Exception {
+    void withoutThePaletteTheToolRefusesAndSaysHowItIsTurnedOff() throws Exception {
         DriverException e = catchThrowableOfType(() -> session.inspect(mapper.readTree("{\"op\":\"recording\"}")),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
-        assertThat(e.getMessage()).contains("inspector=on");
+        assertThat(e.getMessage()).contains("the palette is off").contains("palette=off");
     }
 
     @Test

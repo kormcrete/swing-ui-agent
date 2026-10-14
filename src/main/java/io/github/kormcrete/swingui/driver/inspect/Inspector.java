@@ -52,7 +52,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 /**
- * Work between the agent and the person at the app, in the app window (an app started with {@code inspector=on}):
+ * Work between the agent and the person at the app, in the app window (while the palette is on, the agent's default):
  * <ul>
  *   <li>The person records: a palette in the main window (in the open modal dialog while one is open) starts a
  *       {@link Recording} with ● Record and ends it with Done. Only the person starts and ends one; the agent reads it
@@ -263,8 +263,8 @@ public final class Inspector {
 
     /**
      * Puts the palette (● Record) into the app's main window - into the open modal dialog while one is open - now and
-     * whenever the windows change. The person's recordings go to {@code sink}. Call once, for an app started with
-     * {@code inspector=on}.
+     * whenever the windows change. The person's recordings go to {@code sink}. Call once, when the palette is on
+     * ({@code palette=off}, {@code mode=background} and a headless JVM leave it off).
      */
     public void enable(Sink sink) {
         SwingUtilities.invokeLater(() -> {

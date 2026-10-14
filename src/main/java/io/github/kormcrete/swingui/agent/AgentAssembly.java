@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,7 +38,7 @@ final class AgentAssembly {
         // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
         lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
-        session.inspector(args.inspector);
+        session.palette(paletteOn(args, GraphicsEnvironment.isHeadless()));
         ScreenshotVerb.moduleDir = () -> plugins.exportDefaults().moduleDir;
         List<McpToolDefinition> raw = new ArrayList<McpToolDefinition>(UiMcpTools.build(session, mapper));
         raw.add(pluginCallTool(session, plugins, mapper));
@@ -48,6 +49,11 @@ final class AgentAssembly {
         HttpMcpEndpoint endpoint = new HttpMcpEndpoint(new UiMcpDispatcher(mapper, tools), mapper, args.bind, "/mcp", args.port);
         holder.set(endpoint);
         return new AgentAssembly(lease, session, endpoint);
+    }
+
+    /** The palette as asked for (on unless {@code palette=off} or {@code mode=background}), and never without a screen. */
+    static boolean paletteOn(AgentArgs args, boolean headless) {
+        return args.palette && !headless;
     }
 
     private static McpToolDefinition pluginCallTool(final UiMcpSession session, final Plugins plugins,

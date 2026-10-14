@@ -167,7 +167,7 @@ final class SessionTool implements McpToolDefinition {
         }
         r.putObject("endpoint").put("bind", args.bind).put("port", boundPort.getAsInt());
         r.put("mode", args.mode);
-        r.put("inspector", args.inspector);
+        r.put("palette", session.paletteOn());
         ObjectNode app = r.putObject("app");
         app.put("startedAtMillis", appStartedAt).put("startedAt", Instant.ofEpochMilli(appStartedAt).toString());
         ArrayNode classpath = app.putArray("classpath");

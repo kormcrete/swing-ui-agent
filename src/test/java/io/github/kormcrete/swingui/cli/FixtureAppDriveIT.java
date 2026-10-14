@@ -30,7 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The whole product on this OS and Java: FixtureApp starts in its own JVM with the packaged agent jar
  * ({@code -javaagent}, so on Java 9+ the agent opens java.desktop itself), and the CLI drives it the way a coding
  * agent does - typing, clicking, keys that follow focus the app moved itself, Tab, a modal dialog, a drop and a
- * context menu. Run by failsafe after {@code package}; on every OS CI covers, this is what makes the platform green.
+ * context menu - with the person's palette shown in the window, as it is by default. Run by failsafe after
+ * {@code package}; on every OS CI covers, this is what makes the platform green.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FixtureAppDriveIT {
@@ -87,6 +88,17 @@ class FixtureAppDriveIT {
 
     @Test
     @Order(2)
+    void thePaletteIsOnByDefaultAndTheAgentClicksUnderIt() throws Exception {
+        assertThat(call("session", "{'op':'info'}").path("palette").asBoolean()).isTrue();
+        // the window is up: the palette is put in at the end of this step (never while the agent acts)
+        step("expect", "{'target':{'name':'status'},'text':'idle'}");
+        // Archive sits where the palette's bar sits by default: the bar steps off it for the agent's click
+        step("click", "{'target':{'name':'archive'}}");
+        step("expect", "{'target':{'name':'status'},'text':'archived'}");
+    }
+
+    @Test
+    @Order(3)
     void typeAndClick() throws Exception {
         step("type", "{'target':{'name':'customer'},'text':'ACME'}");
         step("click", "{'target':{'name':'save'}}");
@@ -94,7 +106,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     void keysFollowTheFocusTheAppMovedItselfAndTab() throws Exception {
         step("click", "{'target':{'name':'new'}}");
         step("press", "{'keys':'5'}");
@@ -105,7 +117,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(4)
+    @Order(5)
     void aModalDialogAndTypingAfterIt() throws Exception {
         step("click", "{'target':{'name':'delete'}}");
         step("answer", "{'button':'Yes'}");
@@ -115,7 +127,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(5)
+    @Order(6)
     void aDropAndAContextMenu() throws Exception {
         step("drop", "{'target':{'name':'attachments'},'text':'ORD-1640.pdf'}");
         step("expect", "{'target':{'name':'status'},'text':'attached ORD-1640.pdf'}");
@@ -124,7 +136,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(6)
+    @Order(7)
     void typeIntoASpinnerCellAndAValueOutOfRangeKeepsTheLastValidOne() throws Exception {
         step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Qty'},'text':'3','commit':true}");
         step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Qty','expected':'3'}}");
@@ -138,7 +150,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(7)
+    @Order(8)
     void aRefusedEditIsCancelledAndTheCellKeepsItsValue() throws Exception {
         step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc','commit':true}");
         step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'10'}}");
@@ -149,7 +161,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     void aRefusalTheAppExplainsInADialogIsLeftToTheTest() throws Exception {
         step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Ref'},'text':'x1','commit':true}");
         // one refusal: the driver asked the editor no second time under the app's dialog
@@ -168,7 +180,7 @@ class FixtureAppDriveIT {
     }
 
     @Test
-    @Order(9)
+    @Order(10)
     void anEditorThatKeepsItsEditOpenNeverTakesTheTextOfAnotherCell() throws Exception {
         step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'11','commit':true}");
         step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc'}");

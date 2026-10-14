@@ -13,11 +13,12 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,inspector=off,plugins=a.jar:b/classes}.
+ * {@code -javaagent:swing-ui-agent.jar=port=8765,bind=127.0.0.1,mode=normal,palette=on,plugins=a.jar:b/classes}.
  * <p>{@code plugins} is a list separated by {@link File#pathSeparator}; every entry gets its own {@link PluginSlot}.
- * <p>{@code inspector=on} is for a person at the app: it lets them record steps and checks in the app and answer the
- * agent's questions there. Off by default, so an agent-driven or CI run can never show a palette or listen to input;
- * it needs a screen, so it refuses {@code mode=background}.
+ * <p>{@code palette} is on by default, for a person at the screen: a small bar in the app window lets them record
+ * steps and checks and answer the agent's questions there. {@code palette=off} is for agent-only and CI runs, where
+ * nothing should show or listen to input. It needs a screen, so {@code mode=background} defaults it off and refuses
+ * {@code palette=on}; a headless JVM never shows one. A test run holding the lease takes it out of the window.
  */
 public final class AgentArgs {
 
@@ -25,13 +26,13 @@ public final class AgentArgs {
     public final String bind;
     public final String mode;
     public final List<Path> plugins;
-    public final boolean inspector;
+    public final boolean palette;
 
-    private AgentArgs(int port, String bind, String mode, List<Path> plugins, boolean inspector) {
+    private AgentArgs(int port, String bind, String mode, List<Path> plugins, boolean palette) {
         this.port = port;
         this.bind = bind;
         this.mode = mode;
-        this.inspector = inspector;
+        this.palette = palette;
         this.plugins = Collections.unmodifiableList(plugins);
     }
 
@@ -40,7 +41,7 @@ public final class AgentArgs {
         String bind = "127.0.0.1";
         String mode = "normal";
         List<Path> plugins = new ArrayList<Path>();
-        boolean inspector = false;
+        Boolean palette = null;
         if (raw != null && !raw.trim().isEmpty()) {
             for (String pair : raw.split(",")) {
                 int eq = pair.indexOf('=');
@@ -58,27 +59,31 @@ public final class AgentArgs {
                         throw new IllegalArgumentException("mode must be normal or background, was '" + value + "'");
                     }
                     mode = value;
-                } else if ("inspector".equals(key)) {
+                } else if ("palette".equals(key)) {
                     if ("on".equals(value) || "true".equals(value)) {
-                        inspector = true;
+                        palette = Boolean.TRUE;
                     } else if ("off".equals(value) || "false".equals(value)) {
-                        inspector = false;
+                        palette = Boolean.FALSE;
                     } else {
-                        throw new IllegalArgumentException("inspector must be on or off, was '" + value + "'");
+                        throw new IllegalArgumentException("palette must be on or off, was '" + value + "'");
                     }
+                } else if ("inspector".equals(key)) {
+                    throw new IllegalArgumentException("'inspector' is now 'palette' (on by default; palette=off turns it off)");
                 } else if ("plugins".equals(key)) {
                     for (String p : value.split(Pattern.quote(File.pathSeparator))) {
                         if (!p.trim().isEmpty()) plugins.add(Paths.get(p.trim()));
                     }
                 } else {
-                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, inspector, plugins)");
+                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, palette, plugins)");
                 }
             }
         }
-        if (inspector && "background".equals(mode)) {
-            throw new IllegalArgumentException("inspector=on needs a person at the screen; it cannot run with mode=background");
+        // decided after the loop, so the order of mode and palette does not matter
+        boolean background = "background".equals(mode);
+        if (Boolean.TRUE.equals(palette) && background) {
+            throw new IllegalArgumentException("palette=on needs a person at the screen; it cannot run with mode=background");
         }
-        return new AgentArgs(port, bind, mode, plugins, inspector);
+        return new AgentArgs(port, bind, mode, plugins, palette == null ? !background : palette.booleanValue());
     }
 
     /**

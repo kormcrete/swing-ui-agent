@@ -33,7 +33,7 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, inspector, plugins");
+                .hasMessageContaining("port, bind, mode, palette, plugins");
     }
 
     @Test
@@ -79,17 +79,52 @@ class AgentArgsTest {
     }
 
     @Test
-    void theInspectorIsOffUnlessAskedFor() {
-        assertThat(AgentArgs.parse(null).inspector).isFalse();
-        assertThat(AgentArgs.parse("inspector=on").inspector).isTrue();
-        assertThat(AgentArgs.parse("inspector=off").inspector).isFalse();
-        assertThatThrownBy(() -> AgentArgs.parse("inspector=maybe"))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("inspector must be on or off");
+    void thePaletteIsOnByDefault() {
+        assertThat(AgentArgs.parse(null).palette).isTrue();
+        assertThat(AgentArgs.parse("port=0").palette).isTrue();
+        assertThat(AgentArgs.parse("palette=on").palette).isTrue();
+        assertThat(AgentArgs.parse("palette=true").palette).isTrue();
     }
 
     @Test
-    void theInspectorNeedsAScreenSoNotBackgroundMode() {
-        assertThatThrownBy(() -> AgentArgs.parse("mode=background,inspector=on"))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("mode=background");
+    void paletteOffTurnsItOff() {
+        assertThat(AgentArgs.parse("palette=off").palette).isFalse();
+        assertThat(AgentArgs.parse("palette=false").palette).isFalse();
+    }
+
+    @Test
+    void aBadPaletteValueIsRefused() {
+        assertThatThrownBy(() -> AgentArgs.parse("palette=maybe"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("palette must be on or off");
+    }
+
+    @Test
+    void backgroundModeDefaultsItOff() {
+        assertThat(AgentArgs.parse("mode=background").palette).isFalse();
+        assertThat(AgentArgs.parse("mode=background,palette=off").palette).isFalse();
+    }
+
+    @Test
+    void paletteOnWithBackgroundIsRefusedInEitherOrder() {
+        assertThatThrownBy(() -> AgentArgs.parse("mode=background,palette=on"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("palette=on needs a person at the screen; it cannot run with mode=background");
+        assertThatThrownBy(() -> AgentArgs.parse("palette=on,mode=background"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("palette=on needs a person at the screen; it cannot run with mode=background");
+    }
+
+    @Test
+    void theOldInspectorKeyNamesItsNewName() {
+        assertThatThrownBy(() -> AgentArgs.parse("inspector=on"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("'inspector' is now 'palette' (on by default; palette=off turns it off)");
+    }
+
+    @Test
+    void withoutAScreenThereIsNoPalette() {
+        assertThat(AgentAssembly.paletteOn(AgentArgs.parse(null), true)).isFalse();
+        assertThat(AgentAssembly.paletteOn(AgentArgs.parse(null), false)).isTrue();
+        assertThat(AgentAssembly.paletteOn(AgentArgs.parse("palette=off"), false)).isFalse();
     }
 }

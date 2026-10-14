@@ -275,10 +275,11 @@ public final class UiMcpTools {
                 p.putObject("on").put("type", "boolean").put("description", "hover: true starts it, false stops it.");
                 schema.putArray("required").add("op");
                 return tool(m, "inspect",
-                        "Work WITH the person at the app (only when it was started with inspector=on; otherwise a "
-                        + "CAPABILITY_GAP). highlight: box every match of 'target' (numbered when several) with "
-                        + "'question' on a bar; they click the check mark on the one they mean (outcome confirmed, chosen "
-                        + "n, its locator) or 'None of these' (rejected). pick: they click the element they mean - the "
+                        "Work WITH the person at the app, only when the palette is on (the default; off with "
+                        + "palette=off, mode=background or headless); otherwise a CAPABILITY_GAP. highlight: box every "
+                        + "match of 'target' (numbered when several) with 'question' on a bar; they click the check "
+                        + "mark on the one they mean (outcome confirmed, chosen n, its locator) or 'None of these' "
+                        + "(rejected). pick: they click the element they mean - the "
                         + "click does not reach the app - and you get its locator. recording: what the person recorded. "
                         + "THEY start it with ● Record in the palette in the app window and end it with Done - every "
                         + "step they take is recorded as if you had run it, Check mode adds checks, Steps replays, redoes "

@@ -68,6 +68,19 @@ class SessionToolTest {
     }
 
     @Test
+    void infoSaysWhetherThePaletteIsOn() throws Exception {
+        Plugins none = new Plugins(null);
+        UiMcpSession session = new UiMcpSession(none, none, mapper);
+        McpToolDefinition tool = new SessionTool(none, new Lease(System::currentTimeMillis), session, dialogs,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
+        // the effective state, not the argument: a headless app asked for none gets none
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("palette").asBoolean()).isFalse();
+        session.palette(true);
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("palette").asBoolean()).isTrue();
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).has("inspector")).isFalse();
+    }
+
+    @Test
     void infoListsTheClientClasspathDirectoriesOnly() throws Exception {
         java.io.File dir = java.nio.file.Files.createTempDirectory("cp").toFile();
         java.io.File jar = java.io.File.createTempFile("cpjar", ".jar");

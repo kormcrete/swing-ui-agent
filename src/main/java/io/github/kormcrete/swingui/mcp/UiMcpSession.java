@@ -70,8 +70,8 @@ public class UiMcpSession {
     private boolean definedStart;
 
     private final Supplier<ExportDefaults> exportDefaults;
-    /** The agent was started with {@code inspector=on}: a person may record, check and answer in the app. */
-    private volatile boolean inspector;
+    /** The palette is on (the agent's default, with a screen): a person may record, check and answer in the app. */
+    private volatile boolean palette;
 
     public UiMcpSession(StepHost host, UiInventory inventory, ObjectMapper mapper) {
         this(host, inventory, mapper, () -> Plugins.GENERIC_EXPORT);
@@ -84,14 +84,19 @@ public class UiMcpSession {
         this.exportDefaults = exportDefaults;
     }
 
-    /** Lets {@code inspect} run: only for an app started with {@code inspector=on}. */
-    public void inspector(boolean on) {
-        inspector = on;
+    /** Lets {@code inspect} run: only while the palette is on. Off until the agent says so. */
+    public void palette(boolean on) {
+        palette = on;
+    }
+
+    /** Whether the palette is on: what the agent was started with, after a headless JVM or background mode turned it off. */
+    public boolean paletteOn() {
+        return palette;
     }
 
     /** Puts the person's palette into the app (● Record), its recordings going into this session. */
-    public void startInspector(Driver driver) {
-        if (inspector) Inspector.of(driver).enable(humanSink());
+    public void startPalette(Driver driver) {
+        if (palette) Inspector.of(driver).enable(humanSink());
     }
 
     /** The recording, one step per element, as export_test would read it. */
@@ -152,19 +157,18 @@ public class UiMcpSession {
      * check mark, or says none), {@code pick} (the person clicks what they mean), {@code recording} (what the person
      * recorded with the palette - they start and end it, the agent only reads it or waits for their Done; their steps go
      * into THIS recording, as if the agent had run them), {@code steps} (the recording so far), {@code hover} on/off,
-     * {@code clear}. Only when the app was started with {@code inspector=on}. Not synchronized: it waits for a person,
-     * and must not hold the session meanwhile.
+     * {@code clear}. Only while the palette is on. Not synchronized: it waits for a person, and must not hold the
+     * session meanwhile.
      */
     public String inspect(JsonNode args) {
-        if (!inspector) {
-            throw new DriverException(Reason.CAPABILITY_GAP, "the inspector is off: it is for a person at the app, so it "
-                    + "runs only when the app was started with -javaagent:<agent jar>=inspector=on (agent-driven and CI "
-                    + "runs leave it off)");
+        if (!palette) {
+            throw new DriverException(Reason.CAPABILITY_GAP, "the palette is off (the app was started with palette=off, "
+                    + "mode=background, or without a screen): there is no person at the app to work with");
         }
         Driver driver = Driver.current();
         if (driver == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed in this client");
         if (driver.settings().mode == LaunchMode.BACKGROUND) {
-            throw new DriverException(Reason.CAPABILITY_GAP, "the inspector needs a person at the screen; this app runs in background mode");
+            throw new DriverException(Reason.CAPABILITY_GAP, "the palette needs a person at the screen; this app runs in background mode");
         }
         Inspector inspector = Inspector.of(driver);
         String op = text(args, "op");
