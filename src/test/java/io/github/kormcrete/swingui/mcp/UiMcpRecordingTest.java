@@ -321,4 +321,234 @@ class UiMcpRecordingTest {
             }
         }
     }
+
+    // ---- editing --------------------------------------------------------------------------------
+
+    private void four() throws Exception {
+        call("{\"op\":\"start\"}");
+        click("a");
+        click("b");
+        click("c");
+        click("d");
+    }
+
+    private static String ids(JsonNode list) {
+        StringBuilder sb = new StringBuilder();
+        for (JsonNode s : list.path("steps")) sb.append(s.path("step").path("target").path("id").asText());
+        return sb.toString();
+    }
+
+    private DriverException refused(String json) {
+        return catchThrowableOfType(() -> call(json), DriverException.class);
+    }
+
+    @Test
+    void insertAddsACheckWithoutRunningItAndMarksItEdited() throws Exception {
+        four();
+        int calls = backend.verbs.calls.size();
+        JsonNode r = call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        assertThat(backend.verbs.calls).hasSize(calls);
+        assertThat(r.path("did").asText()).isEqualTo("inserted at step 2");
+        assertThat(r.path("steps")).hasSize(5);
+        assertThat(r.path("steps").get(1).path("step").path("action").asText()).isEqualTo("expect");
+        assertThat(r.path("steps").get(1).path("edited").asBoolean()).isTrue();
+        assertThat(r.path("steps").get(0).has("edited")).isFalse();
+        assertThat(r.path("steps").get(1).path("author").asText()).isEqualTo("agent");
+        // at size+1 appends
+        assertThat(call("{\"op\":\"insert\",\"at\":6,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"z\"}}}")
+                .path("steps")).hasSize(6);
+    }
+
+    @Test
+    void aStepWithoutAJavaFormIsRefusedAndNothingChanges() throws Exception {
+        four();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        for (String step : new String[] {
+                "{\"action\":\"click\",\"target\":{\"id\":\"c\",\"point\":{\"x\":0.5,\"y\":0.5}}}",
+                "{\"action\":\"click\",\"target\":{\"ref\":\"e3\"}}"}) {
+            DriverException e = refused("{\"op\":\"insert\",\"at\":1,\"step\":" + step + "}");
+            assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).contains("step 1:");
+        }
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("rev").asInt()).isEqualTo(rev);
+        assertThat(list.path("steps")).hasSize(4);
+    }
+
+    @Test
+    void anUnknownStepTypeIsRefused() throws Exception {
+        four();
+        DriverException e = refused("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"dance\"}}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("there is no step type 'dance'");
+    }
+
+    @Test
+    void numbersArePositionsAndCloseUpAfterADelete() throws Exception {
+        four();
+        JsonNode r = call("{\"op\":\"delete\",\"n\":2}");
+        assertThat(r.path("did").asText()).isEqualTo("deleted step 2");
+        assertThat(ids(r)).isEqualTo("acd");
+        assertThat(r.path("steps").get(1).path("n").asInt()).isEqualTo(2);
+        assertThat(r.path("steps").get(1).path("step").path("target").path("id").asText()).isEqualTo("c");
+    }
+
+    @Test
+    void aRangeDeleteSaysWhatItDid() throws Exception {
+        four();
+        JsonNode r = call("{\"op\":\"delete\",\"from\":2,\"to\":3}");
+        assertThat(r.path("did").asText()).isEqualTo("deleted steps 2-3");
+        assertThat(ids(r)).isEqualTo("ad");
+        assertThat(refused("{\"op\":\"delete\",\"n\":1,\"from\":1,\"to\":2}").reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(refused("{\"op\":\"delete\",\"n\":9}").getMessage()).contains("no step 9");
+    }
+
+    @Test
+    void deletingTheLastStepsLeavesAnEmptyRecordingAndUndoBringsThemBack() throws Exception {
+        four();
+        assertThat(call("{\"op\":\"delete\",\"from\":1,\"to\":4}").path("steps")).isEmpty();
+        assertThat(ids(call("{\"op\":\"undo\"}"))).isEqualTo("abcd");
+    }
+
+    @Test
+    void moveCarriesAStepToItsNewPosition() throws Exception {
+        four();
+        JsonNode r = call("{\"op\":\"move\",\"n\":4,\"to\":1}");
+        assertThat(r.path("did").asText()).isEqualTo("moved step 4 to 1");
+        assertThat(ids(r)).isEqualTo("dabc");
+    }
+
+    @Test
+    void aMoveThatBreaksTheExportIsRefused() throws Exception {
+        call("{\"op\":\"start\"}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"loginAs\",\"as\":\"ada\"}}");
+        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"a\"}}}");
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        DriverException e = refused("{\"op\":\"move\",\"n\":1,\"to\":2}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 2:").contains("loginAs");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+    }
+
+    @Test
+    void editReplacesTheTargetOrTheTextAndClearsFragile() throws Exception {
+        call("{\"op\":\"start\"}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"name\",\"nth\":1},\"text\":\"Ada\",\"fragile\":true}}");
+        JsonNode r = call("{\"op\":\"edit\",\"n\":1,\"text\":\"Grace\"}");
+        assertThat(r.path("did").asText()).isEqualTo("edited step 1");
+        JsonNode step = r.path("steps").get(0).path("step");
+        assertThat(step.path("text").asText()).isEqualTo("Grace");
+        assertThat(step.path("fragile").asBoolean()).isTrue();
+        assertThat(r.path("steps").get(0).path("edited").asBoolean()).isTrue();
+
+        step = call("{\"op\":\"edit\",\"n\":1,\"target\":{\"id\":\"customer\"}}").path("steps").get(0).path("step");
+        assertThat(step.path("target").path("id").asText()).isEqualTo("customer");
+        assertThat(step.has("fragile")).isFalse();
+        assertThat(step.path("text").asText()).isEqualTo("Grace");
+
+        step = call("{\"op\":\"edit\",\"n\":1,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"q\"}}}")
+                .path("steps").get(0).path("step");
+        assertThat(step.path("action").asText()).isEqualTo("click");
+    }
+
+    @Test
+    void editOfAFieldTheStepDoesNotHaveIsRefused() throws Exception {
+        call("{\"op\":\"start\"}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"menu\",\"path\":[\"File\",\"New\"]}}");
+        DriverException e = refused("{\"op\":\"edit\",\"n\":1,\"text\":\"x\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 1 (menu) has no text");
+        assertThat(refused("{\"op\":\"edit\",\"n\":1,\"target\":{\"id\":\"x\"}}").getMessage())
+                .contains("step 1 (menu) has no target");
+        assertThat(refused("{\"op\":\"edit\",\"n\":1}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void sayAndGroupWaitForTheSentencesVersion() throws Exception {
+        four();
+        assertThat(refused("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\"}").getMessage())
+                .contains("sentences ('say') come in a later version of swing-ui-agent");
+        assertThat(refused("{\"op\":\"group\",\"from\":1,\"to\":2}").getMessage())
+                .contains("group (steps under one sentence) comes in a later version of swing-ui-agent");
+    }
+
+    @Test
+    void aStaleRevisionIsRefusedAndSaysWhatChanged() throws Exception {
+        four();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        assertThat(sink.done(step("click", Locator.ofId("e"))).ok).isTrue();
+        DriverException e = refused("{\"op\":\"delete\",\"n\":1,\"rev\":" + rev + "}");
+        assertThat(e.reason()).isEqualTo(Reason.BUSY);
+        assertThat(e.getMessage()).contains("changed since revision " + rev).contains("the person").contains("list it again");
+        int now = call("{\"op\":\"list\"}").path("rev").asInt();
+        assertThat(call("{\"op\":\"delete\",\"n\":1,\"rev\":" + now + "}").path("did").asText()).isEqualTo("deleted step 1");
+    }
+
+    @Test
+    void undoTakesBackTheLastEditByEitherAuthor() throws Exception {
+        four();
+        call("{\"op\":\"delete\",\"n\":3}");
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the delete of step 3 by the agent");
+        sink.remove(0);
+        JsonNode r = call("{\"op\":\"undo\"}");
+        assertThat(r.path("did").asText()).isEqualTo("undid the delete of step 1 by the person");
+        assertThat(ids(r)).isEqualTo("abcd");
+        assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo in this recording");
+    }
+
+    @Test
+    void undoingADeleteKeepsStepsRecordedSince() throws Exception {
+        four();
+        call("{\"op\":\"delete\",\"n\":2}");
+        click("e");
+        assertThat(ids(call("{\"op\":\"undo\"}"))).isEqualTo("abcde");
+    }
+
+    @Test
+    void undoNeverReachesBeforeTheRecordingStarted() throws Exception {
+        four();
+        call("{\"op\":\"delete\",\"n\":1}");
+        session.startRecording(true);
+        assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo");
+
+        call("{\"op\":\"start\"}");
+        click("a");
+        call("{\"op\":\"delete\",\"n\":1}");
+        Flow flow = new Flow();
+        flow.version = FlowFiles.VERSION;
+        flow.name = "one";
+        flow.start = FlowFiles.START_RESET;
+        ClickVerb a = new ClickVerb(); a.target = Locator.ofId("a");
+        flow.steps.add(a);
+        Path file = dir.resolve("one.json");
+        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadFlow(file);
+        assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo");
+
+        call("{\"op\":\"delete\",\"n\":1}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"menu\",\"path\":[\"File\"]}}");
+        session.exportFlow("out", dir.toString(), null, true);
+        assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo");
+    }
+
+    @Test
+    void editsWorkOnAStoppedRecording() throws Exception {
+        four();
+        call("{\"op\":\"stop\"}");
+        JsonNode r = call("{\"op\":\"delete\",\"n\":1}");
+        assertThat(r.path("state").asText()).isEqualTo("stopped");
+        assertThat(r.path("steps")).hasSize(3);
+    }
+
+    @Test
+    void thePalettesDeleteAndRedoCutAreUndoable() throws Exception {
+        sink.begin();
+        sink.done(step("click", Locator.ofId("a")));
+        sink.done(step("click", Locator.ofId("b")));
+        sink.done(step("click", Locator.ofId("c")));
+        sink.end();
+        sink.truncate(1);
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the cut from step 2 (redo) by the person");
+        assertThat(sink.steps()).hasSize(3);
+    }
 }

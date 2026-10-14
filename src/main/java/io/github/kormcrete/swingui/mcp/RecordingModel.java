@@ -4,8 +4,10 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.flow.Action;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -51,6 +53,8 @@ final class RecordingModel {
 
     private final List<RecordedStep> steps = new ArrayList<RecordedStep>();
     private final List<String> notRecorded = new ArrayList<String>();
+    private final Deque<Edit> history = new ArrayDeque<Edit>();
+    private String lastChange = "nothing yet";
     private int nextId = 1;
     private int rev;
     private State state = State.IDLE;
@@ -85,12 +89,13 @@ final class RecordingModel {
     void start(RecordedStep.Author by, boolean explicit, boolean shared, long now) {
         steps.clear();
         notRecorded.clear();
+        history.clear();
         state = State.RECORDING;
         this.startedBy = by;
         this.explicit = explicit;
         this.shared = shared;
         this.startedAt = now;
-        rev++;
+        changed("the " + by.json + " started a recording");
     }
 
     /** Takes steps again after a stop, keeping the steps (a redo that records on). */
@@ -100,13 +105,13 @@ final class RecordingModel {
         this.explicit = explicit;
         this.shared = shared;
         this.startedAt = now;
-        rev++;
+        changed("the " + by.json + " resumed the recording");
     }
 
     /** Ends the recording: no further step joins it. */
     void stop() {
         state = State.STOPPED;
-        rev++;
+        changed("the recording stopped");
     }
 
     /** The steps are a loaded flow's: stopped, started by the flow. */
@@ -116,13 +121,13 @@ final class RecordingModel {
         explicit = false;
         shared = false;
         notRecorded.clear();
-        rev++;
+        changed("a flow was loaded");
     }
 
     /** A step that ran but could not be recorded, with why. */
     void refused(String line) {
         notRecorded.add(line);
-        rev++;
+        changed("a step could not be recorded");
     }
 
     List<String> notRecorded() {
@@ -137,7 +142,7 @@ final class RecordingModel {
     RecordedStep append(Action action, RecordedStep.Author author) {
         RecordedStep step = new RecordedStep(nextId++, author, action, false);
         steps.add(step);
-        rev++;
+        changed("the " + author.json + " recorded step " + steps.size());
         return step;
     }
 
@@ -145,17 +150,19 @@ final class RecordingModel {
     void clear() {
         steps.clear();
         notRecorded.clear();
+        history.clear();
         state = State.IDLE;
         explicit = false;
         shared = false;
-        rev++;
+        changed("the recording was cleared");
     }
 
     /** Replaces the recording with {@code actions}, all by {@code author}. */
     void load(List<Action> actions, RecordedStep.Author author) {
         steps.clear();
+        history.clear();
         for (Action a : actions) steps.add(new RecordedStep(nextId++, author, a, false));
-        rev++;
+        changed("a flow was loaded");
     }
 
     List<Action> actions() {
@@ -194,7 +201,7 @@ final class RecordingModel {
     void remove(int n) {
         if (n < 1 || n > steps.size()) throw outOfRange(n);
         steps.remove(n - 1);
-        rev++;
+        changed("step " + n + " was removed");
     }
 
     /** Keeps the first {@code keep} steps (the palette's positional redo). */
@@ -202,7 +209,159 @@ final class RecordingModel {
         int k = Math.max(0, keep);
         if (k >= steps.size()) return;
         while (steps.size() > k) steps.remove(steps.size() - 1);
+        changed("the steps after " + k + " were cut");
+    }
+
+    /** Longest history of edits kept. */
+    static final int HISTORY = 50;
+
+    /** One edit that undo can take back: the steps from before it, and the highest id right after. */
+    private static final class Edit {
+        final String label;
+        final String past;
+        final RecordedStep.Author author;
+        final List<RecordedStep> before;
+        final int maxIdAfter;
+        final boolean cut;
+
+        Edit(String label, String past, RecordedStep.Author author, List<RecordedStep> before, int maxIdAfter,
+                boolean cut) {
+            this.label = label;
+            this.past = past;
+            this.author = author;
+            this.before = before;
+            this.maxIdAfter = maxIdAfter;
+            this.cut = cut;
+        }
+    }
+
+    /** What the last change was, e.g. "the person deleted step 3", for the refusal of an edit made on a stale rev. */
+    String lastChange() {
+        return lastChange;
+    }
+
+    private void changed(String what) {
+        lastChange = what;
         rev++;
+    }
+
+    private static String by(RecordedStep.Author a) {
+        return a.json.equals("flow") ? "the flow" : "the " + a.json;
+    }
+
+    /** Records the edit just made (steps before it in {@code before}) and returns its past-tense text. */
+    private String edited(String label, String past, RecordedStep.Author author, List<RecordedStep> before,
+            boolean cut) {
+        history.addFirst(new Edit(label + " by " + by(author), past, author, before, nextId - 1, cut));
+        while (history.size() > HISTORY) history.removeLast();
+        changed(by(author) + " " + past);
+        return past;
+    }
+
+    /** Inserts {@code action} so that it is step {@code at} (1 to size+1); it counts as edited. */
+    String insert(int at, Action action, RecordedStep.Author author) {
+        if (at < 1 || at > steps.size() + 1) {
+            throw new DriverException(Reason.BAD_INPUT, "cannot insert at step " + at + ": the recording "
+                    + (steps.isEmpty() ? "is empty (insert at 1)" : "has " + steps.size() + " steps (insert at 1-"
+                    + (steps.size() + 1) + ")"));
+        }
+        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
+        steps.add(at - 1, new RecordedStep(nextId++, author, action, true));
+        return edited("insert at step " + at, "inserted at step " + at, author, before, false);
+    }
+
+    /** Removes steps {@code from} to {@code to} (1-based, inclusive). */
+    String delete(int from, int to, RecordedStep.Author author) {
+        if (from < 1 || from > steps.size()) throw outOfRange(from);
+        if (to < from || to > steps.size()) throw outOfRange(to);
+        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
+        for (int i = to; i >= from; i--) steps.remove(i - 1);
+        String what = from == to ? "step " + from : "steps " + from + "-" + to;
+        return edited("delete of " + what, "deleted " + what, author, before, false);
+    }
+
+    /** Moves step {@code n} so that it is step {@code to} afterwards. */
+    String move(int n, int to, RecordedStep.Author author) {
+        if (n < 1 || n > steps.size()) throw outOfRange(n);
+        if (to < 1 || to > steps.size()) throw outOfRange(to);
+        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
+        steps.add(to - 1, steps.remove(n - 1));
+        return edited("move of step " + n + " to " + to, "moved step " + n + " to " + to, author, before, false);
+    }
+
+    /** Replaces the action of step {@code n}; the step keeps its id and author and counts as edited. */
+    String replace(int n, Action action, RecordedStep.Author author) {
+        RecordedStep old = at(n);
+        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
+        steps.set(n - 1, old.with(action, true));
+        return edited("edit of step " + n, "edited step " + n, author, before, false);
+    }
+
+    /** Drops step {@code n} and everything after it (a redo's cut); null when there is nothing to drop. */
+    String cutFrom(int n, RecordedStep.Author author) {
+        if (n < 1 || n > steps.size()) return null;
+        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
+        while (steps.size() >= n) steps.remove(steps.size() - 1);
+        return edited("cut from step " + n + " (redo)", "cut from step " + n, author, before, true);
+    }
+
+    /** A replay passed the step with {@code id}: it no longer counts as edited. */
+    void markReplayed(int id) {
+        for (int i = 0; i < steps.size(); i++) {
+            RecordedStep s = steps.get(i);
+            if (s.id == id && s.edited) {
+                steps.set(i, s.with(s.action, false));
+                changed("step " + (i + 1) + " passed a replay");
+                return;
+            }
+        }
+    }
+
+    /** The steps after the last edit is taken back, or null when there is nothing to undo. */
+    private List<RecordedStep> undone() {
+        Edit e = history.peekFirst();
+        if (e == null) return null;
+        List<RecordedStep> out = new ArrayList<RecordedStep>(e.before);
+        if (!e.cut) {
+            for (RecordedStep s : steps) if (s.id > e.maxIdAfter) out.add(s);
+        }
+        return out;
+    }
+
+    /** The actions undo would leave, to check them before committing; null when there is nothing to undo. */
+    List<Action> undoPreview() {
+        List<RecordedStep> after = undone();
+        if (after == null) return null;
+        List<Action> out = new ArrayList<Action>(after.size());
+        for (RecordedStep s : after) out.add(s.action);
+        return out;
+    }
+
+    /** What undo would take back, e.g. "delete of step 7 by the person", or null. */
+    String undoLabel() {
+        Edit e = history.peekFirst();
+        return e == null ? null : e.label;
+    }
+
+    /**
+     * Takes back the last edit, keeping steps recorded since (a redo's cut instead drops the steps recorded after
+     * it, which followed the cut). Returns what it did, or null when there is nothing to undo.
+     */
+    String undo() {
+        Edit e = history.peekFirst();
+        List<RecordedStep> after = undone();
+        if (e == null) return null;
+        int dropped = 0;
+        if (e.cut) {
+            for (RecordedStep s : steps) if (s.id > e.maxIdAfter) dropped++;
+        }
+        history.removeFirst();
+        steps.clear();
+        steps.addAll(after);
+        String did = "undid the " + e.label;
+        if (dropped > 0) did += " (" + dropped + " step" + (dropped == 1 ? "" : "s") + " recorded after it dropped)";
+        changed(did);
+        return did;
     }
 
     private DriverException outOfRange(int n) {

@@ -36,6 +36,10 @@ import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
+import io.github.kormcrete.swingui.flow.verb.DropVerb;
+import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
+import io.github.kormcrete.swingui.flow.verb.SetClipboardVerb;
+import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.UiInventory;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -424,7 +428,7 @@ public class UiMcpSession {
             @Override
             public void truncate(int keep) {
                 synchronized (UiMcpSession.this) {
-                    model.truncate(keep);
+                    model.cutFrom(Math.max(0, keep) + 1, RecordedStep.Author.PERSON);
                     publish();
                 }
             }
@@ -441,7 +445,7 @@ public class UiMcpSession {
             @Override
             public void remove(int index) {
                 synchronized (UiMcpSession.this) {
-                    if (index >= 0 && index < model.size()) model.remove(index + 1);
+                    if (index >= 0 && index < model.size()) model.delete(index + 1, index + 1, RecordedStep.Author.PERSON);
                     publish();
                 }
             }
@@ -1504,9 +1508,170 @@ public class UiMcpSession {
                 }
                 return published.json;
             }
+            case "insert": {
+                Integer at = integer(args, "at");
+                if (at == null) throw new DriverException(Reason.BAD_INPUT, "insert needs 'at' (the position) and 'step'");
+                if (!args.path("step").isObject()) throw new DriverException(Reason.BAD_INPUT, "insert needs 'step': a flow step");
+                return recordingInsert(at, args.get("step"), integer(args, "rev"));
+            }
+            case "delete":
+                return recordingDelete(integer(args, "n"), integer(args, "from"), integer(args, "to"), integer(args, "rev"));
+            case "move": {
+                Integer n = integer(args, "n");
+                Integer to = integer(args, "to");
+                if (n == null || to == null) throw new DriverException(Reason.BAD_INPUT, "move needs 'n' and 'to'");
+                return recordingMove(n, to, integer(args, "rev"));
+            }
+            case "edit": {
+                Integer n = integer(args, "n");
+                if (n == null) throw new DriverException(Reason.BAD_INPUT, "edit needs 'n' and target, text or step");
+                return recordingEdit(n, args.get("target"), text(args, "text"), args.get("step"), integer(args, "rev"),
+                        args.has("say"));
+            }
+            case "undo":
+                return recordingUndo(integer(args, "rev"));
+            case "group":
+                throw new DriverException(Reason.BAD_INPUT, "group (steps under one sentence) comes in a later version "
+                        + "of swing-ui-agent, with sentences");
             default:
-                throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op + "' (start, stop, list)");
+                throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op
+                        + "' (start, stop, list, insert, delete, move, edit, undo)");
         }
+    }
+
+    /** Refuses an edit made on a recording that changed since the revision the caller listed. */
+    private void checkRev(Integer rev) {
+        if (rev != null && rev.intValue() != model.rev()) {
+            throw new DriverException(Reason.BUSY, "the recording changed since revision " + rev + " (now "
+                    + model.rev() + "; last change: " + model.lastChange() + "): list it again");
+        }
+    }
+
+    /** Refuses an edit that would leave a recording export_test could not write; an empty one is allowed. */
+    private void validateEdit(List<Action> after) {
+        if (after.isEmpty()) return;
+        try {
+            JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+        } catch (ExportRefused e) {
+            throw new DriverException(Reason.BAD_INPUT, String.join("; ", e.problems()) + " (the recording is unchanged)");
+        }
+    }
+
+    private String edited(String did) {
+        publish();
+        ObjectNode r = (ObjectNode) readTree(published.json);
+        r.put("did", did);
+        return r.toString();
+    }
+
+    private JsonNode readTree(String json) {
+        try {
+            return mapper.readTree(json);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Puts {@code step} at position {@code at} without running it; it counts as edited until a replay passes it. */
+    synchronized String recordingInsert(int at, JsonNode step, Integer rev) {
+        checkRev(rev);
+        Action action = action(step);
+        List<Action> after = model.actions();
+        if (at < 1 || at > after.size() + 1) {
+            model.insert(at, action, RecordedStep.Author.AGENT); // says why
+        }
+        after.add(at - 1, action);
+        validateEdit(after);
+        return edited(model.insert(at, action, RecordedStep.Author.AGENT));
+    }
+
+    /** Deletes step {@code n}, or steps {@code from} to {@code to}; the later steps close up. */
+    synchronized String recordingDelete(Integer n, Integer from, Integer to, Integer rev) {
+        checkRev(rev);
+        int a;
+        int b;
+        if (n != null && from == null && to == null) {
+            a = n;
+            b = n;
+        } else if (n == null && from != null && to != null) {
+            a = from;
+            b = to;
+        } else {
+            throw new DriverException(Reason.BAD_INPUT, "delete takes 'n', or 'from' and 'to'");
+        }
+        List<Action> after = model.actions();
+        model.at(a);
+        model.at(b);
+        if (b < a) throw new DriverException(Reason.BAD_INPUT, "delete: 'to' (" + b + ") is before 'from' (" + a + ")");
+        for (int i = b; i >= a; i--) after.remove(i - 1);
+        validateEdit(after);
+        return edited(model.delete(a, b, RecordedStep.Author.AGENT));
+    }
+
+    /** Moves step {@code n} to position {@code to}. */
+    synchronized String recordingMove(int n, int to, Integer rev) {
+        checkRev(rev);
+        model.at(n);
+        model.at(to);
+        List<Action> after = model.actions();
+        after.add(to - 1, after.remove(n - 1));
+        validateEdit(after);
+        return edited(model.move(n, to, RecordedStep.Author.AGENT));
+    }
+
+    /**
+     * Changes step {@code n}: its {@code target}, its {@code text}, or the whole step. The step is not run again; it
+     * counts as edited until a replay passes it.
+     */
+    synchronized String recordingEdit(int n, JsonNode target, String text, JsonNode step, Integer rev, boolean say) {
+        checkRev(rev);
+        if (say) {
+            throw new DriverException(Reason.BAD_INPUT, "sentences ('say') come in a later version of swing-ui-agent; "
+                    + "edit takes target, text or step");
+        }
+        Action old = model.at(n).action;
+        boolean hasTarget = target != null && !target.isNull();
+        boolean whole = step != null && !step.isNull();
+        if (whole && (hasTarget || text != null)) {
+            throw new DriverException(Reason.BAD_INPUT, "edit takes 'step', or 'target' and/or 'text', not both");
+        }
+        if (!whole && !hasTarget && text == null) {
+            throw new DriverException(Reason.BAD_INPUT, "edit needs target, text or step");
+        }
+        Action replaced;
+        if (whole) {
+            replaced = action(step);
+        } else {
+            ObjectNode tree = (ObjectNode) stripNulls(mapper.valueToTree(old));
+            if (hasTarget) {
+                if (!(old instanceof VerbAction) || !((VerbAction) old).targets().containsKey("target")) {
+                    throw new DriverException(Reason.BAD_INPUT, "step " + n + " (" + tree.path("action").asText() + ") has no target");
+                }
+                tree.set("target", target);
+                if (!target.hasNonNull("nth")) tree.remove("fragile");
+            }
+            if (text != null) {
+                if (!(old instanceof TypeVerb || old instanceof ExpectVerb || old instanceof SetClipboardVerb
+                        || old instanceof DropVerb)) {
+                    throw new DriverException(Reason.BAD_INPUT, "step " + n + " (" + tree.path("action").asText() + ") has no text");
+                }
+                tree.put("text", text);
+            }
+            replaced = action(tree);
+        }
+        List<Action> after = model.actions();
+        after.set(n - 1, replaced);
+        validateEdit(after);
+        return edited(model.replace(n, replaced, RecordedStep.Author.AGENT));
+    }
+
+    /** Takes back the last edit, whoever made it. */
+    synchronized String recordingUndo(Integer rev) {
+        checkRev(rev);
+        List<Action> after = model.undoPreview();
+        if (after == null) throw new DriverException(Reason.BAD_INPUT, "nothing to undo in this recording");
+        validateEdit(after);
+        return edited(model.undo());
     }
 
     /**

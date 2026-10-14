@@ -354,7 +354,20 @@ public final class UiMcpTools {
             @Override public ObjectNode descriptor(ObjectMapper m) {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
-                p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list");
+                p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
+                        .add("insert").add("delete").add("move").add("edit").add("undo");
+                p.putObject("at").put("type", "integer").put("description", "insert: the position the step gets (1 to size+1).");
+                p.putObject("n").put("type", "integer").put("description", "delete, move, edit: the step's position (1-based).");
+                p.putObject("from").put("type", "integer").put("description", "delete: first step of a range.");
+                p.putObject("to").put("type", "integer").put("description",
+                        "delete: last step of a range; move: the position the step has afterwards.");
+                p.putObject("step").put("type", "object").put("description",
+                        "insert, edit: a flow step as do_action takes it.");
+                p.set("target", LocatorSchema.of(m));
+                p.putObject("text").put("type", "string").put("description",
+                        "edit: the new text of a type, expect, setClipboard or drop step.");
+                p.putObject("rev").put("type", "integer").put("description",
+                        "insert, delete, move, edit, undo: the rev of your last list; refused if the recording changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
                         "start: reset the app first, as a test starts (default false).");
                 p.putObject("wait").put("type", "integer").put("description",
@@ -366,7 +379,12 @@ public final class UiMcpTools {
                         + "the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the "
                         + "person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, "
                         + "and every step with n, author (person, agent, flow), line, java and its flow JSON; wait (ms) "
-                        + "waits until it stops. While one runs, session reset and test runs are refused; stop it first.",
+                        + "waits until it stops. insert {at, step}: a step or check at position at, NOT run (marked edited until a "
+                        + "replay passes it). delete {n | from, to}. move {n, to}. edit {n, target | text | step}. undo: "
+                        + "takes back the last edit, by you or the person. Positions close up after a delete; pass rev "
+                        + "from your last list so an edit is refused if the person changed the recording meanwhile. "
+                        + "Every edit returns the new list. While one runs, session reset and test runs are refused; "
+                        + "stop it first.",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception { return session.recording(args); }
