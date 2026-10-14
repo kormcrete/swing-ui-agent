@@ -107,6 +107,11 @@ final class HumanSteps implements AWTEventListener {
         }
     }
 
+    /** Whether it listens to the person's input now. */
+    boolean listening() {
+        return installed;
+    }
+
     /** What the person is doing that is not a step yet - typing not committed - or null. */
     String pending() {
         if (editing == null || editingTarget == null) return null;

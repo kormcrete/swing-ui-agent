@@ -636,6 +636,96 @@ class UiMcpRecordingTest {
         javax.swing.SwingUtilities.invokeAndWait(() -> { });
     }
 
+    // ---- the palette follows the agent --------------------------------------------------------
+
+    /** A view that writes down what the palette would be told besides changes. */
+    private static UiMcpSession.RecordingView hearing(List<String> heard) {
+        return new UiMcpSession.RecordingView() {
+            @Override public void changed(String notice) { }
+            @Override public void agentStarted() { heard.add("started"); }
+            @Override public void agentStopped() { heard.add("stopped"); }
+            @Override public void agentLoaded(String name, int steps) { heard.add("loaded " + name + " - " + steps); }
+            @Override public void replaced() { heard.add("replaced"); }
+            @Override public void agentReplaying(String reason) { heard.add("replaying: " + reason); }
+            @Override public void replayed(int id, boolean ok) { heard.add("replayed " + id + (ok ? " ok" : " failed")); }
+        };
+    }
+
+    @Test
+    void theViewHearsStartStopLoadResetAndReplay() throws Exception {
+        session.palette(true);
+        fakeReset();
+        List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        session.recordingView(hearing(heard));
+
+        call("{\"op\":\"start\"}");
+        click("a");
+        click("b");
+        assertThat(heard).containsExactly("started");
+        // the person's ● Record while the agent records is refused; the agent's steps stay
+        Inspector.Result record = sink.begin();
+        assertThat(record.ok).isFalse();
+        assertThat(record.line).isEqualTo(Inspector.AGENTS_RECORDING_RUNS)
+                .isEqualTo("the agent's recording is running: Done ends it");
+        assertThat(lines()).containsExactly("click(#a)", "click(#b)");
+        call("{\"op\":\"stop\"}");
+        assertThat(heard).containsExactly("started", "stopped");
+
+        int a = id(0);
+        int b = id(1);
+        heard.clear();
+        call("{\"op\":\"replay\"}");
+        assertThat(heard).containsExactly(
+                "replaying: resetting the app, then replaying steps 1-2",
+                "replaying: replaying 1/2  click(#a)", "replayed " + a + " ok",
+                "replaying: replaying 2/2  click(#b)", "replayed " + b + " ok",
+                "replaying: null");
+
+        // a redo that records on starts the agent's recording again
+        heard.clear();
+        call("{\"op\":\"redo\",\"from\":2}");
+        assertThat(heard).containsExactly(
+                "replaying: resetting the app, then replaying steps 1-1",
+                "replaying: replaying 1/1  click(#a)", "replayed " + a + " ok",
+                "replaying: null", "started");
+        heard.clear();
+        call("{\"op\":\"redo\",\"from\":1}");
+        assertThat(heard).containsExactly("replaying: resetting the app", "replaying: null", "started");
+        call("{\"op\":\"stop\"}");
+
+        heard.clear();
+        Path file = savedFlow("three");
+        call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
+        assertThat(heard).containsExactly("loaded three - 3");
+
+        // a session reset's recording, and an export that clears, replace whatever the palette showed
+        heard.clear();
+        session.startRecording(true);
+        click("c");
+        call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"one\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}");
+        assertThat(heard).containsExactly("replaced", "replaced");
+    }
+
+    @Test
+    void withThePaletteOffNoRecordingIsShared() throws Exception {
+        fakeReset();
+        List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        session.recordingView(hearing(heard));
+
+        assertThat(call("{\"op\":\"start\"}").path("shared").asBoolean()).isFalse();
+        click("a");
+        assertThat(call("{\"op\":\"stop\"}").path("shared").asBoolean()).isFalse();
+        call("{\"op\":\"replay\"}");
+        call("{\"op\":\"redo\",\"from\":2}");
+        call("{\"op\":\"stop\"}");
+        call("{\"op\":\"load\",\"path\":\"" + quoted(savedFlow("three")) + "\"}");
+        session.startRecording(true);
+        assertThat(sink.begin().ok).isTrue();
+        assertThat(call("{\"op\":\"list\"}").path("shared").asBoolean()).isFalse();
+        sink.end();
+        assertThat(heard).isEmpty();
+    }
+
     // ---- replay, redo, export, load -------------------------------------------------------------
 
     private void fakeReset() {

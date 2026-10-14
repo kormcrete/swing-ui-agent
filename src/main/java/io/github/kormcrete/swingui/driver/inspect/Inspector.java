@@ -50,6 +50,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -58,6 +59,8 @@ import java.util.function.Supplier;
  *   <li>The person records: a palette in the main window (in the open modal dialog while one is open) starts a
  *       {@link Recording} with ● Record and ends it with Done. The agent reads it, ends it and exports it
  *       with the {@code recording} tool.</li>
+ *   <li>The palette follows the agent: a recording the agent starts shows at once (the person's steps join it), and
+ *       so do its stop, its load, a reset that replaces the recording, and its replay ({@link #agentStarted} …).</li>
  *   <li>The person loads a flow file (Load flow…) into the recording and runs it: the app reset, then every step
  *       replayed. While a run or replay goes on no other call drives the app ({@link #drivingReason}).</li>
  *   <li>{@link #highlight}: the agent shows what a locator matches - numbered boxes when several - with a question; the
@@ -87,8 +90,12 @@ public final class Inspector {
 
     /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     public interface Sink {
-        /** The person pressed ● Record: a fresh recording starts here, on the screen they are on. */
-        void begin();
+        /**
+         * The person pressed ● Record: a fresh recording starts here, on the screen they are on. Refused while a
+         * recording someone started on purpose runs ({@link #AGENTS_RECORDING_RUNS} when it is the agent's) or the
+         * agent replays; the result's line says why.
+         */
+        Result begin();
 
         /** The person pressed Done: the recording stops, the agent's steps no longer join it. */
         void end();
@@ -229,6 +236,9 @@ public final class Inspector {
         }
     }
 
+    /** Why ● Record is refused while the agent's recording runs: the palette then shows that recording. */
+    public static final String AGENTS_RECORDING_RUNS = "the agent's recording is running: Done ends it";
+
     private static volatile Inspector instance;
 
     private final Refs refs;
@@ -255,6 +265,8 @@ public final class Inspector {
     /** Where the bar sat in each window it left (null: where it goes by itself); outlives the window's overlay. */
     private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
     private Recording recording;
+    /** While the agent replays: its bar, without buttons, in place of the palette's. EDT. */
+    private Bar agentBar;
     /** Load flow…'s panel while it is open. EDT. */
     FlowsPanel flowsPanel;
     private boolean testRun;
@@ -400,6 +412,111 @@ public final class Inspector {
         });
     }
 
+    /**
+     * The agent started a recording the person shares: the palette switches to it at once, saying who started it, and
+     * the person's steps join it. Like every call from the agent's side here, it returns at once ({@code invokeLater})
+     * and does nothing without a palette.
+     */
+    public static void agentStarted() {
+        later(Inspector::agentStartedNow);
+    }
+
+    /** The agent stopped the shared recording: the palette shows it stopped, as after the person's Done. */
+    public static void agentStopped() {
+        Inspector i = instance;
+        if (i == null) return;
+        // the session stopped already: a test run need not wait for the EDT to hear it
+        String busy = i.recordingBusy;
+        if (Recording.PERSON_BUSY.equals(busy) || Recording.AGENT_BUSY.equals(busy)) i.recordingBusy = null;
+        later(Inspector::agentStoppedNow);
+    }
+
+    /** The agent loaded the flow {@code name} ({@code steps} steps): shown as the palette's own load shows it. */
+    public static void agentLoaded(String name, int steps) {
+        later(i -> i.agentLoadedNow(name, steps));
+    }
+
+    /** The recording was replaced by one the person does not share (a session reset, a clearing export): idle again. */
+    public static void recordingReplaced() {
+        later(Inspector::recordingReplacedNow);
+    }
+
+    /**
+     * The agent replays steps: a bar without buttons says what it does ({@code reason}, updated per step), the steps
+     * panel's controls go and the person's input is not recorded; null when it ended: the palette is back as before.
+     */
+    public static void agentReplaying(String reason) {
+        later(i -> i.agentReplayingNow(reason));
+    }
+
+    /** The agent's replay ran step {@code id}: the steps panel marks it ✓ or ✗. */
+    public static void agentReplayed(int id, boolean ok) {
+        later(i -> {
+            if (i.recording != null) i.recording.replayed(id, ok);
+        });
+    }
+
+    /** Runs {@code work} on the EDT later, on the JVM's inspector, once it has a palette (a sink); else nothing. */
+    private static void later(Consumer<Inspector> work) {
+        Inspector i = instance;
+        if (i == null) return;
+        SwingUtilities.invokeLater(() -> {
+            if (i.sink != null) work.accept(i);
+        });
+    }
+
+    /** {@link #agentStarted} on this inspector: Load flow… closes, the old recording goes, the agent's shows. EDT. */
+    void agentStartedNow() {
+        if (sink == null || paletteHome == null) return;
+        closeFlows();
+        if (recording != null) recording.dispose();
+        recording = new Recording(this, sink, sinkThread, paletteHome, this::startRecording);
+        recording.startedByAgent();
+        if (agentBar != null) recording.agentReplay(agentBar);
+    }
+
+    /** {@link #agentStopped} on this inspector. EDT. */
+    void agentStoppedNow() {
+        if (recording != null) recording.stoppedByAgent();
+    }
+
+    /** {@link #agentLoaded} on this inspector. EDT. */
+    void agentLoadedNow(String name, int steps) {
+        if (sink == null || paletteHome == null) return;
+        closeFlows();
+        if (recording != null) recording.dispose();
+        recording = Recording.loaded(this, sink, sinkThread, paletteHome, this::startRecording, name, steps);
+    }
+
+    /** {@link #recordingReplaced} on this inspector: the recording goes, the idle palette comes back. EDT. */
+    void recordingReplacedNow() {
+        if (recording == null) return;
+        recording.dispose();
+        recording = null;
+        recordingBusy(null);
+        if (paletteHome != null && agentBar == null) paletteHome.bar(idle);
+    }
+
+    /** {@link #agentReplaying} on this inspector. EDT. */
+    void agentReplayingNow(String reason) {
+        if (reason == null) {
+            if (agentBar == null) return;
+            agentBar = null;
+            if (recording != null) recording.agentReplayEnded();
+            else if (paletteHome != null) paletteHome.bar(idle);
+            return;
+        }
+        if (agentBar != null) {
+            agentBar.text(reason);
+            return;
+        }
+        agentBar = new Bar("Agent", reason).dot(Overlay.HOVER, false);
+        // the person's panels wait too: nothing they press there could run meanwhile
+        closeFlows();
+        if (recording != null) recording.agentReplay(agentBar);
+        else if (paletteHome != null) paletteHome.bar(agentBar);
+    }
+
     // ---- the person records ---------------------------------------------------------------------------------------
 
     /**
@@ -443,7 +560,7 @@ public final class Inspector {
      */
     void attachPalette() {
         if (sink == null || agentIsActing()) return;
-        Bar want = recording != null ? recording.bar : idle;
+        Bar want = agentBar != null ? agentBar : recording != null ? recording.bar : idle;
         JRootPane root = paletteRoot.get();
         if (root != null && !fits(root, want)) {
             JRootPane main = mainRoot();
@@ -469,7 +586,7 @@ public final class Inspector {
         shown.moved = spotIn(to, shown);
         to.hidePalette(testRun);
         paletteHome = to;
-        if (recording != null) recording.rehome(to); else to.bar(idle);
+        if (recording != null) recording.rehome(to); else to.bar(agentBar != null ? agentBar : idle);
         if (flowsPanel != null) {
             // out of the old window first: while it still holds the panel, any change there would take it back
             if (from != null) from.panel(null);
@@ -516,16 +633,29 @@ public final class Inspector {
         return layers.getWidth() >= bar.minimumWidth() + 16 && layers.getHeight() >= 3 * bar.getPreferredSize().height;
     }
 
-    /** ● Record: a fresh recording, from the screen the person is on. EDT. */
+    /**
+     * ● Record: a fresh recording, from the screen the person is on. Refused while the agent's recording runs: the
+     * palette then shows that one. EDT.
+     */
     private void startRecording() {
-        if (sink == null || paletteHome == null) return;
+        if (sink == null || paletteHome == null || agentBar != null) return;
         if (recording != null && recording.replaying) return;
         closeFlows();
         if (recording != null) recording.dispose();
         recording = null;
         sinkThread.submit(() -> {
-            sink.begin();
+            Result begun = sink.begin();
             SwingUtilities.invokeLater(() -> {
+                if (!begun.ok) {
+                    if (AGENTS_RECORDING_RUNS.equals(begun.line)) {
+                        agentStartedNow();
+                    } else {
+                        idle.text("✗ not recording: " + begun.line);
+                        if (paletteHome != null && agentBar == null) paletteHome.bar(idle);
+                    }
+                    return;
+                }
+                idle.text("");
                 // where the palette is now: an agent step may have opened or closed a dialog while begin() waited
                 Overlay home = paletteHome;
                 if (home == null) return;
@@ -560,9 +690,9 @@ public final class Inspector {
         });
     }
 
-    /** The person records or replays: no flow is loaded meanwhile. EDT. */
+    /** The person records or replays, or the agent replays: no flow is loaded meanwhile. EDT. */
     private boolean busyRecording() {
-        return recording != null && (recording.active() || recording.replaying);
+        return agentBar != null || recording != null && (recording.active() || recording.replaying);
     }
 
     /** Load flow…'s panel goes, with its folder dialog. EDT. */

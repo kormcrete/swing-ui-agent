@@ -882,6 +882,179 @@ class RecordingTest {
         });
     }
 
+    // ---- the palette follows what the agent does --------------------------------------------------------------
+
+    /** Runs {@code body} with this scene's inspector as the JVM's one: the agent's calls reach it. */
+    private void asTheInspector(Body body) throws Exception {
+        Inspector before = Inspector.swap(scene.inspector);
+        try {
+            body.run();
+        } finally {
+            Inspector.swap(before);
+        }
+    }
+
+    private interface Body {
+        void run() throws Exception;
+    }
+
+    /** The agent started a recording: the palette's recording, once it shows it. */
+    private Recording agentStarts() throws Exception {
+        Recording old = scene.inspector.recording();
+        Inspector.agentStarted();
+        recording = eventually(() -> scene.inspector.recording() != old ? scene.inspector.recording() : null);
+        return recording;
+    }
+
+    @Test
+    void whenTheAgentStartsThePaletteRecordsAndSaysWho() throws Exception {
+        asTheInspector(() -> {
+            // Load flow… is open: the agent's start closes it
+            openFlows();
+            agentStarts();
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(scene.inspector.flowsPanel).isNull();
+                assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+                assertThat(recording.bar.title()).isEqualTo("Recording");
+                assertThat(recording.bar.text()).isEqualTo("The agent started this recording: use the app, your steps join it.");
+                assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
+                assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
+                assertThat(recording.listening()).isTrue();
+                assertThat(scene.inspector.engaged()).isEqualTo(
+                        "a recording is running in the app (the agent started it): Done in its palette or the agent ends it");
+            });
+            settle();
+            assertThat(sink.log).doesNotContain("begin");
+        });
+    }
+
+    @Test
+    void whenTheAgentStopsThePaletteShowsItStopped() throws Exception {
+        asTheInspector(() -> {
+            SwingUtilities.invokeAndWait(this::paletteInFrame);
+            agentStarts();
+            sink.agent("click(#new)", "click(#save)");
+            Inspector.agentStopped();
+            // a test run need not wait for the palette to hear it: the session stopped already
+            assertThat(scene.inspector.engaged()).isNull();
+            recording.done.get(5, TimeUnit.SECONDS);
+            String text = eventually(() -> recording.bar.text().startsWith("The agent") ? recording.bar.text() : null);
+            assertThat(text).isEqualTo("The agent ended the recording - 2 steps");
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+                assertThat(recording.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+                assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
+                assertThat(recording.listening()).isFalse();
+                assertThat(scene.inspector.engaged()).isNull();
+            });
+            assertThat(sink.log).doesNotContain("end");
+        });
+    }
+
+    @Test
+    void theAgentsLoadShowsTheFlowReadyToRun() throws Exception {
+        asTheInspector(() -> {
+            Recording person = recordInFrame();
+            SwingUtilities.invokeAndWait(person::done);
+            person.done.get(5, TimeUnit.SECONDS);
+            twoFlows();
+            sink.loadFlow(sink.flowsFolder.resolve("add-to-cart.json"));
+            Inspector.agentLoaded("add-to-cart", 2);
+            recording = eventually(() -> scene.inspector.recording() != person && scene.inspector.recording().panel != null
+                    && scene.inspector.recording().panel.rows().size() == 2 ? scene.inspector.recording() : null);
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
+                assertThat(recording.bar.title()).isEqualTo("Flow");
+                assertThat(recording.bar.text()).isEqualTo("add-to-cart - 2 steps");
+                assertThat(recording.panel.replayAllLabel()).isEqualTo("▶ Run");
+                assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
+                assertThat(person.panel).isNull();
+            });
+            run(recording, 0);
+            eventually(() -> !recording.replaying && sink.log.contains("replay 1") ? Boolean.TRUE : null);
+            assertThat(sink.log).containsSubsequence("reset", "replay 0", "replay 1");
+        });
+    }
+
+    @Test
+    void aResetTakesThePaletteBackToIdle() throws Exception {
+        asTheInspector(() -> {
+            Recording person = recordInFrame();
+            SwingUtilities.invokeAndWait(() -> {
+                person.done();
+                person.toggleSteps();
+            });
+            person.done.get(5, TimeUnit.SECONDS);
+            StepsPanel panel = person.panel;
+            Inspector.recordingReplaced();
+            eventually(() -> scene.inspector.recording() == null ? Boolean.TRUE : null);
+            recording = null;
+            SwingUtilities.invokeAndWait(() -> {
+                Overlay o = scene.inspector.overlay(frame.getRootPane());
+                assertThat(o.bar().title()).isEqualTo("swing-ui-agent");
+                assertThat(o.bar().labels()).containsExactly("● Record", "Load flow…");
+                assertThat(o.holds(panel)).isFalse();
+                assertThat(scene.inspector.engaged()).isNull();
+            });
+        });
+    }
+
+    @Test
+    void whileTheAgentReplaysThePersonsInputIsNotRecordedAndTheButtonsAreAway() throws Exception {
+        asTheInspector(() -> {
+            recordInFrame();
+            sink.person("click(#a)", "click(#b)");
+            int a = sink.steps.get(0).id;
+            int b = sink.steps.get(1).id;
+            SwingUtilities.invokeAndWait(() -> {
+                recording.toggleSteps();
+                recording.live.stop();
+            });
+            eventually(() -> recording.panel.rows().size() == 2 ? Boolean.TRUE : null);
+            Bar own = recording.bar;
+
+            Inspector.agentReplaying("resetting the app, then replaying steps 1-2");
+            Overlay o = scene.inspector.overlay(frame.getRootPane());
+            Bar agent = eventually(() -> "Agent".equals(o.bar().title()) ? o.bar() : null);
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(agent.text()).isEqualTo("resetting the app, then replaying steps 1-2");
+                assertThat(agent.labels()).isEmpty();
+                assertThat(o.controlsAreAway()).isTrue();
+                assertThat(recording.listening()).isFalse();
+            });
+            // the agent's progress shows on the same bar
+            Inspector.agentReplaying("replaying 1/2  click(#a)");
+            eventually(() -> agent.text().equals("replaying 1/2  click(#a)") ? Boolean.TRUE : null);
+            Inspector.agentReplayed(a, true);
+            Inspector.agentReplayed(b, false);
+            Inspector.agentReplaying(null);
+            eventually(() -> o.bar() == own ? Boolean.TRUE : null);
+            eventually(() -> recording.panel.rows().get(1).startsWith("2  ✗") ? Boolean.TRUE : null);
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(recording.panel.rows()).containsExactly("1  ✓  click(#a)", "2  ✗  click(#b)");
+                assertThat(o.controlsAreAway()).isFalse();
+                assertThat(recording.listening()).isTrue();
+                assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            });
+        });
+    }
+
+    @Test
+    void aRecordPressedWhileTheAgentRecordsShowsTheAgentsRecording() throws Exception {
+        asTheInspector(() -> {
+            sink.agent("click(#new)");
+            sink.refuseBegin = Inspector.AGENTS_RECORDING_RUNS;
+            recordInFrame();
+            SwingUtilities.invokeAndWait(() -> {
+                assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+                assertThat(recording.bar.text()).isEqualTo("The agent started this recording: use the app, your steps join it.");
+                assertThat(scene.inspector.engaged()).contains("the agent started it");
+            });
+            assertThat(sink.log).containsExactly("begin");
+            assertThat(sink.lines()).containsExactly("click(#new)");
+        });
+    }
+
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */
     private static <T> T eventually(java.util.concurrent.Callable<T> read) throws Exception {
         long end = System.currentTimeMillis() + 5000;

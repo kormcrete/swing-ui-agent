@@ -27,7 +27,10 @@ final class FakeSink implements Inspector.Sink {
     /** What undo would take back (null: nothing); why an undo is refused (null: it is not). */
     volatile String undoLabel;
     volatile String refuseUndo;
-    /** What a run did, in order: "reset", "replay 0", …; the person's edits: "delete <id>", "cut <id>", "undo". */
+    /**
+     * What a run did, in order: "reset", "replay 0", …; the person's edits: "delete <id>", "cut <id>", "undo"; their
+     * ● Record: "begin".
+     */
     final List<String> log = Collections.synchronizedList(new ArrayList<String>());
     /** The flows Load flow… finds, in any folder; and the folders it looked in. */
     volatile List<Inspector.FlowEntry> flows = new ArrayList<Inspector.FlowEntry>();
@@ -69,7 +72,17 @@ final class FakeSink implements Inspector.Sink {
         return -1;
     }
 
-    @Override public void begin() { if (onBegin != null) onBegin.run(); steps.clear(); loaded = null; }
+    /** Why ● Record is refused (null: it is not), as the session refuses it while the agent's recording runs. */
+    volatile String refuseBegin;
+
+    @Override public Inspector.Result begin() {
+        log.add("begin");
+        if (onBegin != null) onBegin.run();
+        if (refuseBegin != null) return new Inspector.Result(false, refuseBegin);
+        steps.clear();
+        loaded = null;
+        return new Inspector.Result(true, "recording");
+    }
     @Override public void resume() { log.add("resume"); }
     @Override public void end() { log.add("end"); }
     @Override public Inspector.Result done(Map<String, Object> step) { person(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }

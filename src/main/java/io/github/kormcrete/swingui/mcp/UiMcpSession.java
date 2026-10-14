@@ -142,18 +142,46 @@ public class UiMcpSession {
     private volatile Published published =
             new Published("{}", false, null, Collections.<Inspector.StepLine>emptyList(), null);
 
-    /** Who shows the recording besides the agent: the person's palette. */
+    /**
+     * Who shows the recording besides the agent: the person's palette. Every call comes under the session's lock and
+     * must return at once, never waiting for the EDT. Only {@link #changed} is heard with the palette off.
+     */
     interface RecordingView {
         /**
          * The recording changed; {@code notice} is the agent's edit as the person should read it ("the agent deleted
-         * step 7"), null for a step recorded and for the person's own edits. Called under the session's lock: it must
-         * return at once, never waiting for the EDT.
+         * step 7"), null for a step recorded and for the person's own edits.
          */
         void changed(String notice);
+
+        /** The agent started a shared recording ({@code recording start}, or a redo that records on). */
+        default void agentStarted() { }
+
+        /** The agent stopped a shared recording. */
+        default void agentStopped() { }
+
+        /** The agent loaded the flow {@code name}, {@code steps} steps long, as the recording. */
+        default void agentLoaded(String name, int steps) { }
+
+        /** A fresh recording nobody shares replaced the one shown: a session reset's, or none after a clearing export. */
+        default void replaced() { }
+
+        /** The agent replays: what it does now ({@code reason}, again for each step); null when it ended. */
+        default void agentReplaying(String reason) { }
+
+        /** The agent's replay ran step {@code id}: passed or failed. */
+        default void replayed(int id, boolean ok) { }
     }
 
-    /** The palette's view: each change reaches the person's recording through {@code invokeLater}. */
-    static final RecordingView PALETTE = Inspector::recordingChanged;
+    /** The palette's view: each call reaches the person's palette through {@code invokeLater}. */
+    static final RecordingView PALETTE = new RecordingView() {
+        @Override public void changed(String notice) { Inspector.recordingChanged(notice); }
+        @Override public void agentStarted() { Inspector.agentStarted(); }
+        @Override public void agentStopped() { Inspector.agentStopped(); }
+        @Override public void agentLoaded(String name, int steps) { Inspector.agentLoaded(name, steps); }
+        @Override public void replaced() { Inspector.recordingReplaced(); }
+        @Override public void agentReplaying(String reason) { Inspector.agentReplaying(reason); }
+        @Override public void replayed(int id, boolean ok) { Inspector.agentReplayed(id, ok); }
+    };
 
     private volatile RecordingView view = notice -> { };
     /** A list with {@code wait} waits here, never on the session: the session must stay free to record. */
@@ -365,9 +393,18 @@ public class UiMcpSession {
     Inspector.Sink humanSink() {
         return new Inspector.Sink() {
             @Override
-            public void begin() {
-                // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
-                startRecording(false, RecordedStep.Author.PERSON, true);
+            public Inspector.Result begin() {
+                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
+                synchronized (UiMcpSession.this) {
+                    // a recording someone started on purpose is not wiped: the palette shows that one instead
+                    if (model.state() == RecordingModel.State.RECORDING && model.explicit()) {
+                        return new Inspector.Result(false, model.startedBy() == RecordedStep.Author.AGENT
+                                ? Inspector.AGENTS_RECORDING_RUNS : "a recording is running: Done ends it");
+                    }
+                    // the person's ● Record: a fresh recording from the screen they are on; nothing in the app is reset
+                    startRecording(false, RecordedStep.Author.PERSON, true);
+                    return new Inspector.Result(true, "recording");
+                }
             }
 
             @Override
@@ -437,6 +474,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result replay(int index) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
                 JsonNode json;
                 int id;
                 synchronized (UiMcpSession.this) {
@@ -617,6 +655,8 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result check(Map<String, Object> step) {
+                // a check runs on the screen as it is: not on one the agent's replay is changing
+                if (agentReplaying != null) return AGENT_REPLAYING;
                 JsonNode json = stripNulls(mapper.valueToTree(step));
                 try {
                     JsonNode result = mapper.readTree(doAction(json, true, RecordedStep.Author.PERSON));
@@ -1236,6 +1276,7 @@ public class UiMcpSession {
             recordingFromReset = false;
             forgetLoadedFlow();
             publish();
+            if (palette) view.replaced();
         }
 
         ObjectNode result = mapper.createObjectNode();
@@ -1331,6 +1372,7 @@ public class UiMcpSession {
             loadedDescription = flow.description;
         }
         publish();
+        if (clear && palette) view.replaced();
         return result.toString();
     }
 
@@ -1510,6 +1552,7 @@ public class UiMcpSession {
      */
     public synchronized void startRecording(boolean definedStart) {
         startRecording(definedStart, RecordedStep.Author.AGENT, false);
+        if (palette) view.replaced();
     }
 
     /**
@@ -1562,7 +1605,10 @@ public class UiMcpSession {
                     }
                     defined = appReset.defined();
                 }
-                startRecording(defined, RecordedStep.Author.AGENT, true);
+                synchronized (this) {
+                    startRecording(defined, RecordedStep.Author.AGENT, true);
+                    if (model.shared()) view.agentStarted();
+                }
                 return published.json;
             }
             case "stop": {
@@ -1571,8 +1617,10 @@ public class UiMcpSession {
                         throw new DriverException(Reason.BAD_INPUT,
                                 "no recording is running (it is " + model.state().json + ")");
                     }
+                    boolean shared = model.shared();
                     model.stop();
                     publish();
+                    if (shared) view.agentStopped();
                 }
                 return published.json;
             }
@@ -1717,7 +1765,10 @@ public class UiMcpSession {
         boolean reset = a == 1;
         ObjectNode r = mapper.createObjectNode();
         ArrayNode results = mapper.createArrayNode();
-        agentReplaying = "steps " + a + "-" + b;
+        // the palette hears of it before a refused palette call can: a ● Record refused for it finds its bar there
+        String steps = "steps " + a + "-" + b;
+        if (palette) view.agentReplaying(reset ? "resetting the app, then replaying " + steps : "replaying " + steps);
+        agentReplaying = steps;
         Inspector.agentActing(true);
         try {
             if (reset) appReset.run();
@@ -1726,16 +1777,19 @@ public class UiMcpSession {
             for (int n = a; n <= b; n++) {
                 RecordedStep recorded = model.at(n);
                 if (pause > 0 && (n == a || !isCheck(recorded.action))) sleep(pause);
+                if (palette) view.agentReplaying("replaying " + n + "/" + b + "  " + recorded.action.describe());
                 JsonNode json = stripNulls(mapper.valueToTree(recorded.action));
                 ObjectNode step;
                 try {
                     step = runAndRecord(json, false, RecordedStep.Author.AGENT);
                 } catch (DriverException e) {
+                    if (palette) view.replayed(recorded.id, false);
                     throw new DriverException(e.reason(), "step " + n + ": "
                             + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
                 }
                 ran++;
                 boolean ok = step.path("passed").asBoolean();
+                if (palette) view.replayed(recorded.id, ok);
                 ObjectNode o = results.addObject();
                 o.put("n", n);
                 o.put("line", recorded.action.describe());
@@ -1757,6 +1811,8 @@ public class UiMcpSession {
             r.set("steps", results);
             return r;
         } finally {
+            // the palette's own bar is back before the palette may move again (it waits for agentActing to end)
+            if (palette) view.agentReplaying(null);
             Inspector.agentActing(false);
             agentReplaying = null;
         }
@@ -1795,6 +1851,7 @@ public class UiMcpSession {
             model.resume(RecordedStep.Author.AGENT, true, palette, System.currentTimeMillis());
         }
         publish();
+        if (passed && model.shared()) view.agentStarted();
         r.put("recording", passed);
         r.put("rev", model.rev());
         r.set("list", readTree(published.json));
@@ -1809,11 +1866,13 @@ public class UiMcpSession {
 
     /** A redo from the first step has nothing to replay: only the reset. */
     private ObjectNode resetOnly() {
+        if (palette) view.agentReplaying("resetting the app");
         agentReplaying = "reset";
         Inspector.agentActing(true);
         try {
             appReset.run();
         } finally {
+            if (palette) view.agentReplaying(null);
             Inspector.agentActing(false);
             agentReplaying = null;
         }
@@ -1846,6 +1905,7 @@ public class UiMcpSession {
         String busy = personBusy.get();
         if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
         loadFlow(flowFile(name, path));
+        if (palette) view.agentLoaded(loadedName, model.size());
         return published.json;
     }
 

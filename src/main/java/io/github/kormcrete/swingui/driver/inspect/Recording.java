@@ -23,7 +23,9 @@ import java.util.concurrent.Semaphore;
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
  * Done; after Done ● Record, Load flow…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
  * mode), the steps panel with replay, redo and delete, and the export panel that writes the recording as a JUnit class
- * or a flow file. Only the person starts and ends it. A flow file the person loads is one too, already stopped
+ * or a flow file. The person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
+ * {@link #stoppedByAgent}); while the agent replays, its bar stands in for the palette's ({@link #agentReplay}). A
+ * flow file the person or the agent loads is one too, already stopped
  * ({@link #loaded}): its steps panel runs it - the app reset, then every step. While a replay or run goes on, no other
  * call drives the app ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the
  * panel shows each change at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a
@@ -32,6 +34,11 @@ import java.util.concurrent.Semaphore;
 final class Recording {
 
     enum State { RECORDING, CHECKING, STOPPED }
+
+    /** Why a test run waits while the person's recording runs, and while the agent's does. */
+    static final String PERSON_BUSY = "a person is recording in the app (they end it with Done in its palette)";
+    static final String AGENT_BUSY =
+            "a recording is running in the app (the agent started it): Done in its palette or the agent ends it";
 
     private static final Color STEPS = new Color(0x6B, 0x4F, 0xBB);
     private static final Color RED = new Color(0xE5, 0x39, 0x35);
@@ -54,6 +61,10 @@ final class Recording {
     ExportPanel exportPanel;
     State state = State.RECORDING;
     boolean replaying;
+    /** The agent's bar while the agent replays, else null. */
+    private Bar agentReplay;
+    /** Why a test run waits while this recording runs: whoever started it. */
+    private String busy = PERSON_BUSY;
     /** Completes at the person's Done; a redo that records on starts a new one. */
     volatile CompletableFuture<List<String>> done = new CompletableFuture<List<String>>();
     /**
@@ -119,9 +130,24 @@ final class Recording {
 
     void start() {
         home.bar(bar);
-        inspector.recordingBusy("a person is recording in the app (they end it with Done in its palette)");
+        inspector.recordingBusy(busy);
         mode(false);
         refresh(-1);
+    }
+
+    /**
+     * Starts as the agent's recording: the session runs it already (no begin), the bar says the agent started it, and
+     * the person's steps join it.
+     */
+    void startedByAgent() {
+        busy = AGENT_BUSY;
+        start();
+        activeBar.text("The agent started this recording: use the app, your steps join it.");
+    }
+
+    /** Whether the person's input is recorded now. */
+    boolean listening() {
+        return steps.listening();
     }
 
     boolean active() {
@@ -129,7 +155,7 @@ final class Recording {
     }
 
     void mode(boolean check) {
-        if (replaying || state == State.STOPPED) return;
+        if (replaying || agentReplay != null || state == State.STOPPED) return;
         if (check) steps.flush();
         state = check ? State.CHECKING : State.RECORDING;
         activeBar.active(check ? "Check" : "Record");
@@ -160,35 +186,85 @@ final class Recording {
         JComponent open = panel != null ? panel : exportPanel;
         from.bar(null);
         if (open != null) from.panel(null);
-        if (replaying) {
+        if (replaying || agentReplay != null) {
             from.controlsAway(false);
             to.controlsAway(true);
         }
         home = to;
         to.bar(shown);
         if (open != null) to.panel(open);
-        if (state == State.CHECKING && !replaying) mode(true);
+        if (state == State.CHECKING && !replaying && agentReplay == null) mode(true);
     }
 
     /** The person's Done: stop listening, keep the recording for the agent, offer Steps and a new ● Record. */
     void done() {
-        if (replaying || state == State.STOPPED) return;
+        if (replaying || agentReplay != null || state == State.STOPPED) return;
+        stop(true);
+    }
+
+    /** The agent stopped the recording (the session did already): shown as after Done, saying who ended it. */
+    void stoppedByAgent() {
+        if (state == State.STOPPED) return;
+        stop(false);
+    }
+
+    /** Stops listening and shows the stopped bar; {@code person}: their Done, which the session hears of. */
+    private void stop(boolean person) {
         steps.flush();
         steps.active(false);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         state = State.STOPPED;
         inspector.recordingBusy(null);
         bar = stoppedBar;
-        home.bar(bar);
+        if (agentReplay == null && !replaying) home.bar(bar);
         // the steps already handed to the sink thread reach the session before anyone reads the recording
         CompletableFuture<List<String>> finished = done;
         sinkThread.submit(() -> {
-            sink.end();
+            if (person) sink.end();
             int n = sink.steps().size();
-            SwingUtilities.invokeLater(() -> stoppedBar.text(n + (n == 1 ? " step" : " steps")
-                    + " - Export… writes them as a test, or the agent does"));
+            String count = n + (n == 1 ? " step" : " steps");
+            SwingUtilities.invokeLater(() -> stoppedBar.text(person
+                    ? count + " - Export… writes them as a test, or the agent does"
+                    : "The agent ended the recording - " + count));
             finished.complete(new ArrayList<String>(lines));
         });
+    }
+
+    /**
+     * The agent replays: {@code agentBar} (no buttons) stands in for the palette's bar, the steps panel's controls go,
+     * the person's input is not recorded and Check mode's catcher goes; the marks of an earlier replay go too.
+     */
+    void agentReplay(Bar agentBar) {
+        if (agentReplay != null) return;
+        agentReplay = agentBar;
+        steps.flush();
+        steps.active(false);
+        for (Overlay o : inspector.overlays()) o.removeCatcher();
+        marks.clear();
+        home.controlsAway(true);
+        home.bar(agentBar);
+        refresh(-1);
+    }
+
+    /** The agent's replay ended: the palette's bar and controls come back, and the person records again if they did. */
+    void agentReplayEnded() {
+        if (agentReplay == null) return;
+        agentReplay = null;
+        home.controlsAway(false);
+        home.bar(bar);
+        if (active()) {
+            // the bar keeps what it said (who started the recording), as before the replay
+            String text = activeBar.text();
+            mode(state == State.CHECKING);
+            activeBar.text(text);
+        }
+        refresh(-1);
+    }
+
+    /** The agent's replay ran step {@code id}: ✓ or ✗ on its row. */
+    void replayed(int id, boolean ok) {
+        marks.put(id, ok ? "✓" : "✗");
+        refresh(-1);
     }
 
     /** Stops for good: a new recording replaces this one. */
@@ -438,7 +514,8 @@ final class Recording {
                         done = new CompletableFuture<List<String>>();
                         bar = activeBar;
                         home.bar(bar);
-                        inspector.recordingBusy("a person is recording in the app (they end it with Done in its palette)");
+                        busy = PERSON_BUSY;
+                        inspector.recordingBusy(busy);
                     }
                     mode(false);
                     activeBar.text(i == 0 ? "Recording cleared: record from here." : "Back at step " + i + ": record the rest.");
@@ -474,7 +551,7 @@ final class Recording {
 
     /** {@link #replay(int, int, Runnable)}; {@code reset}: the app is reset first (a run). */
     private void replay(int from, int to, Runnable after, boolean reset) {
-        if (replaying) return;
+        if (replaying || agentReplay != null) return;
         replaying = true;
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
@@ -613,7 +690,7 @@ final class Recording {
             inspector.driving(null);
             home.bar(bar);
             if (active()) {
-                inspector.recordingBusy("a person is recording in the app (they end it with Done in its palette)");
+                inspector.recordingBusy(busy);
                 mode(wasChecking);
             } else {
                 inspector.recordingBusy(null);
