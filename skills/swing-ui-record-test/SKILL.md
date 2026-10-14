@@ -67,7 +67,7 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 
 ## When a person records with you
 
-If `$UI session` shows `"inspector": true` (the app was started with `inspector=on`), the person at the app can show
+If `$UI session` shows `"palette": true` (the default; the app was not started with `palette=off` or `mode=background`), the person at the app can show
 you instead of describing:
 
 - **Ask, don't guess.** When a target is unclear, `$UI inspect '{"op":"highlight","target":{...},"question":"Is this the
@@ -83,7 +83,7 @@ you instead of describing:
 - **Or they export.** After Done the palette offers Export…: the person names the class and package and the file is
   written without you (the recording stays). When they ask you to check it, run it from another screen and fix what
   it flags, as in "Export, then verify".
-- With `"inspector": false` the tool answers CAPABILITY_GAP; work from the person's words as described above.
+- With `"palette": false` the tool answers CAPABILITY_GAP; work from the person's words as described above.
 
 ## What is not recorded
 

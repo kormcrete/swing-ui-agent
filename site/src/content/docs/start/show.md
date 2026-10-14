@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Sometimes it is quicker to show the agent what a test should do than to describe it. Start the app with
-`inspector=on` and a small palette appears in its window. You press **● Record** and use the app. Every click,
+the agent and a small palette appears in its window. You press **● Record** and use the app. Every click,
 selection and bit of typing becomes a step, as if the agent had run it. **Check** adds checks, **Steps** lets you
 replay and fix them, and **Done** ends the recording. Then **Export…** writes it as a `@UiTest` class, or your coding
 agent does.
@@ -29,12 +29,12 @@ You will learn how to:
 - You are at the screen. The palette is for a person working with the agent. Leave it off for agent-only and CI
   runs.
 
-## 1. Start the app with the palette
+## 1. Start the app with the agent
 
-Add `inspector=on` to the agent arguments:
+The palette is on by default, so there is nothing to add to the agent arguments:
 
 ```sh
-java -javaagent:target/swing-ui-agent-agent.jar=port=8770,inspector=on \
+java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
      -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar
 ```
 
@@ -42,8 +42,10 @@ The palette appears at the bottom right of the main window, about a second after
 grip if it covers something you need. It is part of the window, not a separate one, so it also works when the app is
 full screen.
 
-- `inspector=on` cannot be combined with `mode=background`: the palette needs the app in front of you.
-- `session` shows `"inspector": true`, which is how the agent knows it can ask you.
+- `palette=off` turns it off, for agent-only runs, CI and shared machines. Then no palette appears and nothing listens to input.
+- `mode=background` turns it off too, and `palette=on` with it is refused: the palette needs the app in front of you. A headless run has no palette either.
+- `session` shows `"palette": true`, which is how the agent knows it can ask you.
+- While a test run holds the lease, the palette leaves the window; it comes back when the run ends.
 
 ## 2. Record the steps
 

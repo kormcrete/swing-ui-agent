@@ -47,7 +47,7 @@ java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
 - For your own app, add `-Dswingui.testsDir=/path/to/project/src/test/java`: that is where exported tests go. The default is `src/test/java` under the app's working directory.
 - The same jar works on every supported Java. On Java 9 and newer the app needs no `--add-opens` flags.
 
-The agent's options (`port`, `bind`, `mode`, `inspector`, `plugins`) are in [Agent options](/swing-ui-agent/reference/agent-options/).
+The agent's options (`port`, `bind`, `mode`, `palette`, `plugins`) are in [Agent options](/swing-ui-agent/reference/agent-options/).
 
 ## 4. Check that it is ready
 
@@ -58,7 +58,7 @@ java -jar target/swing-ui-agent-agent.jar --port 8770 session
 The answer names the agent, the port and the plugin state (trimmed):
 
 ```json
-{"agent":{"version":"0.1.0-SNAPSHOT",…},"endpoint":{"bind":"127.0.0.1","port":8770},"mode":"normal","inspector":false,…,"lease":null,"plugins":[],"plugin":{"state":"none","detail":"no plugin configured (agent argument plugins=…)"}}
+{"agent":{"version":"0.1.0-SNAPSHOT",…},"endpoint":{"bind":"127.0.0.1","port":8770},"mode":"normal","palette":true,…,"lease":null,"plugins":[],"plugin":{"state":"none","detail":"no plugin configured (agent argument plugins=…)"}}
 ```
 
 ## When it does not connect

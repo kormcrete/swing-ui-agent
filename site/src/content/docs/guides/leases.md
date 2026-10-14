@@ -59,7 +59,7 @@ While a test runs, the agent's own CLI calls are refused with `busy: leased by P
 
 ## A person at the app
 
-An app started with `inspector=on` has a palette for a person at the screen, who can record steps and answer the agent's questions in the app (see [Record a test by showing it](/swing-ui-agent/start/show/)). The person and test runs take turns too:
+An app has a palette by default (`palette=off` or `mode=background` turn it off) for a person at the screen, who can record steps and answer the agent's questions in the app (see [Record a test by showing it](/swing-ui-agent/start/show/)). The person and test runs take turns too:
 
 - **While the person records, picks an element, answers a question or replays steps,** no test run can take the lease. The test waits as above and then fails with what the person is doing:
 
@@ -70,7 +70,7 @@ busy: a person is recording in the app (they end it with Done in its palette)
 - **While a test run holds the lease,** the palette leaves the window, so the person cannot start anything; it comes back when the lease ends.
 - **`session reset` is refused** while the person records: a reset starts a fresh recording and would wipe theirs.
 
-Leave the inspector off on machines that run tests unattended. It is off by default.
+Start with `palette=off` on machines that run tests unattended. It is on by default, and off with `mode=background`.
 
 ## Several apps in one test
 

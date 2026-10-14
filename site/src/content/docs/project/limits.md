@@ -29,9 +29,10 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **Not exportable:** a target addressed by `point` or `item`, a `row` matched on more than two columns, and a `loginAs` that is not the first step. The step runs and its result says `notRecorded`; pick another locator, or write that line by hand.
 - **Starting screen:** without a plugin, a reset only closes modal dialogs, so the app may be on any screen. Each test reaches its own starting screen through the menu bar or a shortcut, and `export_test` warns when a recording starts any other way.
 
-## Recording by showing it (`inspector=on`)
+## The palette and recording by showing it
 
-- **Inside modal dialogs:** the palette sits in the app's main window, so it cannot be used while a modal dialog has the screen.
+- **Narrow dialogs:** the palette follows an open modal dialog, but not into one narrower than its buttons. Then it stays in the main window and cannot be used until the dialog closes.
+- **The agent's question bar:** it stays in the window of what the agent asks about, even when another window is in front.
 - **Column checks:** checks on a whole table column are shown greyed, because no `expect` kind exists for them yet.
 - **Not recorded as steps of their own yet:** clicks on spinner arrows, drags, and clicks on list or tree items. Re-do those with the agent, or write them by hand.
 - **Password fields:** what a person types into one is never recorded.

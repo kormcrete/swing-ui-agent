@@ -35,9 +35,9 @@ A test run, a script or an agent can take a **lease**: then only calls that carr
 
 - **Development and test machines, and CI.** Start the app with the agent only where you mean to drive it.
 - **Test data.** The agent clicks what it is told to click. Point the app at a test database or a test account, never at production data.
-- **The person's choice.** The palette (`inspector=on`) is for a person at the screen. Leave it off on CI and shared machines: then no palette appears and nothing listens to input.
+- **The person's choice.** The palette is on by default and is for a person at the screen. Start with `palette=off` on CI and shared machines (`mode=background` turns it off too): then no palette appears and nothing listens to input.
 
 ## What's next
 
-- [Agent options](/swing-ui-agent/reference/agent-options/): `bind`, `port`, `inspector`.
+- [Agent options](/swing-ui-agent/reference/agent-options/): `bind`, `port`, `palette`.
 - [Limits](/swing-ui-agent/project/limits/)

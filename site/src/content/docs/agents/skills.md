@@ -39,7 +39,7 @@ Ask in your own words. For example:
 - "Check by hand that Checkout… stays disabled when the cart has more Staplers than are in stock."
 - "Use the driver to walk the checkout for Café Lumen and tell me which steps fail."
 
-With the app started with `inspector=on`, you can also show the agent instead of describing it: see [Record a test by showing it](/swing-ui-agent/start/show/).
+With the palette on (the default), you can also show the agent instead of describing it: see [Record a test by showing it](/swing-ui-agent/start/show/).
 
 ## What's next
 
