@@ -144,7 +144,7 @@ $UI inspect '{"op":"highlight","target":{"role":"table"},"question":"Which table
 $UI inspect '{"op":"pick","question":"Click the field that holds the customer"}'
 ```
 
-`inspect` also has `hover`, which shows the locator under your pointer as you move it, and `clear`, which removes
+`inspect` also has `hover`, which names what is under your pointer as you move it, and `clear`, which removes
 the agent's boxes and question.
 
 ## You and test runs

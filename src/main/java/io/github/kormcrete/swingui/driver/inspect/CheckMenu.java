@@ -46,8 +46,16 @@ final class CheckMenu extends JPopupMenu {
     }
 
     static void show(Target t, MouseEvent e, BiConsumer<Map<String, Object>, Target> run) {
+        of(t, run).show(e.getComponent(), e.getX(), e.getY());
+    }
+
+    /**
+     * The menu for {@code t}: its title is what the person sees there, not the locator, which would make the menu
+     * wider than the window and means nothing to them.
+     */
+    static CheckMenu of(Target t, BiConsumer<Map<String, Object>, Target> run) {
         CheckMenu menu = new CheckMenu();
-        JMenuItem title = new JMenuItem(t.element);
+        JMenuItem title = new JMenuItem(t.shown);
         title.setEnabled(false);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
         menu.add(title);
@@ -58,7 +66,12 @@ final class CheckMenu extends JPopupMenu {
             if (c.step != null) item.addActionListener(x -> run.accept(c.step, t));
             menu.add(item);
         }
-        menu.show(e.getComponent(), e.getX(), e.getY());
+        return menu;
+    }
+
+    /** The bold title on top. */
+    String title() {
+        return ((JMenuItem) getComponent(0)).getText();
     }
 
     /** The check also says which view row it is about (see {@link Inspector#ROW_INDEX}). */

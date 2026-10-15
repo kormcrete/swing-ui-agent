@@ -64,6 +64,14 @@ class CheckMenuTest {
                 .containsExactly("Every row's Status is “Open”", "Status contains “Open”", "Sorted by Status, ascending");
     }
 
+    @Test
+    void itsTitleSaysWhatThePersonSeesNotTheLocator() {
+        Target cell = scene.inspector.cell(scene.orders, 0, 2);
+        assertThat(CheckMenu.of(cell, (step, t) -> { }).title()).isEqualTo("ORD-1640 · Status");
+        Target column = scene.inspector.column(scene.orders, 2);
+        assertThat(CheckMenu.of(column, (step, t) -> { }).title()).isEqualTo("Status column");
+    }
+
     private static CheckMenu.Choice first(List<CheckMenu.Choice> choices) {
         assertThat(choices).isNotEmpty();
         return choices.get(0);

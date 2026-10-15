@@ -66,7 +66,8 @@ import java.util.function.Supplier;
  *       person answers with the check mark on a box, or "None of these" on the question bar.</li>
  *   <li>{@link #pick}: the agent asks the person to click what they mean; the click goes to the inspector, not the app,
  *       and comes back as the locator the recorder writes.</li>
- *   <li>{@link #hover}: passive; a box follows the pointer and names the locator under it. The app keeps every event.</li>
+ *   <li>{@link #hover}: passive; a box follows the pointer and names what the person sees under it (never the
+ *       locator). The app keeps every event.</li>
  * </ul>
  * Boxes snap to what a locator can address: walking up from the deepest component, a table cell (row by its first
  * unique column), a whole column from its header, one tab of a tab strip. While a test run holds the agent the palette
@@ -845,7 +846,7 @@ public final class Inspector {
                 if (o == null) continue;
                 if (first == null) first = o;
                 final int n = i + 1;
-                Overlay.Mark m = Overlay.Mark.of(t, targets.size() > 1 ? String.valueOf(n) : t.element, Overlay.ASK, false);
+                Overlay.Mark m = Overlay.Mark.of(t, targets.size() > 1 ? String.valueOf(n) : t.shown, Overlay.ASK, false);
                 o.mark(m, waitMs <= 0 ? null : () -> {
                     m.color = Overlay.YES;
                     answer.complete(new Answer("confirmed", n, t));
@@ -882,7 +883,7 @@ public final class Inspector {
             o.catcher(e -> hoverIn(o, e), e -> {
                 Target t = snapIn(o, e);
                 if (t == null) return;
-                o.hover(Overlay.Mark.of(t, t.element, Overlay.YES, false));
+                o.hover(Overlay.Mark.of(t, t.shown, Overlay.YES, false));
                 answer.complete(new Answer("picked", null, t));
             });
         });
@@ -978,7 +979,7 @@ public final class Inspector {
             return;
         }
         Target t = snap(under, SwingUtilities.convertPoint(o.layers(), p, under));
-        o.hover(t == null ? null : Overlay.Mark.of(t, t.element, Overlay.HOVER, true));
+        o.hover(t == null ? null : Overlay.Mark.of(t, t.shown, Overlay.HOVER, true));
     }
 
     /** The catcher's mouse event, snapped: what lies under it in the app. */
@@ -990,7 +991,7 @@ public final class Inspector {
 
     void hoverIn(Overlay o, MouseEvent e) {
         Target t = snapIn(o, e);
-        o.hover(t == null ? null : Overlay.Mark.of(t, t.element, Overlay.HOVER, false));
+        o.hover(t == null ? null : Overlay.Mark.of(t, t.shown, Overlay.HOVER, false));
     }
 
     /** What a recorded step's target is now, or null when it does not resolve yet. EDT. */
@@ -1084,18 +1085,20 @@ public final class Inspector {
         Locator l = Locator.ofRef(refs.add(table, null));
         l.row = TableWidget.rowKey(table, row);
         l.column = TableWidget.headers(table).get(column);
-        Recorder.Recorded rec = recorder.record(resolver.resolve(l));
-        return new Target(rec.locator, rec.fragile, "cell " + rowText(l.row) + " · " + l.column + suffix(rec), "cell",
-                table, null, row, column);
+        Resolved r = resolver.resolve(l);
+        Recorder.Recorded rec = recorder.record(r);
+        return new Target(rec.locator, rec.fragile, "cell " + rowText(l.row) + " · " + l.column + suffix(rec),
+                Target.shown(r.role, resolver.seenName(r), rec.locator), "cell", table, null, row, column);
     }
 
     /** A whole table column, addressed by its header. EDT. */
     Target column(JTable table, int column) {
         Locator l = Locator.ofRef(refs.add(table, null));
         l.column = TableWidget.headers(table).get(column);
-        Recorder.Recorded rec = recorder.record(resolver.resolve(l));
-        return new Target(rec.locator, rec.fragile, "column '" + l.column + "'" + suffix(rec), "column", table, null, -1,
-                column);
+        Resolved r = resolver.resolve(l);
+        Recorder.Recorded rec = recorder.record(r);
+        return new Target(rec.locator, rec.fragile, "column '" + l.column + "'" + suffix(rec),
+                Target.shown(r.role, resolver.seenName(r), rec.locator), "column", table, null, -1, column);
     }
 
     /** The target for a component on its own (no cell), as a locator addresses it; null when nothing does. EDT. */
@@ -1136,7 +1139,9 @@ public final class Inspector {
         if (rec.locator.row != null) s.append(" · ").append(rowText(rec.locator.row));
         if (rec.locator.column != null) s.append(" · ").append(rec.locator.column);
         s.append(suffix(rec));
-        return new Target(rec.locator, rec.fragile, s.toString(), role, r.component, r.tab, row, column);
+        // the agent reads the locator; the person reads the name they see, also when the locator goes by id
+        return new Target(rec.locator, rec.fragile, s.toString(), Target.shown(r.role, resolver.seenName(r), rec.locator), role,
+                r.component, r.tab, row, column);
     }
 
     private static String suffix(Recorder.Recorded rec) {

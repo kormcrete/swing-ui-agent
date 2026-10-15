@@ -335,6 +335,11 @@ final class Overlay extends JComponent {
         relayout();
     }
 
+    /** The hover box's label, or null when none shows. */
+    String hoverLabel() {
+        return hover == null ? null : hover.label;
+    }
+
     /** The boxes' labels, in the order they were put up. */
     List<String> markLabels() {
         List<String> out = new ArrayList<String>();

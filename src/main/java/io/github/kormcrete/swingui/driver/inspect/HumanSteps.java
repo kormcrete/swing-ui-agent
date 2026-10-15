@@ -116,7 +116,7 @@ final class HumanSteps implements AWTEventListener {
     String pending() {
         if (editing == null || editingTarget == null) return null;
         String now = editing.getText();
-        return !typed || now.equals(editingText) ? null : "typing “" + now + "” into " + editingTarget.element + " (recorded when you leave the field)";
+        return !typed || now.equals(editingText) ? null : "typing “" + now + "” into " + editingTarget.shown + " (recorded when you leave the field)";
     }
 
     /** Hands over what is still held back: a click waiting to see whether it becomes a double click, open typing. */

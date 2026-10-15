@@ -49,6 +49,78 @@ class InspectorTest {
         assertThat(t.fragile).isFalse();
     }
 
+    // ---- what the person reads: what they see, never the locator ---------------------------------------------------
+
+    @Test
+    void thePersonReadsWhatTheySeeNotTheLocator() throws Exception {
+        onEdt(() -> {
+            JTextField customer = labelled("Customer", 400);
+            // a second Save makes the recorder fall back to nth: the agent's line says so, the person's does not
+            JButton other = new JButton("Save");
+            other.setBounds(10, 200, 80, 24);
+            scene.content.add(other);
+
+            assertThat(scene.inspector.cell(scene.orders, 1, 2).shown).isEqualTo("ORD-1641 · Status");
+            assertThat(scene.inspector.column(scene.orders, 1).shown).isEqualTo("Customer column");
+            Target save = scene.inspector.component(scene.save);
+            assertThat(save.shown).isEqualTo("Save");
+            assertThat(save.element).contains("nth").contains("(fragile)");
+            Target field = scene.inspector.component(customer);
+            assertThat(field.shown).isEqualTo("Customer");
+            assertThat(field.element).contains("#customerName");
+            assertThat(scene.inspector.component(scene.orders).shown).isEqualTo("table");
+        });
+    }
+
+    @Test
+    void aLongLabelEndsInAnEllipsisAndTheColumnStays() throws Exception {
+        onEdt(() -> {
+            scene.orders.setValueAt("ORD-1641 for the very long customer name of a wholesale stationery shop", 1, 0);
+            String shown = scene.inspector.cell(scene.orders, 1, 2).shown;
+            assertThat(shown).hasSizeLessThanOrEqualTo(Target.SHOWN_MAX).startsWith("ORD-1641 for").endsWith("… · Status");
+        });
+    }
+
+    @Test
+    void theHoverBoxAndTheAgentsBoxSayWhatThePersonSees() throws Exception {
+        Overlay[] o = new Overlay[1];
+        onEdt(() -> {
+            JRootPane app = new JRootPane();
+            app.setBounds(0, 0, 400, 200);
+            app.getContentPane().add(scene.content);
+            app.doLayout();
+            app.getLayeredPane().setBounds(0, 0, 400, 200);
+            layOut(app);
+            o[0] = scene.inspector.overlay(app);
+            Point p = inside(scene.save);
+            scene.inspector.hoverIn(o[0], new java.awt.event.MouseEvent(scene.save, java.awt.event.MouseEvent.MOUSE_MOVED,
+                    0, 0, p.x, p.y, 0, false));
+            assertThat(o[0].hoverLabel()).isEqualTo("Save");
+        });
+        List<Target> one = scene.inspector.targets(Collections.singletonList(
+                scene.resolver.resolve(io.github.kormcrete.swingui.driver.model.Locator.of("button", "Save"))));
+        scene.inspector.highlight(one, null, 0);
+        onEdt(() -> {
+            // the question swept the hover's overlay away: the box went up in the window's new one
+            Overlay boxes = scene.inspector.overlayFor(scene.save);
+            assertThat(boxes.markLabels()).containsExactly("Save");
+            boxes.dispose();
+        });
+    }
+
+    /** A text field with an id in code and {@code caption} beside it on screen, at {@code y}. EDT. */
+    private JTextField labelled(String caption, int y) {
+        JLabel label = new JLabel(caption);
+        JTextField field = new JTextField();
+        field.setName("customerName");
+        label.setLabelFor(field);
+        label.setBounds(10, y, 80, 24);
+        field.setBounds(100, y, 120, 24);
+        scene.content.add(label);
+        scene.content.add(field);
+        return field;
+    }
+
     @Test
     void aFieldWithANameSnapsToItsId() {
         Target t = scene.inspector.component(scene.customer);

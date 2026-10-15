@@ -355,8 +355,8 @@ public final class UiMcpTools {
                         + "mark on the one they mean (outcome confirmed, chosen n, its locator) or 'None of these' "
                         + "(rejected). pick: they click the element they mean - the "
                         + "click does not reach the app - and you get its locator. hover: a box follows their pointer "
-                        + "and names the locator under it. clear: removes your boxes and question. The recording itself: "
-                        + "the recording tool. While a person records, picks, answers or replays, no test run can take "
+                        + "and names what is under it as they see it (not the locator). clear: removes your boxes and "
+                        + "question. The recording itself: the recording tool. While a person records, picks, answers or replays, no test run can take "
                         + "the lease.", schema);
             }
             @Override public String invoke(JsonNode args) { return session.inspect(args); }

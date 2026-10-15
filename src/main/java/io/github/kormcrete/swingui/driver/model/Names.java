@@ -37,7 +37,15 @@ public final class Names {
     /** {@code root} bounds the label search: the window, or the top of an unshown tree. */
     public String nameOf(Component c, Container root) {
         String n = clean(explicitName(c));
-        if (n == null) n = clean(ownText(c));
+        return n != null ? n : seenName(c, root);
+    }
+
+    /**
+     * The name a person reads on screen: {@link #nameOf} without the component's code name ({@code setName}), which
+     * names it for a locator but shows nowhere. Null when nothing on screen names it.
+     */
+    public String seenName(Component c, Container root) {
+        String n = clean(ownText(c));
         if (n == null && root != null) {
             JLabel label = labelIndex(root).get(c);
             if (label != null) n = cleanLabel(label.getText());

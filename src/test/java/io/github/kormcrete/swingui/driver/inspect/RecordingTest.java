@@ -2813,7 +2813,7 @@ class RecordingTest {
             recording.mode(true);
             java.util.Map<String, Object> step = new java.util.LinkedHashMap<String, Object>();
             step.put("action", "expect");
-            recording.check(step, new Target(null, false, "Save", "button", save, null, -1, -1),
+            recording.check(step, new Target(null, false, "Save", "Save", "button", save, null, -1, -1),
                     scene.inspector.overlay(frame.getRootPane()));
         });
         assertThat(eventually(() -> recording.bar.text().startsWith("recorded: ") ? recording.bar.text() : null))

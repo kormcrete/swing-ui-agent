@@ -248,7 +248,8 @@ class HumanStepsTest {
         focus(scene.customer, FocusEvent.FOCUS_GAINED);
         typeInto(scene.customer, "Acme");
         assertThat(steps).isEmpty();
-        assertThat(human.pending()).contains("Acme");
+        // what the person reads: the field as they see it, not its locator (#customer)
+        assertThat(human.pending()).isEqualTo("typing “Acme” into text field (recorded when you leave the field)");
         focus(scene.customer, FocusEvent.FOCUS_LOST);
         assertThat(steps).hasSize(1);
         assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Acme").doesNotContainKey("commit");

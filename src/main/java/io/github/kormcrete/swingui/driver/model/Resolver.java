@@ -295,6 +295,20 @@ public final class Resolver {
                 new ArrayList<String>(trail), l);
     }
 
+    /**
+     * The name a person reads for {@code r}: its name, unless that is only the component's code name ({@code setName},
+     * which a locator goes by and the screen never shows) - then what names it on screen, a label or its own text
+     * (null: nothing). A tab, a part or a window keeps its title. EDT.
+     */
+    public String seenName(Resolved r) {
+        Component c = r.component;
+        if (r.tab != null || r.name == null || !r.name.equals(Names.clean(c.getName()))) return r.name;
+        names.reset();
+        WindowRoot root = rootOf(c);
+        if (root != null && root.content == c) return r.name;
+        return names.seenName(c, root != null && root.content instanceof Container ? (Container) root.content : Snapshot.topOf(c));
+    }
+
     private Resolved fromRef(Locator l) {
         Refs.Entry entry = refs.get(l.ref);
         Component c = entry.component();

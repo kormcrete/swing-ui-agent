@@ -891,7 +891,7 @@ final class Recording {
     private static String shownName(Locator l) {
         if (l == null) return null;
         String name = l.name != null ? "“" + l.name + "”" : l.id != null ? "“" + l.id + "”" : null;
-        String part = l.column != null ? l.column : l.item != null && !l.item.isEmpty() ? l.item.get(l.item.size() - 1) : null;
+        String part = Target.part(l);
         if (part == null) return name;
         return "“" + part + "”" + (name != null ? " in " + name : "");
     }
