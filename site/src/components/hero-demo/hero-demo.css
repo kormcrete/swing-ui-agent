@@ -1,7 +1,9 @@
 /*
- * The home hero's record-and-replay demo (player.ts), and the stage, marks, terminal lines and play button the
+ * The home hero's record-and-replay demo (player.ts), and the stage, marks, log lines and play button the
  * IntelliJ page's run demo (run-demo/) shares with it. The stage shows screenshots of a light app in both themes,
- * so the marks on it use fixed light-theme colours; the log under it is a terminal, dark in both themes.
+ * so the marks on it use fixed light-theme colours; the log under it is dark in both themes: the agent's sentences
+ * while it records and
+ * again while the test replays them, test output in monospace.
  * Inside .kc-demo-cam, lengths are frame pixels; --s (set by the player) is screen pixels per frame pixel.
  */
 .kc-demo,
@@ -15,7 +17,7 @@
 	--kc-demo-term-bg: #0f1a24;
 	--kc-demo-term-ink: #e3e9ee;
 	--kc-demo-term-dim: #8a9aa8;
-	--kc-demo-term-prompt: #76d8ff;
+	--kc-demo-term-label: #76d8ff;
 	--kc-demo-term-pass: #7fcb9c;
 	--kc-demo-term-dot: #e0786a;
 }
@@ -229,11 +231,24 @@
 	white-space: nowrap;
 	text-overflow: ellipsis;
 }
-.kc-demo-prompt {
-	color: var(--kc-demo-term-prompt);
+.kc-demo-label {
+	color: var(--kc-demo-term-label);
 }
-.kc-demo-prompt:not(:empty)::after {
-	content: ' ';
+.kc-demo-label:not(:empty) {
+	display: inline-block;
+	min-width: 3.2ch;
+	margin-right: 0.6ch;
+}
+/* The agent's sentences read as words, not code; a check's label is dimmer than a step's. */
+.kc-demo-line.is-say .kc-demo-text {
+	font-family: var(--sl-font);
+	font-size: 1.05em;
+}
+.kc-demo-line.is-check .kc-demo-label {
+	color: var(--kc-demo-term-dim);
+}
+.kc-demo-line.is-meta {
+	color: var(--kc-demo-term-dim);
 }
 /* The gutter: ● once the agent has recorded the step, ✓ once the test has passed it. */
 .kc-demo-gutter {
@@ -242,6 +257,7 @@
 	color: var(--kc-demo-term-dot);
 }
 .kc-demo-line.is-java .kc-demo-gutter,
+.kc-demo-line.is-ran .kc-demo-gutter,
 .kc-demo-line.is-pass .kc-demo-gutter {
 	color: var(--kc-demo-term-pass);
 }
@@ -273,7 +289,7 @@
 	}
 }
 
-/* Phones: a smaller terminal font, so a command keeps its verb and target before the cut. */
+/* Phones: a smaller log font, so a line keeps its start before the cut. */
 @media (max-width: 40rem) {
 	.kc-demo-log,
 	.kc-run-console {

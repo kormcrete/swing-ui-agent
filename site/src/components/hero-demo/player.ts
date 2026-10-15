@@ -1,6 +1,7 @@
 /*
  * Plays the hero story (steps.ts) in the [data-kc-demo] figure that Hero.astro renders: the stage (stage.ts) with a
- * ripple where a step acts and a box where it checks, and a three-line log under it. It pauses with its button,
+ * ripple where a step acts and a box where it checks, and a three-line log under it: the agent's sentence for each
+ * step while it records, and again, each with its ✓, while the exported test replays it. It pauses with its button,
  * while the figure is off screen and while the tab is hidden; with reduced motion it shows the end state until the
  * button is pressed.
  */
@@ -8,6 +9,22 @@ import { Clock, Stage, Stopped, controls, reducedMotion } from './stage';
 import { steps, story } from './steps';
 
 const LOG_LINES = 3;
+
+/** One numbering, as the palette's Steps list: steps n, a step's checks n.k (the badge counts steps). */
+const LABELS: string[] = (() => {
+	let n = 0;
+	let k = 0;
+	return steps.map((s) => {
+		if (s.kind === 'check') return `${n}.${++k}`;
+		k = 0;
+		return String(++n);
+	});
+})();
+
+/** The step's sentence as the log shows it, recording or replaying: a check starts with ✓. */
+function sentence(step: (typeof steps)[number]) {
+	return step.kind === 'check' ? `✓ ${step.say}` : step.say;
+}
 
 class Player {
 	private readonly clock = new Clock();
@@ -35,19 +52,19 @@ class Player {
 		sync();
 	}
 
-	/** A log line: a gutter (● recorded, ✓ passed), a prompt, the text; long text is cut at the end, not the gutter. */
-	private line(prompt: string, text: string, cls = '') {
+	/** A log line: a gutter (● recorded, ✓ passed), the step's number, the text; long text is cut at the end. */
+	private line(label: string, text: string, cls = '') {
 		const el = document.createElement('div');
 		el.className = `kc-demo-line ${cls}`;
 		const gutter = document.createElement('span');
 		gutter.className = 'kc-demo-gutter';
-		const p = document.createElement('span');
-		p.className = 'kc-demo-prompt';
-		p.textContent = prompt;
+		const n = document.createElement('span');
+		n.className = 'kc-demo-label';
+		n.textContent = label;
 		const t = document.createElement('span');
 		t.className = 'kc-demo-text';
 		t.textContent = text;
-		el.append(gutter, p, t);
+		el.append(gutter, n, t);
 		this.log.append(el);
 		while (this.log.children.length > LOG_LINES) this.log.firstElementChild!.remove();
 		return { el, text: t, gutter };
@@ -92,34 +109,35 @@ class Player {
 		this.setBadge('● Recording', 'record');
 		stage.aim(story.all);
 		await stage.show(story.firstFrame);
-		const reset = this.line('$UI', '');
-		await this.typeInto(reset.text, `session '{"op":"reset"}'`, 300, gen);
+		const start = this.line('', '', 'is-say is-meta');
+		await this.typeInto(start.text, 'Start a new recording', 300, gen);
 		await clock.wait(700, gen);
 		let n = 0;
-		for (const step of steps) {
+		for (const [i, step] of steps.entries()) {
 			if (step.view !== stage.view) {
 				stage.aim(step.view);
 				await clock.wait(600, gen);
 			}
-			const l = this.line('$UI', '');
-			await this.typeInto(l.text, step.command, 360, gen);
-			if (step.kind === 'act') {
-				stage.ripple(step.box);
-				await clock.wait(140, gen);
-				if (step.frame) await stage.show(step.frame);
-			} else {
+			const check = step.kind === 'check';
+			if (!check) n++;
+			const l = this.line(LABELS[i], '', check ? 'is-say is-check' : 'is-say');
+			await this.typeInto(l.text, sentence(step), 360, gen);
+			if (check) {
 				const box = stage.mark(step.box, 'is-noted');
 				await clock.wait(600, gen);
 				box.remove();
+			} else {
+				stage.ripple(step.box);
+				await clock.wait(140, gen);
+				if (step.frame) await stage.show(step.frame);
 			}
 			l.gutter.textContent = '●';
-			n++;
 			this.setBadge(`● Recording · ${n} step${n === 1 ? '' : 's'}`, 'record');
 			await clock.wait(300, gen);
 		}
 		stage.aim(story.all);
-		const l = this.line('$UI', '');
-		await this.typeInto(l.text, `export_test '{"class":"${story.testClass}"}'`, 300, gen);
+		const save = this.line('', '', 'is-say is-meta');
+		await this.typeInto(save.text, `Save the test as ${story.testClass}`, 300, gen);
 		await clock.wait(250, gen);
 		this.line('', `wrote src/test/java/…/${story.testClass}.java`, 'is-out');
 		await clock.wait(1600, gen);
@@ -132,12 +150,12 @@ class Player {
 		await stage.show(story.firstFrame);
 		this.line('', `mvn -Pui verify  ·  ${story.testClass}`, 'is-out');
 		await clock.wait(800, gen);
-		for (const step of steps) {
+		for (const [i, step] of steps.entries()) {
 			if (step.view !== stage.view) {
 				stage.aim(step.view);
 				await clock.wait(500, gen);
 			}
-			const l = this.line('', step.java, 'is-java');
+			const l = this.line(LABELS[i], sentence(step), step.kind === 'check' ? 'is-say is-check is-ran' : 'is-say is-ran');
 			if (step.kind === 'act') {
 				stage.ripple(step.box);
 				await clock.wait(120, gen);
@@ -166,8 +184,8 @@ class Player {
 		this.reset();
 		this.stage.aim(story.all, false);
 		this.stage.set(story.lastFrame);
-		const last = steps.filter((s) => s.kind === 'check').at(-1)!;
-		this.line('', last.java, 'is-java').gutter.textContent = '✓';
+		const last = steps.length - 1;
+		this.line(LABELS[last], sentence(steps[last]), 'is-say is-check is-ran').gutter.textContent = '✓';
 		this.line('', 'Tests run: 1, Failures: 0', 'is-pass').gutter.textContent = '✓';
 		this.line('', 'In CI the same test runs headless on every push.', 'is-out');
 		this.setBadge(`✓ ${story.testClass} passed`, 'end');

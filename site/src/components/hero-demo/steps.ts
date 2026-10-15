@@ -1,9 +1,10 @@
 /*
  * The home hero's story: the agent records a test against Order Desk, exports it, and the test replays it.
  * Frames are real 2x screenshots of the main window (title band cropped, 2400 x 1448 px): f0 is the app at start,
- * rNN the app after the test's NNth action, saved by the exported test itself while it ran and passed.
- * Boxes and camera views are in those frame pixels. Commands and Java lines are the recorded and exported ones;
- * "…" stands for a scope left out to fit the line.
+ * rNN the app after the test's NNth action. Boxes and camera views are in those frame pixels.
+ * While recording, the log shows what the agent gives each step to say: one short sentence in the person's words,
+ * the way the palette's Steps list reads (steps n, a step's checks n.k). The replay shows the same sentences: the
+ * exported test keeps them as comments above its Java lines.
  */
 import type { Box, View } from './stage';
 
@@ -21,72 +22,58 @@ export type Step = {
 	view: View;
 	/** The frame after the step; a check leaves the app as it was. */
 	frame?: string;
-	command: string;
-	java: string;
+	/** The step's sentence (its say), as the agent recorded it. */
+	say: string;
 };
-
-const ADA = 'ui.tab("New order · Ada Shop Ltd")';
 
 export const steps: Step[] = [
 	{
 		kind: 'act', box: [0, 0, 67, 42], view: TOP, frame: 'r01',
-		command: `menu '{"path":["File","New order"]}'`,
-		java: 'ui.menu("File", "New order");',
+		say: 'Open a new order',
 	},
 	{
 		kind: 'act', box: [157, 199, 600, 51], view: TOP, frame: 'r02',
-		command: `type '{"target":{…"name":"Customer"},"text":"Ada"}'`,
-		java: 'ui.tab("New order").field("Customer").type("Ada");',
+		say: 'Type “Ada” into Customer',
 	},
 	{
 		kind: 'act', box: [157, 199, 600, 51], view: CUSTOMER, frame: 'r03',
-		command: `press '{"keys":"Enter"}'`,
-		java: 'ui.press("Enter");',
+		say: 'Press Enter to pick Ada Shop Ltd',
 	},
 	{
 		kind: 'check', box: [134, 125, 376, 53], view: CUSTOMER,
-		command: `expect '{"target":{"role":"tab","name":"New order · Ada Shop Ltd"},"state":["selected"]}'`,
-		java: `assertThat(${ADA}).isSelected();`,
+		say: 'The New order tab for Ada Shop Ltd is selected',
 	},
 	{
 		kind: 'act', box: [418, 427, 210, 48], view: PRODUCTS, frame: 'r04',
-		command: `click '{"target":{…"row":{"Product":"A4 paper, 500 sheets"},"column":"SKU"}}'`,
-		java: '….table().row("Product", "A4 paper, 500 sheets").cell("SKU").click();',
+		say: 'Select A4 paper, 500 sheets',
 	},
 	{
 		kind: 'act', box: [1139, 1333, 223, 50], view: PRODUCTS, frame: 'r05',
-		command: `click '{"target":{…"role":"button","name":"Add to cart"}}'`,
-		java: '….button("Add to cart").click();',
+		say: 'Add the A4 paper to the cart',
 	},
 	{
 		kind: 'act', box: [418, 622, 210, 48], view: PRODUCTS, frame: 'r06',
-		command: `click '{"target":{…"row":{"Product":"Gel pen, black"},"column":"SKU"}}'`,
-		java: '….table().row("Product", "Gel pen, black").cell("SKU").click();',
+		say: 'Select Gel pen, black',
 	},
 	{
 		kind: 'act', box: [1139, 1333, 223, 50], view: PRODUCTS, frame: 'r07',
-		command: `click '{"target":{…"role":"button","name":"Add to cart"}}'`,
-		java: '….button("Add to cart").click();',
+		say: 'Add the gel pen to the cart',
 	},
 	{
 		kind: 'act', box: [1843, 355, 193, 48], view: CART, frame: 'r08',
-		command: `type '{"target":{…"A4 paper, 500 sheets"},"column":"Qty"},"text":"3","commit":true}'`,
-		java: '….row("Product", "A4 paper, 500 sheets").cell("Qty").type("3", null, Boolean.TRUE);',
+		say: 'Order 3 packs of A4 paper',
 	},
 	{
 		kind: 'act', box: [1843, 404, 193, 48], view: CART, frame: 'r09',
-		command: `type '{"target":{…"Gel pen, black"},"column":"Qty"},"text":"10","commit":true}'`,
-		java: '….row("Product", "Gel pen, black").cell("Qty").type("10", null, Boolean.TRUE);',
+		say: 'Order 10 gel pens',
 	},
 	{
 		kind: 'check', box: [2196, 355, 182, 48], view: CART,
-		command: `expect '{…"cell":{"row":{"Product":"A4 paper, 500 sheets"},"column":"Line total","expected":"€14.70"}}'`,
-		java: 'assertThat(….cell("Line total")).hasCell(row("Product", "A4 paper, 500 sheets"), "Line total", "€14.70");',
+		say: 'The A4 paper line comes to €14.70',
 	},
 	{
 		kind: 'check', box: [2274, 1272, 114, 58], view: TOTALS,
-		command: `expect '{"target":{…"name":"€31.32"},"text":"€31.32"}'`,
-		java: 'assertThat(….label("€31.32")).hasText("€31.32");',
+		say: 'The cart total is €31.32',
 	},
 ];
 

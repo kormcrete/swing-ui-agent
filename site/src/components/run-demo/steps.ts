@@ -1,9 +1,10 @@
 /*
  * The IntelliJ page's run demo: the "UI tests" run configuration runs Order Desk's two @UiTest classes, by class
  * name, against the running app. Frames are real 2x screenshots from one such run (title band cropped, 2400 x 1448):
- * cNN after CartTotalsUiIT's NNth statement, pNN PlaceOrderUiIT's own screenshots, c00 the app at start. A dialog is
- * drawn over the frame before it, centred on its parent as the app shows it. Times are from a run without the extra
- * screenshots. Java lines are the tests' own; "…" stands for a part left out to fit the line.
+ * cNN after CartTotalsUiIT's NNth action, pNN after PlaceOrderUiIT's steps (its own screenshots where it takes them),
+ * c00 the app at start. A dialog open at that moment is drawn, with a title bar, over the main window as it was then,
+ * centred on the window as the app shows it. Times are from a run without the extra screenshots. Java lines are the
+ * tests' own; "…" stands for a part left out to fit the line.
  */
 import type { Box, View } from '../hero-demo/stage';
 
@@ -51,7 +52,7 @@ const shot = (window: string, file: string): Step => ({
 
 export const tests: Test[] = [
 	{
-		cls: 'CartTotalsUiIT', method: 'totalsTheCart()', time: '822 ms', pace: 0.8,
+		cls: 'CartTotalsUiIT', method: 'totalsTheCart()', time: '703 ms', pace: 0.8,
 		steps: [
 			{ kind: 'act', box: FILE, view: TOP, frame: 'c01', java: 'ui.menu("File", "New order");' },
 			{ kind: 'act', box: CUSTOMER_FIELD, view: TOP, frame: 'c02', java: 'ui.tab("New order").field("Customer").type("Ada");' },
@@ -71,7 +72,7 @@ export const tests: Test[] = [
 		],
 	},
 	{
-		cls: 'PlaceOrderUiIT', method: 'placesAnOrderForAda()', time: '3 s 467 ms', pace: 0.5,
+		cls: 'PlaceOrderUiIT', method: 'placesAnOrderForAda()', time: '3 s 446 ms', pace: 0.5,
 		steps: [
 			{ kind: 'act', box: FILE, view: TOP, frame: 'p01', java: 'ui.menu("File", "New order");' },
 			{ kind: 'check', box: [134, 125, 196, 53], view: TOP, java: 'assertThat(ui.tab("New order")).isSelected();' },
@@ -123,8 +124,8 @@ export const tests: Test[] = [
 export const run = {
 	all: ALL,
 	config: 'UI tests',
-	total: '4 s 289 ms',
-	seconds: '4.3 s',
+	total: '4 s 149 ms',
+	seconds: '4.1 s',
 	agentLine: '[ui] 127.0.0.1:8770 agent 0.1.0-SNAPSHOT built …; app started …; plugin none',
 	firstFrame: 'c00',
 	lastFrame: 'p10',

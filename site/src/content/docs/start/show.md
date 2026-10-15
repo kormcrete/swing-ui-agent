@@ -10,7 +10,7 @@ the agent and a small palette appears in its window. You press **● Record** an
 selection and bit of typing becomes a step, as if the agent had run it. **Check** adds checks, **Steps** lets you
 replay and fix them, and **Done** ends the recording. Then **Export…** writes the test, or your coding agent does.
 
-![The palette in Order Desk while recording: a red dot, the word Recording, the step just recorded, and the Record, Check, Steps and Done buttons](../../../assets/inspector/recording.png)
+![The palette in Order Desk while recording: a red dot, the word Recording, a note that the agent started this recording and your steps join it, and the Record, Check, Steps and Done buttons](../../../assets/inspector/recording.png)
 
 You will learn how to:
 
@@ -84,7 +84,7 @@ mode until you press **◀ Back to recording** (the Record button while you chec
 
 Press **Steps** to open the list of what has been recorded so far, your steps and checks and any the agent ran.
 
-![The Steps panel: the recorded steps with their results, the replay speed and the replay buttons](../../../assets/inspector/steps.png)
+![The Steps panel: numbered steps and a check, each with its sentence, a group being named in place above steps 4 and 5, the replay speed and the replay buttons](../../../assets/inspector/steps.png)
 
 - **▶ Replay all** and **▶ From selected** run the steps again in the app. Choose the **Replay speed** first:
   Fast, Normal, Slow or Step by step.
