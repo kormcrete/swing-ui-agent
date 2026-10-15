@@ -642,7 +642,7 @@ class RecordingModelTest {
     }
 
     @Test
-    void flowViewHasStepsAndGroupRanges() {
+    void theFlatViewHasStepsAndGroupRanges() {
         five();
         model.insert(at("2.1"), check("k"), AGENT);
         model.insert(at("2.2"), check("k2"), AGENT);

@@ -218,7 +218,7 @@ final class RecordingModel {
         changed("the recording was cleared");
     }
 
-    /** Replaces the recording with the steps and groups of {@code flow}, all by {@code author}. */
+    /** Replaces the recording with the steps and groups of a {@link Flow}, all by {@code author}. */
     void load(Flow flow, RecordedStep.Author author) {
         List<RecordedStep> loaded = new ArrayList<RecordedStep>(flow.steps.size());
         for (Action a : flow.steps) loaded.add(new RecordedStep(nextId++, author, a, false));
@@ -256,10 +256,10 @@ final class RecordingModel {
 
     /** The recording as a flat list of actions plus its groups as flat ranges. */
     Flow flow() {
-        return flowOf(steps);
+        return viewOf(steps);
     }
 
-    private static Flow flowOf(List<RecordedStep> records) {
+    private static Flow viewOf(List<RecordedStep> records) {
         Flow flow = new Flow();
         Map<Integer, int[]> ranges = new LinkedHashMap<Integer, int[]>();
         Map<Integer, String> says = new LinkedHashMap<Integer, String>();
@@ -691,7 +691,7 @@ final class RecordingModel {
     /** The recording undo would leave, to check it before committing; null when there is nothing to undo. */
     Flow undoPreview() {
         List<RecordedStep> after = undone();
-        return after == null ? null : flowOf(after);
+        return after == null ? null : viewOf(after);
     }
 
     /** What undo would take back, e.g. "delete of step 7 by the person", or null. */
