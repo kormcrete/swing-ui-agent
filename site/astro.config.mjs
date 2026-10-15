@@ -17,6 +17,13 @@ export default defineConfig({
 			description:
 				'Let a coding agent drive your real Swing app and write its UI tests. Attach one jar, no changes to the app.',
 			favicon: '/favicon.svg',
+			// agents fetching a page find the plain-text docs here: they live under the base, not at the domain's root
+			head: [
+				{
+					tag: 'link',
+					attrs: { rel: 'alternate', type: 'text/plain', href: '/swing-ui-agent/llms.txt', title: 'The docs as plain text, for coding agents' },
+				},
+			],
 			social: [{ icon: 'github', label: 'GitHub', href: repo }],
 			editLink: { baseUrl: `${repo}/edit/main/site/` },
 			customCss: [

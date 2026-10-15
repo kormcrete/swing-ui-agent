@@ -41,6 +41,13 @@ Ask in your own words. For example:
 
 With the palette on (the default), you can also show the agent instead of describing it: see [Record a test by showing it](/swing-ui-agent/start/show/).
 
+## The docs in one file
+
+The whole site is also plain text for agents: [`llms.txt`](https://kormcrete.github.io/swing-ui-agent/llms.txt) lists
+the pages, [`llms-full.txt`](https://kormcrete.github.io/swing-ui-agent/llms-full.txt) holds all of them, and
+[`llms-small.txt`](https://kormcrete.github.io/swing-ui-agent/llms-small.txt) a shorter version. Point your agent at
+one of them when it should know the tool beyond what the skills teach.
+
 ## What's next
 
 - [Let your agent drive the app](/swing-ui-agent/start/drive/)

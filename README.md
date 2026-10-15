@@ -14,6 +14,9 @@ Attach one jar to the app's JVM: no changes to the app, and it never takes over 
 
 **Documentation: https://kormcrete.github.io/swing-ui-agent**
 
+**For coding agents:** the docs as plain text, [llms.txt](https://kormcrete.github.io/swing-ui-agent/llms.txt) (an index)
+or [llms-full.txt](https://kormcrete.github.io/swing-ui-agent/llms-full.txt) (all of them in one file).
+
 ## How it works
 
 - **Drive:** a coding agent clicks, types and reads the live app, from a shell (`java -jar … <tool>`) or over MCP.
