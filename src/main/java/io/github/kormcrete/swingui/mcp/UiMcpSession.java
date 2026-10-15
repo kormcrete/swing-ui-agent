@@ -1630,14 +1630,22 @@ public class UiMcpSession {
         r.put("passed", result.passed());
         r.put("test", flow.name);
         if (file != null) r.put("file", file.toString());
-        r.put("ran", result.steps.size());
-        r.put("total", flow.steps.size());
+        List<String> labels = StepNumbers.labels(flow.steps);
+        java.util.Set<String> reached = new java.util.HashSet<String>();
+        for (StepResult s : result.steps) reached.add(stepNumber(labels.get(s.index)));
+        r.put("ran", reached.size());   // steps, not records: a step that failed in a check counts
+        r.put("total", StepNumbers.of(flow.steps).size());
         r.put("ms", (System.nanoTime() - started) / 1_000_000L);
         ArrayNode steps = r.putArray("steps");
-        List<String> labels = StepNumbers.labels(flow.steps);
         for (StepResult s : result.steps) steps.add(stepJson(s, labels.get(s.index), flow.steps.get(s.index)));
         r.put("report", FlowReport.format(flow, result));
         return r.toString();
+    }
+
+    /** The step a label belongs to: "7" for "7" and "7.2". */
+    private static String stepNumber(String label) {
+        int dot = label.indexOf('.');
+        return dot < 0 ? label : label.substring(0, dot);
     }
 
     /** The recorded test file {@code name} (in the recorded tests folder, which must have it) or {@code path} (relative to the working directory) names. */
@@ -2009,8 +2017,10 @@ public class UiMcpSession {
         try {
             if (reset) appReset.run();
             boolean passed = true;
-            int ran = 0;
+            java.util.Set<String> reached = new java.util.HashSet<String>();
+            java.util.Set<String> inRange = new java.util.HashSet<String>();
             List<String> labels = StepNumbers.labels(model.actions());
+            for (int i = range[0]; i <= range[1]; i++) inRange.add(stepNumber(labels.get(i)));
             for (int i = range[0]; i <= range[1]; i++) {
                 RecordedStep recorded = model.at(i + 1);
                 boolean check = StepNumbers.isCheck(recorded.action);
@@ -2036,7 +2046,7 @@ public class UiMcpSession {
                     throw new DriverException(e.reason(), what + ": "
                             + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
                 }
-                ran++;
+                reached.add(stepNumber(labels.get(i)));
                 boolean ok = step.path("passed").asBoolean();
                 if (palette) view.replayed(recorded.id, ok);
                 ObjectNode o = results.addObject();
@@ -2055,8 +2065,8 @@ public class UiMcpSession {
                 publish();
             }
             r.put("passed", passed);
-            r.put("ran", ran);
-            r.put("total", range[1] - range[0] + 1);
+            r.put("ran", reached.size());   // steps, not records
+            r.put("total", inRange.size());
             r.put("reset", reset);
             r.set("steps", results);
             return r;

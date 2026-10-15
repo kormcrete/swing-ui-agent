@@ -233,7 +233,7 @@ class FixtureAppDriveIT {
 
         JsonNode ran = call("run_recorded_test", "{'path':'" + file.toString().replace('\\', '/') + "'}");
         assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
-        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
+        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(3);
     }
 
     @Test
@@ -321,7 +321,7 @@ class FixtureAppDriveIT {
             JsonNode replayed = call("recording", "{'op':'replay'}");
             why = replayed.path("why").asText();
             assertThat(replayed.path("passed").asBoolean()).as(why).isTrue();
-            assertThat(replayed.path("ran").asInt()).as(why).isEqualTo(4);
+            assertThat(replayed.path("ran").asInt()).as(why).isEqualTo(3);   // steps: the check sits under step 3
             assertThat(replayed.path("reset").asBoolean()).as(why).isTrue();
             // a passing replay clears the edit marks
             JsonNode after = call("recording", "{'op':'list'}");
@@ -343,7 +343,7 @@ class FixtureAppDriveIT {
         assertThat(RecordedTestFiles.read(file).steps).as(why).hasSize(4);
         JsonNode ran = call("run_recorded_test", "{'path':'" + file.toString().replace('\\', '/') + "'}");
         assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
-        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
+        assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(3);
     }
 
     @Test
@@ -424,6 +424,8 @@ class FixtureAppDriveIT {
         assertThat(ran.path("passed").asBoolean()).as(why).isTrue();
         String report = ran.path("report").asText();
         assertThat(report).as(why).contains("[1.1]").contains("[4.1]").contains("Start a new customer").contains("\u2014 Save Said 1");
+        assertThat(ran.path("ran").asInt()).as(why).isEqualTo(4);   // steps: ran and total do not count checks
+        assertThat(ran.path("total").asInt()).as(why).isEqualTo(4);
         JsonNode steps = ran.path("steps");
         assertThat(steps).as(why).hasSize(5);
         assertThat(steps.path(0).path("n").asText()).as(why).isEqualTo("1.1");

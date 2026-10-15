@@ -77,8 +77,8 @@ class UiMcpRunRecordedTestTest {
         int before = session.humanSink().steps().size();
         JsonNode out = run("{\"name\":\"place-order\"," + evidenceArg() + "}");
         assertThat(out.path("passed").asBoolean()).isTrue();
-        assertThat(out.path("ran").asInt()).isEqualTo(2);
-        assertThat(out.path("total").asInt()).isEqualTo(2);
+        assertThat(out.path("ran").asInt()).isEqualTo(1);
+        assertThat(out.path("total").asInt()).isEqualTo(1);
         assertThat(out.path("test").asText()).isEqualTo("place-order");
         assertThat(out.path("file").asText()).isEqualTo(testsDir.resolve("place-order.json").toAbsolutePath().normalize().toString());
         assertThat(out.path("steps")).hasSize(2);
@@ -116,7 +116,7 @@ class UiMcpRunRecordedTestTest {
         JsonNode out = run("{\"name\":\"place-order\"," + evidenceArg() + "}");
         assertThat(out.path("passed").asBoolean()).isFalse();
         assertThat(out.path("ran").asInt()).isEqualTo(1);
-        assertThat(out.path("total").asInt()).isEqualTo(2);
+        assertThat(out.path("total").asInt()).isEqualTo(1);
         JsonNode step = out.path("steps").get(0);
         assertThat(step.path("passed").asBoolean()).isFalse();
         assertThat(step.path("reason").asText()).isEqualTo("NOT_FOUND");

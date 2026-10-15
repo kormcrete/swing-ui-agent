@@ -917,15 +917,15 @@ class UiMcpRecordingTest {
         JsonNode r = call("{\"op\":\"replay\",\"from\":1,\"to\":1}");
         assertThat(r.path("passed").asBoolean()).isTrue();
         assertThat(r.path("reset").asBoolean()).isTrue();
-        assertThat(r.path("ran").asInt()).isEqualTo(3);      // the action and its two checks
+        assertThat(r.path("ran").asInt()).isEqualTo(1);      // one step: the action and its two checks
         assertThat(r.path("steps").get(0).path("n").asInt()).isEqualTo(1);
         assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("1.1");
         assertThat(r.path("steps").get(2).path("n").asText()).isEqualTo("1.2");
         backend.verbs.calls.clear();
         r = call("{\"op\":\"replay\",\"from\":3,\"to\":3}");
         assertThat(r.path("reset").asBoolean()).isFalse();
-        assertThat(r.path("ran").asInt()).isEqualTo(2);
-        assertThat(r.path("total").asInt()).isEqualTo(2);
+        assertThat(r.path("ran").asInt()).isEqualTo(1);
+        assertThat(r.path("total").asInt()).isEqualTo(1);
         assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("3.1");
         assertThat(refused("{\"op\":\"replay\",\"from\":3,\"to\":5}").getMessage()).contains("no step 5");
         assertThat(refused("{\"op\":\"replay\",\"from\":3,\"to\":2}").getMessage()).contains("before");
@@ -934,7 +934,7 @@ class UiMcpRecordingTest {
         backend.verbs.calls.clear();
         r = call("{\"op\":\"redo\",\"from\":3}");
         assertThat(r.path("passed").asBoolean()).isTrue();
-        assertThat(r.path("ran").asInt()).isEqualTo(4);
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
         assertThat(r.path("list").path("steps")).hasSize(2);
         assertThat(r.path("list").path("steps").get(0).path("checks")).hasSize(2);
         // the number after the last step continues
