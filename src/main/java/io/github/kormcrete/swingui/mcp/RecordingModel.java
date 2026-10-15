@@ -2,18 +2,28 @@ package io.github.kormcrete.swingui.mcp;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowGroup;
+import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
+import io.github.kormcrete.swingui.flow.StepNumbers;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * The steps recorded so far, each with an id that is never reused and an author. Not thread-safe: every call happens
- * under the session's monitor. Sentences, groups and folds hang off step ids, so they survive other steps coming and
- * going; {@link #rev()} moves on every change so a reader can tell its copy is stale.
+ * The records made so far, each with an id that is never reused and an author. In memory the list is flat, one record
+ * per action or check; the public edits work on STEPS (see {@link StepNumbers}): an action with the checks under it, so
+ * a step is deleted, moved or cut with its checks and no check is left without its step. Groups are runs of whole
+ * steps; every record of a member step shares the group. Not thread-safe: every call happens under the session's
+ * monitor; {@link #rev()} moves on every change so a reader can tell its copy is stale.
  */
 final class RecordingModel {
 
@@ -56,6 +66,7 @@ final class RecordingModel {
     private final Deque<Edit> history = new ArrayDeque<Edit>();
     private String lastChange = "nothing yet";
     private int nextId = 1;
+    private int nextGroupId = 1;
     private int rev;
     private State state = State.IDLE;
     /** Started by {@code recording start}, the person's Record or a redo, not implicitly by a session reset. */
@@ -138,65 +149,6 @@ final class RecordingModel {
         return new Snapshot(this);
     }
 
-    /** Adds {@code action} at the end with the next id. */
-    RecordedStep append(Action action, RecordedStep.Author author) {
-        RecordedStep step = new RecordedStep(nextId++, author, action, false);
-        steps.add(step);
-        changed("the " + author.json + " recorded step " + steps.size());
-        return step;
-    }
-
-    /** Empties the recording and ends it (idle). Ids keep counting: a step gone is never confused with a later one. */
-    void clear() {
-        steps.clear();
-        notRecorded.clear();
-        history.clear();
-        state = State.IDLE;
-        explicit = false;
-        shared = false;
-        changed("the recording was cleared");
-    }
-
-    /** Replaces the recording with {@code actions}, all by {@code author}. */
-    void load(List<Action> actions, RecordedStep.Author author) {
-        steps.clear();
-        history.clear();
-        for (Action a : actions) steps.add(new RecordedStep(nextId++, author, a, false));
-        changed("a recorded test was loaded");
-    }
-
-    List<Action> actions() {
-        List<Action> out = new ArrayList<Action>(steps.size());
-        for (RecordedStep s : steps) out.add(s.action);
-        return out;
-    }
-
-    List<RecordedStep> steps() {
-        return Collections.unmodifiableList(new ArrayList<RecordedStep>(steps));
-    }
-
-    int size() {
-        return steps.size();
-    }
-
-    int rev() {
-        return rev;
-    }
-
-    /** The step at position {@code n} (1-based). */
-    RecordedStep at(int n) {
-        if (n < 1 || n > steps.size()) throw outOfRange(n);
-        return steps.get(n - 1);
-    }
-
-    /** The position (1-based) of the step with {@code id}, 0 when it is gone. */
-    int positionOf(int id) {
-        for (int i = 0; i < steps.size(); i++) {
-            if (steps.get(i).id == id) return i + 1;
-        }
-        return 0;
-    }
-
     /** Longest history of edits kept. */
     static final int HISTORY = 50;
 
@@ -243,51 +195,447 @@ final class RecordingModel {
         return past;
     }
 
-    /** Inserts {@code action} so that it is step {@code at} (1 to size+1); it counts as edited. */
-    String insert(int at, Action action, RecordedStep.Author author) {
-        if (at < 1 || at > steps.size() + 1) {
-            throw new DriverException(Reason.BAD_INPUT, "cannot insert at step " + at + ": the recording "
-                    + (steps.isEmpty() ? "is empty (insert at 1)" : "has " + steps.size() + " steps (insert at 1-"
-                    + (steps.size() + 1) + ")"));
+    // ------------------------------------------------------------------ recording and reading
+
+    /** Adds an action as a new step at the end, or a check under the last step; never joins a group by placement. */
+    RecordedStep append(Action action, RecordedStep.Author author) {
+        boolean isCheck = StepNumbers.isCheck(action);
+        RecordedStep.Group group = isCheck && !steps.isEmpty() ? steps.get(steps.size() - 1).group : null;
+        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, null);
+        steps.add(step);
+        changed("the " + author.json + " recorded " + (isCheck ? "check " : "step ") + addressOf(step.id));
+        return step;
+    }
+
+    /** Empties the recording and ends it (idle). Ids keep counting: a step gone is never confused with a later one. */
+    void clear() {
+        steps.clear();
+        notRecorded.clear();
+        history.clear();
+        state = State.IDLE;
+        explicit = false;
+        shared = false;
+        changed("the recording was cleared");
+    }
+
+    /** Replaces the recording with the steps and groups of {@code flow}, all by {@code author}. */
+    void load(Flow flow, RecordedStep.Author author) {
+        List<RecordedStep> loaded = new ArrayList<RecordedStep>(flow.steps.size());
+        for (Action a : flow.steps) loaded.add(new RecordedStep(nextId++, author, a, false));
+        for (FlowGroup g : flow.groups) {
+            if (g.from < 0 || g.to < g.from || g.to >= loaded.size()) {
+                throw bad("the group '" + g.say + "' lies outside the " + loaded.size() + " records");
+            }
+            RecordedStep.Group group = new RecordedStep.Group(nextGroupId++, g.say);
+            for (int i = g.from; i <= g.to; i++) loaded.set(i, loaded.get(i).inGroup(group));
         }
-        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
-        steps.add(at - 1, new RecordedStep(nextId++, author, action, true));
-        return edited("insert at step " + at, "inserted at step " + at, author, before, false);
+        steps.clear();
+        history.clear();
+        steps.addAll(loaded);
+        changed("a recorded test was loaded");
     }
 
-    /** Removes steps {@code from} to {@code to} (1-based, inclusive). */
-    String delete(int from, int to, RecordedStep.Author author) {
-        if (from < 1 || from > steps.size()) throw outOfRange(from);
-        if (to < from || to > steps.size()) throw outOfRange(to);
-        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
-        for (int i = to; i >= from; i--) steps.remove(i - 1);
-        String what = from == to ? "step " + from : "steps " + from + "-" + to;
-        return edited("delete of " + what, "deleted " + what, author, before, false);
+    /** Replaces the recording with {@code actions} (no groups), all by {@code author}. */
+    void load(List<Action> actions, RecordedStep.Author author) {
+        Flow flow = new Flow();
+        flow.steps = new ArrayList<Action>(actions);
+        load(flow, author);
     }
 
-    /** Moves step {@code n} so that it is step {@code to} afterwards. */
-    String move(int n, int to, RecordedStep.Author author) {
-        if (n < 1 || n > steps.size()) throw outOfRange(n);
-        if (to < 1 || to > steps.size()) throw outOfRange(to);
-        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
-        steps.add(to - 1, steps.remove(n - 1));
-        return edited("move of step " + n + " to " + to, "moved step " + n + " to " + to, author, before, false);
+    /** The flat actions and checks, one per record. */
+    List<Action> actions() {
+        List<Action> out = new ArrayList<Action>(steps.size());
+        for (RecordedStep s : steps) out.add(s.action);
+        return out;
     }
 
-    /** Replaces the action of step {@code n}; the step keeps its id and author and counts as edited. */
-    String replace(int n, Action action, RecordedStep.Author author) {
-        RecordedStep old = at(n);
-        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
-        steps.set(n - 1, old.with(action, true));
-        return edited("edit of step " + n, "edited step " + n, author, before, false);
+    /** The records, flat, with ids, authors and groups. */
+    List<RecordedStep> records() {
+        return Collections.unmodifiableList(new ArrayList<RecordedStep>(steps));
+    }
+
+    /** The recording as a flat list of actions plus its groups as flat ranges. */
+    Flow flow() {
+        return flowOf(steps);
+    }
+
+    private static Flow flowOf(List<RecordedStep> records) {
+        Flow flow = new Flow();
+        Map<Integer, int[]> ranges = new LinkedHashMap<Integer, int[]>();
+        Map<Integer, String> says = new LinkedHashMap<Integer, String>();
+        for (int i = 0; i < records.size(); i++) {
+            RecordedStep r = records.get(i);
+            flow.steps.add(r.action);
+            if (r.group == null) continue;
+            int[] range = ranges.get(r.group.id);
+            if (range == null) {
+                ranges.put(r.group.id, new int[] {i, i});
+                says.put(r.group.id, r.group.say);
+            } else {
+                range[1] = i;
+            }
+        }
+        for (Map.Entry<Integer, int[]> e : ranges.entrySet()) {
+            flow.groups.add(new FlowGroup(e.getValue()[0], e.getValue()[1], says.get(e.getKey())));
+        }
+        return flow;
+    }
+
+    /** The number of records (actions and checks); a replay loop walks them. */
+    int size() {
+        return steps.size();
+    }
+
+    /** The record at flat position {@code n} (1-based), for the replay loop and the session's flat adapters. */
+    RecordedStep at(int n) {
+        if (n < 1 || n > steps.size()) {
+            throw bad("no step " + n + ": the recording " + (steps.isEmpty() ? "is empty"
+                    : "has " + steps.size() + (steps.size() == 1 ? " step" : " steps") + " (1-" + steps.size() + ")"));
+        }
+        return steps.get(n - 1);
+    }
+
+    /** The number of steps (an action with its checks; a leading run of checks is step 1). */
+    int steps() {
+        return StepNumbers.of(actions()).size();
+    }
+
+    int rev() {
+        return rev;
+    }
+
+    /** The record at {@code address}: a step's action, or one of its checks. */
+    RecordedStep at(StepAddress address) {
+        if (address.step < 1 || address.step > steps()) throw outOfRange(address.step);
+        return steps.get(StepNumbers.flatIndex(actions(), address.step, address.check));
+    }
+
+    /** Where the record with {@code id} sits now, or null when it is gone. */
+    StepAddress addressOf(int id) {
+        for (StepNumbers.Step s : StepNumbers.of(actions())) {
+            if (s.action >= 0 && steps.get(s.action).id == id) return new StepAddress(s.number, 0);
+            for (int k = 0; k < s.checks.size(); k++) {
+                if (steps.get(s.checks.get(k)).id == id) return new StepAddress(s.number, k + 1);
+            }
+        }
+        return null;
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private static DriverException bad(String message) {
+        return new DriverException(Reason.BAD_INPUT, message);
+    }
+
+    private static String stepsText(int from, int to) {
+        return from == to ? "step " + from : "steps " + from + "-" + to;
+    }
+
+    /** The group of a step: that of its first record. */
+    private RecordedStep.Group groupOf(StepNumbers.Step s) {
+        return steps.get(s.first()).group;
+    }
+
+    private static boolean same(RecordedStep.Group a, RecordedStep.Group b) {
+        return a != null && b != null && a.id == b.id;
+    }
+
+    /** Puts every record of the flat range {@code from..to} (inclusive) in {@code group} (null = none). */
+    private void setGroup(int from, int to, RecordedStep.Group group) {
+        for (int i = from; i <= to; i++) steps.set(i, steps.get(i).inGroup(group));
+    }
+
+    /** The first and last step number of group {@code g} (0, 0 when it has none). */
+    private int[] extent(RecordedStep.Group g) {
+        int a = 0;
+        int b = 0;
+        for (StepNumbers.Step s : StepNumbers.of(actions())) {
+            if (same(groupOf(s), g)) {
+                if (a == 0) a = s.number;
+                b = s.number;
+            }
+        }
+        return new int[] {a, b};
+    }
+
+    /**
+     * Rules (f) and (g) after an edit: a group left with one step ends (its sentence moves to that step's action when
+     * it has none, and is dropped for a check-only step or a step with its own); a group with no step is simply gone.
+     * Returns the text added to the edit's {@code did}, empty when nothing ended.
+     */
+    private String repairGroups() {
+        Map<Integer, List<StepNumbers.Step>> byGroup = new LinkedHashMap<Integer, List<StepNumbers.Step>>();
+        Map<Integer, RecordedStep.Group> groups = new LinkedHashMap<Integer, RecordedStep.Group>();
+        for (StepNumbers.Step s : StepNumbers.of(actions())) {
+            RecordedStep.Group g = groupOf(s);
+            if (g == null) continue;
+            if (!byGroup.containsKey(g.id)) {
+                byGroup.put(g.id, new ArrayList<StepNumbers.Step>());
+                groups.put(g.id, g);
+            }
+            byGroup.get(g.id).add(s);
+        }
+        StringBuilder out = new StringBuilder();
+        for (Map.Entry<Integer, List<StepNumbers.Step>> e : byGroup.entrySet()) {
+            if (e.getValue().size() != 1) continue;
+            StepNumbers.Step s = e.getValue().get(0);
+            RecordedStep.Group g = groups.get(e.getKey());
+            setGroup(s.first(), s.last(), null);
+            String what;
+            if (s.checkOnly()) {
+                what = "its sentence was dropped";
+            } else if (steps.get(s.action).action.say == null) {
+                RecordedStep r = steps.get(s.action);
+                steps.set(s.action, r.with(withSay(r.action, g.say), r.edited));
+                what = "its sentence is now step " + s.number + "'s";
+            } else {
+                what = "step " + s.number + " keeps its own sentence and the group's was dropped";
+            }
+            out.append("; the group \"").append(g.say).append("\" ended with one step left: ").append(what);
+        }
+        return out.toString();
+    }
+
+    /** A copy of {@code action} with another sentence; an action that history shares is never changed. */
+    private static Action withSay(Action action, String say) {
+        Action copy = FlowJson.mapper().convertValue(action, Action.class);
+        copy.say = say;
+        return copy;
+    }
+
+    private List<RecordedStep> copyOfRecords() {
+        return new ArrayList<RecordedStep>(steps);
+    }
+
+    /** The end of every edit: the groups are repaired, the edit is kept for undo, and its past-tense text returned. */
+    private String finish(String label, String past, RecordedStep.Author author, List<RecordedStep> before, boolean cut) {
+        return edited(label, past + repairGroups(), author, before, cut);
+    }
+
+    // ------------------------------------------------------------------ edits (steps and checks)
+
+    /**
+     * Puts {@code action} at {@code at}. An action goes at a step position (1 to steps+1), before that step's action;
+     * a check goes at {@code n.k} under step n (k up to its checks + 1), or at plain position 1 to make the check-only
+     * step 1. It counts as edited.
+     */
+    String insert(StepAddress at, Action action, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        List<RecordedStep> before = copyOfRecords();
+        RecordedStep.Group group = null;
+        int flatAt;
+        String label;
+        String past;
+        if (StepNumbers.isCheck(action)) {
+            if (at.check == 0) {
+                if (at.step != 1 || (!st.isEmpty() && st.get(0).checkOnly())) {
+                    if (at.step < 1 || at.step > st.size()) throw outOfRange(at.step);
+                    throw bad("a check goes under a step: at \"" + at.step + "." + (st.get(at.step - 1).checks.size() + 1)
+                            + "\"");
+                }
+                flatAt = 0;
+                label = "insert of check 1.1";
+                past = "inserted check 1.1";
+            } else {
+                if (at.step < 1 || at.step > st.size()) throw outOfRange(at.step);
+                StepNumbers.Step s = st.get(at.step - 1);
+                if (at.check > s.checks.size() + 1) {
+                    throw bad("no place for check " + at + ": step " + at.step + " has " + s.checks.size()
+                            + (s.checks.size() == 1 ? " check" : " checks") + " (the next is \"" + at.step + "."
+                            + (s.checks.size() + 1) + "\")");
+                }
+                flatAt = at.check <= s.checks.size() ? s.checks.get(at.check - 1) : s.last() + 1;
+                group = groupOf(s);
+                label = "insert of check " + at;
+                past = "inserted check " + at;
+            }
+        } else {
+            if (at.check != 0) {
+                throw bad("an action goes at a step position (" + at.step + "), not at a check label (" + at + ")");
+            }
+            if (at.step < 1 || at.step > st.size() + 1) {
+                throw bad("cannot insert at step " + at.step + ": the recording "
+                        + (st.isEmpty() ? "is empty (insert at 1)" : "has " + st.size() + " steps (insert at 1-"
+                        + (st.size() + 1) + ")"));
+            }
+            if (at.step == 1 && !st.isEmpty() && st.get(0).checkOnly()) {
+                throw bad("step 1 holds only checks, which run before any action: insert at 2, or delete them first");
+            }
+            flatAt = at.step <= st.size() ? st.get(at.step - 1).first() : steps.size();
+            RecordedStep.Group left = at.step >= 2 ? groupOf(st.get(at.step - 2)) : null;
+            RecordedStep.Group right = at.step <= st.size() ? groupOf(st.get(at.step - 1)) : null;
+            if (same(left, right)) group = left;
+            label = "insert at step " + at.step;
+            past = "inserted at step " + at.step;
+        }
+        steps.add(flatAt, new RecordedStep(nextId++, author, action, true, group, null));
+        return finish(label, past, author, before, false);
+    }
+
+    /** Removes steps {@code from} to {@code to} (1-based, inclusive) with their checks. */
+    String deleteSteps(int from, int to, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (from < 1 || from > st.size()) throw outOfRange(from);
+        if (to < from || to > st.size()) throw outOfRange(to);
+        List<RecordedStep> before = copyOfRecords();
+        int checks = 0;
+        for (int n = from; n <= to; n++) checks += st.get(n - 1).checks.size();
+        for (int i = st.get(to - 1).last(); i >= st.get(from - 1).first(); i--) steps.remove(i);
+        String what = stepsText(from, to);
+        String past = "deleted " + what;
+        if (checks > 0) {
+            past += " and " + (from == to ? "its " : "their ") + checks + (checks == 1 ? " check" : " checks");
+        }
+        return finish("delete of " + what, past, author, before, false);
+    }
+
+    /** Removes check {@code check} of step {@code step}. */
+    String deleteCheck(int step, int check, RecordedStep.Author author) {
+        int flat = flatOf(step, check, true);
+        List<RecordedStep> before = copyOfRecords();
+        steps.remove(flat);
+        return finish("delete of check " + step + "." + check, "deleted check " + step + "." + check, author, before,
+                false);
+    }
+
+    /** Moves step {@code n} with its checks so that it is step {@code to} afterwards. */
+    String moveStep(int n, int to, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (n < 1 || n > st.size()) throw outOfRange(n);
+        if (to < 1 || to > st.size()) throw outOfRange(to);
+        if (st.get(0).checkOnly()) {
+            if (n == 1) throw bad("step 1 holds only checks (a check-only step): it cannot be moved, delete it instead");
+            if (to == 1) {
+                throw bad("step 1 holds only checks, which run before any action: move to 2 or later, or delete them first");
+            }
+        }
+        List<RecordedStep> before = copyOfRecords();
+        List<List<RecordedStep>> blocks = new ArrayList<List<RecordedStep>>();
+        for (StepNumbers.Step s : st) blocks.add(new ArrayList<RecordedStep>(steps.subList(s.first(), s.last() + 1)));
+        List<RecordedStep> moving = blocks.remove(n - 1);
+        RecordedStep.Group own = moving.get(0).group;
+        RecordedStep.Group left = to >= 2 ? blocks.get(to - 2).get(0).group : null;
+        RecordedStep.Group right = to - 1 < blocks.size() ? blocks.get(to - 1).get(0).group : null;
+        RecordedStep.Group group = null;
+        if (own != null && (same(own, left) || same(own, right))) group = own;
+        else if (same(left, right)) group = left;
+        for (int i = 0; i < moving.size(); i++) moving.set(i, moving.get(i).inGroup(group));
+        blocks.add(to - 1, moving);
+        steps.clear();
+        for (List<RecordedStep> b : blocks) steps.addAll(b);
+        return finish("move of step " + n + " to " + to, "moved step " + n + " to " + to, author, before, false);
+    }
+
+    /** Replaces the action at {@code at} (a step's or a check's, the same kind); the record keeps its id and counts as edited. */
+    String replace(StepAddress at, Action action, RecordedStep.Author author) {
+        return change(at, action, "edit of ", "edited ", author);
+    }
+
+    /** As {@link #replace} for a table step whose row was named another way; says which way. */
+    String row(StepAddress at, Action rewritten, RecordedStep.Author author) {
+        com.fasterxml.jackson.databind.JsonNode tree = FlowJson.mapper().valueToTree(rewritten);
+        boolean byPosition = tree.path("target").path("row").has("index") || tree.path("cell").path("row").has("index");
+        return change(at, rewritten, "row of ", "changed the row of ", author, byPosition ? " by position" : " by value");
+    }
+
+    private String change(StepAddress at, Action action, String label, String past, RecordedStep.Author author) {
+        return change(at, action, label, past, author, "");
+    }
+
+    private String change(StepAddress at, Action action, String label, String past, RecordedStep.Author author,
+            String labelSuffix) {
+        RecordedStep old = at(at);
+        boolean check = StepNumbers.isCheck(old.action);
+        if (check != StepNumbers.isCheck(action)) {
+            throw bad((check ? "check " : "step ") + at + " is " + (check ? "a check" : "an action") + ": it is replaced by "
+                    + (check ? "a check" : "an action") + " (delete it and insert the other kind)");
+        }
+        List<RecordedStep> before = copyOfRecords();
+        steps.set(flatOf(at.step, at.check, false), old.with(action, true));
+        String what = (check ? "check " : "step ") + at;
+        return finish(label + what + labelSuffix, past + what, author, before, false);
+    }
+
+    /** Sets, changes or (with {@code ""} or null) removes the sentence of the step or check at {@code at}. Not a behaviour change. */
+    String say(StepAddress at, String say, RecordedStep.Author author) {
+        RecordedStep old = at(at);
+        String text = say == null ? "" : say.trim();
+        if (!text.isEmpty()) RecordedTestFiles.checkSay(text, (at.isCheck() ? "check " : "step ") + at);
+        List<RecordedStep> before = copyOfRecords();
+        steps.set(flatOf(at.step, at.check, false), old.with(withSay(old.action, text.isEmpty() ? null : text), old.edited));
+        String what = (at.isCheck() ? "check " : "step ") + at;
+        return finish("sentence of " + what, (text.isEmpty() ? "removed" : "set") + " the sentence of " + what, author,
+                before, false);
     }
 
     /** Drops step {@code n} and everything after it (a redo's cut); null when there is nothing to drop. */
-    String cutFrom(int n, RecordedStep.Author author) {
-        if (n < 1 || n > steps.size()) return null;
-        List<RecordedStep> before = new ArrayList<RecordedStep>(steps);
-        while (steps.size() >= n) steps.remove(steps.size() - 1);
-        return edited("cut from step " + n + " (redo)", "cut from step " + n, author, before, true);
+    String cutFromStep(int n, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (n < 1 || n > st.size()) return null;
+        List<RecordedStep> before = copyOfRecords();
+        while (steps.size() > st.get(n - 1).first()) steps.remove(steps.size() - 1);
+        return finish("cut from step " + n + " (redo)", "cut from step " + n, author, before, true);
+    }
+
+    /** Makes steps {@code from} to {@code to} one group with sentence {@code say}; the same range again renames it. */
+    String group(int from, int to, String say, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (from < 1 || from > st.size()) throw outOfRange(from);
+        if (to < 1 || to > st.size()) throw outOfRange(to);
+        if (to < from) throw bad("group: 'to' (" + to + ") is before 'from' (" + from + ")");
+        if (to == from) throw bad("a group takes at least two steps");
+        String text = say == null ? "" : say.trim();
+        RecordedTestFiles.checkSay(text, "the group's sentence");
+        Map<Integer, Integer> inRange = new LinkedHashMap<Integer, Integer>();
+        Map<Integer, RecordedStep.Group> found = new LinkedHashMap<Integer, RecordedStep.Group>();
+        int ungrouped = 0;
+        for (int n = from; n <= to; n++) {
+            RecordedStep.Group g = groupOf(st.get(n - 1));
+            if (g == null) {
+                ungrouped++;
+                continue;
+            }
+            Integer c = inRange.get(g.id);
+            inRange.put(g.id, c == null ? 1 : c + 1);
+            found.put(g.id, g);
+        }
+        boolean rename = false;
+        RecordedStep.Group renamed = null;
+        for (Map.Entry<Integer, RecordedStep.Group> e : found.entrySet()) {
+            RecordedStep.Group g = e.getValue();
+            int[] ext = extent(g);
+            int total = ext[1] - ext[0] + 1;
+            int count = inRange.get(g.id);
+            String where = "the group of steps " + ext[0] + "-" + ext[1];
+            if (count == total && ungrouped == 0 && found.size() == 1) {
+                rename = true;
+                renamed = g;
+            } else if (found.size() == 1 && ungrouped == 0 && count == to - from + 1) {
+                throw bad("groups do not nest: steps " + from + "-" + to + " are inside " + where);
+            } else if (count == total) {
+                throw bad("groups do not nest: steps " + from + "-" + to + " contain " + where);
+            } else {
+                throw bad("steps " + from + "-" + to + " overlap " + where + ": a group takes whole steps and groups do not overlap");
+            }
+        }
+        List<RecordedStep> before = copyOfRecords();
+        RecordedStep.Group group = new RecordedStep.Group(rename ? renamed.id : nextGroupId++, text);
+        setGroup(st.get(from - 1).first(), st.get(to - 1).last(), group);
+        String what = stepsText(from, to);
+        return finish("group of " + what, (rename ? "renamed the group of " : "grouped ") + what, author, before, false);
+    }
+
+    /** Ends the group that holds step {@code n}; its steps stay. */
+    String ungroup(int n, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (n < 1 || n > st.size()) throw outOfRange(n);
+        RecordedStep.Group g = groupOf(st.get(n - 1));
+        if (g == null) throw bad("step " + n + " is in no group");
+        int[] ext = extent(g);
+        List<RecordedStep> before = copyOfRecords();
+        setGroup(st.get(ext[0] - 1).first(), st.get(ext[1] - 1).last(), null);
+        String what = stepsText(ext[0], ext[1]);
+        return finish("ungroup of " + what, "ungrouped " + what, author, before, false);
     }
 
     /** A replay passed the step with {@code id}: it no longer counts as edited. Whether that changed anything. */
@@ -296,31 +644,54 @@ final class RecordingModel {
             RecordedStep s = steps.get(i);
             if (s.id == id && s.edited) {
                 steps.set(i, s.with(s.action, false));
-                changed("step " + (i + 1) + " passed a replay");
+                changed("step " + StepNumbers.label(actions(), i) + " passed a replay");
                 return true;
             }
         }
         return false;
     }
 
-    /** The steps after the last edit is taken back, or null when there is nothing to undo. */
+    /** The alternatives of the table row the record with {@code id} names are known; no change of revision when they were. */
+    void rowKnown(int id, RowChoice choice) {
+        for (int i = 0; i < steps.size(); i++) {
+            RecordedStep s = steps.get(i);
+            if (s.id != id) continue;
+            if (choice == null ? s.row == null : choice.equals(s.row)) return;
+            steps.set(i, s.withRow(choice));
+            changed("the row alternatives of step " + StepNumbers.label(actions(), i) + " are known");
+            return;
+        }
+    }
+
+    /** The flat index of step {@code step}'s action ({@code check} 0) or check; {@code mustBeCheck} refuses a plain step. */
+    private int flatOf(int step, int check, boolean mustBeCheck) {
+        if (step < 1 || step > steps()) throw outOfRange(step);
+        if (mustBeCheck && check < 1) throw bad("a check label is needed: \"" + step + ".1\"");
+        return StepNumbers.flatIndex(actions(), step, check);
+    }
+
+    // ------------------------------------------------------------------ undo
+
+    /** The records after the last edit is taken back, or null when there is nothing to undo. */
     private List<RecordedStep> undone() {
         Edit e = history.peekFirst();
         if (e == null) return null;
         List<RecordedStep> out = new ArrayList<RecordedStep>(e.before);
         if (!e.cut) {
-            for (RecordedStep s : steps) if (s.id > e.maxIdAfter) out.add(s);
+            // records made since join as they would have: an action never in a group, a check in its step's
+            for (RecordedStep s : steps) {
+                if (s.id <= e.maxIdAfter) continue;
+                boolean check = StepNumbers.isCheck(s.action);
+                out.add(s.inGroup(check && !out.isEmpty() ? out.get(out.size() - 1).group : null));
+            }
         }
         return out;
     }
 
-    /** The actions undo would leave, to check them before committing; null when there is nothing to undo. */
-    List<Action> undoPreview() {
+    /** The recording undo would leave, to check it before committing; null when there is nothing to undo. */
+    Flow undoPreview() {
         List<RecordedStep> after = undone();
-        if (after == null) return null;
-        List<Action> out = new ArrayList<Action>(after.size());
-        for (RecordedStep s : after) out.add(s.action);
-        return out;
+        return after == null ? null : flowOf(after);
     }
 
     /** What undo would take back, e.g. "delete of step 7 by the person", or null. */
@@ -352,8 +723,9 @@ final class RecordingModel {
     }
 
     private DriverException outOfRange(int n) {
-        String range = steps.isEmpty() ? "is empty"
-                : "has " + steps.size() + " step" + (steps.size() == 1 ? "" : "s") + " (1-" + steps.size() + ")";
-        return new DriverException(Reason.BAD_INPUT, "no step " + n + ": the recording " + range);
+        int count = steps();
+        String range = count == 0 ? "is empty"
+                : "has " + count + " step" + (count == 1 ? "" : "s") + " (1-" + count + ")";
+        return bad("no step " + n + ": the recording " + range);
     }
 }

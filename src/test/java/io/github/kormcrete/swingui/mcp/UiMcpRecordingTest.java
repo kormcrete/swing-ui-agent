@@ -457,7 +457,7 @@ class UiMcpRecordingTest {
         int calls = backend.verbs.calls.size();
         JsonNode r = call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
         assertThat(backend.verbs.calls).hasSize(calls);
-        assertThat(r.path("did").asText()).isEqualTo("inserted at step 2");
+        assertThat(r.path("did").asText()).isEqualTo("inserted check 1.1");   // the check goes under step 1
         assertThat(r.path("steps")).hasSize(5);
         assertThat(r.path("steps").get(1).path("step").path("action").asText()).isEqualTo("expect");
         assertThat(r.path("steps").get(1).path("edited").asBoolean()).isTrue();

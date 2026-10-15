@@ -513,11 +513,12 @@ public class UiMcpSession {
             public Inspector.Result cutFrom(int id) {
                 if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
-                    int n = model.positionOf(id);
-                    if (n == 0) return gone("nothing cut");
-                    Inspector.Result refused = refusedEdit(model.actions().subList(0, n - 1));
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing cut");
+                    int firstRecord = StepNumbers.of(model.actions()).get(at.step - 1).first();
+                    Inspector.Result refused = refusedEdit(model.actions().subList(0, firstRecord));
                     if (refused != null) return refused;
-                    String did = model.cutFrom(n, RecordedStep.Author.PERSON);
+                    String did = model.cutFromStep(at.step, RecordedStep.Author.PERSON);
                     publish();
                     return new Inspector.Result(true, did);
                 }
@@ -537,13 +538,13 @@ public class UiMcpSession {
             public Inspector.Result delete(int id) {
                 if (agentReplaying != null) return AGENT_REPLAYING;
                 synchronized (UiMcpSession.this) {
-                    int n = model.positionOf(id);
-                    if (n == 0) return gone("nothing deleted");
-                    List<Action> after = model.actions();
-                    after.remove(n - 1);
-                    Inspector.Result refused = refusedEdit(after);
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing deleted");
+                    RecordingModel scratch = scratchModel();
+                    deleteAt(scratch, at);
+                    Inspector.Result refused = refusedEdit(scratch.actions());
                     if (refused != null) return refused;
-                    String did = model.delete(n, n, RecordedStep.Author.PERSON);
+                    String did = deleteAt(model, at);
                     publish();
                     return new Inspector.Result(true, did);
                 }
@@ -553,9 +554,9 @@ public class UiMcpSession {
             public Inspector.Result undo() {
                 if (agentReplaying != null) return AGENT_REPLAYING;
                 synchronized (UiMcpSession.this) {
-                    List<Action> after = model.undoPreview();
+                    Flow after = model.undoPreview();
                     if (after == null) return new Inspector.Result(false, "nothing to undo in this recording");
-                    Inspector.Result refused = refusedEdit(after);
+                    Inspector.Result refused = refusedEdit(after.steps);
                     if (refused != null) return refused;
                     String did = model.undo(RecordedStep.Author.PERSON);
                     publish();
@@ -1323,7 +1324,7 @@ public class UiMcpSession {
 
     /** The recording with ids and authors, for tests. */
     synchronized List<RecordedStep> recordedSteps() {
-        return model.steps();
+        return model.records();
     }
 
     private int fragileSteps() {
@@ -1371,7 +1372,9 @@ public class UiMcpSession {
         flow.description = description != null && !description.trim().isEmpty() ? description.trim()
                 : exists ? loadedDescription : null;
         flow.start = RecordedTestFiles.START_RESET;
-        flow.steps = model.actions();
+        Flow recorded = model.flow();
+        flow.steps = recorded.steps;
+        flow.groups = recorded.groups;
         flow.version = RecordedTestFiles.versionFor(flow);
         String text = RecordedTestFiles.write(flow);
         Files.write(file, text.getBytes(StandardCharsets.UTF_8));
@@ -1539,7 +1542,7 @@ public class UiMcpSession {
                     + String.join("; ", e.problems()) + "; run it with run_recorded_test or the JUnit runner instead");
         }
         Path abs = file.toAbsolutePath().normalize();
-        model.load(flow.steps, RecordedStep.Author.LOADED);
+        model.load(flow, RecordedStep.Author.LOADED);
         model.loaded();
         recordingFromReset = true;
         freshStart = true;
@@ -1883,11 +1886,13 @@ public class UiMcpSession {
                     + " steps; " + (size + 1) + " continues it)");
         }
         boolean wasRecording = model.state() == RecordingModel.State.RECORDING;
-        String cut = model.cutFrom(from, RecordedStep.Author.AGENT);
+        // ADAPTER (Task 7): a flat record number; the cut starts at that record's step
+        String cut = from > size ? null : model.cutFromStep(model.addressOf(model.at(from).id).step, RecordedStep.Author.AGENT);
         publish(cut == null ? null : "the agent " + cut);
         ObjectNode r = null;
         try {
-            r = from == 1 ? resetOnly() : replay(1, from - 1, 0L);
+            int kept = model.size();
+            r = kept == 0 ? resetOnly() : replay(1, kept, 0L);
         } finally {
             // as the palette's redo: a running recording stops, its next steps would be on a screen the replay missed
             if (wasRecording && (r == null || !r.path("passed").asBoolean())) stopAfterFailedRedo();
@@ -1999,17 +2004,50 @@ public class UiMcpSession {
         }
     }
 
+    // ADAPTERS (Task 7 removes them): the session still speaks flat record numbers; the model speaks steps and checks.
+
+    /** A copy of the recording to try an edit on before it is made for real. */
+    private RecordingModel scratchModel() {
+        RecordingModel scratch = new RecordingModel();
+        scratch.load(model.flow(), RecordedStep.Author.LOADED);
+        return scratch;
+    }
+
+    /** Deletes what {@code at} names: a check alone, or a step with its checks. */
+    private static String deleteAt(RecordingModel m, StepAddress at) {
+        return at.isCheck() ? m.deleteCheck(at.step, at.check, RecordedStep.Author.PERSON)
+                : m.deleteSteps(at.step, at.step, RecordedStep.Author.PERSON);
+    }
+
+    /** The step or check that flat record {@code n} (1-based) is. */
+    private StepAddress addressOfRecord(int n) {
+        return model.addressOf(model.at(n).id);
+    }
+
+    /** Where inserting {@code action} before flat record {@code at} puts it, as the model reads it. */
+    private StepAddress insertAddress(int at, Action action) {
+        List<Action> flat = model.actions();
+        if (at < 1 || at > flat.size() + 1) return StepAddress.ofStep(at);
+        boolean check = StepNumbers.isCheck(action);
+        if (check) {
+            if (at == 1) return flat.isEmpty() || !StepNumbers.isCheck(flat.get(0)) ? StepAddress.ofStep(1) : new StepAddress(1, 1);
+            StepAddress before = addressOfRecord(at - 1);
+            return new StepAddress(before.step, before.check + 1);
+        }
+        if (at == flat.size() + 1) return StepAddress.ofStep(model.steps() + 1);
+        StepAddress here = addressOfRecord(at);
+        return StepAddress.ofStep(here.isCheck() ? here.step + 1 : here.step);
+    }
+
     /** Puts {@code step} at position {@code at} without running it; it counts as edited until a replay passes it. */
     synchronized String recordingInsert(int at, JsonNode step, Integer rev) {
         checkRev(rev);
         Action action = action(step);
-        List<Action> after = model.actions();
-        if (at < 1 || at > after.size() + 1) {
-            model.insert(at, action, RecordedStep.Author.AGENT); // says why
-        }
-        after.add(at - 1, action);
-        validateEdit(after);
-        return edited(model.insert(at, action, RecordedStep.Author.AGENT));
+        StepAddress where = insertAddress(at, action);
+        RecordingModel scratch = scratchModel();
+        scratch.insert(where, action, RecordedStep.Author.AGENT);
+        validateEdit(scratch.actions());
+        return edited(model.insert(where, action, RecordedStep.Author.AGENT));
     }
 
     /** Deletes step {@code n}, or steps {@code from} to {@code to}; the later steps close up. */
@@ -2026,24 +2064,32 @@ public class UiMcpSession {
         } else {
             throw new DriverException(Reason.BAD_INPUT, "delete takes 'n', or 'from' and 'to'");
         }
-        List<Action> after = model.actions();
-        model.at(a);
-        model.at(b);
+        StepAddress first = addressOfRecord(a);
+        StepAddress last = addressOfRecord(b);
         if (b < a) throw new DriverException(Reason.BAD_INPUT, "delete: 'to' (" + b + ") is before 'from' (" + a + ")");
-        for (int i = b; i >= a; i--) after.remove(i - 1);
-        validateEdit(after);
-        return edited(model.delete(a, b, RecordedStep.Author.AGENT));
+        RecordingModel scratch = scratchModel();
+        String did;
+        if (a == b && first.isCheck()) {
+            scratch.deleteCheck(first.step, first.check, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            did = model.deleteCheck(first.step, first.check, RecordedStep.Author.AGENT);
+        } else {
+            scratch.deleteSteps(first.step, last.step, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            did = model.deleteSteps(first.step, last.step, RecordedStep.Author.AGENT);
+        }
+        return edited(did);
     }
 
     /** Moves step {@code n} to position {@code to}. */
     synchronized String recordingMove(int n, int to, Integer rev) {
         checkRev(rev);
-        model.at(n);
-        model.at(to);
-        List<Action> after = model.actions();
-        after.add(to - 1, after.remove(n - 1));
-        validateEdit(after);
-        return edited(model.move(n, to, RecordedStep.Author.AGENT));
+        StepAddress from = addressOfRecord(n);
+        StepAddress target = addressOfRecord(to);
+        RecordingModel scratch = scratchModel();
+        scratch.moveStep(from.step, target.step, RecordedStep.Author.AGENT);
+        validateEdit(scratch.actions());
+        return edited(model.moveStep(from.step, target.step, RecordedStep.Author.AGENT));
     }
 
     /**
@@ -2085,18 +2131,19 @@ public class UiMcpSession {
             }
             replaced = action(tree);
         }
-        List<Action> after = model.actions();
-        after.set(n - 1, replaced);
-        validateEdit(after);
-        return edited(model.replace(n, replaced, RecordedStep.Author.AGENT));
+        StepAddress where = addressOfRecord(n);
+        RecordingModel scratch = scratchModel();
+        scratch.replace(where, replaced, RecordedStep.Author.AGENT);
+        validateEdit(scratch.actions());
+        return edited(model.replace(where, replaced, RecordedStep.Author.AGENT));
     }
 
     /** Takes back the last edit, whoever made it. */
     synchronized String recordingUndo(Integer rev) {
         checkRev(rev);
-        List<Action> after = model.undoPreview();
+        Flow after = model.undoPreview();
         if (after == null) throw new DriverException(Reason.BAD_INPUT, "nothing to undo in this recording");
-        validateEdit(after);
+        validateEdit(after.steps);
         return edited(model.undo(RecordedStep.Author.AGENT));
     }
 
