@@ -259,7 +259,24 @@ final class RecordingModel {
         return viewOf(steps);
     }
 
-    private static Flow viewOf(List<RecordedStep> records) {
+    /** A new model holding the same steps and groups (no history): an edit is tried on it before it is made for real. */
+    RecordingModel copy() {
+        RecordingModel copy = new RecordingModel();
+        copy.load(flow(), RecordedStep.Author.LOADED);
+        return copy;
+    }
+
+    /** The flat indexes {first, last} of the records of steps {@code from} to {@code to}; BAD_INPUT when one is no step. */
+    int[] flatRange(int from, int to) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (from < 1 || from > st.size()) throw outOfRange(from);
+        if (to < 1 || to > st.size()) throw outOfRange(to);
+        if (to < from) throw bad("'to' (" + to + ") is before 'from' (" + from + ")");
+        return new int[] {st.get(from - 1).first(), st.get(to - 1).last()};
+    }
+
+    /** The actions of {@code records} with their groups as flat ranges. */
+    static Flow viewOf(List<RecordedStep> records) {
         Flow flow = new Flow();
         Map<Integer, int[]> ranges = new LinkedHashMap<Integer, int[]>();
         Map<Integer, String> says = new LinkedHashMap<Integer, String>();
@@ -322,6 +339,11 @@ final class RecordingModel {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** "step 2" or "check 2.1": the record at flat index {@code i}, as the numbering names it. */
+    private String describe(int i) {
+        return (StepNumbers.isCheck(steps.get(i).action) ? "check " : "step ") + StepNumbers.label(actions(), i);
+    }
 
     private static DriverException bad(String message) {
         return new DriverException(Reason.BAD_INPUT, message);
@@ -470,6 +492,11 @@ final class RecordingModel {
         }
         steps.add(flatAt, new RecordedStep(nextId++, author, action, true, group, null));
         return finish(label, past, author, before, false);
+    }
+
+    /** Deletes what {@code at} names: a check alone, or a step with its checks. */
+    String delete(StepAddress at, RecordedStep.Author author) {
+        return at.isCheck() ? deleteCheck(at.step, at.check, author) : deleteSteps(at.step, at.step, author);
     }
 
     /** Removes steps {@code from} to {@code to} (1-based, inclusive) with their checks. */
@@ -644,7 +671,7 @@ final class RecordingModel {
             RecordedStep s = steps.get(i);
             if (s.id == id && s.edited) {
                 steps.set(i, s.with(s.action, false));
-                changed("step " + StepNumbers.label(actions(), i) + " passed a replay");
+                changed(describe(i) + " passed a replay");
                 return true;
             }
         }
@@ -658,7 +685,7 @@ final class RecordingModel {
             if (s.id != id) continue;
             if (choice == null ? s.row == null : choice.equals(s.row)) return;
             steps.set(i, s.withRow(choice));
-            changed("the row alternatives of step " + StepNumbers.label(actions(), i) + " are known");
+            changed("the row alternatives of " + describe(i) + " are known");
             return;
         }
     }

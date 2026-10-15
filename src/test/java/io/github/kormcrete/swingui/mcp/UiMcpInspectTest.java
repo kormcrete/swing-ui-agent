@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
@@ -136,6 +137,80 @@ class UiMcpInspectTest {
         Inspector.Result nothing = sink.undo();
         assertThat(nothing.ok).isFalse();
         assertThat(nothing.line).contains("nothing to undo");
+    }
+
+    private static Map<String, Object> check(String text) {
+        Map<String, Object> s = step("expect", Locator.ofId("status"));
+        s.put("text", text);
+        return s;
+    }
+
+    @Test
+    void thePersonsDeleteOfAnActionRowDeletesItsChecks() {
+        sink.done(step("click", Locator.ofId("new")));
+        assertThat(sink.check(check("one")).ok).isTrue();
+        assertThat(sink.check(check("two")).ok).isTrue();
+        sink.done(step("click", Locator.ofId("save")));
+        List<Inspector.StepLine> before = sink.steps();
+        assertThat(before).extracting(l -> l.label).containsExactly("1", "1.1", "1.2", "2");
+        assertThat(before).extracting(l -> l.check).containsExactly(false, true, true, false);
+        // a check row: only that check
+        assertThat(sink.delete(before.get(1).id).line).isEqualTo("deleted check 1.1");
+        assertThat(sink.steps()).extracting(l -> l.label).containsExactly("1", "1.1", "2");
+        // an action row: the step and its checks
+        Inspector.Result r = sink.delete(before.get(0).id);
+        assertThat(r.line).isEqualTo("deleted step 1 and its 1 check");
+        assertThat(lines()).containsExactly("click(#save)");
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(sink.steps()).extracting(l -> l.label).containsExactly("1", "1.1", "2");
+    }
+
+    @Test
+    void thePersonsRedoFromACheckCutsFromItsStep() {
+        sink.done(step("click", Locator.ofId("new")));
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.check(check("saved")).ok).isTrue();
+        sink.done(step("click", Locator.ofId("delete")));
+        List<Inspector.StepLine> steps = sink.steps();
+        Inspector.Result r = sink.cutFrom(steps.get(2).id);   // the check 2.1
+        assertThat(r.ok).isTrue();
+        assertThat(r.line).isEqualTo("cut from step 2");
+        assertThat(lines()).containsExactly("click(#new)");
+    }
+
+    @Test
+    void thePersonsDescribeAndUngroupAreUndoableByTheAgent() throws Exception {
+        sink.done(step("click", Locator.ofId("new")));
+        assertThat(sink.check(check("one")).ok).isTrue();
+        sink.done(step("click", Locator.ofId("save")));
+        sink.done(step("click", Locator.ofId("done")));
+        List<Inspector.StepLine> steps = sink.steps();
+        // one check id: the check's sentence; the action row: the step's
+        assertThat(sink.describe(steps.get(1).id, steps.get(1).id, "Status shown").ok).isTrue();
+        assertThat(sink.steps().get(1).say).isEqualTo("Status shown");
+        assertThat(sink.describe(steps.get(0).id, steps.get(1).id, "Create it").ok).isTrue();
+        assertThat(sink.steps().get(0).say).isEqualTo("Create it");
+        // ids spanning steps: a group of the whole steps they touch
+        Inspector.Result g = sink.describe(steps.get(2).id, steps.get(3).id, "Save and finish");
+        assertThat(g.ok).isTrue();
+        assertThat(sink.steps().get(2).groupSay).isEqualTo("Save and finish");
+        assertThat(sink.steps().get(3).groupId).isEqualTo(sink.steps().get(2).groupId).isNotZero();
+        assertThat(sink.steps().get(0).groupId).isZero();
+        // a bad sentence is refused with its reason
+        Inspector.Result bad = sink.describe(steps.get(0).id, steps.get(0).id, "a\nb");
+        assertThat(bad.ok).isFalse();
+        assertThat(bad.line).contains("one line");
+        // ungroup, then the agent takes it back
+        assertThat(sink.ungroup(steps.get(3).id).ok).isTrue();
+        assertThat(sink.steps().get(2).groupId).isZero();
+        assertThat(sink.undoLabel()).isEqualTo("ungroup of steps 2-3 by the person");
+        JsonNode undone = mapper.readTree(session.recording(mapper.readTree("{\"op\":\"undo\"}")));
+        assertThat(undone.path("did").asText()).isEqualTo("undid the ungroup of steps 2-3 by the person");
+        assertThat(undone.path("groups")).hasSize(1);
+        assertThat(sink.steps().get(2).groupSay).isEqualTo("Save and finish");
+        // an id that is gone
+        assertThat(sink.describe(9999, 9999, "x").line).contains("gone");
+        assertThat(sink.ungroup(9999).line).contains("gone");
     }
 
     @Test

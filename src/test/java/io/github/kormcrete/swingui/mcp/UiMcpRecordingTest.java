@@ -175,7 +175,7 @@ class UiMcpRecordingTest {
         for (String args : new String[] {"{}", "{\"op\":\"dance\"}"}) {
             DriverException e = catchThrowableOfType(() -> call(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load");
+            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, undo, replay, redo, export, load");
         }
     }
 
@@ -455,17 +455,18 @@ class UiMcpRecordingTest {
     void insertAddsACheckWithoutRunningItAndMarksItEdited() throws Exception {
         four();
         int calls = backend.verbs.calls.size();
-        JsonNode r = call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        JsonNode r = call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
         assertThat(backend.verbs.calls).hasSize(calls);
         assertThat(r.path("did").asText()).isEqualTo("inserted check 1.1");   // the check goes under step 1
-        assertThat(r.path("steps")).hasSize(5);
-        assertThat(r.path("steps").get(1).path("step").path("action").asText()).isEqualTo("expect");
-        assertThat(r.path("steps").get(1).path("edited").asBoolean()).isTrue();
+        assertThat(r.path("steps")).hasSize(4);
+        JsonNode check = r.path("steps").get(0).path("checks").get(0);
+        assertThat(check.path("step").path("action").asText()).isEqualTo("expect");
+        assertThat(check.path("edited").asBoolean()).isTrue();
         assertThat(r.path("steps").get(0).has("edited")).isFalse();
-        assertThat(r.path("steps").get(1).path("author").asText()).isEqualTo("agent");
-        // at size+1 appends
-        assertThat(call("{\"op\":\"insert\",\"at\":6,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"z\"}}}")
-                .path("steps")).hasSize(6);
+        assertThat(check.path("author").asText()).isEqualTo("agent");
+        // at steps+1 appends
+        assertThat(call("{\"op\":\"insert\",\"at\":5,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"z\"}}}")
+                .path("steps")).hasSize(5);
     }
 
     @Test
@@ -578,18 +579,432 @@ class UiMcpRecordingTest {
         call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"total\"},\"value\":\"42.00\"}}");
         call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"drop\",\"target\":{\"id\":\"zone\"},\"files\":[\"/tmp/a.txt\"]}}");
         int rev = call("{\"op\":\"list\"}").path("rev").asInt();
-        assertThat(refused("{\"op\":\"edit\",\"n\":1,\"text\":\"x\"}").getMessage()).contains("step 1 (expect) has no text");
+        assertThat(refused("{\"op\":\"edit\",\"n\":\"1.1\",\"text\":\"x\"}").getMessage()).contains("check 1.1 (expect) has no text");
         assertThat(refused("{\"op\":\"edit\",\"n\":2,\"text\":\"x\"}").getMessage()).contains("step 2 (drop) has no text");
         assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
     }
 
-    @Test
-    void sayAndGroupWaitForTheSentencesVersion() throws Exception {
+    private static final String CHECK = "{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}";
+
+    /** Four clicks (a b c d) with two checks under step 1 (1.1, 1.2) and one under step 3 (3.1). */
+    private void fourWithChecks() throws Exception {
         four();
-        assertThat(refused("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\"}").getMessage())
-                .contains("sentences ('say') come in a later version of swing-ui-agent");
-        assertThat(refused("{\"op\":\"group\",\"from\":1,\"to\":2}").getMessage())
-                .contains("group (steps under one sentence) comes in a later version of swing-ui-agent");
+        call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":" + CHECK + "}");
+        call("{\"op\":\"insert\",\"at\":\"1.2\",\"step\":" + CHECK + "}");
+        call("{\"op\":\"insert\",\"at\":\"3.1\",\"step\":" + CHECK + "}");
+    }
+
+    @Test
+    void editSaysAndUnsaysAStepAndACheck() throws Exception {
+        fourWithChecks();
+        JsonNode r = call("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\"}");
+        assertThat(r.path("did").asText()).isEqualTo("set the sentence of step 1");
+        assertThat(r.path("steps").get(0).path("say").asText()).isEqualTo("Open it");
+        assertThat(r.path("steps").get(0).has("edited")).isFalse();   // a sentence is not a change of behaviour
+        r = call("{\"op\":\"edit\",\"n\":\"1.1\",\"say\":\"  The status is ok \"}");
+        assertThat(r.path("did").asText()).isEqualTo("set the sentence of check 1.1");
+        assertThat(r.path("steps").get(0).path("checks").get(0).path("say").asText()).isEqualTo("The status is ok");
+        assertThat(r.path("steps").get(0).path("say").asText()).isEqualTo("Open it");
+        r = call("{\"op\":\"edit\",\"n\":1,\"say\":\"\"}");
+        assertThat(r.path("did").asText()).isEqualTo("removed the sentence of step 1");
+        assertThat(r.path("steps").get(0).has("say")).isFalse();
+        assertThat(r.path("steps").get(0).path("checks").get(0).has("say")).isTrue();
+    }
+
+    @Test
+    void editCanChangeTheSentenceAndTheTextTogether() throws Exception {
+        call("{\"op\":\"start\"}");
+        call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"name\"},\"text\":\"Ada\"}}");
+        call("{\"op\":\"edit\",\"n\":1,\"say\":\"Name the customer\"}");
+        JsonNode r = call("{\"op\":\"edit\",\"n\":1,\"text\":\"Grace\",\"say\":\"Name Grace\"}");
+        assertThat(r.path("did").asText()).isEqualTo("edited step 1");
+        JsonNode step = r.path("steps").get(0);
+        assertThat(step.path("step").path("text").asText()).isEqualTo("Grace");
+        assertThat(step.path("say").asText()).isEqualTo("Name Grace");
+        assertThat(step.path("edited").asBoolean()).isTrue();
+        // one history entry: one undo takes back the text and the sentence
+        r = call("{\"op\":\"undo\"}");
+        assertThat(r.path("did").asText()).isEqualTo("undid the edit of step 1 by the agent");
+        assertThat(r.path("steps").get(0).path("step").path("text").asText()).isEqualTo("Ada");
+        assertThat(r.path("steps").get(0).path("say").asText()).isEqualTo("Name the customer");
+    }
+
+    @Test
+    void aSentenceWithALineBreakIsRefused() throws Exception {
+        fourWithChecks();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        DriverException e = refused("{\"op\":\"edit\",\"n\":2,\"say\":\"one\\ntwo\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 2").contains("one line");
+        e = refused("{\"op\":\"edit\",\"n\":\"1.2\",\"say\":\"one\\ntwo\"}");
+        assertThat(e.getMessage()).contains("check 1.2").contains("one line");
+        e = refused("{\"op\":\"edit\",\"n\":2,\"text\":\"x\",\"say\":\"one\\ntwo\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(refused("{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\"one\\ntwo\"}").getMessage()).contains("one line");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+    }
+
+    @Test
+    void groupPutsStepsUnderOneSentence() throws Exception {
+        four();
+        JsonNode r = call("{\"op\":\"group\",\"from\":2,\"to\":3,\"say\":\"Pick two\"}");
+        assertThat(r.path("did").asText()).isEqualTo("grouped steps 2-3");
+        assertThat(r.path("groups")).hasSize(1);
+        assertThat(r.path("groups").get(0).path("from").asInt()).isEqualTo(2);
+        assertThat(r.path("groups").get(0).path("to").asInt()).isEqualTo(3);
+        assertThat(r.path("groups").get(0).path("say").asText()).isEqualTo("Pick two");
+        assertThat(r.path("steps").get(0).has("group")).isFalse();
+        assertThat(r.path("steps").get(1).path("group").asInt()).isEqualTo(1);
+        assertThat(r.path("steps").get(2).path("group").asInt()).isEqualTo(1);
+        assertThat(r.path("steps").get(3).has("group")).isFalse();
+        assertThat(r.path("steps").get(1).has("edited")).isFalse();
+        r = call("{\"op\":\"group\",\"from\":2,\"to\":3,\"say\":\"Pick both\"}");
+        assertThat(r.path("did").asText()).isEqualTo("renamed the group of steps 2-3");
+        assertThat(r.path("groups").get(0).path("say").asText()).isEqualTo("Pick both");
+        assertThat(refused("{\"op\":\"group\",\"from\":1,\"to\":9,\"say\":\"x\"}").getMessage()).contains("no step 9");
+        assertThat(refused("{\"op\":\"group\",\"from\":3,\"to\":3,\"say\":\"x\"}").getMessage()).contains("at least two");
+        assertThat(refused("{\"op\":\"group\",\"from\":1,\"to\":2}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void ungroupKeepsTheSteps() throws Exception {
+        four();
+        call("{\"op\":\"group\",\"from\":2,\"to\":4,\"say\":\"Pick three\"}");
+        JsonNode r = call("{\"op\":\"ungroup\",\"n\":3}");
+        assertThat(r.path("did").asText()).isEqualTo("ungrouped steps 2-4");
+        assertThat(r.path("groups")).isEmpty();
+        assertThat(ids(r)).isEqualTo("abcd");
+        assertThat(refused("{\"op\":\"ungroup\",\"n\":3}").getMessage()).contains("step 3 is in no group");
+        assertThat(refused("{\"op\":\"ungroup\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void aGroupThatOverlapsIsRefusedAndNothingChanges() throws Exception {
+        four();
+        call("{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\"First two\"}");
+        JsonNode before = call("{\"op\":\"list\"}");
+        for (String range : new String[] {"\"from\":2,\"to\":3", "\"from\":1,\"to\":4"}) {
+            DriverException e = refused("{\"op\":\"group\"," + range + ",\"say\":\"x\"}");
+            assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        }
+        JsonNode after = call("{\"op\":\"list\"}");
+        assertThat(after.path("rev").asInt()).isEqualTo(before.path("rev").asInt());
+        assertThat(after.path("groups")).isEqualTo(before.path("groups"));
+    }
+
+    @Test
+    void sentenceOpsAreUndoableAndRevChecked() throws Exception {
+        four();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        call("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\",\"rev\":" + rev + "}");
+        DriverException stale = refused("{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\"x\",\"rev\":" + rev + "}");
+        assertThat(stale.reason()).isEqualTo(Reason.BUSY);
+        assertThat(stale.getMessage()).contains("changed since revision " + rev);
+        assertThat(refused("{\"op\":\"ungroup\",\"n\":1,\"rev\":" + rev + "}").reason()).isEqualTo(Reason.BUSY);
+        call("{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\"Two\"}");
+        call("{\"op\":\"ungroup\",\"n\":2}");
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the ungroup of steps 1-2 by the agent");
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the group of steps 1-2 by the agent");
+        JsonNode r = call("{\"op\":\"undo\"}");
+        assertThat(r.path("did").asText()).isEqualTo("undid the sentence of step 1 by the agent");
+        assertThat(r.path("steps").get(0).has("say")).isFalse();
+    }
+
+    @Test
+    void sentenceOpsAreBusyWhileTheAgentReplays() throws Exception {
+        fakeReset();
+        four();
+        final java.util.concurrent.CountDownLatch inStep = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> {
+            if (backend.verbs.calls.size() == 2) {
+                inStep.countDown();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        Thread replay = new Thread(() -> {
+            try {
+                call("{\"op\":\"replay\"}");
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        replay.start();
+        try {
+            assertThat(inStep.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            for (String op : new String[] {
+                    "{\"op\":\"edit\",\"n\":1,\"say\":\"x\"}",
+                    "{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\"x\"}",
+                    "{\"op\":\"ungroup\",\"n\":1}"}) {
+                DriverException e = refused(op);
+                assertThat(e.reason()).isEqualTo(Reason.BUSY);
+                assertThat(e.getMessage()).contains("the agent is replaying the recording");
+            }
+            Inspector.Result d = sink.describe(id(0), id(1), "x");
+            assertThat(d.ok).isFalse();
+            assertThat(d.line).isEqualTo("the agent is replaying the recording");
+            assertThat(sink.ungroup(id(0)).ok).isFalse();
+        } finally {
+            release.countDown();
+            replay.join(10_000);
+        }
+    }
+
+    @Test
+    void theListNestsChecksUnderTheirStep() throws Exception {
+        fourWithChecks();
+        call("{\"op\":\"group\",\"from\":3,\"to\":4,\"say\":\"Last two\"}");
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("steps")).hasSize(4);
+        JsonNode one = list.path("steps").get(0);
+        assertThat(one.path("n").isInt()).isTrue();
+        assertThat(one.path("n").asInt()).isEqualTo(1);
+        assertThat(one.path("line").asText()).isEqualTo("click(#a)");
+        assertThat(one.has("java")).isTrue();
+        assertThat(one.path("step").path("target").path("id").asText()).isEqualTo("a");
+        assertThat(one.path("checks")).hasSize(2);
+        assertThat(one.path("checks").get(0).path("n").isTextual()).isTrue();
+        assertThat(one.path("checks").get(0).path("n").asText()).isEqualTo("1.1");
+        assertThat(one.path("checks").get(1).path("n").asText()).isEqualTo("1.2");
+        assertThat(one.path("checks").get(0).path("author").asText()).isEqualTo("agent");
+        assertThat(one.path("checks").get(0).path("line").asText()).startsWith("expect(");
+        assertThat(one.path("checks").get(0).has("java")).isTrue();
+        assertThat(one.path("checks").get(0).path("step").path("action").asText()).isEqualTo("expect");
+        assertThat(one.path("checks").get(0).path("edited").asBoolean()).isTrue();
+        assertThat(list.path("steps").get(1).path("checks")).isEmpty();
+        assertThat(list.path("steps").get(2).path("checks").get(0).path("n").asText()).isEqualTo("3.1");
+        assertThat(list.path("groups")).hasSize(1);
+        assertThat(list.path("groups").get(0).path("from").asInt()).isEqualTo(3);
+        assertThat(list.path("groups").get(0).path("to").asInt()).isEqualTo(4);
+        assertThat(list.path("steps").get(2).path("group").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void aCheckOnlyStepHasNoLineAndNothingGoesInFrontOfIt() throws Exception {
+        call("{\"op\":\"start\"}");
+        JsonNode r = call("{\"op\":\"insert\",\"at\":1,\"step\":" + CHECK + "}");
+        assertThat(r.path("did").asText()).isEqualTo("inserted check 1.1");
+        JsonNode first = r.path("steps").get(0);
+        assertThat(first.path("n").asInt()).isEqualTo(1);
+        assertThat(first.has("line")).isFalse();
+        assertThat(first.has("step")).isFalse();
+        assertThat(first.has("java")).isFalse();
+        assertThat(first.path("checks").get(0).path("n").asText()).isEqualTo("1.1");
+        int rev = r.path("rev").asInt();
+        // an action in front would silently take the checks as its own: refused, not moved to 2
+        DriverException e = refused("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"a\"}}}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 1 holds only checks");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+        r = call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"a\"}}}");
+        assertThat(r.path("steps")).hasSize(2);
+        assertThat(refused("{\"op\":\"move\",\"n\":2,\"to\":1}").getMessage()).contains("step 1 holds only checks");
+        assertThat(refused("{\"op\":\"move\",\"n\":1,\"to\":2}").getMessage()).contains("cannot be moved");
+    }
+
+    @Test
+    void aCheckCannotBeMovedAndARangeIsSteps() throws Exception {
+        fourWithChecks();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        DriverException e = refused("{\"op\":\"move\",\"n\":\"1.2\",\"to\":3}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("check 1.2").contains("cannot be moved");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+        // a range delete is steps and takes their checks along
+        JsonNode r = call("{\"op\":\"delete\",\"from\":1,\"to\":2}");
+        assertThat(r.path("did").asText()).isEqualTo("deleted steps 1-2 and their 2 checks");
+        assertThat(r.path("steps")).hasSize(2);
+        assertThat(r.path("steps").get(0).path("checks").get(0).path("n").asText()).isEqualTo("1.1");
+        // moving a step takes its checks along
+        r = call("{\"op\":\"move\",\"n\":1,\"to\":2}");
+        assertThat(r.path("did").asText()).isEqualTo("moved step 1 to 2");
+        assertThat(r.path("steps").get(1).path("checks")).hasSize(1);
+    }
+
+    @Test
+    void deleteOfAStepTakesItsChecksAndDeleteOfACheckOnlyThat() throws Exception {
+        fourWithChecks();
+        JsonNode r = call("{\"op\":\"delete\",\"n\":\"1.1\"}");
+        assertThat(r.path("did").asText()).isEqualTo("deleted check 1.1");
+        assertThat(r.path("steps")).hasSize(4);
+        assertThat(r.path("steps").get(0).path("checks")).hasSize(1);
+        assertThat(r.path("steps").get(0).path("checks").get(0).path("n").asText()).isEqualTo("1.1");
+        r = call("{\"op\":\"delete\",\"n\":1}");
+        assertThat(r.path("did").asText()).isEqualTo("deleted step 1 and its 1 check");
+        assertThat(r.path("steps")).hasSize(3);
+        assertThat(ids(r)).isEqualTo("bcd");
+        assertThat(r.path("steps").get(1).path("checks").get(0).path("n").asText()).isEqualTo("2.1");
+        DriverException e = refused("{\"op\":\"delete\",\"n\":\"2.5\"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("no check 2.5");
+        assertThat(refused("{\"op\":\"delete\",\"n\":\"seven\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+        // the person's delete follows the same rule, by record id
+        List<Inspector.StepLine> lines = sink.steps();
+        assertThat(lines.get(1).label).isEqualTo("2");
+        assertThat(lines.get(2).label).isEqualTo("2.1");
+        assertThat(sink.delete(lines.get(2).id).line).isEqualTo("deleted check 2.1");
+        assertThat(sink.delete(lines.get(1).id).line).isEqualTo("deleted step 2");
+    }
+
+    @Test
+    void insertTakesAStepPositionOrACheckLabel() throws Exception {
+        four();
+        JsonNode r = call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"click\",\"target\":{\"id\":\"x\"}}}");
+        assertThat(r.path("did").asText()).isEqualTo("inserted at step 2");
+        assertThat(ids(r)).isEqualTo("axbcd");
+        r = call("{\"op\":\"insert\",\"at\":\"2.1\",\"step\":" + CHECK + "}");
+        assertThat(r.path("did").asText()).isEqualTo("inserted check 2.1");
+        assertThat(r.path("steps").get(1).path("checks")).hasSize(1);
+        r = call("{\"op\":\"insert\",\"at\":\"2.1\",\"step\":" + CHECK.replace("ok", "first") + "}");
+        assertThat(r.path("steps").get(1).path("checks").get(0).path("step").path("text").asText()).isEqualTo("first");
+        int rev = r.path("rev").asInt();
+        assertThat(refused("{\"op\":\"insert\",\"at\":3,\"step\":" + CHECK + "}").getMessage())
+                .contains("a check goes under a step").contains("\"3.1\"");
+        assertThat(refused("{\"op\":\"insert\",\"at\":\"2.9\",\"step\":" + CHECK + "}").getMessage()).contains("no place for check 2.9");
+        assertThat(refused("{\"op\":\"insert\",\"at\":\"2.1\",\"step\":{\"action\":\"click\",\"target\":{\"id\":\"q\"}}}")
+                .getMessage()).contains("an action goes at a step position");
+        assertThat(refused("{\"op\":\"insert\",\"at\":\"x\",\"step\":" + CHECK + "}").reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+        // at 1 a check makes the check-only step 1
+        r = call("{\"op\":\"insert\",\"at\":1,\"step\":" + CHECK + "}");
+        assertThat(r.path("steps")).hasSize(6);
+        assertThat(r.path("steps").get(0).has("line")).isFalse();
+    }
+
+    @Test
+    void replayAndRedoCountSteps() throws Exception {
+        fakeReset();
+        fourWithChecks();
+        backend.verbs.calls.clear();
+        JsonNode r = call("{\"op\":\"replay\",\"from\":1,\"to\":1}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("reset").asBoolean()).isTrue();
+        assertThat(r.path("ran").asInt()).isEqualTo(3);      // the action and its two checks
+        assertThat(r.path("steps").get(0).path("n").asInt()).isEqualTo(1);
+        assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("1.1");
+        assertThat(r.path("steps").get(2).path("n").asText()).isEqualTo("1.2");
+        backend.verbs.calls.clear();
+        r = call("{\"op\":\"replay\",\"from\":3,\"to\":3}");
+        assertThat(r.path("reset").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
+        assertThat(r.path("total").asInt()).isEqualTo(2);
+        assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("3.1");
+        assertThat(refused("{\"op\":\"replay\",\"from\":3,\"to\":5}").getMessage()).contains("no step 5");
+        assertThat(refused("{\"op\":\"replay\",\"from\":3,\"to\":2}").getMessage()).contains("before");
+        // redo from step 3 cuts steps 3 and 4 with step 3's check, replays step 1 and 2 with theirs, then records on
+        call("{\"op\":\"stop\"}");
+        backend.verbs.calls.clear();
+        r = call("{\"op\":\"redo\",\"from\":3}");
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("ran").asInt()).isEqualTo(4);
+        assertThat(r.path("list").path("steps")).hasSize(2);
+        assertThat(r.path("list").path("steps").get(0).path("checks")).hasSize(2);
+        // the number after the last step continues
+        call("{\"op\":\"stop\"}");
+        r = call("{\"op\":\"redo\",\"from\":3}");
+        assertThat(r.path("recording").asBoolean()).isTrue();
+        assertThat(refused("{\"op\":\"redo\",\"from\":4}").getMessage()).contains("no step 4");
+        assertThat(refused("{\"op\":\"redo\",\"from\":\"1.1\"}").reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void theListTheReportAndTheFileAgreeOnNumbers() throws Exception {
+        fakeReset();
+        four(true);
+        call("{\"op\":\"insert\",\"at\":\"2.1\",\"step\":" + CHECK + "}");
+        call("{\"op\":\"insert\",\"at\":\"2.2\",\"step\":" + CHECK + "}");
+        call("{\"op\":\"group\",\"from\":3,\"to\":4,\"say\":\"The last two\"}");
+        call("{\"op\":\"stop\"}");
+        JsonNode list = call("{\"op\":\"list\"}");
+        List<String> listed = new java.util.ArrayList<String>();
+        for (JsonNode st : list.path("steps")) {
+            listed.add(st.path("n").asText());
+            for (JsonNode c : st.path("checks")) listed.add(c.path("n").asText());
+        }
+        assertThat(listed).containsExactly("1", "2", "2.1", "2.2", "3", "4");
+        call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"agree\",\"dir\":\"" + quoted(dir) + "\"}");
+        JsonNode file = mapper.readTree(Files.readAllBytes(dir.resolve("agree.json")));
+        List<String> nested = new java.util.ArrayList<String>();
+        int n = 0;
+        for (JsonNode el : file.path("steps")) {
+            if (el.has("steps")) {
+                for (JsonNode inner : el.path("steps")) nested.add(String.valueOf(++n));
+            } else {
+                n++;
+                nested.add(String.valueOf(n));
+                int k = 0;
+                for (JsonNode c : el.path("checks")) nested.add(n + "." + (++k));
+            }
+        }
+        assertThat(nested).containsExactly("1", "2", "2.1", "2.2", "3", "4");
+        session.recordedDir(dir, true);
+        JsonNode run = mapper.readTree(session.runRecordedTest(mapper.readTree("{\"name\":\"agree\"}")));
+        List<String> reported = new java.util.ArrayList<String>();
+        for (JsonNode st : run.path("steps")) reported.add(st.path("n").asText());
+        assertThat(reported).isEqualTo(listed);
+        assertThat(run.path("report").asText()).contains("[2.1]").contains("[4]");
+    }
+
+    @Test
+    void exportWritesGroupsAndChecksNestedAndCommentsIntoJava() throws Exception {
+        Path tests = dir.resolve("tests");
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
+        try {
+            fakeReset();
+            four(true);
+            call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":" + CHECK + "}");
+            call("{\"op\":\"edit\",\"n\":\"1.1\",\"say\":\"The status is ok\"}");
+            call("{\"op\":\"edit\",\"n\":2,\"say\":\"Open the second\"}");
+            call("{\"op\":\"group\",\"from\":2,\"to\":3,\"say\":\"Pick two\"}");
+            call("{\"op\":\"stop\"}");
+            call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"nested\",\"dir\":\"" + quoted(dir) + "\"}");
+            JsonNode file = mapper.readTree(Files.readAllBytes(dir.resolve("nested.json")));
+            assertThat(file.path("version").asInt()).isEqualTo(2);
+            assertThat(file.path("steps")).hasSize(3);
+            assertThat(file.path("steps").get(0).path("checks")).hasSize(1);
+            assertThat(file.path("steps").get(0).path("checks").get(0).path("say").asText()).isEqualTo("The status is ok");
+            assertThat(file.path("steps").get(1).path("say").asText()).isEqualTo("Pick two");
+            assertThat(file.path("steps").get(1).path("steps")).hasSize(2);
+            assertThat(file.path("steps").get(1).path("steps").get(0).path("say").asText()).isEqualTo("Open the second");
+            assertThat(file.path("steps").get(2).path("target").path("id").asText()).isEqualTo("d");
+            call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"NestedUiIT\",\"package\":\"demo\"}");
+            String source = new String(Files.readAllBytes(tests.resolve("demo/NestedUiIT.java")), StandardCharsets.UTF_8);
+            assertThat(source).contains("// The status is ok").contains("// Pick two").contains("// Open the second");
+            assertThat(source.indexOf("// Pick two")).isLessThan(source.indexOf("// Open the second"));
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        }
+    }
+
+    @Test
+    void aLoadedGroupedTestKeepsItsGroups() throws Exception {
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "grouped";
+        flow.start = RecordedTestFiles.START_RESET;
+        for (String id : new String[] {"a", "b", "c"}) {
+            ClickVerb c = new ClickVerb();
+            c.target = Locator.ofId(id);
+            if (id.equals("b")) c.say = "Open b";
+            flow.steps.add(c);
+        }
+        flow.groups.add(new io.github.kormcrete.swingui.flow.FlowGroup(1, 2, "The last two"));
+        Path file = dir.resolve("grouped.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        JsonNode list = call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
+        assertThat(list.path("groups")).hasSize(1);
+        assertThat(list.path("groups").get(0).path("from").asInt()).isEqualTo(2);
+        assertThat(list.path("groups").get(0).path("to").asInt()).isEqualTo(3);
+        assertThat(list.path("groups").get(0).path("say").asText()).isEqualTo("The last two");
+        assertThat(list.path("steps").get(1).path("say").asText()).isEqualTo("Open b");
+        // saved back, the groups stay
+        call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"grouped\",\"dir\":\"" + quoted(dir) + "\"}");
+        assertThat(RecordedTestFiles.read(file).groups).hasSize(1);
     }
 
     @Test
@@ -859,7 +1274,7 @@ class UiMcpRecordingTest {
     void replayEntriesAreNumberedByStepAndCheck() throws Exception {
         fakeReset();
         four();
-        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
         JsonNode r = call("{\"op\":\"replay\"}");
         assertThat(r.path("steps")).hasSize(5);
         assertThat(r.path("steps").get(0).path("n").isInt()).isTrue();
@@ -1248,10 +1663,10 @@ class UiMcpRecordingTest {
         click("c");
         call("{\"op\":\"delete\",\"n\":2}");
         assertThat(ids(call("{\"op\":\"undo\"}"))).isEqualTo("abc");
-        call("{\"op\":\"insert\",\"at\":4,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        call("{\"op\":\"insert\",\"at\":\"3.1\",\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
         JsonNode r = call("{\"op\":\"replay\"}");
         assertThat(r.path("passed").asBoolean()).isTrue();
-        assertThat(call("{\"op\":\"list\"}").path("steps").get(3).has("edited")).isFalse();
+        assertThat(call("{\"op\":\"list\"}").path("steps").get(2).path("checks").get(0).has("edited")).isFalse();
         assertThat(session.recordingReason()).isNotNull();
         call("{\"op\":\"stop\"}");
         assertThat(session.recordingReason()).isNull();

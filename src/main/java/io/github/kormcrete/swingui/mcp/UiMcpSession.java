@@ -61,6 +61,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -515,8 +516,9 @@ public class UiMcpSession {
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing cut");
-                    int firstRecord = StepNumbers.of(model.actions()).get(at.step - 1).first();
-                    Inspector.Result refused = refusedEdit(model.actions().subList(0, firstRecord));
+                    RecordingModel scratch = model.copy();
+                    scratch.cutFromStep(at.step, RecordedStep.Author.PERSON);
+                    Inspector.Result refused = refusedEdit(scratch.actions());
                     if (refused != null) return refused;
                     String did = model.cutFromStep(at.step, RecordedStep.Author.PERSON);
                     publish();
@@ -540,13 +542,54 @@ public class UiMcpSession {
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing deleted");
-                    RecordingModel scratch = scratchModel();
-                    deleteAt(scratch, at);
+                    RecordingModel scratch = model.copy();
+                    scratch.delete(at, RecordedStep.Author.PERSON);
                     Inspector.Result refused = refusedEdit(scratch.actions());
                     if (refused != null) return refused;
-                    String did = deleteAt(model, at);
+                    String did = model.delete(at, RecordedStep.Author.PERSON);
                     publish();
                     return new Inspector.Result(true, did);
+                }
+            }
+
+            @Override
+            public Inspector.Result describe(int fromId, int toId, String say) {
+                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
+                synchronized (UiMcpSession.this) {
+                    StepAddress a = model.addressOf(fromId);
+                    StepAddress b = model.addressOf(toId);
+                    if (a == null || b == null) return gone("nothing described");
+                    try {
+                        String did;
+                        if (a.step == b.step) {
+                            // one check: its own sentence; anything else within the step: the step's
+                            did = model.say(a.isCheck() && a.equals(b) ? a : StepAddress.ofStep(a.step), say,
+                                    RecordedStep.Author.PERSON);
+                        } else {
+                            did = model.group(Math.min(a.step, b.step), Math.max(a.step, b.step), say,
+                                    RecordedStep.Author.PERSON);
+                        }
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
+                }
+            }
+
+            @Override
+            public Inspector.Result ungroup(int id) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
+                synchronized (UiMcpSession.this) {
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing ungrouped");
+                    try {
+                        String did = model.ungroup(at.step, RecordedStep.Author.PERSON);
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
                 }
             }
 
@@ -869,6 +912,11 @@ public class UiMcpSession {
 
     private static String text(JsonNode args, String field) {
         return args != null && args.hasNonNull(field) ? args.get(field).asText() : null;
+    }
+
+    /** A step number or check label argument ({@code 7}, {@code "7.2"}); null when absent. */
+    private static StepAddress address(JsonNode args, String field) {
+        return args != null && args.hasNonNull(field) ? StepAddress.parse(args.get(field)) : null;
     }
 
     private static Integer integer(JsonNode args, String field) {
@@ -1265,7 +1313,7 @@ public class UiMcpSession {
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
         ExportDefaults defaults = exportDefaults.get();
         String packageName = pkg == null || pkg.isEmpty() ? defaults.packageName : pkg;
-        String source = JavaTestWriter.write(model.actions(), packageName, className, methodName);
+        String source = JavaTestWriter.write(model.flow(), packageName, className, methodName);
 
         String configured = System.getProperty(TESTS_DIR_PROP);
         boolean genericLocation = defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty()) && configured == null;
@@ -1536,7 +1584,7 @@ public class UiMcpSession {
     public synchronized String loadRecordedTest(Path file) {
         Flow flow = RecordedTestFiles.read(file);
         try {
-            JavaTestWriter.write(new ArrayList<Action>(flow.steps), CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+            JavaTestWriter.write(flow, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
         } catch (ExportRefused e) {
             throw new IllegalArgumentException(flow.name + " cannot be loaded into the recording: "
                     + String.join("; ", e.problems()) + "; run it with run_recorded_test or the JUnit runner instead");
@@ -1677,24 +1725,39 @@ public class UiMcpSession {
                 return published.json;
             }
             case "insert": {
-                Integer at = integer(args, "at");
-                if (at == null) throw new DriverException(Reason.BAD_INPUT, "insert needs 'at' (the position) and 'step'");
+                if (!args.hasNonNull("at")) {
+                    throw new DriverException(Reason.BAD_INPUT, "insert needs 'at' (a step position, or a check label like \"7.2\") and 'step'");
+                }
                 if (!args.path("step").isObject()) throw new DriverException(Reason.BAD_INPUT, "insert needs 'step': a step");
-                return recordingInsert(at, args.get("step"), integer(args, "rev"));
+                return recordingInsert(StepAddress.parse(args.get("at")), args.get("step"), integer(args, "rev"));
             }
             case "delete":
-                return recordingDelete(integer(args, "n"), integer(args, "from"), integer(args, "to"), integer(args, "rev"));
+                return recordingDelete(address(args, "n"), integer(args, "from"), integer(args, "to"), integer(args, "rev"));
             case "move": {
-                Integer n = integer(args, "n");
+                StepAddress n = address(args, "n");
                 Integer to = integer(args, "to");
                 if (n == null || to == null) throw new DriverException(Reason.BAD_INPUT, "move needs 'n' and 'to'");
                 return recordingMove(n, to, integer(args, "rev"));
             }
             case "edit": {
-                Integer n = integer(args, "n");
-                if (n == null) throw new DriverException(Reason.BAD_INPUT, "edit needs 'n' and target, text or step");
+                StepAddress n = address(args, "n");
+                if (n == null) throw new DriverException(Reason.BAD_INPUT, "edit needs 'n' and target, text, step or say");
                 return recordingEdit(n, args.get("target"), text(args, "text"), args.get("step"), integer(args, "rev"),
-                        args.has("say"));
+                        text(args, "say"));
+            }
+            case "group": {
+                Integer from = integer(args, "from");
+                Integer to = integer(args, "to");
+                String say = text(args, "say");
+                if (from == null || to == null || say == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "group needs 'from', 'to' (step numbers) and 'say' (its sentence)");
+                }
+                return recordingGroup(from, to, say, integer(args, "rev"));
+            }
+            case "ungroup": {
+                StepAddress n = address(args, "n");
+                if (n == null) throw new DriverException(Reason.BAD_INPUT, "ungroup needs 'n' (a step of the group)");
+                return recordingUngroup(n.step, integer(args, "rev"));
             }
             case "undo":
                 return recordingUndo(integer(args, "rev"));
@@ -1715,19 +1778,16 @@ public class UiMcpSession {
                 }
                 return recordingLoad(name, path);
             }
-            case "group":
-                throw new DriverException(Reason.BAD_INPUT, "group (steps under one sentence) comes in a later version "
-                        + "of swing-ui-agent, with sentences");
             default:
                 throw new DriverException(Reason.BAD_INPUT, "unknown recording op '" + op + "' (" + OPS + ")");
         }
     }
 
     /** Every op of the recording tool, as its errors list them. */
-    private static final String OPS = "start, stop, list, insert, delete, move, edit, undo, replay, redo, export, load";
+    private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, undo, replay, redo, export, load";
 
     private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
-            java.util.Arrays.asList("insert", "delete", "move", "edit", "undo"));
+            java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "undo"));
 
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
@@ -1772,15 +1832,17 @@ public class UiMcpSession {
     }
 
     /**
-     * Runs steps {@code from} to {@code to} (default: all) again on the live app without recording them. From step 1 the
-     * app is reset first, as the exported test starts. Stops at the first failing step. A step that passes no longer
-     * counts as edited. Result: {@code passed, ran, total, reset, rev, steps:[{n, line, passed, ms, message?, reason?}]}.
+     * Runs steps {@code from} to {@code to} (default: all; step numbers, a step with its checks) again on the live app
+     * without recording them. From step 1 the app is reset first, as the exported test starts. Stops at the first
+     * failing record. A record that passes no longer counts as edited. Result: {@code passed, ran, total, reset, rev,
+     * steps:[{n, line, passed, ms, message?, reason?}]}, n a step number or a check label like "7.2"; {@code ran} and
+     * {@code total} count actions and checks.
      */
     public synchronized String recordingReplay(Integer from, Integer to, String speed) {
         long pause = pauseFor(speed);
-        int size = model.size();
+        int count = model.steps();
         ObjectNode r;
-        if (size == 0) {
+        if (model.size() == 0) {
             r = mapper.createObjectNode();
             r.put("passed", true);
             r.put("ran", 0);
@@ -1790,13 +1852,10 @@ public class UiMcpSession {
             r.putArray("steps");
         } else {
             int a = from == null ? 1 : from;
-            int b = to == null ? size : to;
-            model.at(a);
-            model.at(b);
-            if (b < a) throw new DriverException(Reason.BAD_INPUT, "replay: 'to' (" + b + ") is before 'from' (" + a + ")");
+            int b = to == null ? count : to;
             r = replay(a, b, pause);
             // only a replay of the whole recording from the reset shows that it starts there
-            if (a == 1 && b == size && r.path("passed").asBoolean()) beginsAtReset();
+            if (a == 1 && b == count && r.path("passed").asBoolean()) beginsAtReset();
         }
         r.put("rev", model.rev());
         return r.toString();
@@ -1804,6 +1863,7 @@ public class UiMcpSession {
 
     /** Replays steps {@code a} to {@code b} under the agent's hold (see {@link #agentReplaying}); resets first from step 1. */
     private ObjectNode replay(int a, int b, long pause) {
+        int[] range = model.flatRange(a, b);   // refuses a number that is no step
         boolean reset = a == 1;
         ObjectNode r = mapper.createObjectNode();
         ArrayNode results = mapper.createArrayNode();
@@ -1817,24 +1877,26 @@ public class UiMcpSession {
             boolean passed = true;
             int ran = 0;
             List<String> labels = StepNumbers.labels(model.actions());
-            for (int n = a; n <= b; n++) {
-                RecordedStep recorded = model.at(n);
-                if (pause > 0 && (n == a || !isCheck(recorded.action))) sleep(pause);
-                if (palette) view.agentReplaying("replaying " + n + "/" + b + "  " + recorded.action.describe());
+            for (int i = range[0]; i <= range[1]; i++) {
+                RecordedStep recorded = model.at(i + 1);
+                boolean check = StepNumbers.isCheck(recorded.action);
+                String what = (check ? "check " : "step ") + labels.get(i);
+                if (pause > 0 && (i == range[0] || !check)) sleep(pause);
+                if (palette) view.agentReplaying("replaying " + labels.get(i) + "/" + b + "  " + recorded.action.describe());
                 JsonNode json = stripNulls(mapper.valueToTree(recorded.action));
                 ObjectNode step;
                 try {
                     step = runAndRecord(json, false, RecordedStep.Author.AGENT);
                 } catch (DriverException e) {
                     if (palette) view.replayed(recorded.id, false);
-                    throw new DriverException(e.reason(), "step " + n + ": "
+                    throw new DriverException(e.reason(), what + ": "
                             + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
                 }
                 ran++;
                 boolean ok = step.path("passed").asBoolean();
                 if (palette) view.replayed(recorded.id, ok);
                 ObjectNode o = results.addObject();
-                putLabel(o, labels.get(n - 1));
+                putLabel(o, labels.get(i));
                 o.put("line", recorded.action.describe());
                 o.put("passed", ok);
                 o.put("ms", step.path("ms").asLong());
@@ -1849,7 +1911,7 @@ public class UiMcpSession {
             }
             r.put("passed", passed);
             r.put("ran", ran);
-            r.put("total", b - a + 1);
+            r.put("total", range[1] - range[0] + 1);
             r.put("reset", reset);
             r.set("steps", results);
             return r;
@@ -1861,10 +1923,6 @@ public class UiMcpSession {
         }
     }
 
-    private static boolean isCheck(Action a) {
-        return a.describe().startsWith("expect(");
-    }
-
     private static void sleep(long ms) {
         try {
             Thread.sleep(ms);
@@ -1874,24 +1932,24 @@ public class UiMcpSession {
     }
 
     /**
-     * Cuts the steps from {@code from}, replays the ones before it from a reset and, when they pass, records on (the
-     * recording is running again, started by the agent). {@code from} may be the number after the last step: nothing is
-     * cut and a stopped recording continues. When the replay fails the cut stays (undo brings it back).
+     * Cuts step {@code from} and everything after it, replays the steps before it (with their checks) from a reset and,
+     * when they pass, records on (the recording is running again, started by the agent). {@code from} may be the number
+     * after the last step: nothing is cut and a stopped recording continues. When the replay fails the cut stays (undo
+     * brings it back).
      */
     public synchronized String recordingRedo(int from, Integer rev) {
         checkRev(rev);
-        int size = model.size();
-        if (from < 1 || from > size + 1) {
-            throw new DriverException(Reason.BAD_INPUT, "no step " + from + " to record from (the recording has " + size
-                    + " steps; " + (size + 1) + " continues it)");
+        int count = model.steps();
+        if (from < 1 || from > count + 1) {
+            throw new DriverException(Reason.BAD_INPUT, "no step " + from + " to record from (the recording has " + count
+                    + (count == 1 ? " step" : " steps") + "; " + (count + 1) + " continues it)");
         }
         boolean wasRecording = model.state() == RecordingModel.State.RECORDING;
-        // ADAPTER (Task 7): a flat record number; the cut starts at that record's step
-        String cut = from > size ? null : model.cutFromStep(model.addressOf(model.at(from).id).step, RecordedStep.Author.AGENT);
+        String cut = from > count ? null : model.cutFromStep(from, RecordedStep.Author.AGENT);
         publish(cut == null ? null : "the agent " + cut);
         ObjectNode r = null;
         try {
-            int kept = model.size();
+            int kept = model.steps();
             r = kept == 0 ? resetOnly() : replay(1, kept, 0L);
         } finally {
             // as the palette's redo: a running recording stops, its next steps would be on a screen the replay missed
@@ -2004,138 +2062,119 @@ public class UiMcpSession {
         }
     }
 
-    // ADAPTERS (Task 7 removes them): the session still speaks flat record numbers; the model speaks steps and checks.
+    // Each edit below is first tried on a copy of the recording (RecordingModel.copy): the model refuses a bad address
+    // or structure there (nothing is placed or widened for it), validateEdit refuses a result with no Java form, and only
+    // then is the real recording edited.
 
-    /** A copy of the recording to try an edit on before it is made for real. */
-    private RecordingModel scratchModel() {
-        RecordingModel scratch = new RecordingModel();
-        scratch.load(model.flow(), RecordedStep.Author.LOADED);
-        return scratch;
-    }
-
-    /** Deletes what {@code at} names: a check alone, or a step with its checks. */
-    private static String deleteAt(RecordingModel m, StepAddress at) {
-        return at.isCheck() ? m.deleteCheck(at.step, at.check, RecordedStep.Author.PERSON)
-                : m.deleteSteps(at.step, at.step, RecordedStep.Author.PERSON);
-    }
-
-    /** The step or check that flat record {@code n} (1-based) is. */
-    private StepAddress addressOfRecord(int n) {
-        return model.addressOf(model.at(n).id);
-    }
-
-    /** Where inserting {@code action} before flat record {@code at} puts it, as the model reads it. */
-    private StepAddress insertAddress(int at, Action action) {
-        List<Action> flat = model.actions();
-        if (at < 1 || at > flat.size() + 1) return StepAddress.ofStep(at);
-        boolean check = StepNumbers.isCheck(action);
-        if (check) {
-            if (at == 1) return flat.isEmpty() || !StepNumbers.isCheck(flat.get(0)) ? StepAddress.ofStep(1) : new StepAddress(1, 1);
-            StepAddress before = addressOfRecord(at - 1);
-            return new StepAddress(before.step, before.check + 1);
-        }
-        if (at == flat.size() + 1) return StepAddress.ofStep(model.steps() + 1);
-        StepAddress here = addressOfRecord(at);
-        return StepAddress.ofStep(here.isCheck() ? here.step + 1 : here.step);
-    }
-
-    /** Puts {@code step} at position {@code at} without running it; it counts as edited until a replay passes it. */
-    synchronized String recordingInsert(int at, JsonNode step, Integer rev) {
+    /** Puts {@code step} at {@code at} (a step position for an action, a check label for a check) without running it; it counts as edited until a replay passes it. */
+    synchronized String recordingInsert(StepAddress at, JsonNode step, Integer rev) {
         checkRev(rev);
         Action action = action(step);
-        StepAddress where = insertAddress(at, action);
-        RecordingModel scratch = scratchModel();
-        scratch.insert(where, action, RecordedStep.Author.AGENT);
+        RecordingModel scratch = model.copy();
+        scratch.insert(at, action, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
-        return edited(model.insert(where, action, RecordedStep.Author.AGENT));
+        return edited(model.insert(at, action, RecordedStep.Author.AGENT));
     }
 
-    /** Deletes step {@code n}, or steps {@code from} to {@code to}; the later steps close up. */
-    synchronized String recordingDelete(Integer n, Integer from, Integer to, Integer rev) {
+    /**
+     * Deletes what {@code n} names (a step with its checks, or one check), or steps {@code from} to {@code to} with their
+     * checks; the later steps close up.
+     */
+    synchronized String recordingDelete(StepAddress n, Integer from, Integer to, Integer rev) {
         checkRev(rev);
-        int a;
-        int b;
+        RecordingModel scratch = model.copy();
+        String did;
         if (n != null && from == null && to == null) {
-            a = n;
-            b = n;
+            scratch.delete(n, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            did = model.delete(n, RecordedStep.Author.AGENT);
         } else if (n == null && from != null && to != null) {
-            a = from;
-            b = to;
+            if (to < from) throw new DriverException(Reason.BAD_INPUT, "delete: 'to' (" + to + ") is before 'from' (" + from + ")");
+            scratch.deleteSteps(from, to, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            did = model.deleteSteps(from, to, RecordedStep.Author.AGENT);
         } else {
             throw new DriverException(Reason.BAD_INPUT, "delete takes 'n', or 'from' and 'to'");
-        }
-        StepAddress first = addressOfRecord(a);
-        StepAddress last = addressOfRecord(b);
-        if (b < a) throw new DriverException(Reason.BAD_INPUT, "delete: 'to' (" + b + ") is before 'from' (" + a + ")");
-        RecordingModel scratch = scratchModel();
-        String did;
-        if (a == b && first.isCheck()) {
-            scratch.deleteCheck(first.step, first.check, RecordedStep.Author.AGENT);
-            validateEdit(scratch.actions());
-            did = model.deleteCheck(first.step, first.check, RecordedStep.Author.AGENT);
-        } else {
-            scratch.deleteSteps(first.step, last.step, RecordedStep.Author.AGENT);
-            validateEdit(scratch.actions());
-            did = model.deleteSteps(first.step, last.step, RecordedStep.Author.AGENT);
         }
         return edited(did);
     }
 
-    /** Moves step {@code n} to position {@code to}. */
-    synchronized String recordingMove(int n, int to, Integer rev) {
+    /** Moves step {@code n}, with its checks, so that it is step {@code to} afterwards. A check is not moved on its own. */
+    synchronized String recordingMove(StepAddress n, int to, Integer rev) {
         checkRev(rev);
-        StepAddress from = addressOfRecord(n);
-        StepAddress target = addressOfRecord(to);
-        RecordingModel scratch = scratchModel();
-        scratch.moveStep(from.step, target.step, RecordedStep.Author.AGENT);
+        if (n.isCheck()) {
+            throw new DriverException(Reason.BAD_INPUT, "check " + n + " cannot be moved on its own: move its step (" + n.step
+                    + ") with its checks, or delete the check and insert it again");
+        }
+        RecordingModel scratch = model.copy();
+        scratch.moveStep(n.step, to, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
-        return edited(model.moveStep(from.step, target.step, RecordedStep.Author.AGENT));
+        return edited(model.moveStep(n.step, to, RecordedStep.Author.AGENT));
     }
 
     /**
-     * Changes step {@code n}: its {@code target}, its {@code text}, or the whole step. The step is not run again; it
-     * counts as edited until a replay passes it.
+     * Changes the step or check {@code n}: its {@code target}, its {@code text}, the whole {@code step}, and/or its sentence
+     * {@code say} ({@code ""} removes it). A change of target, text or step is not run again and counts as edited until
+     * a replay passes it; with {@code say} too it is still one edit. A sentence alone is no change of behaviour.
      */
-    synchronized String recordingEdit(int n, JsonNode target, String text, JsonNode step, Integer rev, boolean say) {
+    synchronized String recordingEdit(StepAddress n, JsonNode target, String text, JsonNode step, Integer rev, String say) {
         checkRev(rev);
-        if (say) {
-            throw new DriverException(Reason.BAD_INPUT, "sentences ('say') come in a later version of swing-ui-agent; "
-                    + "edit takes target, text or step");
-        }
+        String what = (n.isCheck() ? "check " : "step ") + n;
         Action old = model.at(n).action;
         boolean hasTarget = target != null && !target.isNull();
         boolean whole = step != null && !step.isNull();
         if (whole && (hasTarget || text != null)) {
             throw new DriverException(Reason.BAD_INPUT, "edit takes 'step', or 'target' and/or 'text', not both");
         }
-        if (!whole && !hasTarget && text == null) {
-            throw new DriverException(Reason.BAD_INPUT, "edit needs target, text or step");
+        boolean changes = whole || hasTarget || text != null;
+        if (!changes && say == null) {
+            throw new DriverException(Reason.BAD_INPUT, "edit needs target, text, step or say");
         }
-        Action replaced;
+        String sentence = say == null ? null : say.trim();
+        if (sentence != null && !sentence.isEmpty()) RecordedTestFiles.checkSay(sentence, what);
+        if (!changes) return edited(model.say(n, sentence, RecordedStep.Author.AGENT));
+        ObjectNode tree;
         if (whole) {
-            replaced = action(step);
+            if (!step.isObject()) throw new DriverException(Reason.BAD_INPUT, "edit 'step' must be a step object");
+            tree = (ObjectNode) step.deepCopy();
+            if (sentence == null && !tree.has("say") && old.say != null) tree.put("say", old.say);   // its sentence stays
         } else {
-            ObjectNode tree = (ObjectNode) stripNulls(mapper.valueToTree(old));
+            tree = (ObjectNode) stripNulls(mapper.valueToTree(old));
             if (hasTarget) {
                 if (!(old instanceof VerbAction) || !((VerbAction) old).targets().containsKey("target")) {
-                    throw new DriverException(Reason.BAD_INPUT, "step " + n + " (" + tree.path("action").asText() + ") has no target");
+                    throw new DriverException(Reason.BAD_INPUT, what + " (" + tree.path("action").asText() + ") has no target");
                 }
                 tree.set("target", target);
                 if (!target.hasNonNull("nth")) tree.remove("fragile");
             }
             if (text != null) {
                 if (!tree.hasNonNull("text")) {
-                    throw new DriverException(Reason.BAD_INPUT, "step " + n + " (" + tree.path("action").asText() + ") has no text");
+                    throw new DriverException(Reason.BAD_INPUT, what + " (" + tree.path("action").asText() + ") has no text");
                 }
                 tree.put("text", text);
             }
-            replaced = action(tree);
         }
-        StepAddress where = addressOfRecord(n);
-        RecordingModel scratch = scratchModel();
-        scratch.replace(where, replaced, RecordedStep.Author.AGENT);
+        if (sentence != null) {
+            if (sentence.isEmpty()) tree.remove("say");
+            else tree.put("say", sentence);
+        }
+        Action replaced = action(tree);
+        RecordingModel scratch = model.copy();
+        scratch.replace(n, replaced, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
-        return edited(model.replace(where, replaced, RecordedStep.Author.AGENT));
+        return edited(model.replace(n, replaced, RecordedStep.Author.AGENT));
+    }
+
+    /** Makes steps {@code from} to {@code to} one group with the sentence {@code say}; the same range again renames it. */
+    synchronized String recordingGroup(int from, int to, String say, Integer rev) {
+        checkRev(rev);
+        return edited(model.group(from, to, say, RecordedStep.Author.AGENT));
+    }
+
+    /** Ends the group that holds step {@code n}; its steps stay. */
+    synchronized String recordingUngroup(int n, Integer rev) {
+        checkRev(rev);
+        return edited(model.ungroup(n, RecordedStep.Author.AGENT));
     }
 
     /** Takes back the last edit, whoever made it. */
@@ -2159,12 +2198,12 @@ public class UiMcpSession {
      */
     private void publish(String notice) {
         RecordingModel.Snapshot snap = model.snapshot();
-        List<Action> actions = new ArrayList<Action>(snap.steps.size());
-        for (RecordedStep s : snap.steps) actions.add(s.action);
+        Flow flow = RecordingModel.viewOf(snap.steps);
+        List<Action> actions = flow.steps;
         List<String> java = null;
         if (!actions.isEmpty()) {
             try {
-                java = JavaTestWriter.lines(actions);
+                java = JavaTestWriter.lines(flow);
                 if (java.size() != actions.size()) java = null;
             } catch (ExportRefused e) {
                 // the recording as a whole has no Java form (a step the writer refuses): list the steps without it
@@ -2184,18 +2223,62 @@ public class UiMcpSession {
         r.put("definedStart", definedStart);
         if (loadedTest != null) r.put("loadedFrom", loadedTest.toString());
         r.put("rev", snap.rev);
+        // the groups in the order they first appear, numbered from 1; each with its first and last step number
+        Map<Integer, Integer> groupNumbers = new LinkedHashMap<Integer, Integer>();
+        Map<Integer, int[]> groupSteps = new LinkedHashMap<Integer, int[]>();
+        Map<Integer, String> groupSays = new LinkedHashMap<Integer, String>();
+        List<StepNumbers.Step> numbered = StepNumbers.of(actions);
+        for (StepNumbers.Step st : numbered) {
+            RecordedStep.Group g = snap.steps.get(st.first()).group;
+            if (g == null) continue;
+            if (!groupNumbers.containsKey(g.id)) {
+                groupNumbers.put(g.id, groupNumbers.size() + 1);
+                groupSteps.put(g.id, new int[] {st.number, st.number});
+                groupSays.put(g.id, g.say);
+            }
+            groupSteps.get(g.id)[1] = st.number;
+        }
+        List<String> labels = StepNumbers.labels(actions);
         ArrayNode steps = r.putArray("steps");
+        for (StepNumbers.Step st : numbered) {
+            ObjectNode o = steps.addObject();
+            o.put("n", st.number);
+            RecordedStep first = snap.steps.get(st.first());
+            o.put("author", first.author.json);
+            if (!st.checkOnly()) {
+                RecordedStep a = first;
+                o.put("line", a.action.describe());
+                if (java != null) o.put("java", java.get(st.action));
+                o.set("step", stripNulls(mapper.valueToTree(a.action)));
+                if (a.action.say != null) o.put("say", a.action.say);
+                if (a.edited) o.put("edited", true);
+            }
+            if (first.group != null) o.put("group", groupNumbers.get(first.group.id));
+            ArrayNode checks = o.putArray("checks");
+            for (int flat : st.checks) {
+                RecordedStep c = snap.steps.get(flat);
+                ObjectNode co = checks.addObject();
+                co.put("n", labels.get(flat));
+                co.put("author", c.author.json);
+                co.put("line", c.action.describe());
+                if (java != null) co.put("java", java.get(flat));
+                co.set("step", stripNulls(mapper.valueToTree(c.action)));
+                if (c.action.say != null) co.put("say", c.action.say);
+                if (c.edited) co.put("edited", true);
+            }
+        }
+        ArrayNode groups = r.putArray("groups");
+        for (Map.Entry<Integer, int[]> e : groupSteps.entrySet()) {
+            ObjectNode g = groups.addObject();
+            g.put("from", e.getValue()[0]);
+            g.put("to", e.getValue()[1]);
+            g.put("say", groupSays.get(e.getKey()));
+        }
         List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
-            listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited));
-            ObjectNode o = steps.addObject();
-            o.put("n", i + 1);
-            o.put("author", s.author.json);
-            o.put("line", s.action.describe());
-            if (java != null) o.put("java", java.get(i));
-            o.set("step", stripNulls(mapper.valueToTree(s.action)));
-            if (s.edited) o.put("edited", true);
+            listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited, labels.get(i), s.action.say,
+                    StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say));
         }
         if (!snap.notRecorded.isEmpty()) {
             ArrayNode lines = r.putArray("notRecorded");

@@ -119,16 +119,31 @@ public final class Inspector {
         Result replay(int index);
 
         /**
-         * Drops the step with {@code id} and every step after it (a redo's cut). Refused when that step is gone or the
-         * agent is replaying the recording; the result's line says what was cut, or why not.
+         * Drops the STEP of the record with {@code id} (a check id means its step) and every step after it (a redo's cut).
+         * Refused when that record is gone or the agent is replaying the recording; the result's line says what was cut,
+         * or why not.
          */
         Result cutFrom(int id);
 
         /** The palette records on after a redo (also after Done): a stopped recording takes steps again. */
         void resume();
 
-        /** Deletes the step with {@code id}; refused when it is gone or the agent is replaying the recording. */
+        /**
+         * Deletes the record with {@code id}: an action id deletes its step together with the step's checks, a check id
+         * deletes that check alone. Refused when it is gone or the agent is replaying the recording.
+         */
         Result delete(int id);
+
+        /**
+         * Sets the sentence of what the records {@code fromId} to {@code toId} (inclusive, either order) cover: one
+         * check id is that check's sentence, ids within one step are the step's sentence, ids spanning steps make a
+         * group of the whole steps they touch. An empty {@code say} removes a sentence. Refused when an id is gone,
+         * the sentence is bad, or the agent is replaying.
+         */
+        Result describe(int fromId, int toId, String say);
+
+        /** Ends the group that holds the step of the record with {@code id}; its steps stay. Refused like {@link #delete}. */
+        Result ungroup(int id);
 
         /**
          * Takes back the last edit, the agent's or the person's. The result's line is what was undone (as
@@ -186,17 +201,37 @@ public final class Inspector {
         public final String author;
         public final String line;
         public final boolean edited;
+        /** "7" for a step's action, "7.1" for a check; null when the list was built without numbers. */
+        public final String label;
+        /** The sentence, or null. */
+        public final String say;
+        /** True for a check (it belongs to the step before it). */
+        public final boolean check;
+        /** The group this record's step is in (the same number for every record of its steps), 0 for none. */
+        public final int groupId;
+        /** The group's sentence; null when there is no group. */
+        public final String groupSay;
 
         public StepLine(int id, String author, String line, boolean edited) {
+            this(id, author, line, edited, null, null, line.startsWith("expect("), 0, null);
+        }
+
+        public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
+                int groupId, String groupSay) {
             this.id = id;
             this.author = author;
             this.line = line;
             this.edited = edited;
+            this.label = label;
+            this.say = say;
+            this.check = check;
+            this.groupId = groupId;
+            this.groupSay = groupSay;
         }
 
         /** A check: it belongs to the action before it. */
         boolean check() {
-            return line.startsWith("expect(");
+            return check;
         }
     }
 

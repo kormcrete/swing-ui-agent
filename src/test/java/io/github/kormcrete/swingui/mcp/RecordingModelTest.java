@@ -725,4 +725,44 @@ class RecordingModelTest {
         assertThat(model.undoLabel()).isEqualTo("insert of check 1.1 by the agent");
         assertThat(model.cutFromStep(1, AGENT)).isEqualTo("cut from step 1");
     }
+
+    @Test
+    void aCopyHoldsTheSameStepsAndGroupsAndEditsOnItLeaveTheOriginal() {
+        five();
+        model.group(2, 3, "Two", AGENT);
+        RecordingModel copy = model.copy();
+        assertThat(copy.flow().steps).hasSize(5);
+        assertThat(copy.flow().groups).hasSize(1);
+        copy.deleteSteps(1, 5, AGENT);
+        assertThat(copy.size()).isZero();
+        assertThat(model.size()).isEqualTo(5);
+    }
+
+    @Test
+    void theFlatRangeOfStepsIncludesTheirChecksAndRefusesWhatIsNoStep() {
+        withCheck();
+        assertThat(model.flatRange(2, 2)).containsExactly(1, 2);
+        assertThat(model.flatRange(1, 3)).containsExactly(0, 3);
+        assertThat(catchThrowableOfType(() -> model.flatRange(1, 4), DriverException.class).getMessage()).contains("no step 4");
+        assertThat(catchThrowableOfType(() -> model.flatRange(3, 2), DriverException.class).getMessage()).contains("before");
+    }
+
+    @Test
+    void deleteTakesAStepWithItsChecksOrACheckAlone() {
+        withCheck();
+        assertThat(model.delete(at("2.1"), AGENT)).isEqualTo("deleted check 2.1");
+        model.insert(at("2.1"), check("k2"), AGENT);
+        assertThat(model.delete(at("2"), AGENT)).isEqualTo("deleted step 2 and its 1 check");
+        assertThat(names()).containsExactly("a", "c");
+    }
+
+    @Test
+    void aReplayedCheckIsNamedACheckInTheChangeText() {
+        withCheck();
+        int id = model.records().get(2).id;   // the check under step 2
+        assertThat(model.markReplayed(id)).isTrue();
+        assertThat(model.lastChange()).isEqualTo("check 2.1 passed a replay");
+        model.rowKnown(id, new RowChoice(0, null));
+        assertThat(model.lastChange()).isEqualTo("the row alternatives of check 2.1 are known");
+    }
 }

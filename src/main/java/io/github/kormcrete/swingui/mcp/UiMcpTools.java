@@ -229,7 +229,7 @@ public final class UiMcpTools {
                         + "(dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT "
                         + "recording, and stops at the first that fails; that step carries what its locators match "
                         + "now, a scoped tree and a picture of the window (written under 'evidence', default "
-                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are [{n, say?, line, passed, ...}], n a step number or a check label like 7.2. After a "
+                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are [{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step number (7) or a check label (\"7.2\"); action is the step's technical line. After a "
                         + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
                         + "answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.", schema);
             }
@@ -360,12 +360,22 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
-                        .add("insert").add("delete").add("move").add("edit").add("undo").add("replay").add("redo")
+                        .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("undo").add("replay").add("redo")
                         .add("export").add("load");
-                p.putObject("at").put("type", "integer").put("description", "insert: the position the step gets (1 to size+1).");
-                p.putObject("n").put("type", "integer").put("description", "delete, move, edit: the step's position (1-based).");
+                ObjectNode at = p.putObject("at");
+                at.putArray("type").add("integer").add("string");
+                at.put("description", "insert: where it goes. An action: the step number it gets (1 to steps+1), before "
+                        + "the step now there. A check: the label it gets, a step number and its place under it "
+                        + "(\"7.2\"; k up to the step's checks + 1), or 1 for a check-only step 1. A step number (7) "
+                        + "or a check label (\"7.2\").");
+                ObjectNode n = p.putObject("n");
+                n.putArray("type").add("integer").add("string");
+                n.put("description", "delete, move, edit, ungroup: a step number (7) or a check label (\"7.2\"). "
+                        + "delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step "
+                        + "(with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group.");
                 p.putObject("from").put("type", "integer").put("description",
-                        "delete: first step of a range; replay: first step (default 1); redo: the step to record again.");
+                        "delete, group: first step of a range; replay: first step (default 1); redo: the step to record "
+                        + "again (steps+1 continues).");
                 p.putObject("speed").put("type", "string").put("description",
                         "replay: pauses for a person watching.").putArray("enum").add("fast").add("normal").add("slow");
                 p.putObject("as").put("type", "string").put("description", "export: the format.")
@@ -382,15 +392,18 @@ public final class UiMcpTools {
                         + "by start or the person's Record runs.");
                 p.putObject("path").put("type", "string").put("description", "load: a recorded test file.");
                 p.putObject("to").put("type", "integer").put("description",
-                        "delete: last step of a range; move: the position the step has afterwards; replay: last step "
-                        + "(default: the last).");
+                        "delete, group: last step of a range; move: the step number it has afterwards; replay: last "
+                        + "step (default: the last).");
+                p.putObject("say").put("type", "string").put("description",
+                        "edit: the step's or check's sentence, one line of at most 200 characters (\"\" removes it), "
+                        + "alone or with target, text or step; group: the group's sentence.");
                 p.putObject("step").put("type", "object").put("description",
-                        "insert, edit: a step as do_action takes it.");
+                        "insert, edit: a step or check as do_action takes it.");
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("text").put("type", "string").put("description",
-                        "edit: the new text of a type, expect, setClipboard or drop step.");
+                        "edit: the new text of a type, expect, setClipboard or drop step or check.");
                 p.putObject("rev").put("type", "integer").put("description",
-                        "insert, delete, move, edit, undo, redo: the rev of your last list; refused if the recording "
+                        "insert, delete, move, edit, group, ungroup, undo, redo: the rev of your last list; refused if the recording "
                         + "changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
                         "start: reset the app first, as a test starts (default false).");
@@ -402,20 +415,28 @@ public final class UiMcpTools {
                         "The recording the agent and the person at the app make together (works with the palette on or "
                         + "off). start {reset?}: a fresh recording; with the palette on the person's steps join it and "
                         + "the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the "
-                        + "person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, "
-                        + "and every step with n, author (person, agent, loaded), line, java and its step JSON; wait (ms) "
-                        + "waits until it stops (not for a session reset's). insert {at, step}: a step or check at "
-                        + "position at, NOT run (marked edited until a replay passes it). delete {n | from, to}. "
-                        + "move {n, to}. edit {n, target | text | step}. undo: "
-                        + "takes back the last edit, by you or the person. Positions close up after a delete; pass rev "
-                        + "from your last list so an edit is refused if the person changed the recording meanwhile. "
-                        + "Every edit returns the new list. While one runs, session reset and test runs are refused; "
-                        + "stop it first. replay {from?, to?, speed?}: runs the steps again without recording them; from "
-                        + "step 1 it resets the app first, as the exported test starts. redo {from}: cuts the steps from "
-                        + "there, replays up to it from a reset, and records on (from = the number after the last step "
-                        + "continues a stopped recording). export {as: java|recorded, ...}: as export_test / export_recorded_test, but "
-                        + "keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or "
-                        + "insert to add to it).",
+                        + "person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action "
+                        + "and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: "
+                        + "state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, "
+                        + "its step JSON, say and its checks nested under it ({n: \"7.1\", ...}), plus groups "
+                        + "[{from, to, say}] in step numbers; wait (ms) waits until it stops (not for a session reset's). "
+                        + "insert {at, step}: an action at a step number (before the step now there) or a check at a "
+                        + "label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a "
+                        + "check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. "
+                        + "move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | "
+                        + "text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) "
+                        + "and may come with target, text or step. group {from, to, say}: steps from..to (two or more, "
+                        + "whole steps, groups do not nest or overlap) under one sentence; the same range renames it. "
+                        + "ungroup {n}: ends the group that holds step n, its steps stay. undo: takes back the last edit, "
+                        + "by you or the person. Numbers close up after a delete; deleting or moving a step takes its checks "
+                        + "along; pass rev from your last list so an edit is refused if the person changed the recording "
+                        + "meanwhile. Every edit returns the new list. While one runs, session reset and test runs are "
+                        + "refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again "
+                        + "without recording them; from step 1 it resets the app first, as the exported test starts. redo "
+                        + "{from}: cuts step from and the ones after it, replays the steps before it from a reset, and "
+                        + "records on (from = the number after the last step continues a stopped recording). export "
+                        + "{as: java|recorded, ...}: as export_test / export_recorded_test, but keeps the recording. load "
+                        + "{name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception { return session.recording(args); }

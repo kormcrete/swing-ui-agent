@@ -64,6 +64,27 @@ class UiMcpExportRecordedTestTest {
     }
 
     @Test
+    void aRecordingIsWrittenAsVersion2() throws Exception {
+        clickSave();
+        session.recording(mapper.readTree("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":"
+                + "{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"Saved\"}}"));
+        session.recording(mapper.readTree("{\"op\":\"edit\",\"n\":1,\"say\":\"Save the order\"}"));
+        mapper.readTree(session.exportRecordedTest("v2", "", "", false));
+        JsonNode file = mapper.readTree(Files.readAllBytes(testsDir.resolve("v2.json")));
+        assertThat(file.path("version").asInt()).isEqualTo(2);
+        assertThat(file.path("steps")).hasSize(1);
+        JsonNode step = file.path("steps").get(0);
+        assertThat(step.path("action").asText()).isEqualTo("click");
+        assertThat(step.path("say").asText()).isEqualTo("Save the order");
+        assertThat(step.path("checks")).hasSize(1);
+        assertThat(step.path("checks").get(0).has("action")).isFalse();
+        assertThat(step.path("checks").get(0).path("text").asText()).isEqualTo("Saved");
+        Flow back = RecordedTestFiles.read(testsDir.resolve("v2.json"));
+        assertThat(back.steps).hasSize(2);
+        assertThat(back.steps.get(0).say).isEqualTo("Save the order");
+    }
+
+    @Test
     void aRecordingThatDidNotBeginAtAResetIsRefused() {
         UiMcpSession fresh = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
         fresh.recordedDir(testsDir, true);

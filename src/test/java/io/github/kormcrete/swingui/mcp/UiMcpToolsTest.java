@@ -482,6 +482,33 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void theRecordingToolTakesStepNumbersAndCheckLabels() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (!t.name().equals("recording")) continue;
+            JsonNode d = t.descriptor(mapper);
+            JsonNode props = d.path("inputSchema").path("properties");
+            for (String name : new String[] {"at", "n"}) {
+                JsonNode type = props.path(name).path("type");
+                assertThat(type.isArray()).isTrue();
+                List<String> types = new ArrayList<String>();
+                for (JsonNode x : type) types.add(x.asText());
+                assertThat(types).containsExactly("integer", "string");
+                assertThat(props.path(name).path("description").asText()).contains("7.2");
+            }
+            for (String name : new String[] {"from", "to"}) assertThat(props.path(name).path("type").asText()).isEqualTo("integer");
+            assertThat(props.path("say").path("type").asText()).isEqualTo("string");
+            List<String> ops = new ArrayList<String>();
+            for (JsonNode n : props.path("op").path("enum")) ops.add(n.asText());
+            assertThat(ops).contains("group", "ungroup");
+            String text = d.path("description").asText();
+            assertThat(text).contains("7.2").contains("group {from, to, say}").contains("ungroup {n}")
+                    .doesNotContain("later version");
+            return;
+        }
+        throw new AssertionError("no recording tool");
+    }
+
+    @Test
     void theRecordingToolsListOpIsReadOnly() {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
             if (t.name().equals("recording")) {
@@ -489,7 +516,7 @@ class UiMcpToolsTest {
                 assertThat(t.descriptor(mapper).path("annotations").path("readOnlyHint").asBoolean()).isFalse();
                 List<String> ops = new ArrayList<String>();
                 for (JsonNode n : t.descriptor(mapper).path("inputSchema").path("properties").path("op").path("enum")) ops.add(n.asText());
-                assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "undo", "replay", "redo", "export", "load");
+                assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "group", "ungroup", "undo", "replay", "redo", "export", "load");
                 JsonNode props = t.descriptor(mapper).path("inputSchema").path("properties");
                 assertThat(props.path("rev").path("description").asText()).contains("redo");
                 assertThat(props.path("wait").path("description").asText()).contains("session reset");

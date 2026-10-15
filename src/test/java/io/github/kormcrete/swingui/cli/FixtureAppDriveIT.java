@@ -283,7 +283,7 @@ class FixtureAppDriveIT {
     void anAgentStartedRecordingIsEditedReplayedAndExported() throws Exception {
         Path folder = Files.createDirectories(testsDir.resolve("together"));
         String dir = folder.toString().replace('\\', '/');
-        String expectSaved = "{'at':4,'step':{'action':'expect','target':{'name':'status'},'text':'saved Rec 1'}}";
+        String expectSaved = "{'at':'3.1','step':{'action':'expect','target':{'name':'status'},'text':'saved Rec 1'}}";
         JsonNode started = call("recording", "{'op':'start','reset':true}");
         try {
             String why = started.path("why").asText();
@@ -310,10 +310,11 @@ class FixtureAppDriveIT {
             assertThat(deleted.path("steps")).as(deleted.path("why").asText()).hasSize(3);
             JsonNode inserted = call("recording", "{'op':'insert'," + expectSaved.substring(1));
             why = inserted.path("why").asText();
-            assertThat(inserted.path("steps")).as(why).hasSize(4);
-            assertThat(inserted.path("steps").path(3).path("edited").asBoolean()).as(why).isTrue();
+            assertThat(inserted.path("steps")).as(why).hasSize(3);   // the check sits under step 3
+            assertThat(inserted.path("steps").path(2).path("checks").path(0).path("edited").asBoolean()).as(why).isTrue();
             JsonNode undone = call("recording", "{'op':'undo'}");
             assertThat(undone.path("steps")).as(undone.path("why").asText()).hasSize(3);
+            assertThat(undone.path("steps").path(2).path("checks")).as(undone.path("why").asText()).isEmpty();
             call("recording", "{'op':'insert'," + expectSaved.substring(1));
 
             JsonNode replayed = call("recording", "{'op':'replay'}");
@@ -325,6 +326,9 @@ class FixtureAppDriveIT {
             JsonNode after = call("recording", "{'op':'list'}");
             for (JsonNode s : after.path("steps")) {
                 assertThat(s.path("edited").asBoolean()).as(after.path("why").asText()).isFalse();
+                for (JsonNode c : s.path("checks")) {
+                    assertThat(c.path("edited").asBoolean()).as(after.path("why").asText()).isFalse();
+                }
             }
             call("recording", "{'op':'stop'}");
         } finally {

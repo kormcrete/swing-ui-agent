@@ -119,6 +119,14 @@ final class FakeSink implements Inspector.Sink {
         while (steps.size() > i) steps.remove(steps.size() - 1);
         return new Inspector.Result(true, "cut from step " + (i + 1));
     }
+    @Override public Inspector.Result describe(int fromId, int toId, String say) {
+        log.add("describe " + fromId + "-" + toId + " " + say);
+        return new Inspector.Result(true, "described");
+    }
+    @Override public Inspector.Result ungroup(int id) {
+        log.add("ungroup " + id);
+        return new Inspector.Result(true, "ungrouped");
+    }
     @Override public Inspector.Result undo() {
         log.add("undo");
         if (refuseUndo != null) return new Inspector.Result(false, refuseUndo);
