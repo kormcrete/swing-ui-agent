@@ -66,18 +66,23 @@ Expect back at most a few lines: verdict, counts (passed / failed / gaps), the r
   `plugin_call` to fake a step, no `nth` to force a match, no raw component paths. A gap is a result.
 - **Answer dialogs deliberately.** A result with `dialog` means a message waits; answer it only as the dispatch
   intends (`answer {"button":"Cancel"}` or `"escape"`), never by clicking whatever is offered.
-- **No `export_test` unless asked.** Steps are recorded either way; exporting unasked leaves a Java file behind.
-  If asked to record, follow swing-ui-record-test (start at a `session` reset, first step reaches the start screen).
+- **No export unless asked** (`export_test`, `export_recorded_test`). Steps are recorded either way; exporting
+  unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
+  the first step reaches the start screen; `recording` `edit`/`group` with `say` for names).
 - **Busy agent.** `busy: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
   run still going. If that run is dead, retry after 15 s idle, or `$UI session '{"op":"lease","owner":"driver"}'`,
   pass `--lease <token>` before the tool name on each call, and release it at the end.
 - **Plugin-only steps.** `navigate`, `close`, `loginAs`, `describe_ui` app facts and resets to a start state need
   an app plugin. Without one, reach screens with `menu` or `press`; a missing plugin is a GAP, not a workaround.
 
-## Running a recorded test
+## Running a test
 
-Run the given `*UiIT` class alone while the app is up, with the project's test command (e.g.
-`mvn -Dtest=OrderSaveUiIT verify`; failsafe uses `-Dit.test=`). Read `target/ui-runs/latest.txt` (`STARTED`, a
+A recorded test file: `$UI run_recorded_test '{"name":"place-order"}'`. It starts with a reset and reports
+`passed`, `ran`/`total` steps and every step and check by its number (`7`, `7.2`); the failing one carries what its
+locators match now and a picture under `evidence`. The CLI exits 4 when the test fails.
+
+A Java test: run the given `*UiIT` class alone while the app is up, with the project's test command (e.g.
+`mvn -Dtest=PlaceOrderUiIT verify`; failsafe uses `-Dit.test=`). Read `target/ui-runs/latest.txt` (`STARTED`, a
 `PASS`/`FAIL` line per test, `DONE`) and, on a failure, `target/ui-failures/<Class>/<method>/evidence.txt` with the
 PNG beside it. Fix the Java only if the dispatch asks; otherwise report the failing step and its evidence path.
 
