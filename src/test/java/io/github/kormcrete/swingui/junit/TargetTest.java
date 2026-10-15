@@ -33,6 +33,15 @@ class TargetTest {
     }
 
     @Test
+    void aScreenshotCanKeepThePalette() {
+        ui.screenshot(2, true);
+        ui.button("OK").screenshot(1, true);
+        ui.screenshot(2, false);
+        assertThat(verbs.calls).containsExactly("screenshot null 2.0 palette",
+                "screenshot " + loc("button", "OK") + " 1.0 palette", "screenshot null 2.0");
+    }
+
+    @Test
     void aLeafBecomesRoleAndName() {
         ui.button("Save").click();
         assertThat(verbs.calls).containsExactly("click " + loc("button", "Save") + " null null null null");

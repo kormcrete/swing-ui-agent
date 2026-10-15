@@ -51,9 +51,11 @@ public interface Verbs {
      * A read, not an action: nothing is recorded and no step exists for it. {@code region} is
      * {x, y, w, h} in fractions 0..1 of the target's bounds, for a snippet rather than the whole of
      * it; {@code maxSize} caps the longest side; {@code scale} (1 to 4, null for 1) paints it as a display
-     * of that density would. A target with only a {@code window} is that window.
+     * of that density would. A target with only a {@code window} is that window. {@code palette} keeps the person's
+     * palette, the inspector's boxes and the menus open over the window in the image (for documentation); without it
+     * they are left out.
      */
-    default Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale) {
+    default Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
         throw missing("screenshot");
     }
 

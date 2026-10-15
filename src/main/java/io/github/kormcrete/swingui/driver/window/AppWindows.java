@@ -77,7 +77,8 @@ public final class AppWindows implements WindowSource {
         return title == null ? "" : title;
     }
 
-    static boolean isPopupWindow(Window w) {
+    /** A window Swing opened for a popup (a menu, a combo's list, a tooltip), not one of the app's own. */
+    public static boolean isPopupWindow(Window w) {
         return w.getType() == Window.Type.POPUP || w.getClass().getName().startsWith("javax.swing.Popup$");
     }
 

@@ -4,17 +4,29 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Shot;
 
+import io.github.kormcrete.swingui.driver.window.AppWindows;
+
 import javax.imageio.ImageIO;
 import javax.swing.JComponent;
+import javax.swing.JLayeredPane;
+import javax.swing.JRootPane;
+import javax.swing.RootPaneContainer;
+import javax.swing.SwingUtilities;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Paints an app component into an offscreen image. EDT.
@@ -23,6 +35,10 @@ import java.io.IOException;
  * front of it. Painting needs no permissions, but anything drawn in a window of its own (an open popup
  * menu, a combo's dropdown, a tooltip) is not in the image: capture that window instead. The inspector's
  * palette and boxes are left out too (see {@link #capturing()}).
+ *
+ * <p>With {@code palette} the image is the window as the person sees it, for documentation pictures: the palette
+ * and boxes paint, and the popups open over the window (lightweight ones in its popup layer, panels Swing put there,
+ * and popup windows of their own) are painted in at the spot they show. Still a paint of the app's own components.
  */
 public final class Screenshots {
 
@@ -54,6 +70,14 @@ public final class Screenshots {
      *               component as a 2x (HiDPI) display would, at the same layout
      */
     public static Shot of(Component c, double[] region, Integer maxSize, Double scale) {
+        return of(c, region, maxSize, scale, false);
+    }
+
+    /**
+     * {@link #of(Component, double[], Integer, Double)}; {@code palette} keeps the person's palette, the inspector's
+     * boxes and the popups open over {@code c} in the image.
+     */
+    public static Shot of(Component c, double[] region, Integer maxSize, Double scale, boolean palette) {
         if (c instanceof Window && !c.isShowing()) {
             throw new DriverException(Reason.NOT_ACTIONABLE,
                     "nothing to capture: the window is not showing (closed or hidden)");
@@ -69,7 +93,7 @@ public final class Screenshots {
         Rectangle shown = shown(c);
         int w = shown.width;
         int h = shown.height;
-        BufferedImage image = paint(c, shown, s);
+        BufferedImage image = palette ? paintAsSeen(c, shown, s) : paint(c, shown, s);
         Rectangle crop = crop(region, image.getWidth(), image.getHeight());
         if (crop != null) image = image.getSubimage(crop.x, crop.y, crop.width, crop.height);
 
@@ -121,6 +145,87 @@ public final class Screenshots {
             g.dispose();
         }
         return image;
+    }
+
+    /**
+     * {@code shown} of {@code c} as the person sees it: what its window (or outermost container) paints there, so
+     * the palette's layers over {@code c} are in, then the heavyweight panels Swing put in the window's popup layer
+     * (they are not painted with the window), then the popup windows over it at their offset on screen, a submenu
+     * after its menu. Nothing the window paints outside {@code shown} is kept.
+     */
+    private static BufferedImage paintAsSeen(Component c, Rectangle shown, double scale) {
+        Component top = c;
+        while (!(top instanceof Window) && top.getParent() != null) top = top.getParent();
+        // a window that is not on screen paints nothing; its root pane still does
+        if (top instanceof Window && !top.isShowing() && top instanceof RootPaneContainer) {
+            top = ((RootPaneContainer) top).getRootPane();
+        }
+        Rectangle area = SwingUtilities.convertRectangle(c, shown, top);
+        int iw = (int) Math.ceil(shown.width * scale);
+        int ih = (int) Math.ceil(shown.height * scale);
+        BufferedImage image = new BufferedImage(iw, ih, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            Color background = c.getBackground();
+            g.setColor(background == null ? Color.WHITE : background);
+            g.fillRect(0, 0, iw, ih);
+            g.scale(scale, scale);
+            g.translate(-area.x, -area.y);
+            g.setClip(area.x, area.y, area.width, area.height);
+            top.paint(g);
+            JRootPane root = top instanceof RootPaneContainer ? ((RootPaneContainer) top).getRootPane()
+                    : top instanceof JRootPane ? (JRootPane) top : null;
+            if (root != null) paintHeavyweightChildren(g, root.getLayeredPane(), top);
+            if (top instanceof Window && top.isShowing()) paintPopupWindows(g, (Window) top);
+        } finally {
+            g.dispose();
+        }
+        return image;
+    }
+
+    /** The panels a medium-weight popup puts in the layered pane: the window's own paint skips heavyweights. */
+    private static void paintHeavyweightChildren(Graphics2D g, JLayeredPane layers, Component top) {
+        Component[] children = layers.getComponents();
+        for (int i = children.length - 1; i >= 0; i--) {   // the last child is the bottom one
+            Component child = children[i];
+            if (child.isLightweight() || !child.isVisible() || !child.isShowing()) continue;
+            Point at = SwingUtilities.convertPoint(layers, child.getLocation(), top);
+            paintAt(g, child, at.x, at.y);
+        }
+    }
+
+    /** Showing popup windows whose owner chain leads to {@code top}, painted where they are on screen. */
+    private static void paintPopupWindows(Graphics2D g, Window top) {
+        final Map<Window, Integer> depth = new HashMap<Window, Integer>();
+        for (Window w : Window.getWindows()) {
+            if (w == top || !w.isShowing() || !AppWindows.isPopupWindow(w)) continue;
+            int d = 0;
+            for (Window o = w.getOwner(); o != null; o = o.getOwner()) {
+                d++;
+                if (o == top) {
+                    depth.put(w, d);
+                    break;
+                }
+            }
+        }
+        List<Window> popups = new ArrayList<Window>(depth.keySet());
+        Collections.sort(popups, (a, b) -> depth.get(a) - depth.get(b));
+        Point origin = top.getLocationOnScreen();
+        for (Window w : popups) {
+            Point p = w.getLocationOnScreen();
+            paintAt(g, w, p.x - origin.x, p.y - origin.y);
+        }
+    }
+
+    private static void paintAt(Graphics2D g, Component c, int x, int y) {
+        Graphics2D cg = (Graphics2D) g.create();
+        try {
+            cg.translate(x, y);
+            cg.clipRect(0, 0, c.getWidth(), c.getHeight());
+            c.paint(cg);
+        } finally {
+            cg.dispose();
+        }
     }
 
     private static Rectangle crop(double[] region, int w, int h) {

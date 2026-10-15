@@ -883,7 +883,9 @@ public class UiMcpSession {
             target = new Locator();   // a whole window, as snapshot takes it
             target.window = window;
         }
-        Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"), number(args, "scale"));
+        Boolean palette = bool(args, "palette");
+        Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"), number(args, "scale"),
+                palette != null && palette);
 
         ObjectNode r = mapper.createObjectNode();
         ArrayNode content = r.putArray("_mcpContent");
@@ -949,6 +951,13 @@ public class UiMcpSession {
         JsonNode v = args.get(field);
         if (!v.canConvertToInt()) throw new DriverException(Reason.BAD_INPUT, "'" + field + "' must be an integer");
         return v.asInt();
+    }
+
+    private static Boolean bool(JsonNode args, String field) {
+        if (args == null || !args.hasNonNull(field)) return null;
+        JsonNode v = args.get(field);
+        if (!v.isBoolean()) throw new DriverException(Reason.BAD_INPUT, "'" + field + "' must be true or false");
+        return v.asBoolean();
     }
 
     private static Double number(JsonNode args, String field) {

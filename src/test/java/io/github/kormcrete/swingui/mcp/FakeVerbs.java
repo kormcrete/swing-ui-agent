@@ -63,8 +63,8 @@ public class FakeVerbs implements Verbs {
         if (readFailure != null) throw readFailure;
         return candidates;
     }
-    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale) {
-        calls.add("screenshot " + target + " " + maxSize + (scale == null ? "" : " " + scale));
+    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
+        calls.add("screenshot " + target + " " + maxSize + (scale == null ? "" : " " + scale) + (palette ? " palette" : ""));
         if (readFailure != null) throw readFailure;
         return shot;
     }

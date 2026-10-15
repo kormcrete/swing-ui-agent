@@ -198,13 +198,13 @@ public final class LiveVerbs implements Verbs {
      */
     @Override
     public Shot screenshot(final Locator target, final double[] region, final Integer maxSize,
-                           final Double scale) {
+                           final Double scale, final boolean palette) {
         driver.settle().drain();   // a panel swapped in just before (a new tab after a dialog closed) is laid out
         return Edt.call(() -> {
             Component c = target == null ? keyWindow()
                     : isWindowOnly(target) ? windowRoot(target.window)
                     : driver.resolver().resolve(target).component;
-            return Screenshots.of(c, region, maxSize, scale);
+            return Screenshots.of(c, region, maxSize, scale, palette);
         });
     }
 

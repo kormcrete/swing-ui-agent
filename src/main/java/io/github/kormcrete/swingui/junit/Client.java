@@ -285,14 +285,20 @@ public final class Client {
 
     private static String blankToNull(String s) { return s == null || s.trim().isEmpty() ? null : s.trim(); }
 
-    public byte[] screenshot() { return shoot(null); }
+    public byte[] screenshot() { return shoot(null, false); }
 
     /** A PNG of the key window at {@code scale} image pixels per screen pixel, 1 to 4: 2 is a HiDPI (2x) image. */
-    public byte[] screenshot(double scale) { return shoot(scale); }
+    public byte[] screenshot(double scale) { return shoot(scale, false); }
 
-    private byte[] shoot(Double scale) {
+    /**
+     * {@link #screenshot(double)} that keeps the person's palette and the menus open over the window in the image,
+     * for documentation pictures; without it they are left out.
+     */
+    public byte[] screenshot(double scale, boolean palette) { return shoot(scale, palette); }
+
+    private byte[] shoot(Double scale, boolean palette) {
         try {
-            return verbs.screenshot(null, null, null, scale).png;
+            return verbs.screenshot(null, null, null, scale, palette).png;
         } catch (DriverException e) {
             throw new UiActionFailed("screenshot", null, e, Collections.<String>emptyList());
         }
@@ -303,6 +309,9 @@ public final class Client {
 
     /** {@link #saveScreenshot(String)} at {@code scale} (1 to 4; 2 for images people will look at). */
     public void saveScreenshot(String path, double scale) { write(path, screenshot(scale)); }
+
+    /** {@link #saveScreenshot(String, double)}, with the palette and open menus kept when {@code palette} is true. */
+    public void saveScreenshot(String path, double scale, boolean palette) { write(path, screenshot(scale, palette)); }
 
     void write(String path, byte[] png) {
         Path p = Paths.get(path);

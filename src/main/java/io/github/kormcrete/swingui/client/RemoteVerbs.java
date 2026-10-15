@@ -86,7 +86,7 @@ public final class RemoteVerbs implements Verbs {
         return r;
     }
 
-    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale) {
+    @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
         ObjectNode a = agent.args();
         put(a, "target", target);
         if (region != null) {
@@ -94,6 +94,7 @@ public final class RemoteVerbs implements Verbs {
         }
         put(a, "maxSize", maxSize);
         put(a, "scale", scale);
+        if (palette) a.put("palette", true);
         JsonNode result = agent.call("screenshot", a);
         byte[] png = null;
         JsonNode meta = json.createObjectNode();

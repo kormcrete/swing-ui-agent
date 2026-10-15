@@ -15,7 +15,14 @@ swing-ui-agent never captures the screen. It asks the app's own components to pa
 
 - it works while the app is behind other windows or in the background, and it takes no focus;
 - it shows only the app: no other application, no desktop, nothing private on the screen around it;
-- anything in a window of its own (an open popup menu, a combo's dropdown, a tooltip) is not in the image of the window that opened it.
+- anything in a window of its own (an open popup menu, a combo's dropdown, a tooltip) is not in the image of the window that opened it;
+- the person's palette and the boxes the agent shows are left out.
+
+For a documentation picture of the window as the person sees it, `"palette":true` keeps the palette, the boxes and the menus open over the window in the image (default false):
+
+```sh
+$UI --out palette.png screenshot '{"window":"main","scale":2,"palette":true}'
+```
 
 ## From the command line
 

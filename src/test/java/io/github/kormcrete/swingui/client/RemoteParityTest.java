@@ -121,7 +121,7 @@ class RemoteParityTest {
                 ui.label("Status").text(), ui.label("Status").value(), ui.label("x").count(), ui.label("x").texts(),
                 ui.label("Status").exists(), ui.table("A").bounds().width(), ui.menuItems("File"),
                 ui.clipboardText(), ui.fileChooserFolder(), ui.fileChooserName(), ui.modalShowing(),
-                Arrays.toString(ui.button("OK").screenshot())
+                Arrays.toString(ui.button("OK").screenshot()), Arrays.toString(ui.screenshot(2, true))
         };
     }
 

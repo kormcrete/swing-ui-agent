@@ -190,6 +190,23 @@ class UiMcpReadToolsTest {
     }
 
     @Test
+    void screenshotLeavesThePaletteOutUnlessAskedFor() throws Exception {
+        session.screenshot(json("{\"scale\":2}"));
+        session.screenshot(json("{\"palette\":false}"));
+        session.screenshot(json("{\"window\":\"main\",\"scale\":2,\"palette\":true}"));
+        assertThat(backend.verbs.calls).containsExactly("screenshot null null 2.0", "screenshot null null",
+                "screenshot in main null 2.0 palette");
+    }
+
+    @Test
+    void aPaletteThatIsNotABooleanIsBadInput() {
+        DriverException e = catchThrowableOfType(
+                () -> session.screenshot(json("{\"palette\":\"yes\"}")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("palette");
+    }
+
+    @Test
     void aScaleThatIsNotANumberIsBadInput() {
         DriverException e = catchThrowableOfType(
                 () -> session.screenshot(json("{\"scale\":\"2x\"}")), DriverException.class);

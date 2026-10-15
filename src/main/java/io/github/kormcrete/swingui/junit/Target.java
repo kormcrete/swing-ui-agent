@@ -284,14 +284,23 @@ public final class Target {
     /** {@link #saveScreenshot(String)} at {@code scale} (1 to 4; 2 for images people will look at). */
     public void saveScreenshot(String path, double scale) { client.write(path, screenshot(scale)); }
 
-    public byte[] screenshot() { return shoot(null); }
+    /** {@link #saveScreenshot(String, double)}, with the palette and open menus kept when {@code palette} is true. */
+    public void saveScreenshot(String path, double scale, boolean palette) { client.write(path, screenshot(scale, palette)); }
+
+    public byte[] screenshot() { return shoot(null, false); }
 
     /** A PNG of this element at {@code scale} image pixels per screen pixel, 1 to 4. */
-    public byte[] screenshot(double scale) { return shoot(scale); }
+    public byte[] screenshot(double scale) { return shoot(scale, false); }
 
-    private byte[] shoot(Double scale) {
+    /**
+     * {@link #screenshot(double)} that keeps the person's palette and the menus open over this element in the image,
+     * for documentation pictures; without it they are left out.
+     */
+    public byte[] screenshot(double scale, boolean palette) { return shoot(scale, palette); }
+
+    private byte[] shoot(Double scale, boolean palette) {
         try {
-            return client.verbs().screenshot(locator.copy(), null, null, scale).png;
+            return client.verbs().screenshot(locator.copy(), null, null, scale, palette).png;
         } catch (io.github.kormcrete.swingui.driver.DriverException e) {
             throw new UiActionFailed("screenshot", locator, e, Collections.<String>emptyList());
         }

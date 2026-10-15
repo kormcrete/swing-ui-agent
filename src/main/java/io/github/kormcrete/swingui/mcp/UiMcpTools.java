@@ -310,6 +310,9 @@ public final class UiMcpTools {
                 p.putObject("scale").put("type", "number").put("description",
                         "Image pixels per screen pixel, 1 to 4, default 1: 2 paints the app as a 2x (HiDPI) display "
                         + "would, same layout, finer text and lines - for images people will look at.");
+                p.putObject("palette").put("type", "boolean").put("description",
+                        "true keeps the person's palette and open menus in the picture (for documentation); "
+                        + "default false.");
                 return readOnly(tool(m, "screenshot",
                         "A PNG of the app: the target element, or the current window when no target is given. "
                         + "It PAINTS the app's own components into an offscreen image - it never grabs the screen - so "
@@ -318,6 +321,8 @@ public final class UiMcpTools {
                         + "and 'region' for a snippet inside it. Anything drawn in a window of its own (an open "
                         + "popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window "
                         + "instead. The person's palette and any boxes shown in the app are not in the image. "
+                        + "'palette': true keeps the palette, the boxes and the open menus in the picture, as the "
+                        + "person sees the window (for documentation); default false. "
                         + "A read: nothing is recorded; to capture screens in a recorded test, use the "
                         + "'screenshot' step in a batch, which writes a file. Use it for an "
                         + "aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for "
