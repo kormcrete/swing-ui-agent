@@ -18,6 +18,7 @@ import io.github.kormcrete.swingui.driver.inspect.Target;
 import io.github.kormcrete.swingui.driver.model.Recorder;
 import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
@@ -1457,7 +1458,8 @@ public class UiMcpSession {
         r.put("total", flow.steps.size());
         r.put("ms", (System.nanoTime() - started) / 1_000_000L);
         ArrayNode steps = r.putArray("steps");
-        for (StepResult s : result.steps) steps.add(stepJson(s));
+        List<String> labels = StepNumbers.labels(flow.steps);
+        for (StepResult s : result.steps) steps.add(stepJson(s, labels.get(s.index), flow.steps.get(s.index)));
         r.put("report", FlowReport.format(flow, result));
         return r.toString();
     }
@@ -1479,9 +1481,16 @@ public class UiMcpSession {
         return Paths.get("").toAbsolutePath().resolve(path).normalize();
     }
 
-    private ObjectNode stepJson(StepResult s) {
+    /** {@code n}: an integer for a step, the string {@code "7.2"} for a check. */
+    private static void putLabel(ObjectNode o, String n) {
+        if (n.indexOf('.') >= 0) o.put("n", n);
+        else o.put("n", Integer.parseInt(n));
+    }
+
+    private ObjectNode stepJson(StepResult s, String n, Action action) {
         ObjectNode o = mapper.createObjectNode();
-        o.put("index", s.index);
+        putLabel(o, n);
+        if (action.say != null && !action.say.isEmpty()) o.put("say", action.say);
         o.put("action", s.action);
         o.put("passed", s.passed);
         o.put("ms", s.ms);
@@ -1804,6 +1813,7 @@ public class UiMcpSession {
             if (reset) appReset.run();
             boolean passed = true;
             int ran = 0;
+            List<String> labels = StepNumbers.labels(model.actions());
             for (int n = a; n <= b; n++) {
                 RecordedStep recorded = model.at(n);
                 if (pause > 0 && (n == a || !isCheck(recorded.action))) sleep(pause);
@@ -1821,7 +1831,7 @@ public class UiMcpSession {
                 boolean ok = step.path("passed").asBoolean();
                 if (palette) view.replayed(recorded.id, ok);
                 ObjectNode o = results.addObject();
-                o.put("n", n);
+                putLabel(o, labels.get(n - 1));
                 o.put("line", recorded.action.describe());
                 o.put("passed", ok);
                 o.put("ms", step.path("ms").asLong());

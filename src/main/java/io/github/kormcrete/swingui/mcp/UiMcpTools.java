@@ -229,7 +229,7 @@ public final class UiMcpTools {
                         + "(dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT "
                         + "recording, and stops at the first that fails; that step carries what its locators match "
                         + "now, a scoped tree and a picture of the window (written under 'evidence', default "
-                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}. After a "
+                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are [{n, say?, line, passed, ...}], n a step number or a check label like 7.2. After a "
                         + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
                         + "answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.", schema);
             }

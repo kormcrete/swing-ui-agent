@@ -88,6 +88,17 @@ class RecordedTestsTest {
     }
 
     @Test
+    void aGroupedTestSurvivesTheRunnersRewrite() throws IOException {
+        // no name: the runner rewrites the file's text with the name set, and the group must come through
+        write("grouped.json", "{\"version\":2,\"start\":\"reset\",\"steps\":[{\"say\":\"Two things\",\"steps\":["
+                + "{\"action\":\"loginAs\",\"as\":\"customer\"},{\"action\":\"loginAs\",\"as\":\"customer\"}]}]}");
+        TestExecutionSummary s = launch(new RecordingVerbs());
+        assertThat(s.getFailures()).hasSize(1);
+        String message = s.getFailures().get(0).getException().getMessage();
+        assertThat(message).contains("Recorded test 'grouped' failed").contains("\u2014 Two things").contains("[1] FAIL");
+    }
+
+    @Test
     void aFailureLeavesItsReportInRecordedTestFailures() throws IOException {
         write("fail.json", FAIL);
         launch(new RecordingVerbs());

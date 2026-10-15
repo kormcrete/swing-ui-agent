@@ -43,14 +43,19 @@ public final class FailureDiagnostics {
         this.screenshotDir = screenshotDir;
     }
 
-    public StepDiagnostics diagnose(Action action, Verbs verbs, String flowName, int index) {
+    public StepDiagnostics diagnose(Action action, Verbs verbs, String flowName, String label) {
         Map<String, Locator> targets = action instanceof VerbAction
                 ? ((VerbAction) action).targets() : Collections.<String, Locator>emptyMap();
-        return diagnose(targets, verbs, flowName, index);
+        return diagnose(targets, verbs, flowName, label);
+    }
+
+    /** As {@link #diagnose(Map, Verbs, String, String)} for a plain index, which names the picture. */
+    public StepDiagnostics diagnose(Map<String, Locator> targets, Verbs verbs, String name, int index) {
+        return diagnose(targets, verbs, name, String.valueOf(index));
     }
 
     /** The same diagnosis for any named locators - a step's, or a Java UI test's failed target. */
-    public StepDiagnostics diagnose(Map<String, Locator> targets, Verbs verbs, String name, int index) {
+    public StepDiagnostics diagnose(Map<String, Locator> targets, Verbs verbs, String name, String label) {
         StepDiagnostics d = new StepDiagnostics();
         if (verbs == null) {
             d.problems.add("no UI driver is installed: nothing to diagnose with");
@@ -68,7 +73,7 @@ public final class FailureDiagnostics {
             }
         }
         tree(verbs, first, firstMatches, d);
-        if (screenshotDir != null) screenshot(verbs, name, index, d);
+        if (screenshotDir != null) screenshot(verbs, name, label, d);
         return d;
     }
 
@@ -154,11 +159,11 @@ public final class FailureDiagnostics {
         return b.toString();
     }
 
-    private void screenshot(Verbs verbs, String flowName, int index, StepDiagnostics d) {
+    private void screenshot(Verbs verbs, String flowName, String label, StepDiagnostics d) {
         try {
             Shot shot = verbs.screenshot(null, null, null, null);
             Files.createDirectories(screenshotDir);
-            Path file = screenshotDir.resolve(safe(flowName) + "-step" + index + ".png");
+            Path file = screenshotDir.resolve(safe(flowName) + "-step" + label + ".png");
             Files.write(file, shot.png);
             d.screenshot = file.toAbsolutePath().normalize().toString();
         } catch (Exception e) {

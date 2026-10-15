@@ -31,10 +31,14 @@ class FlowFailureDiagnosticsTest {
         System.clearProperty(ScreenshotVerb.DIR_PROP);
     }
 
+    private Flow ran;
+
     private FlowResult replay(String... steps) {
-        return new FlowExecutor().diagnoseFailures(new FailureDiagnostics(dir.resolve("screens")))
-                .run(FlowJson.parse("{\"name\":\"pricing walk\",\"steps\":[" + String.join(",", steps) + "]}"), backend);
+        ran = FlowJson.parse("{\"name\":\"pricing walk\",\"steps\":[" + String.join(",", steps) + "]}");
+        return new FlowExecutor().diagnoseFailures(new FailureDiagnostics(dir.resolve("screens"))).run(ran, backend);
     }
+
+    private static final String CHECK = "{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"1\"}";
 
     private static final String PRESS = "{\"action\":\"press\",\"keys\":\"Escape\"}";
     private static final String SCOPED_CLICK = "{\"action\":\"click\",\"target\":{\"window\":\"dialog\","
@@ -78,20 +82,20 @@ class FlowFailureDiagnosticsTest {
         assertThat(d.scope).startsWith("section 'Discounts' (depth 4, compact");
         assertThat(d.tree).containsExactly("section 'Discounts'", "  table 'Discounts' columns=[Line items, Max] rows=12");
         assertThat(table.rows).isNull();
-        assertThat(d.screenshot).endsWith("pricing-walk-step1.png");
+        assertThat(d.screenshot).endsWith("pricing-walk-step2.png");
         assertThat(Files.exists(Paths.get(d.screenshot))).isTrue();
         assertThat(d.problems).isEmpty();
 
-        String report = FlowReport.format(flow("pricing walk"), result);
-        assertThat(report).contains("[0] PASS press(Escape)").contains("ms=").contains("edtMs=");
-        assertThat(report).contains("[1] FAIL click(").contains("NOT_FOUND")
+        String report = FlowReport.format(ran, result);
+        assertThat(report).contains("[1] PASS press(Escape)").contains("ms=").contains("edtMs=");
+        assertThat(report).contains("[2] FAIL click(").contains("NOT_FOUND")
                 .contains("details:").contains("#save in dialog:Order")
                 .contains("target button 'Save'").contains("matched 2:")
                 .contains("tree of section 'Discounts'").contains("screenshot: ");
         // a passing step is one line; the failing one follows it directly
         String[] lines = report.split("\n");
-        int pass = Arrays.asList(lines).indexOf(Arrays.stream(lines).filter(l -> l.startsWith("  [0] PASS")).findFirst().get());
-        assertThat(lines[pass + 1]).startsWith("  [1] FAIL");
+        int pass = Arrays.asList(lines).indexOf(Arrays.stream(lines).filter(l -> l.startsWith("  [1] PASS")).findFirst().get());
+        assertThat(lines[pass + 1]).startsWith("  [2] FAIL");
     }
 
     @Test
@@ -161,7 +165,7 @@ class FlowFailureDiagnosticsTest {
         assertThat(Files.readAllBytes(png)).isEqualTo(backend.verbs.shot.png);
         assertThat(step.message).startsWith("wrote ").contains("pricing.png").contains("(4x3)");
         assertThat(backend.verbs.calls).containsExactly("screenshot in dialog:Validation* null");
-        assertThat(FlowReport.format(flow("x"), result)).contains("wrote ");
+        assertThat(FlowReport.format(ran, result)).contains("wrote ");
     }
 
     @Test
@@ -173,9 +177,39 @@ class FlowFailureDiagnosticsTest {
         assertThat(both.steps.get(0).reason).isEqualTo("BAD_INPUT");
     }
 
-    private static Flow flow(String name) {
-        Flow f = new Flow();
-        f.name = name;
-        return f;
+    @Test
+    void reportsNumberStepsAndChecks() {
+        FlowResult result = replay(PRESS, CHECK, CHECK, PRESS);
+        assertThat(result.passed()).isTrue();
+        String report = FlowReport.format(ran, result);
+        assertThat(report).startsWith("Recorded test 'pricing walk' passed:");
+        assertThat(report).contains("  [1] PASS press(Escape)").contains("    [1.1] PASS expect(").contains("    [1.2] PASS expect(")
+                .contains("  [2] PASS press(Escape)");
+    }
+
+    @Test
+    void groupsAndSentencesShowInTheReport() {
+        String said = "{\"action\":\"press\",\"keys\":\"Escape\",\"say\":\"Leave the dialog\"}";
+        FlowResult result = replay(PRESS, said, CHECK, PRESS);
+        ran.groups.add(new FlowGroup(0, 2, "Close things"));
+        String report = FlowReport.format(ran, result);
+        String[] lines = report.split("\n");
+        int group = Arrays.asList(lines).indexOf("  \u2014 Close things");
+        assertThat(group).as(report).isEqualTo(2);
+        assertThat(lines[3]).startsWith("  [1] PASS press(Escape)");
+        assertThat(lines[4]).startsWith("  [2] PASS Leave the dialog");
+        assertThat(lines[5]).isEqualTo("      press(Escape)");
+        assertThat(lines[6]).startsWith("    [2.1] PASS expect(");
+        assertThat(lines[7]).startsWith("  [3] PASS press(Escape)");
+    }
+
+    @Test
+    void thePictureIsNamedByTheLabel() {
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 3
+                ? new DriverException(Reason.NOT_FOUND, "nothing matches label 'Total'") : null;
+        FlowResult result = replay(PRESS, PRESS, CHECK);
+        assertThat(result.passed()).isFalse();
+        assertThat(result.steps.get(2).diagnostics.screenshot).endsWith("pricing-walk-step2.1.png");
+        assertThat(FlowReport.format(ran, result)).contains("    [2.1] FAIL expect(");
     }
 }

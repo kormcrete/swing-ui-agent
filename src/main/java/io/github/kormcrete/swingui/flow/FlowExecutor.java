@@ -87,7 +87,7 @@ public class FlowExecutor {
             }
             if (!step.passed && diagnostics != null) {
                 try {
-                    step.diagnostics = diagnostics.diagnose(action, verbs, flow.name, i);
+                    step.diagnostics = diagnostics.diagnose(action, verbs, flow.name, StepNumbers.label(flow.steps, i));
                 } catch (RuntimeException e) {
                     step.diagnostics = new StepDiagnostics();
                     step.diagnostics.problems.add("diagnosis failed: " + e);

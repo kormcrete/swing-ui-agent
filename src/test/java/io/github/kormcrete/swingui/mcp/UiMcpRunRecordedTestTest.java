@@ -82,12 +82,30 @@ class UiMcpRunRecordedTestTest {
         assertThat(out.path("test").asText()).isEqualTo("place-order");
         assertThat(out.path("file").asText()).isEqualTo(testsDir.resolve("place-order.json").toAbsolutePath().normalize().toString());
         assertThat(out.path("steps")).hasSize(2);
-        assertThat(out.path("steps").get(1).path("index").asInt()).isEqualTo(1);
+        assertThat(out.path("steps").get(1).path("n").asText()).isEqualTo("1.1");
+        assertThat(out.path("steps").get(1).has("index")).isFalse();
         assertThat(out.path("report").asText()).contains("passed");
         assertThat(backend.verbs.calls.get(0)).isEqualTo("reset");
         assertThat(backend.verbs.calls.get(1)).startsWith("click");
         assertThat(backend.verbs.calls.get(2)).startsWith("expect");
         assertThat(session.humanSink().steps()).hasSize(before);
+    }
+
+    @Test
+    void stepsCarryTheirLabelAndSentence() throws Exception {
+        Flow f = flow("said");
+        f.steps.get(0).say = "Store the order";
+        Files.write(testsDir.resolve("said.json"), RecordedTestFiles.write(f).getBytes(StandardCharsets.UTF_8));
+        JsonNode out = run("{\"name\":\"said\"," + evidenceArg() + "}");
+        JsonNode first = out.path("steps").get(0);
+        assertThat(first.path("n").isInt()).isTrue();
+        assertThat(first.path("n").asInt()).isEqualTo(1);
+        assertThat(first.path("say").asText()).isEqualTo("Store the order");
+        JsonNode check = out.path("steps").get(1);
+        assertThat(check.path("n").isTextual()).isTrue();
+        assertThat(check.path("n").asText()).isEqualTo("1.1");
+        assertThat(check.has("say")).isFalse();
+        assertThat(out.path("report").asText()).contains("[1] PASS Store the order").contains("[1.1] PASS");
     }
 
     @Test

@@ -856,6 +856,21 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void replayEntriesAreNumberedByStepAndCheck() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        JsonNode r = call("{\"op\":\"replay\"}");
+        assertThat(r.path("steps")).hasSize(5);
+        assertThat(r.path("steps").get(0).path("n").isInt()).isTrue();
+        assertThat(r.path("steps").get(0).path("n").asInt()).isEqualTo(1);
+        assertThat(r.path("steps").get(1).path("n").isTextual()).isTrue();
+        assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("1.1");
+        assertThat(r.path("steps").get(2).path("n").asInt()).isEqualTo(2);
+        assertThat(r.path("steps").get(4).path("n").asInt()).isEqualTo(4);
+    }
+
+    @Test
     void replayFromALaterStepDoesNotReset() throws Exception {
         fakeReset();
         four();
