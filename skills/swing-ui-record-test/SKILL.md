@@ -79,8 +79,9 @@ you instead of describing:
   it), adds checks in Check mode, replays or fixes steps, and presses Done. `$UI recording '{"op":"list","wait":540000}'`
   waits for their Done and returns the recording. Edit it with `insert`, `delete`, `move` and `edit`, passing the
   `rev` from your last `list` so a change made meanwhile refuses yours; `undo` takes back the last edit, and
-  `replay` / `redo {"from":3}` run it again. Export with `recording export` or `export_test` / `export_flow`, then
-  verify as always: their steps were recorded, not re-run, until a replay. While a recording runs, `session reset`
+  `replay` / `redo {"from":3}` run it again. Export with `recording export` or `export_test` / `export_recorded_test`.
+  A recorded test checks exact values: data the test creates, or data known to exist; for numbers the app makes up,
+  check something else or write a Java test. Then verify as always: their steps were recorded, not re-run, until a replay. While a recording runs, `session reset`
   is refused: stop it first.
 - **Or they export.** After Done the palette offers Export…: the person names the class and package and the file is
   written without you (the recording stays). When they ask you to check it, run it from another screen and fix what
@@ -93,7 +94,7 @@ you instead of describing:
   the step runs and the result says `notRecorded`. Pick another locator, or add the step to the class by hand.
 - A `{"ref":"e12"}` target is recorded as a locator the recorder derives. `fragile:true` means it needed `nth`;
   find a better locator, reset and redo.
-- Inside a `batch`, `{"verb":"screenshot","path":"..."}` is the flow step that writes a PNG and IS recorded;
+- Inside a `batch`, `{"verb":"screenshot","path":"..."}` is the step that writes a PNG and IS recorded;
   add `"scale":2` for a HiDPI (2x) image.
   To just look, call the `screenshot` tool.
 

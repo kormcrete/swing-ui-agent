@@ -12,7 +12,7 @@ a smaller model and the shell tool).
 
 ## Delegating (dispatcher)
 
-Delegate when the job is "go and look" or "go and do": walk a flow, confirm a fix in the real app, reproduce a
+Delegate when the job is "go and look" or "go and do": walk a task, confirm a fix in the real app, reproduce a
 bug, run or re-run a `*UiIT`, capture screens. Keep in the main session: deciding what a test should prove, and
 recording a test the user is shaping step by step (swing-ui-record-test).
 
@@ -55,7 +55,7 @@ Expect back at most a few lines: verdict, counts (passed / failed / gaps), the r
     {"verb":"expect","target":{"role":"button","name":"Save"},"state":["!disabled"]}],
     "snapshot":{"window":"dialog","depth":3,"compact":true}}'
   ```
-  `do_actions {"actions":[...]}` does the same with flow steps; in `do_action` the step sits one level down:
+  `do_actions {"actions":[...]}` does the same with steps; in `do_action` the step sits one level down:
   `{"action":{"action":"click","target":{...}}}`.
 - **Check with `expect`, not screenshots.** A number or a boolean is an `expect`. Take a `screenshot` (with
   `--out file.png`) only for a visual call or when the dispatch asks.

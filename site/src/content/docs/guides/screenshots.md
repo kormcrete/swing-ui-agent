@@ -76,7 +76,7 @@ The `screenshot` tool is a read and is never recorded. To have a screenshot in t
 $UI batch '{"steps":[{"verb":"screenshot","window":"main","path":"orders/overview.png","scale":2}]}'
 ```
 
-A relative `path` lands under `-Dswingui.screenshotDir` (set on the app), else `target/flow-screenshots` of the app's working directory. The exported test writes it with `saveScreenshot` as above.
+A relative `path` lands under `-Dswingui.screenshotDir` (set on the app), else `target/ui-screenshots` of the app's working directory. The exported test writes it with `saveScreenshot` as above.
 
 ## When a test fails
 

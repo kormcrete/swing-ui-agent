@@ -67,8 +67,8 @@ Start **Order Desk** (the palette is on), then tell Claude Code:
 The agent waits for your recording. In the app:
 
 1. press **● Record** and start with a step that gets to the starting screen;
-2. use the app, add checks with **Check**, and fix the flow with **Steps**;
-3. press **Done** when the flow is right.
+2. use the app, add checks with **Check**, and fix the steps with **Steps**;
+3. press **Done** when the steps are right.
 
 Done hands the recording to the agent: it exports the class, runs it from another screen and reports back.
 

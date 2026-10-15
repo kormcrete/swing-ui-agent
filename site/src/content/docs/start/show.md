@@ -109,7 +109,7 @@ bring the app back to the starting screen first.
 
 ## 5. Press Done, then export
 
-Press **Done** when the flow is right. The bar shows **Recorded** and offers:
+Press **Done** when the steps are right. The bar shows **Recorded** and offers:
 
 - **● Record:** a new recording, which replaces this one.
 - **Steps:** this recording, to replay or fix. **↺ Redo from selected** records again from that step.

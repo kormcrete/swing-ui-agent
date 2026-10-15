@@ -29,7 +29,7 @@ $UI menu '{"path":["File","New order"]}'
 - **Files instead of images.** `--out orders.png screenshot` writes the PNG to a file, so the agent opens it only when it needs to.
 - **The skills assume it.** The three [skills](/swing-ui-agent/agents/skills/) show every step as a CLI call.
 
-Each call starts a small JVM. Driving a whole flow is many calls, so use `batch` when the next steps are already known: several steps, one call.
+Each call starts a small JVM. Driving a whole task is many calls, so use `batch` when the next steps are already known: several steps, one call.
 
 ## Use MCP when your agent speaks it
 

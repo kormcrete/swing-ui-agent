@@ -29,4 +29,4 @@ java -jar swing-ui-agent.jar [--port N] tools [<tool>]
 | `1` | The tool or the agent reported an error (on stderr) |
 | `2` | Usage error |
 | `3` | No agent reachable |
-| `4` | `run_flow` ran and the flow failed (its report on stderr) |
+| `4` | `run_recorded_test` ran and the recorded test failed (its report on stderr) |

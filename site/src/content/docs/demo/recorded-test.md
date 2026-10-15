@@ -248,5 +248,5 @@ runs it on every push, on Linux with Java 8:
 
 ## What's next
 
-- [Tour of Order Desk](/swing-ui-agent/demo/tour/): more flows to record.
+- [Tour of Order Desk](/swing-ui-agent/demo/tour/): more tests to record.
 - [Record a test](/swing-ui-agent/start/record/) and [Run the tests](/swing-ui-agent/start/run/) on your own app.

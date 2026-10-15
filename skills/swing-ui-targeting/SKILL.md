@@ -104,7 +104,7 @@ Plugins are optional. Without one, everything in this skill works on any Swing a
 - `drag` posts a mouse gesture and never starts a native drag; deliver files or text with `drop`.
 - `screenshot` paints the app's own components: open popups, combo dropdowns and tooltips (their own windows) are
   not in the image. Use it for alignment and layout calls only; numbers and booleans are `expect`.
-- `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName` are flow steps with no tool of
+- `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName` are steps with no tool of
   their own: run them through `do_action` or `batch` (`{"verb":"hover","target":...}`).
 
 ## Keep a glossary
