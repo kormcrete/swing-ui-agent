@@ -290,7 +290,7 @@ class InspectorTest {
             assertThat(scene.inspector.stepOff(bar, archive, inside(archive))).isTrue();
             assertThat(bar.getBounds().intersects(archive.getBounds())).isFalse();
 
-            bar.moved = archive.getLocation();
+            bar.dragTo(archive.getLocation());
             o.relayout();
 
             assertThat(bar.getLocation()).isEqualTo(archive.getLocation());
@@ -421,18 +421,73 @@ class InspectorTest {
         onEdt(() -> {
             Bar bar = paletteInFrame();
             Point inFrame = new Point(100, 120);
-            bar.moved = inFrame;
+            bar.dragTo(inFrame);
             scene.inspector.overlay(frame.getRootPane()).relayout();
 
             Overlay o = showIn(dialog);
             Point inDialog = new Point(40, 50);
-            bar.moved = inDialog;
+            bar.dragTo(inDialog);
             o.relayout();
 
             showIn(frame);
             assertThat(bar.getLocation()).isEqualTo(inFrame);
             showIn(dialog);
             assertThat(bar.getLocation()).isEqualTo(inDialog);
+        });
+    }
+
+    @Test
+    void aDragInTheMainWindowNeverFollowsTheBarIntoADialog() throws Exception {
+        onEdt(() -> {
+            paletteInFrame();
+            scene.inspector.agentStartedNow();
+            Bar recording = scene.inspector.overlay(frame.getRootPane()).bar();
+            recording.dragTo(new Point(100, 120));
+            scene.inspector.overlay(frame.getRootPane()).relayout();
+            // kept inside the window: the agent's long bar text makes it wide
+            Point inFrame = recording.getLocation();
+
+            // the agent replays; checkout's dialog opens meanwhile, and the replay ends in it
+            scene.inspector.agentReplayingNow("replaying 3/5  click(#checkout)");
+            showIn(dialog);
+            scene.inspector.agentReplayingNow(null);
+
+            JLayeredPane layers = dialog.getLayeredPane();
+            Dimension size = recording.getPreferredSize();
+            Rectangle byDefault = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+                    Collections.<Rectangle>emptyList());
+            assertThat(recording.getParent()).isSameAs(layers);
+            assertThat(recording.getLocation()).isEqualTo(byDefault.getLocation());
+
+            // the main window's drag was not saved as the dialog's
+            showIn(frame);
+            assertThat(recording.getLocation()).isEqualTo(inFrame);
+            showIn(dialog);
+            assertThat(recording.getLocation()).isEqualTo(byDefault.getLocation());
+        });
+    }
+
+    @Test
+    void theLatestDragInAWindowWinsForEveryBarShownThere() throws Exception {
+        onEdt(() -> {
+            Bar idle = paletteInFrame();
+            Overlay o = scene.inspector.overlay(frame.getRootPane());
+            Point first = new Point(100, 120);
+            idle.dragTo(first);
+            o.relayout();
+
+            scene.inspector.agentStartedNow();
+            Bar recording = o.bar();
+            assertThat(recording.getLocation()).isEqualTo(first);
+            Point second = new Point(200, 300);
+            recording.dragTo(second);
+            o.relayout();
+
+            scene.inspector.agentStoppedNow();
+            assertThat(o.bar().getLocation()).isEqualTo(second);
+            scene.inspector.recordingReplacedNow();
+            assertThat(o.bar()).isSameAs(idle);
+            assertThat(idle.getLocation()).isEqualTo(second);
         });
     }
 
@@ -549,7 +604,7 @@ class InspectorTest {
             assertThat(bar.getBounds().intersects(inLayers(place))).isFalse();
 
             // the person drags it back over the button: the next page change leaves it there
-            bar.moved = home.getLocation();
+            bar.dragTo(home.getLocation());
             scene.inspector.overlay(dialog.getRootPane()).relayout();
             content.remove(place);
             JButton confirm = new JButton("Confirm");
@@ -571,7 +626,7 @@ class InspectorTest {
             assertThat(bar.getBounds().intersects(inLayers(save))).isFalse();
 
             Point over = inLayers(save).getLocation();
-            bar.moved = over;
+            bar.dragTo(over);
             scene.inspector.overlay(frame.getRootPane()).relayout();
             scene.inspector.attachPalette();
             assertThat(bar.getLocation()).isEqualTo(over);

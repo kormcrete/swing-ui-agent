@@ -336,7 +336,7 @@ public final class Inspector {
     Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
     /** The app's windows, which Check mode covers. */
     Supplier<List<JRootPane>> roots = Inspector::appRoots;
-    /** Where the bar sat in each window it left (null: where it goes by itself); outlives the window's overlay. */
+    /** The person's drag in each window the palette left (null: none there); outlives the window's overlay. */
     private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
     private Recording recording;
     /** While the agent replays: its bar, without buttons, in place of the palette's. EDT. */
@@ -657,9 +657,8 @@ public final class Inspector {
      */
     private void movePalette(Overlay to, Bar want) {
         Overlay from = paletteHome;
-        Bar shown = from != null && from.bar() != null ? from.bar() : want;
-        if (from != null) spots.put(from.root, shown.moved);
-        shown.moved = spotIn(to);
+        // the person's drag stays with the window it was made in; every bar shown in `to` takes `to`'s (Overlay.bar)
+        if (from != null) spots.put(from.root, from.dragged());
         to.hidePalette(testRun);
         paletteHome = to;
         if (recording != null) recording.rehome(to); else to.bar(agentBar != null ? agentBar : idle);

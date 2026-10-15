@@ -86,7 +86,7 @@ class OverlayTest {
     }
 
     @Test
-    void aBarWithoutASpotTakesTheWindowsAndOneWithASpotKeepsIt() throws Exception {
+    void everyBarTakesTheWindowsSpotNeverOneItBringsAlong() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             JRootPane root = new JRootPane();
             root.setSize(800, 600);
@@ -97,10 +97,16 @@ class OverlayTest {
             o.bar(fresh);
             assertThat(fresh.getLocation()).isEqualTo(new Point(40, 50));
 
-            Bar dragged = new Bar("Recorded", "").button("Steps", Overlay.HOVER, () -> { });
-            dragged.moved = new Point(300, 200);
-            o.bar(dragged);
-            assertThat(dragged.getLocation()).isEqualTo(new Point(300, 200));
+            // dragged in another window: that spot stays there
+            Bar elsewhere = new Bar("Recorded", "").button("Steps", Overlay.HOVER, () -> { });
+            elsewhere.moved = new Point(300, 200);
+            o.bar(elsewhere);
+            assertThat(elsewhere.getLocation()).isEqualTo(new Point(40, 50));
+
+            // dragged here: the next bar shown here goes there too
+            elsewhere.dragTo(new Point(120, 140));
+            o.bar(fresh);
+            assertThat(fresh.getLocation()).isEqualTo(new Point(120, 140));
             o.dispose();
         });
     }
@@ -296,7 +302,7 @@ class OverlayTest {
             Overlay o = new Overlay(rootWith(content));
             Bar idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
             o.bar(idle);
-            idle.moved = new Point(100, 100);
+            idle.dragTo(new Point(100, 100));
             o.relayout();
             o.recheck();
             assertThat(idle.getLocation()).isEqualTo(new Point(100, 100));

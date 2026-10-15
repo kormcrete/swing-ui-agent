@@ -126,7 +126,9 @@ final class Overlay extends JComponent {
     /** The bar's {@link Bar#moved} when {@link #avoid} was filled: a drag replaces it. */
     private Point movedAtAvoid;
     private Catcher catcher;
-    /** Where a bar that has no spot yet goes in this window (null: where it goes by itself); set by the inspector. */
+    /** Where the person dragged a bar in this window while this overlay showed it; null: no drag here yet. */
+    private Point drag;
+    /** Where a bar goes in this window before the person drags one here (null: where it goes by itself); set by the inspector. */
     Function<Bar, Point> spotFor;
     /**
      * The app's small components in this window as last looked at ({@link #smallIn}): the bar's default spot covers
@@ -187,16 +189,19 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * The person's palette; null removes it. A bar without a spot of its own (the one Done, ● Record or a replay puts
-     * up) takes the one the person dragged the bar it replaces to, else the one they left in this window
-     * ({@link #spotFor}), else the default spot, which covers none of the window's small components.
+     * The person's palette; null removes it. Every bar shown here (the one Done, ● Record or a replay puts up too)
+     * takes the person's latest drag in this window - of whichever bar they dragged here - else the one they left in
+     * this window before ({@link #spotFor}), else the default spot, which covers none of the window's small
+     * components. Never a spot the bar brings from another window or from an older drag.
      */
     void bar(Bar b) {
         if (b == bar) return;
-        Point dragged = bar == null ? null : bar.moved;
         if (bar != null) layers.remove(bar);
-        if (b != null && b.moved == null) b.moved = dragged != null ? dragged : spotFor != null ? spotFor.apply(b) : null;
-        if (b != null) small = smallIn(layers);
+        if (b != null) {
+            b.moved = dragged();
+            b.dragged = p -> drag = p;
+            small = smallIn(layers);
+        }
         bar = b;
         sync();
         relayout();
@@ -289,6 +294,11 @@ final class Overlay extends JComponent {
 
     Bar bar() {
         return bar;
+    }
+
+    /** The person's drag in this window: their latest one here, else the one they left here before; null: none. */
+    Point dragged() {
+        return drag != null ? drag : spotFor != null ? spotFor.apply(bar) : null;
     }
 
     /** A panel beside the bar (the steps list); null removes it. */

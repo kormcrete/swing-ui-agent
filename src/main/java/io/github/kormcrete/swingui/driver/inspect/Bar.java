@@ -17,6 +17,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * The inspector's one control strip, inside the app window: a grip to drag it, a line of text (the agent's
@@ -48,8 +49,13 @@ final class Bar extends JComponent {
     private final javax.swing.Timer pulseTimer = new javax.swing.Timer(50, e -> repaint());
     private final List<Button> buttons = new ArrayList<Button>();
     private Button over;
-    /** Where the person dragged it to; null until they do. */
+    /**
+     * Where it goes: the person's drag in the window it shows in, set by that window's overlay ({@link Overlay#bar}),
+     * or their drag of it there; null: where it goes by itself.
+     */
     Point moved;
+    /** Hears the person's drag: the window it shows in keeps it for every bar shown there ({@link Overlay#bar}). */
+    Consumer<Point> dragged;
     private Point grab;
 
     Bar(String title, String text) {
@@ -63,8 +69,7 @@ final class Bar extends JComponent {
             }
             @Override public void mouseDragged(MouseEvent e) {
                 if (grab == null) return;
-                moved = new Point(getX() + e.getX() - grab.x, getY() + e.getY() - grab.y);
-                setLocation(moved);
+                dragTo(new Point(getX() + e.getX() - grab.x, getY() + e.getY() - grab.y));
             }
             @Override public void mouseReleased(MouseEvent e) {
                 Button b = buttonAt(e.getPoint());
@@ -80,6 +85,13 @@ final class Bar extends JComponent {
         };
         addMouseListener(a);
         addMouseMotionListener(a);
+    }
+
+    /** The person dragged it to {@code p} (layered-pane coordinates). */
+    void dragTo(Point p) {
+        moved = p;
+        setLocation(p);
+        if (dragged != null) dragged.accept(p);
     }
 
     /** A dot before the title; {@code pulse} makes it breathe (only while the bar is showing). */
