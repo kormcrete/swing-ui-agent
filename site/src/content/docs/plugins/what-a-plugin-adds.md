@@ -17,7 +17,7 @@ Everything else on this site works on any Swing app as it is: no plugin, no chan
   CAPABILITY_GAP: login needs the app plugin; no plugin configured (agent argument plugins=…)
   ```
 
-Order Desk has no plugin, and its recorded test needs none.
+Order Desk has no plugin, and its tests need none.
 
 ## With a plugin
 

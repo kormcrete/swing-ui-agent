@@ -23,11 +23,11 @@ $UI session '{"op":"reset"}'
 {"reset":"dialogs"}
 ```
 
-A reset starts a fresh recording. Without a [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) it moves the pointer home and closes modal dialogs, nothing more: the app may still be on any screen.
+A reset starts a fresh recording. Without a [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) it moves the pointer home and closes modal dialogs, nothing more: the app may still be on any screen. `recording {"op":"start","reset":true}` resets and starts a recording too, and the palette shows it.
 
 ## 3. Reach the starting screen
 
-So the first step must get to the test's own starting screen from anywhere: a `menu` item, a key shortcut (`press`) or, with a plugin, `navigate`.
+The first step must get to the test's own starting screen from anywhere: a `menu` item, a key shortcut (`press`) or, with a plugin, `navigate`. [Reset and the starting screen](/swing-ui-agent/guides/reset/) explains why.
 
 ```sh
 $UI menu '{"path":["File","New order"]}'
@@ -46,7 +46,7 @@ Each answer carries `recorded`, the step as it will be exported:
 {"passed":true,"action":"type(text 'Customer' [tab:New order] 'Ada')","message":"","ms":18,"recorded":{"action":"type","target":{"scope":["tab:New order"],"role":"text","name":"Customer"},"text":"Ada"}}
 ```
 
-A step that fails is not recorded. A step that ran but was wrong is: reset and redo from step 3 rather than patching it with more steps.
+A step that fails is not recorded. A step that ran but was wrong is: record it again (`recording {"op":"redo","from":<step>}`, or reset and start over) rather than patching it with more steps.
 
 ## 5. Check with `expect`
 
@@ -95,17 +95,7 @@ class NewOrderForAdaUiIT {
 - `class` is required and ends in `UiIT`. `method` defaults to `recorded`, `package` to `recorded` (or the plugin's export package).
 - An export clears the recording. Reset again before the next test.
 - `export_test` refuses a recording that did not begin at a reset, an empty one, bad names and an existing file. A refusal keeps the recording, so fix the problem and export again.
-
-### The start warning
-
-A test that does not begin by reaching its own screen only works on whatever screen the app happens to show. The export still writes it, and says so:
-
-```json
-{"savedTo":"…/OpenOrdersUiIT.java","steps":1,"fragile":0,
- "startWarning":"the test begins with 'expect(label '4 open orders' state [!hidden])', which works only on the screen the app happens to show after a reset (no app plugin: a reset only closes dialogs); begin with a menu, a key shortcut or navigate so the test gets to its own starting screen"}
-```
-
-Reset and record again with a `menu` or `press` first step.
+- A test that does not begin by reaching its own screen is still written, with a `startWarning` (see [Reset and the starting screen](/swing-ui-agent/guides/reset/#recording-starts-at-a-reset)). Reset and record again with a `menu` or `press` first step.
 
 ## 7. Prove it from another screen
 
@@ -166,7 +156,7 @@ String order = eventually("the status bar naming the new order", Duration.ofMill
 assertThat(ui.tab(order)).isSelected();
 ```
 
-Add by hand only checks no tool expresses, as here with `UiAssertions.eventually`. To change a recorded step, record it again. The whole test, step by step with its screenshots, is in [The recorded test](/swing-ui-agent/demo/recorded-test/).
+Add by hand only checks no tool expresses, as here with `UiAssertions.eventually`. To change a recorded step, record it again. The whole test, step by step with its screenshots, is in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
 
 ## What's next
 

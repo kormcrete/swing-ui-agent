@@ -75,7 +75,7 @@ $UI snapshot '{"window":"main","depth":4,"compact":true}'
   {"ref":"e13","role":"table","state":["atTop","atBottom"],"columns":["Order","Date","Customer","Items","Total","Status"],"rowCount":12,"selected":[],"truncated":true}]}
 ```
 
-(Trimmed.) Each node has a `ref`. `{"ref":"e13"}` works as a target while you explore, but only until the next snapshot, and a step aimed by ref is not exported. Write the locator for anything you keep.
+(Trimmed.) Each node has a `ref`. `{"ref":"e13"}` works as a target while you explore, but only until the next snapshot. A step aimed by ref is recorded with a locator the recorder derives: read it in the step's `recorded`.
 
 Never take an unscoped snapshot of a real app: it is every window, and it costs thousands of tokens. Scope it with `window`, a `target`, `depth` and `compact`. When the answer ends with `"scoped":false`, scope the next one.
 
@@ -114,7 +114,7 @@ All three are the app's answer, so the call itself succeeds (exit code 0) and `p
 ## Prefer a stable target
 
 - **An `id` beats a label** when the app sets one: it survives rewording and translation. Find the element by its label, then keep its `id`.
-- **Leave data out of names.** A tab titled `ORD-1640` is that order's tab today; the next run places `ORD-1641`. Read the number from the app, as Order Desk's [recorded test](/swing-ui-agent/demo/recorded-test/) does with the status bar, or match a stable part with `contains`.
+- **Leave data out of names.** A tab titled `ORD-1640` is that order's tab today; the next run places `ORD-1641`. Read the number from the app, as Order Desk's [`PlaceOrderUiIT`](/swing-ui-agent/demo/recorded-test/) does with the status bar, or match a stable part with `contains`.
 - **Scope instead of `nth`.** `nth` picks the n-th match in tree order. The step is marked `fragile`, and it hits the wrong element as soon as the layout changes. A scope, a window or a column says which one you mean.
 - **Two inputs with one label is a bug to report.** When a label could name two fields, the driver refuses to guess. The fix is `setLabelFor(field)` in the app.
 

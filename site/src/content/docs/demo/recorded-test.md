@@ -1,6 +1,6 @@
 ---
-title: The recorded test
-description: PlaceOrderUiIT, a test the agent recorded on Order Desk, step by step with the screenshots it takes.
+title: PlaceOrderUiIT, step by step
+description: The Java test an agent recorded on Order Desk, step by step with the screenshots it takes.
 sidebar:
   order: 2
 ---
@@ -28,7 +28,7 @@ in the Order Desk repository.
      order, so the check matches only the part before it.
    - **Long lines are wrapped** at 120 characters.
 
-See [Record a test](/swing-ui-agent/start/record/) for the same workflow on your app.
+See [Record a test with the agent](/swing-ui-agent/start/record/) for the same workflow on your app.
 
 ## The test, step by step
 
@@ -207,46 +207,18 @@ ui.inWindow("main").saveScreenshot("PlaceOrderUiIT/10-orders-after.png", 2);
 
 ## Run it
 
-The test runs against an Order Desk that is already up with the agent. It does not start the app.
-
-1. Start Order Desk with the agent on port 8770, the port named in `src/test/resources/junit-platform.properties`:
-
-   ```bash
-   java -javaagent:target/swing-ui-agent-agent.jar=port=8770 -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar
-   ```
-
-2. Run the UI tests with the `ui` profile. It runs every `*UiIT` class through Maven Failsafe:
-
-   ```bash
-   mvn -B -Pui verify
-   ```
-
-   Another port: add `-Dswingui.agents=127.0.0.1:<port>`. Without `-Pui`, the build runs only the unit tests and
-   needs no app.
-
-3. Find the screenshots in `target/ui-screenshots/PlaceOrderUiIT/`, `01-new-order.png` to `10-orders-after.png`.
-
-In IntelliJ, run **Order Desk**, then **UI tests** or the gutter icon next to the class: see
-[Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/).
+- **By hand:** start Order Desk with the agent on port 8770, then `mvn -B -Pui verify`, as in
+  [Run the tests](/swing-ui-agent/start/run/), or from IntelliJ as in
+  [Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/). The screenshots land in
+  `target/ui-screenshots/PlaceOrderUiIT/`, `01-new-order.png` to `10-orders-after.png`.
+- **In CI:** the Order Desk [build workflow](https://github.com/kormcrete/swing-order-desk-demo/blob/main/.github/workflows/build.yml)
+  runs it on every push, on Linux with Java 8, and keeps the `ui-screenshots` artifact. See
+  [Run in CI](/swing-ui-agent/start/ci/).
 
 Each run places a real order on invoice, so Ada owes €37.20 more after it. Her credit limit is €2,000.00: restart
 Order Desk before about 40 runs, or the credit limit warning appears and the test fails.
 
-## In CI
-
-The Order Desk [build workflow](https://github.com/kormcrete/swing-order-desk-demo/blob/main/.github/workflows/build.yml)
-runs it on every push, on Linux with Java 8:
-
-- It installs swing-ui-agent from its repository, then builds and runs the unit tests.
-- [`.github/scripts/ui-tests.sh`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/.github/scripts/ui-tests.sh)
-  starts a virtual display (Xvfb) when there is none, starts Order Desk with the agent, waits until `session`
-  answers, and runs the UI tests.
-- The run keeps the `ui-screenshots` artifact: the ten screenshots, any failure evidence, the test reports and the
-  app's log.
-
-[Run in CI](/swing-ui-agent/start/ci/) shows the same setup for your app.
-
 ## What's next
 
 - [Tour of Order Desk](/swing-ui-agent/demo/tour/): more tests to record.
-- [Record a test](/swing-ui-agent/start/record/) and [Run the tests](/swing-ui-agent/start/run/) on your own app.
+- [Record a test with the agent](/swing-ui-agent/start/record/) and [Run the tests](/swing-ui-agent/start/run/) on your own app.

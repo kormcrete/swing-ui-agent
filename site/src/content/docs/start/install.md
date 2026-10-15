@@ -45,7 +45,6 @@ java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
   `http://127.0.0.1:8765/mcp`.
 - `-Dorderdesk.today` is Order Desk's own: it fixes the date, so every run looks the same.
 - For your own app, add `-Dswingui.testsDir=/path/to/project/src/test/java`: that is where exported tests go. The default is `src/test/java` under the app's working directory.
-- The same jar works on every supported Java. On Java 9 and newer the app needs no `--add-opens` flags.
 
 The agent's options (`port`, `bind`, `mode`, `palette`, `plugins`) are in [Agent options](/swing-ui-agent/reference/agent-options/).
 

@@ -1,11 +1,11 @@
 ---
 title: Run the tests
-description: Run the recorded tests from Maven or IntelliJ against the running app, and read what a failure left behind.
+description: Run the Java tests from Maven or IntelliJ against the running app, and read what a failure left behind.
 sidebar:
   order: 8
 ---
 
-A recorded test is a plain JUnit 5 class. It does not start the app: it connects to the agent of an app that is already running and drives it the same way the agent did. This page sets up Maven and IntelliJ the way Order Desk does, and shows what a failure leaves behind.
+A Java test is a plain JUnit 5 class. It does not start the app: it connects to the agent of an app that is already running and drives it the same way the agent did. This page sets up Maven the way Order Desk does, and shows what a failure leaves behind.
 
 ## 1. Add the library
 
@@ -82,34 +82,15 @@ mvn -B -Pui verify
 To run one class: `mvn -B -Pui verify -Dit.test=PlaceOrderUiIT`.
 
 - When no agent answers, the first test fails at once with "no swing-ui-agent on 127.0.0.1:8770", and every later test with it.
-- Before each test, the agent moves the pointer home and closes modal dialogs. A [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) can reset more.
-- The app may be on any screen, so every test begins by getting to its own screen. Run a test twice against the same app and it must pass twice.
-
-## In IntelliJ
-
-Order Desk ships its run configurations: **Order Desk** starts the app with the agent, **UI tests** runs every
-`@UiTest` (JUnit tag `ui`), **All tests** the unit tests (tag `!ui`), and the gutter runs a single test. See
-[Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/).
-
-## Screenshots per step
-
-`ui.saveScreenshot(path, scale)` writes a PNG of the key window, and `ui.inWindow("main").saveScreenshot(path, scale)` one of a given window. A relative path lands in `target/ui-screenshots/`; a scale of 2 makes a sharp (2x) image. `PlaceOrderUiIT` takes one after every step:
-
-<!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L22-L25 -->
-```java
-ui.menu("File", "New order");
-
-assertThat(ui.tab("New order")).isSelected();
-ui.inWindow("main").saveScreenshot("PlaceOrderUiIT/01-new-order.png", 2);
-```
-
-![The first screenshot of PlaceOrderUiIT: a New order tab](../../../assets/place-order/01-new-order.png)
+- Before each test the agent resets the app, and every test begins by getting to its own screen (see [Reset and the starting screen](/swing-ui-agent/guides/reset/)). Run a test twice against the same app and it must pass twice.
+- In IntelliJ, Order Desk's run configurations start the app and run the tests: see [Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/).
+- A test can save a screenshot after each step: see [Screenshots](/swing-ui-agent/guides/screenshots/#in-a-test).
 
 ## When a test fails
 
 A failed test writes its evidence under `target/ui-failures/<Class>/<method>/`:
 
-- `evidence.txt`: the failure, what the locator matched, the element tree at that moment and the stack.
+- `evidence.txt`: the failure, what the locator matched, the element tree at that moment and the stack; on a timeout, also the app's event-thread stack.
 - a PNG of the window at the failure.
 - with several clients in one test, one `client-N` folder each.
 

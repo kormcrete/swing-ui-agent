@@ -35,7 +35,7 @@ So every test begins by getting to its own starting screen, the way a user would
 - a key shortcut: `press {"keys":"Mod+N"}`, in Java `ui.press("Mod+N")` (`Mod` is ⌘ on macOS and Ctrl elsewhere);
 - with a plugin, a named screen: `ui.navigate("orders")`.
 
-Order Desk's recorded test opens a New order tab from the File menu, so it starts from the same place every time:
+Order Desk's `PlaceOrderUiIT` opens a New order tab from the File menu, so it starts from the same place every time:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L22-L30 -->
 ```java
@@ -56,15 +56,15 @@ A test that begins with a click on whatever happened to be showing passes once a
 
 The agent records the steps it runs, and `export_test` writes them as a test. The recording starts at a reset, because that is where the test will start:
 
-1. `session {"op":"reset"}` closes dialogs and starts a fresh recording.
+1. `session {"op":"reset"}` closes dialogs and starts a fresh recording. `recording {"op":"start","reset":true}` does the same, and the palette shows the recording.
 2. The first step gets to the starting screen (a menu, a shortcut, or `navigate`).
 3. The steps and checks follow.
-4. `export_test` writes the class.
+4. `export_test` writes the class, or `export_recorded_test` a recorded test file.
 
-`export_test` refuses a recording that did not begin at a reset:
+Both refuse a recording that did not begin at a reset:
 
 ```text
-the recording did not begin at a session reset, where the test will start: reset (session op reset), get to the starting screen, redo the steps, then export
+the recording did not begin at a session reset or a recording start, where the test will start: reset (session op reset), get to the starting screen, redo the steps, then export; or replay it from step 1 (recording replay) and export once that passes
 ```
 
 Without a plugin, it also adds a `startWarning` when the first step is not a menu, a key press or `navigate`:
@@ -81,7 +81,7 @@ With a plugin that resets the app to a defined state, there is no warning: the t
 
 A reset does not undo what earlier tests did to the app's data. In Order Desk each placed order takes the next number and adds to what the customer owes. A test that passes twice:
 
-- reads values the app made instead of expecting fixed ones: the recorded test reads the new order's number from the status bar (see [Waiting](/swing-ui-agent/guides/waiting/#work-the-driver-cannot-see));
+- reads values the app made instead of expecting fixed ones: `PlaceOrderUiIT` reads the new order's number from the status bar (see [Waiting](/swing-ui-agent/guides/waiting/#work-the-driver-cannot-see));
 - checks its own row, found by values, rather than the first row or a row count;
 - leaves what it opened to the next reset, or closes it the way a user would.
 

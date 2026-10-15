@@ -17,14 +17,12 @@ Attach one jar to the app's JVM: no changes to the app, and it never takes over 
 ## How it works
 
 - **Drive:** a coding agent clicks, types and reads the live app, from a shell (`java -jar … <tool>`) or over MCP.
-- **Record:** a test comes about in one of two ways:
-  - you describe it, and the agent drives the app and exports what it did;
-  - you show it with the palette in the app (● Record, Check, Done), then export it with Export… or let the agent.
-- **Run:** the result is a JUnit 5 `@UiTest` class. It runs against the live app from Maven or your IDE, and in CI.
+- **Record:** you describe the test and the agent drives the app, or you show it with the palette in the app
+  (● Record, Check, Done). Either way the steps are exported as a test.
+- **Run:** a JUnit 5 `@UiTest` class runs against the live app from Maven, your IDE or CI.
 - **Ask:** when the agent is not sure what you mean, it boxes the candidates in the app and you confirm one.
 
-Tests are recorded, not written by hand: by the agent, or by you with the palette. You review them like any other
-code, and run them.
+Nobody writes the tests by hand: you review them like any other code, and run them.
 
 ## Quick start
 
@@ -40,22 +38,23 @@ Start your app with the agent. It listens on `127.0.0.1:8765`:
 java -javaagent:target/swing-ui-agent-0.1.0-SNAPSHOT-agent.jar -jar my-app.jar
 ```
 
-Let your coding agent drive it, one call per step, and export the test:
+Your coding agent drives it, one call per step, and exports the test:
 
 ```sh
 UI="java -jar target/swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"
-$UI snapshot '{"depth":3,"compact":true}'
+$UI session '{"op":"reset"}'
+$UI snapshot '{"window":"main","depth":3,"compact":true}'
 $UI menu '{"path":["File","New order"]}'
 $UI export_test '{"class":"PlaceOrderUiIT"}'
 ```
 
-The quickest way to see all of it is [Order Desk](https://github.com/kormcrete/swing-order-desk-demo), a demo app
-made to be driven. To just try it,
-[download it](https://kormcrete.github.io/swing-ui-agent/demo/tour/#download-and-run-it) for macOS or Windows (Java and
-the agent built in, nothing to build), connect your agent and ask it to place an order. To record tests, open its
-source in IntelliJ: its run configurations start the app with the agent and the palette, and run its UI tests. See
-[Record and run a UI test in IntelliJ](https://kormcrete.github.io/swing-ui-agent/start/intellij/) and
-[with Claude Code](https://kormcrete.github.io/swing-ui-agent/start/claude-code/).
+To see all of it, use [Order Desk](https://github.com/kormcrete/swing-order-desk-demo), a demo app made to be driven:
+
+- **Try it:** [download it](https://kormcrete.github.io/swing-ui-agent/demo/tour/#download-and-run-it) with the agent
+  built in, connect your agent and ask it to place an order.
+- **Record tests:** open its source in IntelliJ. Its run configurations start the app with the agent and run its UI
+  tests. See [in IntelliJ](https://kormcrete.github.io/swing-ui-agent/start/intellij/) and
+  [with Claude Code](https://kormcrete.github.io/swing-ui-agent/start/claude-code/).
 
 ## What a test looks like
 

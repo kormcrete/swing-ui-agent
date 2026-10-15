@@ -9,12 +9,12 @@ A coding agent can find out on its own how to drive a Swing app, but it gets the
 
 ## The three skills
 
-- **`swing-ui-record-test`:** record a `@UiTest` class. It covers:
+- **`swing-ui-record-test`:** record a test and save it as a recorded test file or a Java `@UiTest` class. It covers:
   - the reset that starts a recording, and reaching the test's own starting screen first;
   - acting, then checking with `expect` so the check is recorded;
-  - `export_test` and its warnings;
+  - fixing steps, naming them in sentences, and the exports and their warnings;
   - proving the test passes when the app starts on another screen;
-  - working with a person at the app: asking with `inspect highlight` and `pick`, and exporting what they recorded with the palette.
+  - working with a person at the app: asking with `inspect highlight` and `pick`, and saving what they recorded with the palette.
 - **`swing-ui-targeting`:** turn words into a locator, so "the Customer field", "order ORD-1640" or "Checkout…" becomes a target the driver can reach. It also says what to report when a word does not resolve, and what needs a plugin. `references/recipes.md` lists common jobs as live steps next to the Java each one exports to.
 - **`swing-ui-driver`:** hand the clicking to a cheaper sub-agent. The main session keeps the decisions; the driver walks a checklist with scoped reads and batched steps, and reports pass, fail or gap per item. The file doubles as the sub-agent's definition.
 

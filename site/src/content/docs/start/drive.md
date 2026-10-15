@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-A coding agent with a shell drives the app through the agent jar's command line: one tool call per command, a JSON answer on stdout. This page installs the skills, then walks a short session on Order Desk with the real answers, so you know what your agent sees.
+A coding agent with a shell drives the app through the agent jar's command line: one tool call per command, a JSON answer on stdout. This page walks a short session on Order Desk with the real answers, so you know what your agent sees.
 
 ## 1. Start the app with the agent
 
@@ -13,17 +13,13 @@ Start Order Desk as in [Installation](/swing-ui-agent/start/install/), on port 8
 
 ## 2. Give your agent the skills
 
-The repository's [`skills/`](https://github.com/kormcrete/swing-ui-agent/tree/main/skills) folder holds three agent skills. Copy the folders into your agent's skills directory; for Claude Code that is `.claude/skills/` in your project:
+Copy the three skills into your agent's skills directory; for Claude Code that is `.claude/skills/` in your project. [Skills](/swing-ui-agent/agents/skills/) says what each one covers.
 
 ```sh
 cp -r swing-ui-agent/skills/swing-ui-* your-project/.claude/skills/
 ```
 
-- **swing-ui-targeting:** turns "the Customer field" into a locator.
-- **swing-ui-record-test:** records a test, step by step.
-- **swing-ui-driver:** hands the driving to a cheaper sub-agent.
-
-Then ask in plain words: "Open a new order for Ada Shop Ltd and tell me what the cart shows." [Skills](/swing-ui-agent/agents/skills/) has the details.
+Then ask in plain words: "Open a new order for Ada Shop Ltd and tell me what the cart shows."
 
 ## 3. What the agent does
 

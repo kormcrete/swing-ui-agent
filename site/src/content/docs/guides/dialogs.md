@@ -62,7 +62,7 @@ $UI batch '{"steps":[
   {"verb":"click","target":{"window":"dialog","role":"button","name":"Next"}}]}'
 ```
 
-The recorded test walks the same wizard and checks each step:
+`PlaceOrderUiIT` walks the same wizard and checks each step:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L50-L69 -->
 ```java

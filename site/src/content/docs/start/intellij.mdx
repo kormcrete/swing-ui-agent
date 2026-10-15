@@ -21,13 +21,7 @@ You will learn how to:
 ## Before you start
 
 - IntelliJ IDEA with a JDK 8 or later.
-- swing-ui-agent installed in your local Maven repository. It is not on Maven Central yet, so build it once:
-
-  ```sh
-  git clone https://github.com/kormcrete/swing-ui-agent.git
-  (cd swing-ui-agent && mvn -B install -DskipTests)
-  ```
-
+- swing-ui-agent installed in your local Maven repository, as in [Installation](/swing-ui-agent/start/install/#1-build-and-install-it).
 - Order Desk cloned: `git clone https://github.com/kormcrete/swing-order-desk-demo.git`. Open the folder in IntelliJ
   (**File ▸ Open**) and let it import the Maven project.
 
@@ -57,7 +51,7 @@ Only one Order Desk can listen on port 8770 at a time: stop a running one before
 **UI tests** runs Order Desk's two tests, and you can watch them in the app: `CartTotalsUiIT` fills Ada Shop Ltd's
 cart, checks its totals and discards it, then `PlaceOrderUiIT` takes an order for Ada through checkout. It saves a
 screenshot after each step in `target/ui-screenshots/PlaceOrderUiIT/`. See
-[The recorded test](/swing-ui-agent/demo/recorded-test/) for what each step does.
+[PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/) for what each step does.
 
 <RunDemo />
 
@@ -72,12 +66,11 @@ screenshot after each step in `target/ui-screenshots/PlaceOrderUiIT/`. See
 Run **Order Desk** (or use the one that is already running). The palette appears at the bottom right of the window.
 
 1. Press **● Record**.
-2. Make the first step one that gets the app to the starting screen from anywhere: a menu item such as
-   **File ▸ New order**, a shortcut, or a click on the **Orders** tab. The test will run against an app that may be
-   on any screen, often the one the last test left behind.
+2. Make the first step one that gets the app to the starting screen from anywhere, such as **File ▸ New order**
+   (see [Reset and the starting screen](/swing-ui-agent/guides/reset/)).
 3. Use the app. Each click, selection and committed text field becomes a step.
 4. Press **Check**, click an element, and choose a check from the menu. Press **Record** to go on recording.
-5. Press **Steps** to see the recording. Replay it, redo it from a step, or delete a step until the steps are right.
+5. Press **Steps** to see the recording. Replay it, redo from a step, or delete one until the recording is right.
 6. Press **Done**.
 
 A recording can also be checks only, such as "ORD-1639 is Placed": the test then only asserts. More on each step in
@@ -88,14 +81,13 @@ A recording can also be checks only, such as "ORD-1639 is Placed": the test then
 After **Done** the palette offers **Export…**:
 
 1. Press **Export…**.
-2. Enter the class name, ending in `UiIT`, for example `CancelOrderUiIT`. The package is already filled in with the
-   app's own package, `io.github.kormcrete.orderdesk`.
+2. Choose **Java test** and enter the class name, ending in `UiIT`, for example `CancelOrderUiIT`. The package is
+   already filled in with the app's own package, `io.github.kormcrete.orderdesk`.
 3. Press **Export**.
 
-The palette says where the file went: `src/test/java/io/github/kormcrete/orderdesk/CancelOrderUiIT.java`. When the
-first step does not get the app to a known screen, it says that too. The recording stays, so you can still replay
-it, redo steps and export again under another name. An existing file is never overwritten: the export is refused
-and says so.
+The palette says where the file went: `src/test/java/io/github/kormcrete/orderdesk/CancelOrderUiIT.java`. The
+recording stays, and an existing file is never overwritten (see
+[Record a test by showing it](/swing-ui-agent/start/show/#5-press-done-then-export)).
 
 You can also export from IntelliJ's terminal, or let a coding agent do it:
 
@@ -125,5 +117,5 @@ java -jar target/swing-ui-agent-agent.jar --port 8770 \
 
 - [Record and run a UI test with Claude Code](/swing-ui-agent/start/claude-code/): let a coding agent drive the app
   and write the test.
-- [Targets and locators](/swing-ui-agent/guides/targets/): how a step finds its element, for reviewing a recorded test.
+- [Targets and locators](/swing-ui-agent/guides/targets/): how a step finds its element, for reviewing an exported test.
 - [Run in CI](/swing-ui-agent/start/ci/).

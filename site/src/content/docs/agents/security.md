@@ -16,7 +16,7 @@ The agent gives whoever can reach its port the same power over your app as a per
 ## What a caller can do
 
 - **What a user can do, through the UI.** Click, type, press keys, pick from menus, answer dialogs, choose files in the app's file chooser, read what is on screen, take screenshots of the app's windows.
-- **Write files, in two places.** `export_test` writes a test class under the tests folder (`-Dswingui.testsDir`, else `src/test/java`), and refuses to overwrite an existing file. Screenshot steps write PNGs under the screenshot folder or a path the caller gives. Exported tests are code: review them like any other change.
+- **Write files.** `export_test` writes a test class under the tests folder (`-Dswingui.testsDir`, else `src/test/java`), and `export_recorded_test` a recorded test file under the recorded tests folder; neither overwrites another existing file. Screenshot steps and a failing `run_recorded_test` write PNGs under the screenshot folder or a path the caller gives. Exported tests are code: review them like any other change.
 - **Read the clipboard, and set it.** `read_clipboard` and `set_clipboard` work with the system clipboard as the app sees it.
 - **Call a plugin's hooks.** `plugin_call` reaches only the methods of the one interface a plugin declares as its hooks. Without a plugin there is nothing to call.
 
@@ -29,7 +29,7 @@ The agent gives whoever can reach its port the same power over your app as a per
 
 ## One owner at a time
 
-A test run, a script or an agent can take a **lease**: then only calls that carry its token can act, and everyone else can only read. A lease ends when it is released, after its time-to-live passes without a call, or when another owner takes over an agent that has been idle for 15 seconds. While a person records, picks or replays with the palette, no test run can take the lease. See [Leases and several clients](/swing-ui-agent/guides/leases/).
+A test run, a script or an agent can take a **lease**: then only calls that carry its token can act, and everyone else can only read. See [Leases and several clients](/swing-ui-agent/guides/leases/).
 
 ## Where to run it
 

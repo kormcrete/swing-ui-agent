@@ -53,7 +53,7 @@ $UI --out orders.png screenshot '{"scale":2,"maxSize":2560}'
 
 ## In a test
 
-A test saves screenshots through the `Client` API. A relative path lands under the test module's `target/ui-screenshots`. Order Desk's recorded test keeps a 2x image after each step:
+A test saves screenshots through the `Client` API. A relative path lands under the test module's `target/ui-screenshots`. Order Desk's `PlaceOrderUiIT` keeps a 2x image after each step:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L50-L53 -->
 ```java
@@ -66,7 +66,7 @@ ui.inWindow("dialog").saveScreenshot("PlaceOrderUiIT/04-address.png", 2);
 - `ui.inWindow("main")` or `ui.inWindow("dialog")` for a whole window, any target for one element: `ui.tab("Orders").table().saveScreenshot("orders.png", 2)`.
 - `screenshot()` and `screenshot(scale)` return the PNG bytes instead of writing a file.
 
-The [recorded test](/swing-ui-agent/demo/recorded-test/) page shows the ten images Order Desk's CI run keeps.
+[PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/) shows the ten images Order Desk's CI run keeps.
 
 ## As a recorded step
 
@@ -80,7 +80,7 @@ A relative `path` lands under `-Dswingui.screenshotDir` (set on the app), else `
 
 ## When a test fails
 
-A failing `@UiTest` writes evidence under the test module's `target/ui-failures/<Class>/<method>/`: `evidence.txt` (the failure, the element tree, and on a timeout the app's event-thread stack) and a screenshot beside it. With several clients there is one `client-N` folder each.
+A failing `@UiTest` leaves a screenshot next to its `evidence.txt` under `target/ui-failures/`. See [Run the tests](/swing-ui-agent/start/run/#when-a-test-fails).
 
 ## What's next
 

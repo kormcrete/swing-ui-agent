@@ -49,18 +49,7 @@ assertThat(ui.table("Orders")).within(Duration.ofSeconds(30))
 
 ## A dialog comes back as pending
 
-A step that opens a modal dialog does not hang on it. It returns at once, and `pending` describes the dialog:
-
-```sh
-$UI context_menu '{"target":{"scope":["tab:Orders"],"role":"table","row":{"Order":"ORD-1637"}},"path":["Cancel orders…"]}'
-```
-
-```json
-{"passed":true,"action":"contextMenu(table [tab:Orders] row={Order=ORD-1637} > [Cancel orders…])","message":"","ms":39,
- "pending":{"title":"Cancel order","message":"Cancel order ORD-1637? Stock is restored and invoice totals are taken off what the customer owes.","buttons":["Cancel order","Keep"],"fields":[]}}
-```
-
-(Trimmed.) The next step deals with it: `answer {"button":"Keep"}`. Until then, a step aimed at the window behind it fails `NOT_ACTIONABLE: blocked by dialog Cancel order`. More in [Dialogs and file choosers](/swing-ui-agent/guides/dialogs/).
+A step that opens a modal dialog does not hang on it. It returns at once with `pending`, which describes the dialog, and the next step answers it. See [Dialogs and file choosers](/swing-ui-agent/guides/dialogs/#a-step-that-opens-a-dialog).
 
 ## Errors stop the step
 
@@ -89,7 +78,7 @@ $UI expect '{"target":{"window":"main","role":"label","name":"placed","match":"c
 {"passed":true,"action":"expect(label 'placed'~ in main state [!hidden])","message":"","ms":1780}
 ```
 
-When a value has to be read and reasoned about, `UiAssertions.eventually` retries a read until a condition holds. Order Desk's recorded test uses it to learn the new order's number:
+When a value has to be read and reasoned about, `UiAssertions.eventually` retries a read until a condition holds. Order Desk's `PlaceOrderUiIT` uses it to learn the new order's number:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L74-L83 -->
 ```java

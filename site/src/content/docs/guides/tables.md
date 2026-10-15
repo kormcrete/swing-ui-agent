@@ -57,7 +57,7 @@ A row named by more than two columns runs, but `export_test` has no Java form fo
 
 ## Click, open and sort
 
-Click a cell to select its row. Order Desk's recorded test selects products this way before Add to cart:
+Click a cell to select its row. Order Desk's `PlaceOrderUiIT` selects products this way before Add to cart:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L35-L38 -->
 ```java
@@ -90,7 +90,7 @@ $UI type '{"target":{"scope":["tab:New order · Ada Shop Ltd"],"role":"table","r
 {"passed":true,"action":"type(table [tab:New order · Ada Shop Ltd] row={Product=Gel pen, black} column=Qty '10' +Enter)","message":"","ms":24}
 ```
 
-The Qty cell's editor is a spinner; `type` finds the text field inside it. In the recorded test:
+The Qty cell's editor is a spinner; `type` finds the text field inside it. In `PlaceOrderUiIT`:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L41-L42 -->
 ```java
@@ -115,7 +115,7 @@ ui.tab("New order · Ada Shop Ltd").table().row("Product", "Gel pen, black").cel
 | A cell editable | target with a `row` and `column`, `"state":["editable"]` | `.isEditable()` |
 | Scrolled to the end | `"state":["atBottom"]` | `.hasStates("atBottom")` |
 
-The recorded test checks the new order's row on the Orders tab:
+`PlaceOrderUiIT` checks the new order's row on the Orders tab:
 
 <!-- snippet: src/test/java/io/github/kormcrete/orderdesk/PlaceOrderUiIT.java#L86-L89 -->
 ```java

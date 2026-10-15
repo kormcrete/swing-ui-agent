@@ -88,7 +88,7 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
 - `mvn -B verify` runs the unit tests without the app. The UI tests run next, against the app.
 - `if: always()` keeps the screenshots and the evidence when a test fails, which is when you need them.
 
-The `ui-screenshots` artifact of a green run holds the ten 2x screenshots of `PlaceOrderUiIT`; they are shown in [The recorded test](/swing-ui-agent/demo/recorded-test/).
+The `ui-screenshots` artifact of a green run holds the ten 2x screenshots of `PlaceOrderUiIT`; they are shown in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
 
 ## On each runner
 

@@ -19,7 +19,6 @@ No dates, just the order we expect to work in. Each item closes a gap from [Limi
 - **For app users, not only developers:** someone with only the built app, started with the agent when needed, drives
   it in plain language with an agent, by typing or by voice, and keeps tests as scripts or plain-language steps with
   their checks, run by the agent with nothing to compile.
-
 - **Linux and Windows on more real desktops:** GNOME and KDE, Wayland through XWayland, display scaling, and the palette tried by hand on both.
 - **A plugin tutorial on Order Desk:** reset to a defined start, a login and a typed hook, built step by step.
 - **Javadoc** of the library on this site.
