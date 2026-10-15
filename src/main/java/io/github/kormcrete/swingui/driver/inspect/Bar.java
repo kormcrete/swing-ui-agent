@@ -26,7 +26,7 @@ import java.util.function.Consumer;
 final class Bar extends JComponent {
 
     static final class Button {
-        final String label;
+        String label;
         final Color color;
         final Runnable action;
         boolean active;
@@ -123,6 +123,18 @@ final class Bar extends JComponent {
     void active(String label) {
         for (Button b : buttons) b.active = b.label.equals(label);
         repaint();
+    }
+
+    /** The button labelled {@code from}, if there is one, reads {@code to} now. */
+    void relabel(String from, String to) {
+        for (Button b : buttons) {
+            if (b.label.equals(from)) {
+                b.label = to;
+                revalidate();
+                repaint();
+                return;
+            }
+        }
     }
 
     void text(String text) {

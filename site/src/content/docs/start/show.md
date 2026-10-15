@@ -61,7 +61,7 @@ comes back with a `startWarning`.
 
 ## 3. Add checks
 
-Press **Check**. The bar says "Click what to check, then choose the check." Clicks now go to the palette, not to the
+Press **Check**. The bar says "Click what to check · Esc or ◀ to go back." Clicks now go to the palette, not to the
 app. Click an element and pick a check built from what it shows right now.
 
 ![Check mode on an order's lines: the clicked SKU cell is boxed and a menu offers SKU is "PEN-GEL-BLK" in this row, Has exactly 3 rows and Has at least 1 row](../../../assets/inspector/check-menu.png)
@@ -77,8 +77,8 @@ Which checks you get depends on the element:
 Column checks such as "Every row's Status is …" and "Sorted by …" are greyed out: there is no check for them yet.
 
 Each check runs as soon as you choose it. A check that passes is added to the recording, and a green ✓ flashes on
-the element. One that fails is not added: a red ✗ flashes there and the bar says "✗ not recorded". Press **Record** to
-go back to recording steps.
+the element. One that fails is not added: a red ✗ flashes there and the bar says "✗ not recorded". You stay in Check
+mode until you press **◀ Back to recording** (the Record button while you check) or Esc. That Esc never reaches the app.
 
 ## 4. Replay and fix the steps
 

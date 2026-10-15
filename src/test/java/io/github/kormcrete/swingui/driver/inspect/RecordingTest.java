@@ -8,10 +8,20 @@ import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
 import javax.swing.JRootPane;
+import javax.swing.MenuElement;
+import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
 import java.awt.Container;
+import java.awt.KeyEventDispatcher;
+import java.awt.KeyboardFocusManager;
+import java.awt.Toolkit;
+import java.awt.event.AWTEventListener;
+import java.awt.event.AWTEventListenerProxy;
+import java.awt.event.KeyEvent;
 import java.awt.Dimension;
 import java.awt.Rectangle;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -1770,6 +1780,190 @@ class RecordingTest {
         answer(ask, "Save it");
         eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
         assertThat(sink.log).containsExactly("describe 2-2 Save it");
+    }
+
+    @Test
+    void checkModeSaysHowToGetOutAndTheRecordButtonLeadsBack() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
+            recording.mode(true);
+            assertThat(recording.bar.labels()).containsExactly("◀ Back to recording", "Check", "Steps", "Done");
+            assertThat(recording.bar.text()).isEqualTo("Click what to check · Esc or ◀ to go back");
+            // a dialog that opens meanwhile keeps the label
+            recording.mode(true);
+            assertThat(recording.bar.labels()).containsExactly("◀ Back to recording", "Check", "Steps", "Done");
+
+            recording.bar.press("◀ Back to recording");
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
+            assertThat(recording.bar.text()).isEqualTo("Use the app: every step is recorded.");
+        });
+    }
+
+    @Test
+    void escInCheckModeGoesBackToRecordingAndTheAppNeverSeesIt() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.mode(true);
+            assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isTrue();
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            assertThat(recording.listening()).isTrue();
+            assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
+            assertThat(scene.inspector.overlay(frame.getRootPane()).catching()).isFalse();
+            // the rest of that keystroke goes too
+            assertThat(taken(esc(save, KeyEvent.KEY_TYPED))).isTrue();
+            assertThat(taken(esc(save, KeyEvent.KEY_RELEASED))).isTrue();
+            assertThat(ourDispatchers()).isEmpty();
+            // the next Esc is the app's again
+            assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isFalse();
+        });
+        settle();
+        assertThat(sink.lines()).isEmpty();
+    }
+
+    @Test
+    void escWhileRecordingIsTheAppsAndRecordedAsBefore() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            KeyEvent press = esc(save, KeyEvent.KEY_PRESSED);
+            assertThat(taken(press)).isFalse();
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+            // what the recorder hears of it, as the toolkit hands it the event
+            for (AWTEventListener l : Toolkit.getDefaultToolkit().getAWTEventListeners()) {
+                if (((AWTEventListenerProxy) l).getListener() instanceof HumanSteps) l.eventDispatched(press);
+            }
+        });
+        assertThat(eventually(() -> sink.lines().isEmpty() ? null : sink.lines())).containsExactly("press");
+    }
+
+    @Test
+    void escWithTheCheckMenuOpenOnlyClosesTheMenu() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.mode(true);
+            // a popup menu showing is on the menu selection path, as the check menu is
+            CheckMenu menu = new CheckMenu();
+            menu.setInvoker(save);
+            MenuSelectionManager.defaultManager().setSelectedPath(new MenuElement[] {menu});
+            try {
+                assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isFalse();
+                assertThat(recording.state).isEqualTo(Recording.State.CHECKING);
+            } finally {
+                MenuSelectionManager.defaultManager().clearSelectedPath();
+            }
+            assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isTrue();
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+        });
+    }
+
+    @Test
+    void escDuringAReplayIsNotTheCheckModes() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.mode(true);
+            recording.replaying = true;
+            try {
+                assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isFalse();
+                assertThat(recording.state).isEqualTo(Recording.State.CHECKING);
+            } finally {
+                recording.replaying = false;
+            }
+        });
+    }
+
+    @Test
+    void escListensOnlyWhileChecking() throws Exception {
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(ourDispatchers()).isEmpty();
+            recording.mode(true);
+            assertThat(ourDispatchers()).hasSize(1);
+            recording.mode(true);
+            assertThat(ourDispatchers()).hasSize(1);
+            recording.mode(false);
+            assertThat(ourDispatchers()).isEmpty();
+
+            recording.mode(true);
+            recording.done();
+            assertThat(ourDispatchers()).isEmpty();
+        });
+        recording.done.get(5, TimeUnit.SECONDS);
+        SwingUtilities.invokeAndWait(() -> {
+            Recording agents = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });
+            agents.startedByAgent();
+            agents.mode(true);
+            agents.stoppedByAgent();
+            assertThat(ourDispatchers()).isEmpty();
+            agents.dispose();
+
+            Recording replaced = new Recording(scene.inspector, sink, sinkThread, scene.inspector.overlay(frame.getRootPane()), () -> { });
+            replaced.start();
+            replaced.mode(true);
+            replaced.dispose();
+            assertThat(ourDispatchers()).isEmpty();
+        });
+    }
+
+    @Test
+    void afterACheckTheBarSaysWhatWasRecordedThenHowToGetOutAgain() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.hintBackMs = 400;
+            recording.mode(true);
+            java.util.Map<String, Object> step = new java.util.LinkedHashMap<String, Object>();
+            step.put("action", "expect");
+            recording.check(step, new Target(null, false, "Save", "button", save, null, -1, -1),
+                    scene.inspector.overlay(frame.getRootPane()));
+        });
+        assertThat(eventually(() -> recording.bar.text().startsWith("recorded: ") ? recording.bar.text() : null))
+                .isEqualTo("recorded: ok");
+        assertThat(eventually(() -> recording.bar.text().startsWith("Click what") ? recording.bar.text() : null))
+                .isEqualTo("Click what to check · Esc or ◀ to go back");
+    }
+
+    /** An app button in the frame, where the keyboard is. EDT-safe: called before anything shows. */
+    private JButton appButton() throws Exception {
+        JButton save = new JButton("Save");
+        SwingUtilities.invokeAndWait(() -> frame.getContentPane().add(save));
+        return save;
+    }
+
+    private static KeyEvent esc(Component on, int id) {
+        return new KeyEvent(on, id, System.currentTimeMillis(), 0,
+                id == KeyEvent.KEY_TYPED ? KeyEvent.VK_UNDEFINED : KeyEvent.VK_ESCAPE, '\u001b');
+    }
+
+    /** Whether a key event dispatcher takes {@code e}, as the keyboard focus manager asks them before anyone else. EDT. */
+    private static boolean taken(KeyEvent e) {
+        for (KeyEventDispatcher d : dispatchers()) if (d.dispatchKeyEvent(e)) return true;
+        return false;
+    }
+
+    /** The palette's key event dispatchers. EDT. */
+    private static List<KeyEventDispatcher> ourDispatchers() {
+        List<KeyEventDispatcher> out = new java.util.ArrayList<KeyEventDispatcher>();
+        for (KeyEventDispatcher d : dispatchers()) {
+            if (d.getClass().getName().startsWith("io.github.kormcrete.swingui")) out.add(d);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<KeyEventDispatcher> dispatchers() {
+        try {
+            Method m = KeyboardFocusManager.class.getDeclaredMethod("getKeyEventDispatchers");
+            m.setAccessible(true);
+            List<KeyEventDispatcher> l = (List<KeyEventDispatcher>) m.invoke(KeyboardFocusManager.getCurrentKeyboardFocusManager());
+            return l == null ? Collections.<KeyEventDispatcher>emptyList() : l;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */

@@ -4,10 +4,14 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 
 import javax.swing.JComponent;
 import javax.swing.JRootPane;
+import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.KeyEventDispatcher;
+import java.awt.KeyboardFocusManager;
+import java.awt.event.KeyEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,6 +46,12 @@ final class Recording {
     static final String PERSON_BUSY = "a person is recording in the app (they end it with Done in its palette)";
     static final String AGENT_BUSY =
             "a recording is running in the app (the agent started it): Done in its palette or the agent ends it";
+
+    /** What the bar says in each mode; in Check mode, also how to get out of it. */
+    static final String RECORD_HINT = "Use the app: every step is recorded.";
+    static final String CHECK_HINT = "Click what to check · Esc or ◀ to go back";
+    /** The Record button while checking: it leads back to recording. */
+    static final String BACK = "◀ Back to recording";
 
     private static final Color STEPS = new Color(0x6B, 0x4F, 0xBB);
     private static final Color RED = new Color(0xE5, 0x39, 0x35);
@@ -80,10 +90,18 @@ final class Recording {
 
     /** How long the agent's note stays on the bar before the text it covered comes back. */
     static final int NOTE_MS = 4000;
+    /** How long a check's result stays on the bar in Check mode before the way out is shown again. */
+    int hintBackMs = NOTE_MS;
     /** Puts back what the bar said before the agent's note; running while a note shows. */
     Timer noteTimer;
     private Bar noted;
     private String beforeNote;
+
+    /** Esc while checking: back to recording, the key kept from the app; installed only while Check mode needs it. */
+    private final KeyEventDispatcher escape = this::escape;
+    private KeyboardFocusManager escapeOn;
+    /** Esc left Check mode: the rest of that keystroke (typed, released) is kept from the app too. */
+    private boolean swallowing;
 
     /** Replay controls, read by the replay thread. */
     volatile boolean paused;
@@ -104,7 +122,7 @@ final class Recording {
         this.home = home;
         this.recordAgain = recordAgain;
         this.steps = new HumanSteps(inspector, this::emit);
-        this.activeBar = new Bar("Recording", "Use the app: every step is recorded.").dot(RED, true)
+        this.activeBar = new Bar("Recording", RECORD_HINT).dot(RED, true)
                 .button("Record", Overlay.NO, () -> mode(false))
                 .button("Check", Overlay.YES, () -> mode(true))
                 .button("Steps", STEPS, this::toggleSteps)
@@ -163,7 +181,9 @@ final class Recording {
         if (replaying || agentReplay != null || state == State.STOPPED) return;
         if (check) steps.flush();
         state = check ? State.CHECKING : State.RECORDING;
+        if (check) activeBar.relabel("Record", BACK); else activeBar.relabel(BACK, "Record");
         activeBar.active(check ? "Check" : "Record");
+        listenForEscape(check || swallowing);
         steps.active(!check);
         for (JRootPane root : inspector.roots.get()) {
             Overlay o = inspector.overlay(root);
@@ -176,7 +196,51 @@ final class Recording {
                 o.removeCatcher();
             }
         }
-        activeBar.text(check ? "Click what to check, then choose the check." : "Use the app: every step is recorded.");
+        activeBar.text(check ? CHECK_HINT : RECORD_HINT);
+    }
+
+    /**
+     * The keyboard focus manager's look at a key before anyone else: Esc in Check mode goes back to recording, and that
+     * keystroke never reaches the app or the recorder. Not while a popup menu shows (Esc closes it, as always) or a
+     * replay runs. EDT.
+     */
+    private boolean escape(KeyEvent e) {
+        boolean esc = e.getID() == KeyEvent.KEY_TYPED ? e.getKeyChar() == KeyEvent.VK_ESCAPE : e.getKeyCode() == KeyEvent.VK_ESCAPE;
+        if (!esc) return false;
+        if (e.getID() == KeyEvent.KEY_PRESSED) {
+            swallowing = false;
+            if (state != State.CHECKING || replaying || agentReplay != null
+                    || MenuSelectionManager.defaultManager().getSelectedPath().length > 0) {
+                listenForEscape(state == State.CHECKING);
+                return false;
+            }
+            swallowing = true;
+            mode(false);
+            return true;
+        }
+        if (!swallowing) return false;
+        if (e.getID() == KeyEvent.KEY_RELEASED) {
+            swallowing = false;
+            listenForEscape(state == State.CHECKING);
+        }
+        return true;
+    }
+
+    /** Installs or removes the {@link #escape} dispatcher. EDT. */
+    private void listenForEscape(boolean on) {
+        if (on && escapeOn == null) {
+            escapeOn = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+            escapeOn.addKeyEventDispatcher(escape);
+        } else if (!on && escapeOn != null) {
+            escapeOn.removeKeyEventDispatcher(escape);
+            escapeOn = null;
+        }
+    }
+
+    /** No more Esc for Check mode: the recording stopped or goes. EDT. */
+    private void stopListeningForEscape() {
+        swallowing = false;
+        listenForEscape(false);
     }
 
     /**
@@ -222,6 +286,7 @@ final class Recording {
     private void stop(boolean person, String why) {
         steps.flush();
         steps.active(false);
+        stopListeningForEscape();
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         state = State.STOPPED;
         inspector.recordingBusy(null);
@@ -284,6 +349,7 @@ final class Recording {
         live.stop();
         if (noteTimer != null) noteTimer.stop();
         steps.active(false);
+        stopListeningForEscape();
         if (panel != null || exportPanel != null || askPanel != null) home.panel(null);
         panel = null;
         askPanel = null;
@@ -299,12 +365,14 @@ final class Recording {
         });
     }
 
-    private void check(Map<String, Object> step, Target t, Overlay o) {
+    /** The person chose a check in the check menu: {@code step} for {@code t}, in the window of {@code o}. */
+    void check(Map<String, Object> step, Target t, Overlay o) {
         activeBar.text("checking …");
         sinkThread.submit(() -> {
             Inspector.Result r = sink.check(step);
             SwingUtilities.invokeLater(() -> {
                 show(r);
+                hintBack(activeBar.text());
                 Overlay.Mark m = Overlay.Mark.of(t, r.ok ? "check recorded" : "check failed", r.ok ? Overlay.YES : Overlay.NO, false);
                 m.result = r.ok;
                 o.mark(m, null);
@@ -313,6 +381,17 @@ final class Recording {
                 clear.start();
             });
         });
+    }
+
+    /** A check's result {@code shown} on the bar: after a while, if the bar still says it, Check mode's way out again. */
+    private void hintBack(String shown) {
+        Timer back = new Timer(hintBackMs, e -> {
+            if (state == State.CHECKING && !replaying && agentReplay == null && shown.equals(activeBar.text())) {
+                activeBar.text(CHECK_HINT);
+            }
+        });
+        back.setRepeats(false);
+        back.start();
     }
 
     private void show(Inspector.Result r) {
