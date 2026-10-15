@@ -52,9 +52,9 @@ class UiMcpExportRecordedTestTest {
         assertThat(out.path("savedTo").asText()).isEqualTo(file.toAbsolutePath().normalize().toString());
         assertThat(out.path("steps").asInt()).isEqualTo(1);
         assertThat(out.path("overwrote").asBoolean()).isFalse();
-        assertThat(out.path("test").path("version").asInt()).isEqualTo(1);
+        assertThat(out.path("test").path("version").asInt()).isEqualTo(2);
         Flow flow = RecordedTestFiles.read(file);
-        assertThat(flow.version).isEqualTo(1);
+        assertThat(flow.version).isEqualTo(2);
         assertThat(flow.start).isEqualTo("reset");
         assertThat(flow.description).isEqualTo("Saves an order");
         assertThat(flow.steps).hasSize(1);
@@ -201,7 +201,7 @@ class UiMcpExportRecordedTestTest {
         clickSave();
         Path file = testsDir.resolve("switches.json");
         // loginAs has a Java form only as the first step
-        String json = "{\"version\":1,\"name\":\"switches\",\"start\":\"reset\",\"steps\":["
+        String json = "{\"version\":2,\"name\":\"switches\",\"start\":\"reset\",\"steps\":["
                 + "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Save\"}},"
                 + "{\"action\":\"loginAs\",\"as\":\"ada\"}]}";
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));

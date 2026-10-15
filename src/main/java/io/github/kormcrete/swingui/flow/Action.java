@@ -42,6 +42,9 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = LoginAsAction.class, name = "loginAs")
 })
 public abstract class Action {
+    /** The step's or check's sentence: optional, one line, never run. */
+    public String say;
+
     /** Short human label for logs/results, e.g. "navigate(Orders)". */
     public abstract String describe();
 }

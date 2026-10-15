@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.flow;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
@@ -17,4 +18,6 @@ public class Flow {
     /** Where the recorded test begins: {@code "reset"} = right after a session reset, as an exported test does. */
     public String start;
     public List<Action> steps = new ArrayList<>();
+    /** The groups of whole steps, as flat indexes into {@link #steps}; the file nests them, this list stays beside the flat one. */
+    @JsonIgnore public List<FlowGroup> groups = new ArrayList<>();
 }

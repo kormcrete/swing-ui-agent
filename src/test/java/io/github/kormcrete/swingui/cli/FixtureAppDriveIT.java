@@ -239,8 +239,8 @@ class FixtureAppDriveIT {
     @Order(12)
     void aFailingRecordedTestExitsFourWithItsDiagnosis() throws Exception {
         Path evidence = Files.createDirectory(testsDir.resolve("evidence"));
-        JsonNode result = callExpecting(4, "run_recorded_test", "{'test':{'version':1,'name':'never-saved','start':'reset',"
-                + "'steps':[{'action':'expect','target':{'name':'status'},'text':'never','timeout':500}]},"
+        JsonNode result = callExpecting(4, "run_recorded_test", "{'test':{'version':2,'name':'never-saved','start':'reset',"
+                + "'steps':[{'checks':[{'target':{'name':'status'},'text':'never','timeout':500}]}]},"
                 + "'evidence':'" + evidence.toString().replace('\\', '/') + "'}");
         String why = result.path("why").asText();
         assertThat(result.path("passed").asBoolean()).as(why).isFalse();

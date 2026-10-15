@@ -365,7 +365,7 @@ class UiMcpInspectTest {
     @Test
     void savingALoadedRecordedTestKeepsItsNameAndDescription(@TempDir Path recDir) throws Exception {
         Path file = recDir.resolve("place-order.json");
-        String json = "{\"version\":1,\"name\":\"Place an order\",\"description\":\"Ada orders two gel pens\","
+        String json = "{\"version\":2,\"name\":\"Place an order\",\"description\":\"Ada orders two gel pens\","
                 + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"id\":\"save\"}}]}";
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));
         assertThat(sink.loadRecordedTest(file).ok).isTrue();

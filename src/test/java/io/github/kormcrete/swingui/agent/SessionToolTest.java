@@ -94,7 +94,7 @@ class SessionToolTest {
     @Test
     void theRecordedTestResetIsTheSessionResetWithoutANewRecording(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp)
             throws Exception {
-        java.nio.file.Path flow = java.nio.file.Files.write(tmp.resolve("one.json"), ("{\"version\":1,"
+        java.nio.file.Path flow = java.nio.file.Files.write(tmp.resolve("one.json"), ("{\"version\":2,"
                 + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"role\":\"button\","
                 + "\"name\":\"Save\"}}]}").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         UiMcpSession session = new UiMcpSession(fixture, fixture, mapper);

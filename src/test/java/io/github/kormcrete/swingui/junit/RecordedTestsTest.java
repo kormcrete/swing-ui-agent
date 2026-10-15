@@ -44,9 +44,9 @@ class RecordedTestsTest {
 
     @TempDir Path dir;
 
-    private static final String PASS = "{\"version\":1,\"start\":\"reset\",\"steps\":[{\"action\":\"expect\","
-            + "\"target\":{\"role\":\"button\",\"name\":\"OK\"},\"text\":\"OK\"}]}";
-    private static final String FAIL = "{\"version\":1,\"start\":\"reset\",\"steps\":[{\"action\":\"loginAs\","
+    private static final String PASS = "{\"version\":2,\"start\":\"reset\",\"steps\":[{\"checks\":[{"
+            + "\"target\":{\"role\":\"button\",\"name\":\"OK\"},\"text\":\"OK\"}]}]}";
+    private static final String FAIL = "{\"version\":2,\"start\":\"reset\",\"steps\":[{\"action\":\"loginAs\","
             + "\"as\":\"customer\"}]}";
 
     private void write(String name, String json) throws IOException {
@@ -106,7 +106,7 @@ class RecordedTestsTest {
 
     @Test
     void aBrokenFileIsAFailedTestNotASkippedOne() throws IOException {
-        write("broken.json", "{\"version\":2,\"start\":\"reset\",\"steps\":[]}");
+        write("broken.json", "{\"version\":3,\"start\":\"reset\",\"steps\":[]}");
         TestExecutionSummary s = launch(new RecordingVerbs());
         assertThat(s.getTestsFoundCount()).isEqualTo(1);
         assertThat(s.getTestsFailedCount()).isEqualTo(1);

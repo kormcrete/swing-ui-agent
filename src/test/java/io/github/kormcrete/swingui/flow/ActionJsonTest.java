@@ -59,4 +59,19 @@ class ActionJsonTest {
         assertThat(((LoginAsAction) flow.steps.get(0)).as).isEqualTo("customer");
         assertThat(flow.steps.get(0).describe()).isEqualTo("loginAs(customer)");
     }
+
+    @Test
+    void sayRoundTripsOnEveryStepTypeAndIsOmittedWhenNull() throws Exception {
+        for (String type : FlowJson.stepTypes()) {
+            Action with = mapper.readValue("{\"action\":\"" + type + "\",\"say\":\"Open the order\"}", Action.class);
+            assertThat(with.say).as(type).isEqualTo("Open the order");
+            JsonNode tree = mapper.valueToTree(with);
+            assertThat(tree.path("say").asText()).as(type).isEqualTo("Open the order");
+            assertThat(mapper.readValue(mapper.writeValueAsString(tree), Action.class).say).as(type).isEqualTo("Open the order");
+
+            Action without = mapper.readValue("{\"action\":\"" + type + "\"}", Action.class);
+            assertThat(without.say).as(type).isNull();
+            assertThat(mapper.valueToTree(without).has("say")).as(type).isFalse();
+        }
+    }
 }

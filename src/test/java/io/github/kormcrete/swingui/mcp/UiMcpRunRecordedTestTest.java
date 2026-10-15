@@ -143,7 +143,7 @@ class UiMcpRunRecordedTestTest {
 
         ObjectMapper m = mapper;
         com.fasterxml.jackson.databind.node.ObjectNode bad = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree(ok);
-        bad.put("version", 2);
+        bad.put("version", 3);
         DriverException e = catchThrowableOfType(() -> session.runRecordedTest(m.createObjectNode().set("test", bad)),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
