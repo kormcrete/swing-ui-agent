@@ -149,7 +149,7 @@ final class HumanSteps implements AWTEventListener {
         Component deepest = SwingUtilities.getDeepestComponentAt(src, e.getX(), e.getY());
         if (deepest == null) deepest = src;
         if (Overlay.ours(deepest)) return;
-        JTable edited = editedTable(deepest);
+        JTable edited = Inspector.editingTable(deepest);
         if (edited != null && !(deepest instanceof JTextComponent && deepest.getParent() == edited)) {
             // inside a composite cell editor (a spinner's arrows): no click of its own, the cell's new value is the step
             pressed = null;
@@ -267,7 +267,7 @@ final class HumanSteps implements AWTEventListener {
         endedEdit = null;
         // (after a spinner's arrows the table itself has the focus: its Enter ends the edit, part of that type step)
         if (!command && cellEdit != null
-                && (e.getComponent() == cellEdit.table || editedTable(e.getComponent()) == cellEdit.table)) {
+                && (e.getComponent() == cellEdit.table || Inspector.editingTable(e.getComponent()) == cellEdit.table)) {
             return;
         }
         if (code == KeyEvent.VK_ENTER && inText && !(editing instanceof JTextArea) && !command) {
@@ -302,7 +302,7 @@ final class HumanSteps implements AWTEventListener {
     private void focus(FocusEvent e) {
         Component c = e.getComponent();
         if (e.getID() == FocusEvent.FOCUS_GAINED && c instanceof JTextComponent) {
-            JTable edited = editedTable(c);
+            JTable edited = Inspector.editingTable(c);
             if (edited != null && c.getParent() != edited) {
                 // the text field of a spinner in a cell: the cell's value at the end of the edit is the step
                 flushTyping(false);
@@ -396,17 +396,6 @@ final class HumanSteps implements AWTEventListener {
     private static AbstractButton optionPaneButton(Component c) {
         if (!(c instanceof AbstractButton) || c instanceof JMenuItem) return null;
         return SwingUtilities.getAncestorOfClass(javax.swing.JOptionPane.class, c) != null ? (AbstractButton) c : null;
-    }
-
-    /** The table whose cell editor {@code c} is, or sits in, while that cell is being edited; else null. */
-    private static JTable editedTable(Component c) {
-        for (Component k = c; k != null && !(k instanceof Window); k = k.getParent()) {
-            if (k.getParent() instanceof JTable) {
-                JTable table = (JTable) k.getParent();
-                return table.isEditing() && table.getEditorComponent() == k ? table : null;
-            }
-        }
-        return null;
     }
 
     /** Starts watching the cell {@code table} is editing, unless it already is; a cell before it is done with. */

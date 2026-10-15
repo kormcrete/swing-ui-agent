@@ -77,6 +77,76 @@ class InspectorTest {
     }
 
     @Test
+    void aPointInASpinnerCellEditorSnapsToTheCellBeingEdited() throws Exception {
+        onEdt(() -> {
+            JTable cart = cart(new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1)));
+            cart.doLayout();
+            cart.editCellAt(1, 1);
+            javax.swing.JSpinner spinner = (javax.swing.JSpinner) cart.getEditorComponent();
+            layOut(spinner);
+            JTextField text = ((javax.swing.JSpinner.DefaultEditor) spinner.getEditor()).getTextField();
+            // what the palette finds under the pointer: the spinner's own text field, not the editor component
+            Point inText = SwingUtilities.convertPoint(text, inside(text), cart);
+            assertThat(SwingUtilities.getDeepestComponentAt(cart, inText.x, inText.y)).isSameAs(text);
+
+            for (Component under : Arrays.asList(text, arrowOf(spinner))) {
+                Target t = scene.inspector.snapNow(under, inside(under));
+                assertThat(t.role).isEqualTo("cell");
+                assertThat(t.component).isSameAs(cart);
+                assertThat(t.locator.row).isEqualTo(Collections.<String, Object>singletonMap("Product", "Gel pen"));
+                assertThat(t.locator.column).isEqualTo("Qty");
+                assertThat(t.row).isEqualTo(1);
+                assertThat(t.column).isEqualTo(1);
+                assertThat(CheckMenu.choices(t)).extracting(c -> c.label).contains("Qty is “2” in this row");
+            }
+        });
+    }
+
+    @Test
+    void aPointInATextFieldCellEditorSnapsToTheCellBeingEdited() throws Exception {
+        onEdt(() -> {
+            JTable cart = cart(new JTextField());
+            cart.editCellAt(1, 1);
+            Component editor = cart.getEditorComponent();
+            Target t = scene.inspector.snap(editor, inside(editor));
+            assertThat(t.role).isEqualTo("cell");
+            assertThat(t.locator.row).isEqualTo(Collections.<String, Object>singletonMap("Product", "Gel pen"));
+            assertThat(t.locator.column).isEqualTo("Qty");
+        });
+    }
+
+    /** A two-row cart whose Qty column edits in {@code editor} (a spinner or a text field). */
+    private JTable cart(javax.swing.JComponent editor) {
+        JTable cart = new JTable(new javax.swing.table.DefaultTableModel(
+                new Object[][] {{"A4 paper", 1}, {"Gel pen", 2}}, new Object[] {"Product", "Qty"}));
+        javax.swing.table.TableCellEditor cells = editor instanceof JTextField
+                ? new javax.swing.DefaultCellEditor((JTextField) editor) : new SpinnerEditor((javax.swing.JSpinner) editor);
+        cart.getColumnModel().getColumn(1).setCellEditor(cells);
+        cart.setBounds(10, 130, 300, 40);
+        scene.content.add(cart);
+        return cart;
+    }
+
+    private static final class SpinnerEditor extends javax.swing.AbstractCellEditor implements javax.swing.table.TableCellEditor {
+        private final javax.swing.JSpinner spinner;
+
+        SpinnerEditor(javax.swing.JSpinner spinner) {
+            this.spinner = spinner;
+        }
+
+        @Override public Object getCellEditorValue() { return spinner.getValue(); }
+        @Override public Component getTableCellEditorComponent(JTable t, Object value, boolean selected, int row, int column) {
+            spinner.setValue(value);
+            return spinner;
+        }
+    }
+
+    private static Component arrowOf(javax.swing.JSpinner spinner) {
+        for (Component c : spinner.getComponents()) if (c instanceof JButton) return c;
+        throw new AssertionError("no arrow button in the spinner");
+    }
+
+    @Test
     void anActionAndTheChecksAfterItAreOneStep() {
         List<Inspector.StepLine> steps = new java.util.ArrayList<Inspector.StepLine>();
         for (String l : Arrays.asList("click(#save)", "expect(#status text 'saved')", "expect(#save !disabled)",

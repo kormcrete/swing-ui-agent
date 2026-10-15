@@ -1018,6 +1018,7 @@ public final class Inspector {
         int row = -1;
         int column = -1;
         Component at = deepest;
+        JTable edited = editingTable(deepest);
         if (deepest instanceof JTableHeader && ((JTableHeader) deepest).getTable() != null) {
             column = ((JTableHeader) deepest).columnAtPoint(inDeepest);
             at = ((JTableHeader) deepest).getTable();
@@ -1025,11 +1026,10 @@ public final class Inspector {
             row = ((JTable) deepest).rowAtPoint(inDeepest);
             column = ((JTable) deepest).columnAtPoint(inDeepest);
             if (row < 0 || column < 0) row = column = -1;
-        } else if (deepest.getParent() instanceof JTable && ((JTable) deepest.getParent()).getEditorComponent() == deepest) {
-            JTable table = (JTable) deepest.getParent();
-            at = table;
-            row = table.getEditingRow();
-            column = table.getEditingColumn();
+        } else if (edited != null) {
+            at = edited;
+            row = edited.getEditingRow();
+            column = edited.getEditingColumn();
         } else if (deepest instanceof JTabbedPane) {
             int i = ((JTabbedPane) deepest).indexAtLocation(inDeepest.x, inDeepest.y);
             if (i >= 0) tab = i;
@@ -1059,6 +1059,20 @@ public final class Inspector {
         snappedColumn = column;
         snapped = found;
         return found;
+    }
+
+    /**
+     * The table whose open cell editor {@code c} is or sits in, else null: a composite editor (a spinner) puts its own
+     * text field and arrows under the pointer, and those mean the cell too. EDT.
+     */
+    static JTable editingTable(Component c) {
+        for (Component k = c; k != null && !(k instanceof Window); k = k.getParent()) {
+            if (k.getParent() instanceof JTable) {
+                JTable table = (JTable) k.getParent();
+                return table.isEditing() && table.getEditorComponent() == k ? table : null;
+            }
+        }
+        return null;
     }
 
     /** A table cell as the recorder addresses it: the row by key, the column by header. EDT. */
