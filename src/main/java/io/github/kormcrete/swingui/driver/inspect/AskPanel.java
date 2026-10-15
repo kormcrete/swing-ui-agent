@@ -28,17 +28,24 @@ final class AskPanel extends JPanel {
     private final JLabel title = new JLabel();
     private final JTextField text = new JTextField(34);
     private final JLabel message = new JLabel(" ");
+    private final JLabel hint = new JLabel();
     private final JButton ok;
     private final Runnable close;
     private final Function<String, CompletableFuture<Inspector.Result>> onOk;
 
     /**
-     * {@code onOk} gets the trimmed text and completes with what became of it (any thread); {@code close} closes the
-     * panel, after an accepted text too.
+     * {@code group}: a group's sentence, which empty cannot remove (Ungroup ends the group); else a step's or a
+     * check's. {@code onOk} gets the trimmed text and completes with what became of it (any thread); {@code close}
+     * closes the panel, after an accepted text too, and then {@code giveBack} gives the keyboard back to the app's
+     * component that had it (null: none had it).
      */
-    AskPanel(String title, String initial, Function<String, CompletableFuture<Inspector.Result>> onOk, Runnable close) {
+    AskPanel(String title, boolean group, String initial, Runnable giveBack,
+             Function<String, CompletableFuture<Inspector.Result>> onOk, Runnable close) {
         super(new BorderLayout(0, 6));
-        this.close = close;
+        this.close = () -> {
+            close.run();
+            if (giveBack != null) giveBack.run();
+        };
         this.onOk = onOk;
         setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY, 2),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
@@ -47,7 +54,8 @@ final class AskPanel extends JPanel {
         this.title.setFont(this.title.getFont().deriveFont(Font.BOLD));
         add(this.title, BorderLayout.NORTH);
         text.setText(initial == null ? "" : initial);
-        JLabel hint = new JLabel("One line, at most 200 characters. Empty removes the sentence.");
+        hint.setText(group ? "One line, at most 200 characters. A group keeps a sentence: Ungroup ends it."
+                : "One line, at most 200 characters. Empty removes the sentence.");
         hint.setForeground(Color.GRAY);
         hint.setFont(hint.getFont().deriveFont(hint.getFont().getSize2D() - 1f));
         message.setForeground(Overlay.NO);
@@ -60,7 +68,7 @@ final class AskPanel extends JPanel {
         ok = small("OK", this::submit);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         buttons.setOpaque(false);
-        buttons.add(small("Cancel", close));
+        buttons.add(small("Cancel", this.close));
         buttons.add(ok);
         add(buttons, BorderLayout.SOUTH);
         text.addActionListener(e -> ok.doClick());
@@ -72,6 +80,11 @@ final class AskPanel extends JPanel {
 
     String title() {
         return title.getText();
+    }
+
+    /** The line under the field: what a sentence may be. */
+    String hint() {
+        return hint.getText();
     }
 
     /** What the field holds now. */

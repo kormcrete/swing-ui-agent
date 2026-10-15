@@ -539,7 +539,7 @@ class RecordingModelTest {
         assertThat(groupOf("c")).isEqualTo("renamed");
         assertThat(model.flow().groups).hasSize(1);
         assertThat(catchThrowableOfType(() -> model.group(2, 4, " ", AGENT), DriverException.class).getMessage())
-                .contains("not empty");
+                .contains("a group needs a sentence");
     }
 
     @Test

@@ -641,6 +641,14 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aGroupWithoutASentenceIsRefusedSayingHowToEndIt() throws Exception {
+        four();
+        DriverException e = refused("{\"op\":\"group\",\"from\":1,\"to\":2,\"say\":\" \"}");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("a group needs a sentence").contains("ungroup").doesNotContain("leave");
+    }
+
+    @Test
     void editCanChangeTheSentenceAndTheTextTogether() throws Exception {
         call("{\"op\":\"start\"}");
         call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"name\"},\"text\":\"Ada\"}}");

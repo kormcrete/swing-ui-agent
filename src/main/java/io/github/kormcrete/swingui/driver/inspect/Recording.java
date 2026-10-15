@@ -7,6 +7,7 @@ import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.Color;
+import java.awt.Component;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -338,8 +339,8 @@ final class Recording {
                 : new StepsPanel("▶ Replay all", () -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom,
                         this::delete, this::undo, this::toggleSteps);
         panel.edits(new StepsPanel.Edits() {
-            @Override public void describe(String title, int fromId, int toId, String initial) {
-                ask(title, fromId, toId, initial);
+            @Override public void describe(String title, boolean group, int fromId, int toId, String initial) {
+                ask(title, group, fromId, toId, initial);
             }
             @Override public void ungroup(int id) {
                 edit(() -> sink.ungroup(id), "✗ not ungrouped: ");
@@ -489,13 +490,16 @@ final class Recording {
      * Describe…: the ask panel takes the steps panel's place, for the sentence of the records {@code fromId} to
      * {@code toId} (one check, one step, or the steps of a group); OK sets it, a refusal keeps the panel open with
      * the reason, Cancel or an accepted sentence brings the steps back. The ids are those the person saw: the agent's
-     * changes meanwhile do not move them.
+     * changes meanwhile do not move them. {@code group}: the sentence of a group, which an empty one cannot remove.
      */
-    private void ask(String title, int fromId, int toId, String initial) {
+    private void ask(String title, boolean group, int fromId, int toId, String initial) {
         if (panel == null || askPanel != null || replaying || agentReplay != null) return;
         AskPanel[] ask = new AskPanel[1];
-        ask[0] = new AskPanel(title, initial, say -> edit(() -> sink.describe(fromId, toId, say), "✗ not described: "),
-                () -> closeAsk(ask[0]));
+        // the app's component that has the keyboard gets it back when the panel closes
+        Component typing = inspector.focusOwner.get();
+        Runnable giveBack = typing == null || Overlay.ours(typing) ? null : () -> inspector.giveFocus.accept(typing);
+        ask[0] = new AskPanel(title, group, initial, giveBack,
+                say -> edit(() -> sink.describe(fromId, toId, say), "✗ not described: "), () -> closeAsk(ask[0]));
         askPanel = ask[0];
         home.panel(askPanel);
     }

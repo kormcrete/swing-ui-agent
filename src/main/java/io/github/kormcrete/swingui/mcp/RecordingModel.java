@@ -619,6 +619,7 @@ final class RecordingModel {
         if (to < from) throw bad("group: 'to' (" + to + ") is before 'from' (" + from + ")");
         if (to == from) throw bad("a group takes at least two steps");
         String text = say == null ? "" : say.trim();
+        if (text.isEmpty()) throw bad("a group needs a sentence (to end a group, ungroup it)");
         RecordedTestFiles.checkSay(text, "the group's sentence");
         Map<Integer, Integer> inRange = new LinkedHashMap<Integer, Integer>();
         Map<Integer, RecordedStep.Group> found = new LinkedHashMap<Integer, RecordedStep.Group>();

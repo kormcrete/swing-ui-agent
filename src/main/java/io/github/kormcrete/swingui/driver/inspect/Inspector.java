@@ -27,6 +27,7 @@ import javax.swing.table.JTableHeader;
 import java.awt.AWTEvent;
 import java.awt.Component;
 import java.awt.Dialog;
+import java.awt.KeyboardFocusManager;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
@@ -334,6 +335,10 @@ public final class Inspector {
     private Overlay paletteHome;
     /** The palette's window: the open modal dialog nothing blocks, else the main window ({@link #attachPalette}). */
     Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
+    /** The component that has the keyboard now: the ask panel gives it back when it closes ({@link #giveFocus}). */
+    Supplier<Component> focusOwner = () -> KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+    /** Gives the keyboard back to an app component. */
+    Consumer<Component> giveFocus = Component::requestFocusInWindow;
     /** The app's windows, which Check mode covers. */
     Supplier<List<JRootPane>> roots = Inspector::appRoots;
     /** The person's drag in each window the palette left (null: none there); outlives the window's overlay. */

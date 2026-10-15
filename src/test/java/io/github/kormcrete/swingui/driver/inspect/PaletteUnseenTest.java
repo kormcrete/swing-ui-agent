@@ -156,7 +156,7 @@ class PaletteUnseenTest {
             JButton save = new JButton("Save the order");
             save.setBounds(320, 50, 120, 24);
             scene.content.add(save);
-            AskPanel ask = new AskPanel("Describe step 3", "Save the order", say -> null, () -> { });
+            AskPanel ask = new AskPanel("Describe step 3", false, "Save the order", null, say -> null, () -> { });
             ask.setBounds(10, 130, 300, 120);
             ask.validate();
             scene.content.add(ask);

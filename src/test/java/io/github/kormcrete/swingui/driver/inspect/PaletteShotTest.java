@@ -89,7 +89,7 @@ class PaletteShotTest {
     @Test
     void aCaptureLeavesTheAskPanelOut() throws Exception {
         withPalette((root, bar, panel) -> {
-            AskPanel ask = new AskPanel("Describe step 3", "Save the order", say -> null, () -> { });
+            AskPanel ask = new AskPanel("Describe step 3", false, "Save the order", null, say -> null, () -> { });
             ask.setBounds(10, 10, 300, 120);
             ask.validate();
             root.getLayeredPane().add(ask, javax.swing.JLayeredPane.PALETTE_LAYER);

@@ -326,6 +326,22 @@ class HumanStepsTest {
         assertThat(steps).isEmpty();
     }
 
+    @Test
+    void focusMovingIntoThePaletteKeepsTheTypingOpen() {
+        javax.swing.JTextField describe = new javax.swing.JTextField() { };   // the palette's own field
+        focus(scene.customer, FocusEvent.FOCUS_GAINED);
+        typeInto(scene.customer, "Ada Shop Ltd");
+        human.eventDispatched(new FocusEvent(scene.customer, FocusEvent.FOCUS_LOST, false, describe));
+        assertThat(steps).isEmpty();
+        assertThat(human.pending()).contains("Ada Shop Ltd");
+
+        // the keyboard comes back, and leaving the field for the app records the typing once
+        focus(scene.customer, FocusEvent.FOCUS_GAINED);
+        focus(scene.customer, FocusEvent.FOCUS_LOST);
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada Shop Ltd");
+    }
+
     private void click(Component c, int count) {
         click(c, 3, 3, count);
     }

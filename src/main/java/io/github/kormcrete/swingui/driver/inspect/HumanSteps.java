@@ -315,6 +315,8 @@ final class HumanSteps implements AWTEventListener {
                 startEditing((JTextComponent) c);
             }
         } else if (e.getID() == FocusEvent.FOCUS_LOST && c == editing) {
+            // into the palette (Describe…'s field): the person has not left the app's field; the panel gives it back
+            if (e.getOppositeComponent() != null && Overlay.ours(e.getOppositeComponent())) return;
             flushTyping(false);
             editing = null;
         }

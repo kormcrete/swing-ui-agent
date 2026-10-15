@@ -43,8 +43,11 @@ final class StepsPanel extends JPanel {
 
     /** The row menu's edits; ids are the records the person saw. */
     interface Edits {
-        /** Opens the ask panel titled {@code title} for the sentence of records {@code fromId}-{@code toId}. */
-        void describe(String title, int fromId, int toId, String initial);
+        /**
+         * Opens the ask panel titled {@code title} for the sentence of records {@code fromId}-{@code toId}: a group's
+         * ({@code group}) or one step's or check's.
+         */
+        void describe(String title, boolean group, int fromId, int toId, String initial);
 
         void ungroup(int id);
 
@@ -99,7 +102,7 @@ final class StepsPanel extends JPanel {
     private final JButton more;
     private final JButton delete;
     private Edits edits = new Edits() {
-        @Override public void describe(String title, int fromId, int toId, String initial) { }
+        @Override public void describe(String title, boolean group, int fromId, int toId, String initial) { }
         @Override public void ungroup(int id) { }
         @Override public void rowBy(int id, String by) { }
     };
@@ -334,16 +337,16 @@ final class StepsPanel extends JPanel {
             for (Row r : sel) oneGroup &= r.line.groupId == first.line.groupId;
             String initial = oneGroup ? first.line.groupSay : null;
             m.item("Describe these steps…", true, () -> edits.describe("Describe steps " + first.step() + "-" + last.step(),
-                    first.id(), last.id(), initial));
+                    true, first.id(), last.id(), initial));
         } else if (sel.size() == 1 && first.line.check) {
-            m.item("Describe this check…", true, () -> edits.describe("Describe check " + first.label, first.id(), first.id(),
+            m.item("Describe this check…", true, () -> edits.describe("Describe check " + first.label, false, first.id(), first.id(),
                     first.line.say));
         } else {
             int action = stepRecordAt(rows.indexOf(first));
             Inspector.StepLine a = records.get(action);
             // a step of checks only has no sentence of its own: its checks are described one by one
             if (!a.check) {
-                m.item("Describe this step…", true, () -> edits.describe("Describe step " + first.step(), first.id(), last.id(),
+                m.item("Describe this step…", true, () -> edits.describe("Describe step " + first.step(), false, first.id(), last.id(),
                         a.say));
             }
         }

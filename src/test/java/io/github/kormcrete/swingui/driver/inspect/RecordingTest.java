@@ -1485,6 +1485,44 @@ class RecordingTest {
     }
 
     @Test
+    void theAskPanelsHintSaysWhatEmptyDoes() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        AskPanel ask = choose(1, "Describe these steps…");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(ask.hint()).contains("Ungroup").doesNotContain("Empty removes");
+            ask.cancel();
+        });
+        AskPanel one = choose(0, "Describe this step…");
+        SwingUtilities.invokeAndWait(() -> assertThat(one.hint()).contains("Empty removes the sentence"));
+    }
+
+    @Test
+    void theAskPanelGivesTheKeyboardBackToTheAppWhenItCloses() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        List<java.awt.Component> given = new java.util.concurrent.CopyOnWriteArrayList<java.awt.Component>();
+        javax.swing.JTextField customer = new javax.swing.JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        scene.inspector.giveFocus = given::add;
+        AskPanel cancelled = choose(0, "Describe this step…");
+        SwingUtilities.invokeAndWait(cancelled::cancel);
+        assertThat(given).containsExactly(customer);
+
+        AskPanel described = choose(0, "Describe this step…");
+        answer(described, "Open a new order");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertThat(given).containsExactly(customer, customer);
+
+        // the palette's own field had it: nothing to give back
+        scene.inspector.focusOwner = () -> recording.panel;
+        AskPanel fromPalette = choose(0, "Describe this step…");
+        SwingUtilities.invokeAndWait(fromPalette::cancel);
+        assertThat(given).hasSize(2);
+    }
+
+    @Test
     void aGroupsHeaderRenamesTheGroup() throws Exception {
         aGroupOfTwo();
         withSteps();
