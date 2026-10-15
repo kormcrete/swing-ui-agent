@@ -64,7 +64,7 @@ comes back with a `startWarning`.
 Press **Check**. The bar says "Click what to check · Esc or ◀ to go back." Clicks now go to the palette, not to the
 app. Click an element and pick a check built from what it shows right now.
 
-![Check mode on an order's lines: the clicked SKU cell is boxed and a menu offers SKU is "PEN-GEL-BLK" in this row, Has exactly 3 rows and Has at least 1 row](../../../assets/inspector/check-menu.png)
+![Check mode on the cart: the gel pen's Product cell is boxed and labelled Gel pen, black · Product, and a menu offers Product is "Gel pen, black" in this row, Has exactly 2 rows and Has at least 1 row](../../../assets/inspector/check-menu.png)
 
 Which checks you get depends on the element:
 
@@ -115,6 +115,8 @@ for a class name ending in `UiIT` and a package, filled in with the app's own. T
 chose last. Press **Export**. The palette says where
 the file went, and when the first step does not get the app to a known screen it says that too. The recording stays,
 so you can still fix it and export again under another name. An existing file is never overwritten.
+
+![The Export panel over the cart: Recorded test chosen before Java test, a name and the uitest folder, and Cancel and Export buttons](../../../assets/inspector/export.png)
 
 **Or let the agent export it.** When your agent is waiting for you, Done hands it the recording. It exports the
 test, runs it from another screen and fixes the locators it flags, as in
