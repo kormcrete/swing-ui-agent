@@ -112,7 +112,9 @@ final class FakeSink implements Inspector.Sink {
             return new ArrayList<Inspector.StepLine>(steps);
         }
     }
-    @Override public Locator target(int index) { return null; }
+    /** Each record's target by its position, as the session reads it from the step; none: a step without one. */
+    final Map<Integer, Locator> targets = new java.util.concurrent.ConcurrentHashMap<Integer, Locator>();
+    @Override public Locator target(int index) { return targets.get(index); }
     /** Thrown by {@link #replay}, when set: a replay that breaks. */
     volatile RuntimeException replayThrows;
     /** The step (0-based) whose replay fails, -1 none. */

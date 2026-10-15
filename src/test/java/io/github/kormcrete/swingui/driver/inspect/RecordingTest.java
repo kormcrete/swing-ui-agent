@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.model.Locator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -1623,18 +1624,142 @@ class RecordingTest {
         sink.add("2", "click(#save)");
         sink.add("2.1", "expect(#status text 'saved')");
         sink.add("3", "click(#close)");
+        ids("new", "save", "status", "close");
         withSteps();
         List<String> shown = replayBarTexts();
-        assertThat(shown).containsExactly("1/3  click(#new)", "2/3  click(#save) + 1 check", "2/3  check 2.1: #status text 'saved'",
-                "3/3  click(#close)");
+        assertThat(shown).containsExactly("1/3  click “new”", "2/3  click “save” + 1 check", "2/3  check 2.1 “status”",
+                "3/3  click “close”");
     }
 
     @Test
     void aCheckOnlyStepCountsAsStepOne() throws Exception {
         sink.add("1.1", "expect(#total text '0.00')");
         sink.add("2", "click(#new)");
+        ids("total", "new");
         withSteps();
-        assertThat(replayBarTexts()).containsExactly("1/2  check 1.1: #total text '0.00'", "2/2  click(#new)");
+        assertThat(replayBarTexts()).containsExactly("1/2  check 1.1 “total”", "2/2  click “new”");
+    }
+
+    /** The records' targets, in order: the components named {@code ids}. */
+    private void ids(String... ids) {
+        for (int i = 0; i < ids.length; i++) sink.targets.put(i, Locator.ofId(ids[i]));
+    }
+
+    @Test
+    void theReplayBarNamesWhatEachStepDoesWithoutTheLocator() throws Exception {
+        sink.add("1", "click(button 'Add to cart' [New order] in main)");
+        sink.add("2", "type(text 'Customer' [New order], Ada)");
+        sink.add("2.1", "expect(table 'Cart' row={SKU=PEN-GEL-BLK} column=Qty cell '3')");
+        sink.add("3", "menu(File > New order)");
+        sink.add("4", "press(Escape)");
+        sink.targets.put(0, scoped(Locator.of("button", "Add to cart")));
+        sink.targets.put(1, scoped(Locator.of("text", "Customer")));
+        Locator cell = Locator.of("table", "Cart");
+        cell.row = Collections.<String, Object>singletonMap("SKU", "PEN-GEL-BLK");
+        cell.column = "Qty";
+        sink.targets.put(2, cell);
+        withSteps();
+        assertThat(replayBarTexts()).containsExactly("1/4  click “Add to cart”", "2/4  type into “Customer” + 1 check",
+                "2/4  check 2.1 “Qty” in “Cart”", "3/4  menu File > New order", "4/4  press Escape");
+    }
+
+    @Test
+    void aSentenceIsWhatTheReplayBarSays() throws Exception {
+        sink.add("person", "1", "click(button 'Add to cart')", "Add the pen to the cart", 0, null, null);
+        sink.add("person", "1.1", "expect(label 'Total' text '3.00')", "The total is 3.00", 0, null, null);
+        sink.add("2", "click(button 'Checkout…')");
+        sink.targets.put(0, Locator.of("button", "Add to cart"));
+        sink.targets.put(1, Locator.of("label", "Total"));
+        sink.targets.put(2, Locator.of("button", "Checkout…"));
+        withSteps();
+        assertThat(replayBarTexts()).containsExactly("1/2  Add the pen to the cart + 1 check", "1/2  The total is 3.00",
+                "2/2  click “Checkout…”");
+    }
+
+    @Test
+    void theBoxesBesideTheElementsShowTheNumberAndTheSentenceOnly() throws Exception {
+        sink.add("person", "1", "click(button 'Save')", "Save the order", 0, null, null);
+        sink.add("person", "1.1", "expect(#customer value 'Ada')", null, 0, null, null);
+        sink.add("person", "1.2", "expect(checkbox 'Rush' state checked)", "It is a rush order", 0, null, null);
+        sink.add("2", "click(checkbox 'Rush')");
+        sink.targets.put(0, Locator.of("button", "Save"));
+        sink.targets.put(1, Locator.ofId("customer"));
+        sink.targets.put(2, Locator.of("checkbox", "Rush"));
+        sink.targets.put(3, Locator.of("checkbox", "Rush"));
+        sink.failStep = 2;
+        withSteps();
+        Overlay o = appOverlay();
+        List<List<String>> boxes = Collections.synchronizedList(new java.util.ArrayList<List<String>>());
+        sink.onReplay = () -> {
+            try {
+                SwingUtilities.invokeAndWait(() -> boxes.add(o.markLabels()));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        // as each record runs: its own box, and the results of its step's records before it
+        assertThat(boxes).containsExactly(
+                Collections.singletonList("1  Save the order"),
+                Arrays.asList("1  Save the order", "1.1"),
+                Arrays.asList("1  Save the order", "1.1 ✓", "1.2  It is a rush order"));
+        for (List<String> shown : boxes) {
+            for (String label : shown) assertThat(label).doesNotContain("'", "#", "(", "expect", "click");
+        }
+    }
+
+    @Test
+    void stepByStepTheBoxesKeepTheResultsAndTheNextOneSaysUpNext() throws Exception {
+        sink.add("1", "click(button 'Save')");
+        sink.add("1.1", "expect(#customer value 'Ada')");
+        sink.add("person", "2", "click(checkbox 'Rush')", "Make it a rush order", 0, null, null);
+        sink.targets.put(0, Locator.of("button", "Save"));
+        sink.targets.put(1, Locator.ofId("customer"));
+        sink.targets.put(2, Locator.of("checkbox", "Rush"));
+        withSteps();
+        Overlay o = scene.inspector.overlay(frame.getRootPane());
+        Overlay app = appOverlay();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(3);
+            recording.panel.press("▶ Replay all");
+        });
+        Bar replayBar = eventually(() -> o.bar() != recording.bar ? o.bar() : null);
+        eventually(() -> replayBar.text().startsWith("1/2") ? Boolean.TRUE : null);
+        recording.next.release();
+        String upNext = eventually(() -> replayBar.text().startsWith("2/2") ? replayBar.text() : null);
+        assertThat(upNext).isEqualTo("2/2  Make it a rush order   - paused: Next runs it");
+        SwingUtilities.invokeAndWait(() ->
+                assertThat(app.markLabels()).containsExactly("1", "1.1 ✓", "2  Make it a rush order   (up next)"));
+        recording.next.release();
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+    }
+
+    /**
+     * The scene's app components in a root pane of their own (an unshown window would hide them from the resolver):
+     * its overlay, where the replay's boxes go up.
+     */
+    private Overlay appOverlay() throws Exception {
+        Overlay[] o = new Overlay[1];
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane app = new JRootPane();
+            app.setBounds(0, 0, 400, 200);
+            app.getContentPane().add(scene.content);
+            app.doLayout();
+            app.getLayeredPane().setBounds(0, 0, 400, 200);
+            o[0] = scene.inspector.overlay(app);
+        });
+        return o[0];
+    }
+
+    /** {@code l} with a scope and a window, as the recorder writes them: what the replay must not show. */
+    private static Locator scoped(Locator l) {
+        l.scope = Collections.singletonList("New order");
+        l.window = "main";
+        return l;
     }
 
     /** Replays all at Fast; returns what the replay bar said as each record ran. */

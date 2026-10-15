@@ -335,6 +335,13 @@ final class Overlay extends JComponent {
         relayout();
     }
 
+    /** The boxes' labels, in the order they were put up. */
+    List<String> markLabels() {
+        List<String> out = new ArrayList<String>();
+        for (Mark m : marks) out.add(m.label);
+        return out;
+    }
+
     /** Whether the catcher is up here: the person picks or checks. */
     boolean catching() {
         return catcher != null;

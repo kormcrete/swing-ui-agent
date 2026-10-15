@@ -787,13 +787,14 @@ final class Recording {
         });
         for (int i = from; i < n; i++) {
             final int id = all.get(i).id;
-            final String line = all.get(i).line;
             final Locator target = sink.target(i);
             final boolean check = all.get(i).check();
             final String counter = StepsPanel.stepOf(labels.get(i)) + "/" + total + "  ";
-            final String checked = check ? "check " + labels.get(i) : null;
-            final String what = check ? StepsPanel.checkText(line) : line;
-            final String label = counter + (check ? checked + ": " + what : what);
+            // the bar says what it does in a few words, the box beside the element only its number and sentence
+            final String label = counter + said(all.get(i), labels.get(i), target);
+            final String said = all.get(i).say != null ? "  " + all.get(i).say : "";
+            final String number = labels.get(i);
+            final String box = number + said;
             // an action and the checks right after it are one step for the person: one Next runs them all
             final boolean starts = i == from || !check;
             final int group = starts ? Inspector.checksAfter(all, i, n) : 0;
@@ -801,8 +802,8 @@ final class Recording {
             Inspector.onEdt(() -> {
                 marks.put(id, "▶");
                 // while paused the last step's results stay in view beside this one, until Next
-                mine[0] = boxStep(target, label, check, starts && !paused);
-                if (mine[0] != null && starts && paused) mine[0].label = label + "   (up next)";
+                mine[0] = boxStep(target, box, check, starts && !paused);
+                if (mine[0] != null && starts && paused) mine[0].label = box + "   (up next)";
                 replayBar.text(label + (group > 0 ? " + " + group + (group == 1 ? " check" : " checks") : "")
                         + (paused && starts ? "   - paused: Next runs it" : ""));
             });
@@ -817,7 +818,7 @@ final class Recording {
                     for (Overlay o : inspector.overlays()) {
                         if (mine[0] != null) o.keepOnly(mine[0]); else o.clearMarks();
                     }
-                    if (mine[0] != null) mine[0].label = label;
+                    if (mine[0] != null) mine[0].label = box;
                 });
             } else {
                 Inspector.pause(Math.min(delay, 300));
@@ -829,8 +830,7 @@ final class Recording {
                 if (m != null) {
                     m.result = r.ok;
                     if (check || !r.ok) m.color = r.ok ? Overlay.YES : Overlay.NO;
-                    m.label = counter + (check ? checked + (r.ok ? " passed: " : " FAILED: ") + what
-                            : (r.ok ? "" : "FAILED: ") + what);
+                    m.label = check || !r.ok ? number + (r.ok ? " ✓" : " ✗") + said : box;
                     for (Overlay o : inspector.overlays()) o.repaint();
                 }
             });
@@ -847,6 +847,34 @@ final class Recording {
             outcome = n <= from ? "■ stopped after the reset" : "■ stopped after step " + StepsPanel.stepOf(labels.get(n - 1));
         }
         ended(outcome, failed, failed < 0 && !stopped, wasChecking, after);
+    }
+
+    /**
+     * What the replay bar says record {@code s} (labelled {@code label}, aimed at {@code target}) does: its sentence,
+     * else its verb and the element's visible name - never the locator, which the steps list shows on hover.
+     */
+    static String said(Inspector.StepLine s, String label, Locator target) {
+        if (s.say != null) return s.say;
+        String what = shownName(target);
+        if (s.check()) return "check " + label + (what != null ? " " + what : "");
+        String line = s.line;
+        int open = line.indexOf('(');
+        String verb = open < 0 ? line : line.substring(0, open);
+        if (target == null) {
+            // a step without an element (a menu path, keys): its arguments are what the person sees
+            return open < 0 || !line.endsWith(")") ? line : verb + " " + line.substring(open + 1, line.length() - 1);
+        }
+        if (verb.equals("type")) verb = "type into";
+        return what != null ? verb + " " + what : verb;
+    }
+
+    /** The element's name as the person reads it, quoted: a cell's column in its table, else its name, else its id. */
+    private static String shownName(Locator l) {
+        if (l == null) return null;
+        String name = l.name != null ? "“" + l.name + "”" : l.id != null ? "“" + l.id + "”" : null;
+        String part = l.column != null ? l.column : l.item != null && !l.item.isEmpty() ? l.item.get(l.item.size() - 1) : null;
+        if (part == null) return name;
+        return "“" + part + "”" + (name != null ? " in " + name : "");
     }
 
     /**
