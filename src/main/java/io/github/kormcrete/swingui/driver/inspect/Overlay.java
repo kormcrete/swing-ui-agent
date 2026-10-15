@@ -2,24 +2,40 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
+import javax.swing.AbstractButton;
+import javax.swing.CellRendererPane;
+import javax.swing.Icon;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
+import javax.swing.JList;
+import javax.swing.JMenuBar;
 import javax.swing.JPopupMenu;
 import javax.swing.JRootPane;
+import javax.swing.JScrollBar;
+import javax.swing.JSlider;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.JTree;
+import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.JTableHeader;
+import javax.swing.text.JTextComponent;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -27,6 +43,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -44,6 +61,9 @@ final class Overlay extends JComponent {
     private static final Integer BOXES = JLayeredPane.DRAG_LAYER;
     private static final Integer CONTROLS = JLayeredPane.DRAG_LAYER + 1;
     private static final Integer CATCHER = JLayeredPane.POPUP_LAYER - 1;
+    private static final List<Rectangle> NONE = Collections.emptyList();
+    /** How far apart the bar's spots along the window's edges are. */
+    private static final int STEP = 24;
 
     static final Color ASK = new Color(0xE8, 0x6A, 0x10);
     static final Color HOVER = new Color(0x1F, 0x6F, 0xEB);
@@ -108,6 +128,18 @@ final class Overlay extends JComponent {
     private Catcher catcher;
     /** Where a bar that has no spot yet goes in this window (null: where it goes by itself); set by the inspector. */
     Function<Bar, Point> spotFor;
+    /**
+     * The app's small components in this window as last looked at ({@link #smallIn}): the bar's default spot covers
+     * none of them. Looked at again when a bar comes in, when the agent acts, and on the palette's timer
+     * ({@link #recheck}); null until then.
+     */
+    private List<Rectangle> small;
+    /**
+     * The bar's default spot here, as shares of the room it can move in across and down (0 left or top, 1 right or
+     * bottom), so it follows the window's corners as it is resized; null until placed. Kept until it covers a small
+     * component; a drag by the person wins over it.
+     */
+    private double[] spot;
     /** Follows layout changes, scrolling and resizes while anything shows; stopped while nothing does. */
     private final Timer follow = new Timer(120, e -> relayout());
     /** What the boxes looked like when last painted: a tick repaints the window only when that changed. */
@@ -156,12 +188,15 @@ final class Overlay extends JComponent {
 
     /**
      * The person's palette; null removes it. A bar without a spot of its own (the one Done, ● Record or a replay puts
-     * up) takes this window's ({@link #spotFor}): in a dialog, clear of its buttons.
+     * up) takes the one the person dragged the bar it replaces to, else the one they left in this window
+     * ({@link #spotFor}), else the default spot, which covers none of the window's small components.
      */
     void bar(Bar b) {
         if (b == bar) return;
+        Point dragged = bar == null ? null : bar.moved;
         if (bar != null) layers.remove(bar);
-        if (b != null && b.moved == null && spotFor != null) b.moved = spotFor.apply(b);
+        if (b != null && b.moved == null) b.moved = dragged != null ? dragged : spotFor != null ? spotFor.apply(b) : null;
+        if (b != null) small = smallIn(layers);
         bar = b;
         sync();
         relayout();
@@ -200,6 +235,7 @@ final class Overlay extends JComponent {
         avoidDone = false;
         avoid.add(new Rectangle(area));
         movedAtAvoid = bar == null ? null : bar.moved;
+        small = smallIn(layers);
         relayout();
         if (coversAvoided()) {
             yielding = true;
@@ -229,6 +265,18 @@ final class Overlay extends JComponent {
         sync();
         relayout();
         layers.repaint();
+    }
+
+    /**
+     * The palette's timer: looks at the window's small components again. When they changed, a bar on its default spot
+     * that now covers one moves to a spot that covers none (a dialog's next page, a resized window); a bar the person
+     * dragged stays. Nothing changed, nothing happens: no repaint.
+     */
+    void recheck() {
+        List<Rectangle> now = smallIn(layers);
+        if (now.equals(small)) return;
+        small = now;
+        relayout();
     }
 
     /** {@code c} is the bar, the question or the panel, or inside one of them. */
@@ -380,7 +428,7 @@ final class Overlay extends JComponent {
         taken.addAll(avoid);
         boolean withPanel = panel != null && panelIn();
         if (bar != null && barIn()) {
-            place(bar, taken, withPanel ? panel.getPreferredSize() : null);
+            placePalette(taken, withPanel ? panel.getPreferredSize() : null);
             taken.add(bar.getBounds());
         }
         if (ask != null && !yielding) place(ask, taken, null);
@@ -422,9 +470,55 @@ final class Overlay extends JComponent {
         else if (!follow.isRunning()) follow.start();
     }
 
+    private List<Rectangle> small() {
+        if (small == null) small = smallIn(layers);
+        return small;
+    }
+
+    /** The agent's question: off the boxes and the palette, and off small components where it can be. */
     private void place(Bar b, List<Rectangle> taken, Dimension panel) {
         Dimension size = b.getPreferredSize();
-        b.setBounds(placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), b.moved, taken, panel));
+        b.setBounds(placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), b.moved, taken, panel, small(), null));
+    }
+
+    /**
+     * The person's palette: where they dragged it; else its default spot ({@link #spot}), chosen again only when it
+     * covers a small component (so it never jumps about as the window's controls come and go); either one only while
+     * it covers none of the boxes and of what the agent acts on, else the best spot clear of them.
+     */
+    private void placePalette(List<Rectangle> taken, Dimension panel) {
+        Dimension size = bar.getPreferredSize();
+        int areaW = layers.getWidth();
+        int areaH = layers.getHeight();
+        List<Rectangle> small = small();
+        Rectangle home = spot == null ? null : at(spot, size.width, size.height, areaW, areaH);
+        if (home == null || covered(home, small) > 0) {
+            home = placeBar(size.width, size.height, areaW, areaH, null, NONE, panel, small, null);
+            spot = share(home, areaW, areaH);
+        }
+        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, bar.moved, taken, panel, small, home.getLocation()));
+    }
+
+    /** The bar's width in a {@code areaW} wide window. */
+    private static int width(int prefW, int areaW) {
+        return Math.min(prefW, Math.max(120, areaW - 16));
+    }
+
+    /** {@code at} as shares of the room the bar can move in ({@link #spot}). */
+    private static double[] share(Rectangle at, int areaW, int areaH) {
+        int maxX = Math.max(0, areaW - at.width - 8);
+        int maxY = Math.max(0, areaH - at.height - 8);
+        return new double[] {maxX > 8 ? (at.x - 8) / (double) (maxX - 8) : 1, maxY > 8 ? (at.y - 8) / (double) (maxY - 8) : 1};
+    }
+
+    /** The bar's rectangle at {@code share} ({@link #spot}) in a window of that size. */
+    private static Rectangle at(double[] share, int prefW, int h, int areaW, int areaH) {
+        int w = width(prefW, areaW);
+        int maxX = Math.max(0, areaW - w - 8);
+        int maxY = Math.max(0, areaH - h - 8);
+        int x = maxX > 8 ? 8 + (int) Math.round(share[0] * (maxX - 8)) : maxX;
+        int y = maxY > 8 ? 8 + (int) Math.round(share[1] * (maxY - 8)) : maxY;
+        return new Rectangle(x, y, w, h);
     }
 
     /**
@@ -441,19 +535,150 @@ final class Overlay extends JComponent {
      * ({@link #panelBeside}): a spot is free only when the bar and the panel both are.
      */
     static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken, Dimension panel) {
-        int w = Math.min(prefW, Math.max(120, areaW - 16));
+        return placeBar(prefW, h, areaW, areaH, moved, taken, panel, NONE, null);
+    }
+
+    /**
+     * Where the bar goes: where the person dragged it ({@code moved}), else at {@code preferred} (its default spot),
+     * while that covers none of {@code taken} (boxes, what the agent acts on) with the bar or its {@code panel}. Else the
+     * best of the corners, the edge middles and spots along the four edges ({@link #spots}), in that order: clear of
+     * {@code taken}; then covering the fewest of the window's {@code small} components with the bar, then the least of
+     * them; then with the panel the fewest. So the bar is never put on a small component to make room for its panel,
+     * and with every spot taken it still lands where it hides the least. Always inside the window.
+     */
+    static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken, Dimension panel,
+                              List<Rectangle> small, Point preferred) {
+        int w = width(prefW, areaW);
         int maxX = Math.max(0, areaW - w - 8);
         int maxY = Math.max(0, areaH - h - 8);
-        if (moved != null) {
-            Rectangle at = new Rectangle(Math.max(0, Math.min(moved.x, maxX)), Math.max(0, Math.min(moved.y, maxY)), w, h);
+        for (Point p : new Point[] {moved, preferred}) {
+            if (p == null) continue;
+            Rectangle at = new Rectangle(Math.max(0, Math.min(p.x, maxX)), Math.max(0, Math.min(p.y, maxY)), w, h);
             if (free(at, panel, areaW, areaH, taken)) return at;
         }
+        Rectangle best = null;
+        long[] bestScore = null;
+        for (Point p : spots(maxX, maxY)) {
+            Rectangle at = new Rectangle(p.x, p.y, w, h);
+            Rectangle beside = panel == null ? null : panelBeside(at, panel, areaW, areaH);
+            long[] score = {free(at, panel, areaW, areaH, taken) ? 0 : 1, covered(at, small), coveredArea(at, small),
+                    beside == null ? 0 : covered(beside, small)};
+            if (bestScore == null || less(score, bestScore)) {
+                best = at;
+                bestScore = score;
+                if (score[0] == 0 && score[1] == 0 && score[3] == 0) break;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The spots the bar may take in a window where it can go as far as {@code maxX}, {@code maxY}: the corners and the
+     * edge middles (bottom right first), then every {@link #STEP} along the bottom, top, right and left edges.
+     */
+    private static List<Point> spots(int maxX, int maxY) {
+        List<Point> out = new ArrayList<Point>();
         int[][] corners = {{maxX, maxY}, {8, maxY}, {maxX, 8}, {8, 8}, {maxX / 2, maxY}, {maxX / 2, 8}};
-        for (int[] c : corners) {
-            Rectangle at = new Rectangle(c[0], c[1], w, h);
-            if (free(at, panel, areaW, areaH, taken)) return at;
+        for (int[] c : corners) out.add(new Point(c[0], c[1]));
+        for (int y : new int[] {maxY, 8}) for (int x = maxX; x >= 8; x -= STEP) out.add(new Point(x, y));
+        for (int x : new int[] {maxX, 8}) for (int y = maxY; y >= 8; y -= STEP) out.add(new Point(x, y));
+        return out;
+    }
+
+    private static boolean less(long[] a, long[] b) {
+        for (int i = 0; i < a.length; i++) if (a[i] != b[i]) return a[i] < b[i];
+        return false;
+    }
+
+    /** How many of {@code small} {@code at} covers. */
+    private static int covered(Rectangle at, List<Rectangle> small) {
+        int n = 0;
+        for (Rectangle r : small) if (r.intersects(at)) n++;
+        return n;
+    }
+
+    private static long coveredArea(Rectangle at, List<Rectangle> small) {
+        long a = 0;
+        for (Rectangle r : small) {
+            Rectangle i = r.intersection(at);
+            if (!i.isEmpty()) a += (long) i.width * i.height;
         }
-        return new Rectangle(maxX, maxY, w, h);
+        return a;
+    }
+
+    /**
+     * The app's small components in this window, in layered-pane coordinates: what a person acts on or reads in it -
+     * buttons (disabled ones too: a dialog's Next often is), check boxes and radio buttons, combo boxes, text fields,
+     * spinners, sliders, a label's text, a tabbed pane's tab rectangles and the menu bar. Large views - tables, lists,
+     * trees, text in a scroll pane - and plain containers are not: the bar covers only part of them. The inspector's own
+     * components, popups (they come and go) and anything hidden or scrolled out of sight do not count. EDT.
+     */
+    static List<Rectangle> smallIn(JLayeredPane layers) {
+        List<Rectangle> out = new ArrayList<Rectangle>();
+        Rectangle all = new Rectangle(0, 0, layers.getWidth(), layers.getHeight());
+        for (Component c : layers.getComponents()) {
+            if (layers.getLayer(c) >= JLayeredPane.POPUP_LAYER) continue;
+            smallIn(c, 0, 0, all, out);
+        }
+        return out;
+    }
+
+    /** {@code c} (its parent at {@code dx}, {@code dy} in the layered pane, seen only inside {@code clip}) and what it holds. */
+    private static void smallIn(Component c, int dx, int dy, Rectangle clip, List<Rectangle> out) {
+        // the parents were looked at on the way down: only this one's own class can be the inspector's
+        if (!c.isVisible() || c.getWidth() <= 0 || c.getHeight() <= 0 || c.getClass().getName().startsWith(PACKAGE)) return;
+        if (c instanceof JPopupMenu || c instanceof CellRendererPane || c instanceof JScrollBar) return;
+        Rectangle at = new Rectangle(dx + c.getX(), dy + c.getY(), c.getWidth(), c.getHeight());
+        if (c instanceof JLabel) {
+            Rectangle text = labelText((JLabel) c);
+            if (text != null) add(new Rectangle(at.x + text.x, at.y + text.y, text.width, text.height), clip, out);
+            return;
+        }
+        if (c instanceof AbstractButton || c instanceof JComboBox || c instanceof JTextField || c instanceof JSpinner
+                || c instanceof JSlider || c instanceof JMenuBar) {
+            add(at, clip, out);
+            return;
+        }
+        if (c instanceof JTable || c instanceof JList || c instanceof JTree) return;
+        if (c instanceof JTextComponent) {
+            // text in a scroll pane is a view; a bare one reads like a label
+            if (!(c.getParent() instanceof JViewport)) add(at, clip, out);
+            return;
+        }
+        if (c instanceof JTabbedPane) {
+            JTabbedPane tabs = (JTabbedPane) c;
+            for (int i = 0; i < tabs.getTabCount(); i++) {
+                Rectangle tab = tabs.getBoundsAt(i);
+                if (tab != null) add(new Rectangle(at.x + tab.x, at.y + tab.y, tab.width, tab.height), clip, out);
+            }
+        }
+        if (!(c instanceof Container)) return;
+        Rectangle inside = c instanceof JViewport ? clip.intersection(at) : clip;
+        if (inside.isEmpty()) return;
+        for (Component k : ((Container) c).getComponents()) smallIn(k, at.x, at.y, inside, out);
+    }
+
+    private static void add(Rectangle r, Rectangle clip, List<Rectangle> out) {
+        Rectangle seen = r.intersection(clip);
+        if (!seen.isEmpty()) out.add(seen);
+    }
+
+    /** Where a label paints its text and icon, in its own coordinates; null when it shows neither. */
+    private static Rectangle labelText(JLabel l) {
+        String text = l.getText();
+        Icon icon = l.isEnabled() ? l.getIcon() : l.getDisabledIcon();
+        boolean hasText = text != null && !text.isEmpty();
+        if (!hasText && icon == null) return null;
+        if (l.getFont() == null) return new Rectangle(0, 0, l.getWidth(), l.getHeight());
+        Insets in = l.getInsets();
+        Rectangle view = new Rectangle(in.left, in.top, l.getWidth() - in.left - in.right, l.getHeight() - in.top - in.bottom);
+        Rectangle iconAt = new Rectangle();
+        Rectangle textAt = new Rectangle();
+        SwingUtilities.layoutCompoundLabel(l, l.getFontMetrics(l.getFont()), text, icon, l.getVerticalAlignment(),
+                l.getHorizontalAlignment(), l.getVerticalTextPosition(), l.getHorizontalTextPosition(), view, iconAt, textAt,
+                l.getIconTextGap());
+        if (!hasText) return iconAt;
+        return icon == null ? textAt : textAt.union(iconAt);
     }
 
     /** Where a panel of preferred size {@code pref} sits beside {@code bar}: above it, else below; inside the window. */

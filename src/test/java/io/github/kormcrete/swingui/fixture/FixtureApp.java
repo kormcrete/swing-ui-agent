@@ -2,8 +2,10 @@ package io.github.kormcrete.swingui.fixture;
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JLayeredPane;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -22,18 +24,22 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Point;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
 
 /**
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
  * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
  * an attachments drop target with a context menu, a lines table, a status label that tells what happened and an
- * Archive button bottom right, under where the palette sits by default.
+ * Archive button bottom right, with a button beside it that drags the person's palette over Archive (as a person
+ * would: the palette's default spot covers no button).
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
  */
@@ -115,11 +121,14 @@ public final class FixtureApp {
 
             JPanel form = new JPanel(new FlowLayout());
             for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status, linesPane}) form.add(c);
-            // Archive sits bottom right, where the person's palette sits by default
             JButton archive = new JButton("Archive");
             archive.setName("archive");
             archive.addActionListener(e -> status.setText("archived"));
+            JButton paletteOver = new JButton("Palette over Archive");
+            paletteOver.setName("paletteOverArchive");
+            paletteOver.addActionListener(e -> status.setText(dragPaletteOver(archive) ? "palette over archive" : "no palette"));
             JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            south.add(paletteOver);
             south.add(archive);
             JPanel content = new JPanel(new BorderLayout());
             content.add(form, BorderLayout.CENTER);
@@ -129,6 +138,29 @@ public final class FixtureApp {
             frame.setLocation(40, 40);
             frame.setVisible(true);
         });
+    }
+
+    /**
+     * Drags the person's palette (the swing-ui-agent bar in the window's layered pane) over {@code target} the way a
+     * person does: press on its grip, drag, release. True when it then covers {@code target}.
+     */
+    static boolean dragPaletteOver(JComponent target) {
+        JLayeredPane layers = target.getRootPane().getLayeredPane();
+        for (Component bar : layers.getComponents()) {
+            if (!bar.getClass().getName().endsWith(".inspect.Bar")) continue;
+            Point to = SwingUtilities.convertPoint(target.getParent(), target.getLocation(), layers);
+            int x = 5 + to.x - bar.getX();
+            int y = 5 + to.y - bar.getY();
+            long now = System.currentTimeMillis();
+            bar.dispatchEvent(new MouseEvent(bar, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, 5, 5, 1, false,
+                    MouseEvent.BUTTON1));
+            bar.dispatchEvent(new MouseEvent(bar, MouseEvent.MOUSE_DRAGGED, now, InputEvent.BUTTON1_DOWN_MASK, x, y, 0, false,
+                    MouseEvent.BUTTON1));
+            // the bar has moved with the drag: the grip is under the pointer again
+            bar.dispatchEvent(new MouseEvent(bar, MouseEvent.MOUSE_RELEASED, now, 0, 5, 5, 1, false, MouseEvent.BUTTON1));
+            return SwingUtilities.convertRectangle(target.getParent(), target.getBounds(), layers).intersects(bar.getBounds());
+        }
+        return false;
     }
 
     /** A spinner cell editor as an app would write it in a hurry: the value is the spinner's, nothing more. */

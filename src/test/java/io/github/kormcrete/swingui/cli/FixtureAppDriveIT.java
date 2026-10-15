@@ -113,7 +113,10 @@ class FixtureAppDriveIT {
         assertThat(call("session", "{'op':'info'}").path("palette").asBoolean()).isTrue();
         // the window is up: the palette is put in at the end of this step (never while the agent acts)
         step("expect", "{'target':{'name':'status'},'text':'idle'}");
-        // Archive sits where the palette's bar sits by default: the bar steps off it for the agent's click
+        // the palette's default spot covers no button, so the person drags it over Archive (their spot wins there);
+        // the bar steps off it for the agent's click
+        step("click", "{'target':{'name':'paletteOverArchive'}}");
+        step("expect", "{'target':{'name':'status'},'text':'palette over archive'}");
         step("click", "{'target':{'name':'archive'}}");
         step("expect", "{'target':{'name':'status'},'text':'archived'}");
     }

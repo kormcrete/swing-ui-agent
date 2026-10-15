@@ -5,20 +5,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JDesktopPane;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JInternalFrame;
+import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
@@ -301,9 +306,10 @@ class InspectorTest {
             Bar bar = idleBar();
             o.bar(bar);
             Rectangle home = bar.getBounds();
-            JButton from = archive;
-            JButton to = new JButton("Customer");
-            JButton next = new JButton("Checkout");
+            // drop areas, not buttons: the bar's default spot may cover them, so only the agent's step moves it
+            JPanel from = new JPanel();
+            JPanel to = new JPanel();
+            JPanel next = new JPanel();
             from.setBounds(home);
             to.setBounds(8, home.y, home.width, home.height);
             next.setBounds(home.x, 8, home.width, home.height);
@@ -427,6 +433,153 @@ class InspectorTest {
             assertThat(bar.getLocation()).isEqualTo(inFrame);
             showIn(dialog);
             assertThat(bar.getLocation()).isEqualTo(inDialog);
+        });
+    }
+
+    // ---- its default spot covers no small component ----------------------------------------------------------------
+
+    /** The palette (idle) in the unshown 800 x 600 frame showing {@code content}, laid out all the way down. EDT. */
+    private Bar paletteOver(Container content) {
+        frame.setContentPane(content);
+        Scene.size(frame, 800, 600);
+        Scene.size(dialog, 500, 300);
+        layOut(frame.getRootPane());
+        scene.inspector.install(sink);
+        return showIn(frame).bar();
+    }
+
+    /** {@code c}'s bounds in its window's layered pane. */
+    private static Rectangle inLayers(Component c) {
+        return SwingUtilities.convertRectangle(c.getParent(), c.getBounds(), SwingUtilities.getRootPane(c).getLayeredPane());
+    }
+
+    @Test
+    void theMainWindowsDefaultSpotAvoidsAButtonRowBottomRight() throws Exception {
+        onEdt(() -> {
+            JPanel content = new JPanel(new BorderLayout());
+            content.add(new JScrollPane(new JTable(30, 3)), BorderLayout.CENTER);
+            JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            JButton[] buttons = {new JButton("Archive"), new JButton("Delete"), new JButton("Checkout…")};
+            buttons[2].setEnabled(false);
+            for (JButton b : buttons) row.add(b);
+            content.add(row, BorderLayout.SOUTH);
+
+            Bar bar = paletteOver(content);
+
+            assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+            for (JButton b : buttons) assertThat(bar.getBounds().intersects(inLayers(b))).as(b.getText()).isFalse();
+        });
+    }
+
+    @Test
+    void aDialogsSpotAvoidsItsButtonsAndCombo() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Container content = dialog.getContentPane();
+            content.setLayout(null);
+            JComboBox<String> customer = new JComboBox<String>(new String[] {"Ada Shop Ltd"});
+            customer.setBounds(20, 10, 150, 24);
+            JButton back = new JButton("Back");
+            back.setBounds(10, 260, 90, 28);
+            JButton next = new JButton("Next");
+            next.setBounds(300, 260, 90, 28);
+            JButton cancel = new JButton("Cancel");
+            cancel.setBounds(400, 260, 90, 28);
+            for (Component c : new Component[] {customer, back, next, cancel}) content.add(c);
+
+            showIn(dialog);
+
+            assertThat(bar.getParent()).isSameAs(dialog.getLayeredPane());
+            for (Component c : new Component[] {customer, back, next, cancel}) {
+                assertThat(bar.getBounds().intersects(inLayers(c))).as(c.toString()).isFalse();
+            }
+        });
+    }
+
+    @Test
+    void aLabelIsNeverCovered() throws Exception {
+        onEdt(() -> {
+            JPanel content = new JPanel(null);
+            JLabel total = new JLabel("Total 42.00");
+            Dimension size = total.getPreferredSize();
+            // where the bar would go by default: the bottom right corner
+            total.setBounds(800 - 20 - size.width, 600 - 24 - size.height, size.width, size.height);
+            content.add(total);
+
+            Bar bar = paletteOver(content);
+
+            assertThat(bar.getBounds().intersects(inLayers(total))).isFalse();
+        });
+    }
+
+    @Test
+    void aTableUnderTheCornerIsFine() throws Exception {
+        onEdt(() -> {
+            JPanel content = new JPanel(new BorderLayout());
+            content.add(new JScrollPane(new JTable(30, 3)), BorderLayout.CENTER);
+
+            Bar bar = paletteOver(content);
+
+            JLayeredPane layers = frame.getLayeredPane();
+            Dimension size = bar.getPreferredSize();
+            assertThat(bar.getBounds()).isEqualTo(Overlay.placeBar(size.width, size.height, layers.getWidth(),
+                    layers.getHeight(), null, Collections.<Rectangle>emptyList()));
+        });
+    }
+
+    @Test
+    void aDialogPageChangeRePlacesADefaultBarButNotADraggedOne() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Container content = dialog.getContentPane();
+            content.setLayout(null);
+            JButton first = new JButton("Next");
+            first.setBounds(10, 10, 90, 28);
+            content.add(first);
+            showIn(dialog);
+            Rectangle home = bar.getBounds();
+            assertThat(home.intersects(inLayers(first))).isFalse();
+
+            // checkout's next page: a Place order button where the bar sits; the palette's timer looks again
+            content.remove(first);
+            JButton place = new JButton("Place order");
+            place.setBounds(SwingUtilities.convertRectangle(dialog.getLayeredPane(), home, content));
+            content.add(place);
+            scene.inspector.attachPalette();
+            assertThat(bar.getBounds().intersects(inLayers(place))).isFalse();
+
+            // the person drags it back over the button: the next page change leaves it there
+            bar.moved = home.getLocation();
+            scene.inspector.overlay(dialog.getRootPane()).relayout();
+            content.remove(place);
+            JButton confirm = new JButton("Confirm");
+            confirm.setBounds(place.getBounds());
+            content.add(confirm);
+            scene.inspector.attachPalette();
+            assertThat(bar.getBounds()).isEqualTo(home);
+        });
+    }
+
+    @Test
+    void aDraggedSpotIsKeptEvenOverAButton() throws Exception {
+        onEdt(() -> {
+            JPanel content = new JPanel(null);
+            JButton save = new JButton("Save");
+            save.setBounds(100, 120, 90, 28);
+            content.add(save);
+            Bar bar = paletteOver(content);
+            assertThat(bar.getBounds().intersects(inLayers(save))).isFalse();
+
+            Point over = inLayers(save).getLocation();
+            bar.moved = over;
+            scene.inspector.overlay(frame.getRootPane()).relayout();
+            scene.inspector.attachPalette();
+            assertThat(bar.getLocation()).isEqualTo(over);
+
+            // into a dialog and back: the person's spot in the main window is still theirs
+            showIn(dialog);
+            showIn(frame);
+            assertThat(bar.getLocation()).isEqualTo(over);
         });
     }
 

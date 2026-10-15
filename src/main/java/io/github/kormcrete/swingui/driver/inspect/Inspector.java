@@ -14,7 +14,6 @@ import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 import io.github.kormcrete.swingui.driver.window.Modality;
 
-import javax.swing.AbstractButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
@@ -27,9 +26,7 @@ import javax.swing.Timer;
 import javax.swing.table.JTableHeader;
 import java.awt.AWTEvent;
 import java.awt.Component;
-import java.awt.Container;
 import java.awt.Dialog;
-import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
@@ -649,18 +646,20 @@ public final class Inspector {
         o.hidePalette(testRun);
         // a replay shows its own bar until it ends
         if (recording == null || !recording.replaying) o.bar(want);
+        // the window's controls changed under a bar on its default spot (a dialog's next page, a resize): it moves off
+        o.recheck();
     }
 
     /**
      * Moves the palette from its window to {@code to}, with the person's recording - its panel and a running replay's
-     * bar too. The bar takes the spot it had in {@code to} before ({@link #spotIn}): in a dialog, never over its
-     * buttons. A test run's palette moves in hidden. EDT.
+     * bar too. The bar takes the spot the person dragged it to in {@code to} before ({@link #spotIn}), else its default
+     * spot there, off the window's buttons, fields and labels. A test run's palette moves in hidden. EDT.
      */
     private void movePalette(Overlay to, Bar want) {
         Overlay from = paletteHome;
         Bar shown = from != null && from.bar() != null ? from.bar() : want;
         if (from != null) spots.put(from.root, shown.moved);
-        shown.moved = spotIn(to, shown);
+        shown.moved = spotIn(to);
         to.hidePalette(testRun);
         paletteHome = to;
         if (recording != null) recording.rehome(to); else to.bar(agentBar != null ? agentBar : idle);
@@ -680,28 +679,12 @@ public final class Inspector {
     }
 
     /**
-     * Where {@code bar} goes in {@code o}'s window: where the palette sat when it last left that window (null: where it
-     * goes by itself). In a dialog only where it covers none of the dialog's buttons (Next, OK) at its own size; else
-     * the first corner clear of them.
+     * Where the palette's bar goes in {@code o}'s window: where the person dragged it there before it last left the
+     * window - their spot wins, even over the window's controls; null (no drag there): its default spot, which covers
+     * none of the window's small components ({@link Overlay#smallIn}).
      */
-    private Point spotIn(Overlay o, Bar bar) {
-        Point left = spots.get(o.root);
-        if (!(SwingUtilities.getWindowAncestor(o.root) instanceof Dialog)) return left;
-        JLayeredPane layers = o.layers();
-        List<Rectangle> buttons = new ArrayList<Rectangle>();
-        buttonsIn(layers, layers, buttons);
-        Dimension size = bar.getPreferredSize();
-        Rectangle at = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), left, buttons);
-        return at.getLocation();
-    }
-
-    /** The app's visible buttons under {@code c}, in layered-pane coordinates. */
-    private static void buttonsIn(Container c, JLayeredPane layers, List<Rectangle> out) {
-        for (Component k : c.getComponents()) {
-            if (!k.isVisible() || Overlay.ours(k)) continue;
-            if (k instanceof AbstractButton) out.add(SwingUtilities.convertRectangle(c, k.getBounds(), layers));
-            if (k instanceof Container) buttonsIn((Container) k, layers, out);
-        }
+    private Point spotIn(Overlay o) {
+        return spots.get(o.root);
     }
 
     /** Whether {@code root} has room for the palette: its buttons in a row, and three bars' height. */
@@ -1161,7 +1144,7 @@ public final class Inspector {
         Overlay o = overlays.get(root);
         if (o == null) {
             Overlay made = new Overlay(root);
-            made.spotFor = b -> spotIn(made, b);
+            made.spotFor = b -> spotIn(made);
             overlays.put(root, made);
             o = made;
         }
