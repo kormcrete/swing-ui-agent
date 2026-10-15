@@ -151,6 +151,35 @@ class PaletteUnseenTest {
     }
 
     @Test
+    void theStepMenuAndTheAskPanelAreNeverSeen() throws Exception {
+        onEdt(() -> {
+            JButton save = new JButton("Save the order");
+            save.setBounds(320, 50, 120, 24);
+            scene.content.add(save);
+            AskPanel ask = new AskPanel("Describe step 3", "Save the order", say -> null, () -> { });
+            ask.setBounds(10, 130, 300, 120);
+            ask.validate();
+            scene.content.add(ask);
+            StepMenu menu = new StepMenu().item("Describe this step…", true, () -> { });
+            try {
+                String json = new ObjectMapper().writeValueAsString(new Snapshot(Visibility.TREE, scene.names,
+                        scene.refs, scene).build(null, null, 400, 20));
+                assertThat(json).contains("Save the order").doesNotContain("Describe step");
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            // the app's button is found and recorded as if the ask panel were not there
+            List<Resolved> found = scene.resolver.matches(Locator.of("button", "Save the order"));
+            assertThat(found).hasSize(1);
+            assertThat(found.get(0).component).isSameAs(save);
+            assertThat(scene.inspector.component(save).locator.nth).isNull();
+            assertThat(Roles.agentOwn(menu)).isTrue();
+            assertThat(Overlay.ours(menu.getComponent(0))).isTrue();
+            assertThat(Overlay.ours(ask)).isTrue();
+        });
+    }
+
+    @Test
     void aPopupOfThePaletteIsNoAppPopup() {
         assertThat(Roles.agentOwn(new JPopupMenu() { })).isTrue();
         assertThat(Roles.agentOwn(new JPopupMenu())).isFalse();

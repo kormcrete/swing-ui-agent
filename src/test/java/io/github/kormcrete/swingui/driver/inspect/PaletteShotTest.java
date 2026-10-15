@@ -85,4 +85,20 @@ class PaletteShotTest {
             assertThat(centre(image, testsDir)).isEqualTo(0xFF0000);
         });
     }
+
+    @Test
+    void aCaptureLeavesTheAskPanelOut() throws Exception {
+        withPalette((root, bar, panel) -> {
+            AskPanel ask = new AskPanel("Describe step 3", "Save the order", say -> null, () -> { });
+            ask.setBounds(10, 10, 300, 120);
+            ask.validate();
+            root.getLayeredPane().add(ask, javax.swing.JLayeredPane.PALETTE_LAYER);
+            BufferedImage plain = new BufferedImage(600, 400, BufferedImage.TYPE_INT_RGB);
+            root.paint(plain.createGraphics());
+            assertThat(centre(plain, ask)).isNotEqualTo(0xFF0000);
+            Shot shot = Screenshots.of(root, null, null, null);
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(shot.png));
+            assertThat(centre(image, ask)).isEqualTo(0xFF0000);
+        });
+    }
 }

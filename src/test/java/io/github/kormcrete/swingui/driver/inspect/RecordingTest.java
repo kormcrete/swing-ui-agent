@@ -708,8 +708,8 @@ class RecordingTest {
         assertThat(rows).hasSize(3);
         assertThat(rows.get(0)).isEqualTo("1  ●  click(#new)").doesNotContain("agent: ");
         assertThat(rows.get(1)).isEqualTo("2  ●  agent: click(#save)");
-        // a check stays indented under its action, and says whose it is
-        assertThat(rows.get(2)).startsWith("3  ●  ").contains("└ agent: check: #status text 'saved'");
+        // a check stays indented under its action, numbered as its step's, and says whose it is
+        assertThat(rows.get(2)).isEqualTo("      └ 2.1  ●  agent: check: #status text 'saved'");
     }
 
     @Test
@@ -1313,6 +1313,354 @@ class RecordingTest {
             assertThat(sink.log).containsExactly("begin");
             assertThat(sink.lines()).containsExactly("click(#new)");
         });
+    }
+
+    // ---- the steps list in steps and checks: numbers, sentences, groups, the row menu, Describe… ---------------------
+
+    @Test
+    void rowsShowStepAndCheckNumbers() throws Exception {
+        sink.add("1.1", "expect(#total text '0.00')");
+        sink.add("2", "click(#new)");
+        sink.add("2.1", "expect(#status text 'new')");
+        sink.add("3", "click(#save)");
+        withSteps();
+        // a check-only step 1 has no action row: only its checks
+        assertThat(rows()).containsExactly(
+                "      └ 1.1  ●  check: #total text '0.00'",
+                "2  ●  click(#new)",
+                "      └ 2.1  ●  check: #status text 'new'",
+                "3  ●  click(#save)");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.panel.title()).isEqualTo("Steps (3)"));
+    }
+
+    @Test
+    void aStepWithASentenceShowsItAndTheLineOnHover() throws Exception {
+        sink.add("person", "1", "click(#new)", "Open a new order", 0, null, null);
+        sink.add("agent", "2", "click(#save)", "Save it", 0, null, null);
+        withSteps();
+        assertThat(rows()).containsExactly("1  ●  Open a new order", "2  ●  agent: Save it");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.tooltipAt(0)).isEqualTo("click(#new)");
+            assertThat(recording.panel.tooltipAt(1)).isEqualTo("click(#save)");
+        });
+    }
+
+    @Test
+    void aCheckWithASentenceShowsIt() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("person", "1.1", "expect(#status text 'new')", "The order is new", 0, null, null);
+        withSteps();
+        assertThat(rows()).containsExactly("1  ●  click(#new)", "      └ 1.1  ●  The order is new");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.panel.tooltipAt(1)).isEqualTo("expect(#status text 'new')"));
+    }
+
+    /** Step 1, then steps 2 (with check 2.1) and 3 in the group "Save the order", then step 4. */
+    private void aGroupOfTwo() {
+        sink.add("1", "click(#new)");
+        sink.add("person", "2", "click(#save)", null, 7, "Save the order", null);
+        sink.add("person", "2.1", "expect(#status text 'saved')", null, 7, "Save the order", null);
+        sink.add("person", "3", "click(#close)", null, 7, "Save the order", null);
+        sink.add("4", "click(#print)");
+    }
+
+    @Test
+    void aGroupShowsAHeaderAboveItsIndentedSteps() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        assertThat(rows()).containsExactly(
+                "1  ●  click(#new)",
+                "▾ Save the order",
+                "  2  ●  click(#save)",
+                "        └ 2.1  ●  check: #status text 'saved'",
+                "  3  ●  click(#close)",
+                "4  ●  click(#print)");
+    }
+
+    @Test
+    void headerRowsHaveNoIdAndSelectTheirSteps() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            StepsPanel p = recording.panel;
+            assertThat(p.idAt(1)).isEqualTo(-1);
+            assertThat(p.recordAt(1)).isEqualTo(-1);
+            assertThat(p.idAt(2)).isEqualTo(2);
+            assertThat(p.recordAt(2)).isEqualTo(1);
+            assertThat(p.recordAt(5)).isEqualTo(4);
+            // a click on the header selects its steps, with their checks
+            p.select(1);
+            assertThat(p.selectedIds()).containsExactly(2, 3, 4);
+        });
+    }
+
+    /** Opens the row menu on {@code row}, as a right click there does; returns the menu. */
+    private StepMenu menuOn(int row) throws Exception {
+        java.util.concurrent.atomic.AtomicReference<StepMenu> menu = new java.util.concurrent.atomic.AtomicReference<StepMenu>();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.openMenu(row);
+            menu.set(recording.panel.menu());
+        });
+        return menu.get();
+    }
+
+    /** Chooses {@code label} in the row menu on {@code row}; returns the ask panel that opened, when one did. */
+    private AskPanel choose(int row, String label) throws Exception {
+        StepMenu menu = menuOn(row);
+        SwingUtilities.invokeAndWait(() -> menu.choose(label));
+        return recording.askPanel;
+    }
+
+    /** Types {@code say} into the ask panel and presses OK. */
+    private void answer(AskPanel ask, String say) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            ask.type(say);
+            ask.ok();
+        });
+    }
+
+    @Test
+    void describeOneStepSetsItsSentence() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#customer)");
+        sink.add("3", "click(#save)");
+        withSteps();
+        assertThat(menuOn(2).labels()).contains("Describe this step…").doesNotContain("Describe this check…");
+        AskPanel ask = choose(2, "Describe this step…");
+        Overlay o = scene.inspector.overlay(frame.getRootPane());
+        SwingUtilities.invokeAndWait(() -> {
+            // the ask panel takes the steps panel's place
+            assertThat(ask).isNotNull();
+            assertThat(ask.title()).isEqualTo("Describe step 3");
+            assertThat(o.holds(ask)).isTrue();
+            assertThat(o.holds(recording.panel)).isFalse();
+        });
+        answer(ask, "Save the order");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 3-3 Save the order");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(o.holds(recording.panel)).isTrue();
+            assertThat(recording.bar.text()).isEqualTo("described");
+        });
+    }
+
+    @Test
+    void describeOneCheckSetsItsSentence() throws Exception {
+        sink.add("1.1", "expect(#total text '0.00')");
+        sink.add("1.2", "expect(#status text 'empty')");
+        sink.add("2", "click(#new)");
+        sink.add("person", "2.1", "expect(#status text 'new')", "The order is new", 0, null, null);
+        withSteps();
+        assertThat(menuOn(3).labels()).contains("Describe this check…").doesNotContain("Describe this step…");
+        AskPanel ask = choose(3, "Describe this check…");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(ask.title()).isEqualTo("Describe check 2.1");
+            // it starts from the sentence the check has
+            assertThat(ask.text()).isEqualTo("The order is new");
+        });
+        answer(ask, "The status says new");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 4-4 The status says new");
+
+        // a check-only step has no sentence of its own: its checks may each have one
+        assertThat(menuOn(0).labels()).contains("Describe this check…").doesNotContain("Describe this step…");
+        SwingUtilities.invokeAndWait(() -> recording.panel.selectRange(0, 1));
+        assertThat(menuOn(0).labels()).doesNotContain("Describe this step…", "Describe this check…", "Describe these steps…");
+    }
+
+    @Test
+    void describeRowsOfTwoStepsGroupsThem() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        sink.add("2.1", "expect(#status text 'saved')");
+        sink.add("3", "click(#close)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> recording.panel.selectRange(1, 3));
+        StepMenu menu = menuOn(1);
+        assertThat(menu.labels()).contains("Describe these steps…").doesNotContain("Describe this step…");
+        AskPanel ask = choose(1, "Describe these steps…");
+        SwingUtilities.invokeAndWait(() -> assertThat(ask.title()).isEqualTo("Describe steps 2-3"));
+        answer(ask, "Save and close");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 2-4 Save and close");
+    }
+
+    @Test
+    void aGroupsHeaderRenamesTheGroup() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        AskPanel ask = choose(1, "Describe these steps…");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(ask.title()).isEqualTo("Describe steps 2-3");
+            assertThat(ask.text()).isEqualTo("Save the order");
+        });
+        answer(ask, "Save and close the order");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 2-4 Save and close the order");
+    }
+
+    @Test
+    void ungroupFromTheMenu() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        StepMenu outside = menuOn(0);
+        assertThat(outside.labels()).contains("Ungroup");
+        assertThat(outside.enabled("Ungroup")).isFalse();
+        StepMenu inside = menuOn(4);
+        assertThat(inside.enabled("Ungroup")).isTrue();
+        SwingUtilities.invokeAndWait(() -> inside.choose("Ungroup"));
+        eventually(() -> "ungrouped".equals(recording.bar.text()) ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("ungroup 4");
+    }
+
+    @Test
+    void theRowMenuOffersValueAndPosition() throws Exception {
+        sink.add("person", "1", "click(table 'Orders' · Order=ORD-1641 · Customer)", null, 0, null,
+                new Inspector.RowLine("value", Collections.<String, Object>singletonMap("Order", "ORD-1641"), 1));
+        sink.add("person", "2", "click(table 'Orders' · Order=ORD-1642 · Customer)", null, 0, null,
+                new Inspector.RowLine("value", Collections.<String, Object>singletonMap("Order", "ORD-1642"), null));
+        sink.add("3", "click(#save)");
+        withSteps();
+        StepMenu menu = menuOn(0);
+        assertThat(menu.labels()).contains("Row: this value (Order=ORD-1641)", "Row: by position (row 1)");
+        assertThat(menu.selected("Row: this value (Order=ORD-1641)")).isTrue();
+        assertThat(menu.enabled("Row: by position (row 1)")).isTrue();
+        SwingUtilities.invokeAndWait(() -> menu.choose("Row: by position (row 1)"));
+        eventually(() -> "row by position".equals(recording.bar.text()) ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("row 1 position");
+
+        // a step whose position is not known yet: that way is greyed until a replay learns it
+        StepMenu unknown = menuOn(1);
+        assertThat(unknown.labels()).contains("Row: by position (replay it once)");
+        assertThat(unknown.enabled("Row: by position (replay it once)")).isFalse();
+        assertThat(unknown.enabled("Row: this value (Order=ORD-1642)")).isTrue();
+        // a step without a row offers no row
+        assertThat(menuOn(2).labels()).noneMatch(l -> l.startsWith("Row:"));
+    }
+
+    @Test
+    void aRefusedDescribeKeepsTheAskPanelOpenWithWhy() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.refuseDescribe = "a sentence is one line";
+        withSteps();
+        AskPanel ask = choose(0, "Describe this step…");
+        answer(ask, "Open it");
+        eventually(() -> ask.message().contains("one line") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.askPanel).isSameAs(ask);
+            assertThat(scene.inspector.overlay(frame.getRootPane()).holds(ask)).isTrue();
+            assertThat(ask.message()).isEqualTo("Not changed: a sentence is one line");
+            assertThat(recording.bar.text()).isEqualTo("✗ not described: a sentence is one line");
+        });
+        // Cancel puts the steps back
+        SwingUtilities.invokeAndWait(ask::cancel);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.askPanel).isNull();
+            assertThat(scene.inspector.overlay(frame.getRootPane()).holds(recording.panel)).isTrue();
+        });
+    }
+
+    @Test
+    void deleteOnACheckRowDeletesTheCheckOnAnActionRowTheStep() throws Exception {
+        sink.add("1", "click(#new)");
+        int check = sink.add("1.1", "expect(#status text 'new')");
+        int action = sink.add("2", "click(#save)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(1);
+            recording.panel.press("✕ Delete");
+        });
+        eventually(() -> sink.log.size() == 1 ? Boolean.TRUE : null);
+        settle();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(1);
+            recording.panel.press("✕ Delete");
+        });
+        eventually(() -> sink.log.size() == 2 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("delete " + check, "delete " + action);
+    }
+
+    @Test
+    void fromSelectedAndRedoOnACheckRowUseItsStep() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        sink.add("2.1", "expect(#status text 'saved')");
+        sink.add("3", "click(#close)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(2);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("replay 1", "replay 2", "replay 3");
+        sink.log.clear();
+        settle();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(2);
+            recording.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut 2", "reset", "replay 0", "resume");
+    }
+
+    @Test
+    void fromSelectedOnACheckOnlyStepResetsFirst() throws Exception {
+        sink.add("1.1", "expect(#total text '0.00')");
+        sink.add("1.2", "expect(#status text 'empty')");
+        sink.add("2", "click(#new)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(1);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 4 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1", "replay 2");
+    }
+
+    @Test
+    void withAGroupShownTheCallbacksGetRecordIndexesNotRows() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        // row 4 is step 3, the record at 3
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(4);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 2 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("replay 3", "replay 4");
+        sink.log.clear();
+        settle();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(5);
+            recording.panel.press("✕ Delete");
+        });
+        eventually(() -> sink.log.size() == 1 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("delete 5");
+        settle();
+        sink.log.clear();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(3);
+            recording.panel.press("↺ Redo from selected");
+        });
+        eventually(() -> sink.log.contains("resume") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("cut 2", "reset", "replay 0", "resume");
+    }
+
+    @Test
+    void aRefreshWhileTheAskPanelIsOpenKeepsItsTargets() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        withSteps();
+        AskPanel ask = choose(1, "Describe this step…");
+        // the agent puts a step in at the top while the person types
+        sink.insert(0, "click(#x)");
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.askPanel).isSameAs(ask));
+        answer(ask, "Save it");
+        eventually(() -> recording.askPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 2-2 Save it");
     }
 
     /** Polls the EDT until {@code read} gives something, for up to 5 s. */

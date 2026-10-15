@@ -88,13 +88,13 @@ public final class Inspector {
         }
     }
 
-    /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     /**
      * A key beside the person's step map (never part of the step): the view index of the table row the step names, so
      * the session can keep both ways to name the row. It is removed before the step is parsed.
      */
     public static final String ROW_INDEX = "rowIndex";
 
+    /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     public interface Sink {
         /**
          * The person pressed ● Record: a fresh recording starts here, on the screen they are on. Refused while a
@@ -257,8 +257,9 @@ public final class Inspector {
     }
 
     /**
-     * The table row a step or check names: {@code by} is "value" or "position"; {@code value} (the key column's
-     * {@code {column: text}}) and {@code index} are what is known of the other way ({@code valueKnown}/{@code indexKnown}).
+     * The table row a step or check names: {@code by} is how it is named now, "value" or "position"; {@code value}
+     * (the key column's {@code {column: text}}) and {@code index} (the row's position) are both ways as far as they are
+     * known, the current one and the other ({@code valueKnown}/{@code indexKnown}): null for a way not known yet.
      */
     public static final class RowLine {
         public final String by;

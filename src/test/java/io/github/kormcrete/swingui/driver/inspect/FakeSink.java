@@ -55,6 +55,24 @@ final class FakeSink implements Inspector.Sink {
         return s;
     }
 
+    /**
+     * Adds a record as the session lists it: its step or check {@code label} ("2", "2.1"), sentence, group and row.
+     * Returns its id.
+     */
+    int add(String author, String label, String l, String say, int groupId, String groupSay, Inspector.RowLine row) {
+        Inspector.StepLine s;
+        synchronized (this) {
+            s = new Inspector.StepLine(nextId++, author, l, false, label, say, label.contains("."), groupId, groupSay, row);
+        }
+        steps.add(s);
+        return s.id;
+    }
+
+    /** {@link #add} of the person's record without sentence, group or row. */
+    int add(String label, String l) {
+        return add("person", label, l, null, 0, null, null);
+    }
+
     private synchronized Inspector.StepLine line(String author, String l, boolean edited) {
         return new Inspector.StepLine(nextId++, author, l, edited);
     }
@@ -119,8 +137,11 @@ final class FakeSink implements Inspector.Sink {
         while (steps.size() > i) steps.remove(steps.size() - 1);
         return new Inspector.Result(true, "cut from step " + (i + 1));
     }
+    /** Why a describe is refused (null: it is not). */
+    volatile String refuseDescribe;
     @Override public Inspector.Result describe(int fromId, int toId, String say) {
         log.add("describe " + fromId + "-" + toId + " " + say);
+        if (refuseDescribe != null) return new Inspector.Result(false, refuseDescribe);
         return new Inspector.Result(true, "described");
     }
     @Override public Inspector.Result ungroup(int id) {

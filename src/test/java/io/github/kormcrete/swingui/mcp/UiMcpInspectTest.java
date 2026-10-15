@@ -256,6 +256,36 @@ class UiMcpInspectTest {
     }
 
     @Test
+    void thePersonsDeleteByIdKeepsTheAgentsGroupWhole() throws Exception {
+        sink.done(step("click", Locator.ofId("new")));
+        sink.done(step("click", Locator.ofId("customer")));
+        sink.done(step("click", Locator.ofId("save")));
+        assertThat(sink.check(check("saved")).ok).isTrue();
+        sink.done(step("click", Locator.ofId("close")));
+        sink.done(step("click", Locator.ofId("print")));
+        session.recording(mapper.readTree("{\"op\":\"group\",\"from\":2,\"to\":4,\"say\":\"Save the order\"}"));
+        List<Inspector.StepLine> before = sink.steps();
+        assertThat(before).extracting(l -> l.label).containsExactly("1", "2", "3", "3.1", "4", "5");
+        // the check of a member step: the group keeps all three steps
+        assertThat(sink.delete(before.get(3).id).line).isEqualTo("deleted check 3.1");
+        assertThat(groups()).isEqualTo("[{\"from\":2,\"to\":4,\"say\":\"Save the order\"}]");
+        // a step before the group: the group moves up whole
+        assertThat(sink.delete(before.get(0).id).ok).isTrue();
+        assertThat(groups()).isEqualTo("[{\"from\":1,\"to\":3,\"say\":\"Save the order\"}]");
+        // a member step: the others stay in the group, under its sentence
+        assertThat(sink.delete(before.get(2).id).ok).isTrue();
+        assertThat(groups()).isEqualTo("[{\"from\":1,\"to\":2,\"say\":\"Save the order\"}]");
+        assertThat(sink.steps()).extracting(l -> l.groupSay)
+                .containsExactly("Save the order", "Save the order", null);
+        assertThat(lines()).containsExactly("click(#customer)", "click(#close)", "click(#print)");
+    }
+
+    /** The recording's groups, as the {@code list} op gives them. */
+    private String groups() throws Exception {
+        return mapper.readTree(session.recording(mapper.readTree("{\"op\":\"list\"}"))).path("groups").toString();
+    }
+
+    @Test
     void aDeleteOfAStepThatIsGoneSaysSo() {
         sink.done(step("click", Locator.ofId("save")));
         int id = id(0);
