@@ -48,7 +48,7 @@ class RecordingModelTest {
         assertThat(model.rev()).isGreaterThan(rev);
         rev = model.rev();
         model.load(java.util.Collections.<io.github.kormcrete.swingui.flow.Action>singletonList(click("c")),
-                RecordedStep.Author.FLOW);
+                RecordedStep.Author.LOADED);
         assertThat(model.rev()).isGreaterThan(rev);
         rev = model.rev();
         model.clear();
@@ -176,7 +176,7 @@ class RecordingModelTest {
         three();
         model.delete(1, 1, RecordedStep.Author.AGENT);
         model.load(java.util.Collections.<io.github.kormcrete.swingui.flow.Action>singletonList(click("z")),
-                RecordedStep.Author.FLOW);
+                RecordedStep.Author.LOADED);
         assertThat(model.undo(RecordedStep.Author.AGENT)).isNull();
         model.delete(1, 1, RecordedStep.Author.AGENT);
         model.clear();

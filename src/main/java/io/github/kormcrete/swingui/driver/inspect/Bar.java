@@ -119,7 +119,7 @@ final class Bar extends JComponent {
         repaint();
     }
 
-    /** Its title: what the palette is doing ("Recording", "Flow", …). */
+    /** Its title: what the palette is doing ("Recording", "Loaded", …). */
     String title() {
         return title;
     }

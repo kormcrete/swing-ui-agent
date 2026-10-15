@@ -18,14 +18,14 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** The flow file format, version 1: strict reading, stable writing, names and folders. */
-class FlowFilesTest {
+/** The recorded test file format, version 1: strict reading, stable writing, names and folders. */
+class RecordedTestFilesTest {
 
     @TempDir Path tmp;
 
     private static final String HEAD = "{\"version\":1,\"name\":\"x\",\"start\":\"reset\",";
 
-    private static Flow flowOf(String... stepJson) throws Exception {
+    private static Flow stepsOf(String... stepJson) throws Exception {
         Flow flow = new Flow();
         flow.name = "place-order";
         flow.description = "Ada orders two gel pens";
@@ -34,7 +34,7 @@ class FlowFilesTest {
     }
 
     private static void refused(String json, String... parts) {
-        assertThatThrownBy(() -> FlowFiles.parse(json, "uitest/x.json"))
+        assertThatThrownBy(() -> RecordedTestFiles.parse(json, "uitest/x.json"))
                 .isInstanceOfSatisfying(DriverException.class, e -> {
                     assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
                     assertThat(DriverException.stripReason(e.getMessage(), e.reason())).startsWith("uitest/x.json: ");
@@ -43,8 +43,8 @@ class FlowFilesTest {
     }
 
     @Test
-    void aWrittenFlowReadsBackTheSame() throws Exception {
-        Flow flow = flowOf(
+    void aWrittenRecordedTestReadsBackTheSame() throws Exception {
+        Flow flow = stepsOf(
                 "{\"action\":\"loginAs\",\"as\":\"clerk\"}",
                 "{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}",
                 "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Save\",\"scope\":[\"Checkout\"]}}",
@@ -52,17 +52,17 @@ class FlowFilesTest {
                 "{\"action\":\"expect\",\"target\":{\"role\":\"table\"},"
                         + "\"cell\":{\"row\":{\"Order\":\"ORD-1640\"},\"column\":\"Status\",\"expected\":\"Open\"}}");
 
-        String text = FlowFiles.write(flow);
-        Flow back = FlowFiles.parse(text, "x");
+        String text = RecordedTestFiles.write(flow);
+        Flow back = RecordedTestFiles.parse(text, "x");
 
-        assertThat(FlowFiles.write(back)).isEqualTo(text);
+        assertThat(RecordedTestFiles.write(back)).isEqualTo(text);
         assertThat(text.indexOf("\"version\" : 1")).isGreaterThanOrEqualTo(0).isLessThan(text.indexOf("\"name\""));
         assertThat(text.indexOf("\"start\" : \"reset\"")).isGreaterThan(0).isLessThan(text.indexOf("\"steps\""));
     }
 
     @Test
     void theFileUsesLineFeedsOnEveryOsAndEndsWithOne() throws Exception {
-        String text = FlowFiles.write(flowOf("{\"action\":\"menu\",\"path\":[\"Orders\"]}"));
+        String text = RecordedTestFiles.write(stepsOf("{\"action\":\"menu\",\"path\":[\"Orders\"]}"));
 
         assertThat(text).doesNotContain("\r").endsWith("}\n");
     }
@@ -103,30 +103,30 @@ class FlowFilesTest {
         Map<String, String> samples = samples();
         assertThat(samples.keySet()).containsExactlyInAnyOrderElementsOf(FlowJson.stepTypes());
         for (Map.Entry<String, String> e : samples.entrySet()) {
-            Flow flow = flowOf(e.getValue());
-            String text = FlowFiles.write(flow);
+            Flow flow = stepsOf(e.getValue());
+            String text = RecordedTestFiles.write(flow);
             Flow back;
             try {
-                back = FlowFiles.parse(text, e.getKey());
+                back = RecordedTestFiles.parse(text, e.getKey());
             } catch (DriverException ex) {
                 throw new AssertionError("step type " + e.getKey() + " does not read back: " + ex.getMessage(), ex);
             }
-            assertThat(FlowFiles.write(back)).as(e.getKey()).isEqualTo(text);
+            assertThat(RecordedTestFiles.write(back)).as(e.getKey()).isEqualTo(text);
         }
     }
 
     @Test
-    void aPlainFlowIsWrittenAsTheLowestVersionThatHoldsIt() throws Exception {
-        Flow flow = flowOf("{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}");
-        assertThat(FlowFiles.versionFor(flow)).isEqualTo(1);
+    void aPlainRecordedTestIsWrittenAsTheLowestVersionThatHoldsIt() throws Exception {
+        Flow flow = stepsOf("{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}");
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(1);
         assertThat(flow.version).isNull();
-        assertThat(FlowFiles.write(flow)).contains("\"version\" : 1,");
+        assertThat(RecordedTestFiles.write(flow)).contains("\"version\" : 1,");
     }
 
     @Test
     void aNewerVersionSaysToUpdateTheAgent() {
         refused("{\"version\":2,\"start\":\"reset\",\"steps\":[]}",
-                "is flow version 2, written by a newer swing-ui-agent; this one reads version 1 - update the agent");
+                "is format version 2, written by a newer swing-ui-agent; this one reads version 1 - update the agent");
     }
 
     @Test
@@ -137,9 +137,9 @@ class FlowFilesTest {
     }
 
     @Test
-    void notJsonIsNotAFlowFile() {
-        refused("nope", "not a flow file");
-        refused("[]", "not a flow file");
+    void notJsonIsNotARecordedTestFile() {
+        refused("nope", "not a recorded test file");
+        refused("[]", "not a recorded test file");
     }
 
     @Test
@@ -154,22 +154,22 @@ class FlowFilesTest {
     }
 
     @Test
-    void aFlowWithoutStepsIsRefused() {
+    void aRecordedTestWithoutStepsIsRefused() {
         refused("{\"version\":1,\"start\":\"reset\",\"steps\":[]}",
-                "has no steps (a flow that does nothing would always pass)");
+                "has no steps (a recorded test that does nothing would always pass)");
         refused("{\"version\":1,\"start\":\"reset\"}", "steps");
     }
 
     @Test
     void laterTopLevelFieldsAreNamedAsNewer() {
         refused("{\"version\":1,\"start\":\"reset\",\"params\":{},\"groups\":[],\"steps\":[{\"action\":\"close\"}]}",
-                "params", "groups", "newer flow format");
+                "params", "groups", "newer recorded test format");
     }
 
     @Test
     void anUnknownTopLevelFieldNamesTheKnownOnes() {
         refused("{\"version\":1,\"start\":\"reset\",\"stpes\":[],\"steps\":[{\"action\":\"close\"}]}",
-                "stpes", "a flow file has version, name, description, start, steps");
+                "stpes", "a recorded test file has version, name, description, start, steps");
     }
 
     @Test
@@ -181,12 +181,12 @@ class FlowFilesTest {
     @Test
     void aSentenceOnAStepNeedsANewerFormat() {
         refused(HEAD + "\"steps\":[{\"action\":\"close\",\"say\":\"Close it\"}]}",
-                "step 1 (close)", "'say'", "newer flow format");
+                "step 1 (close)", "'say'", "newer recorded test format");
     }
 
     @Test
     void aDoStepNeedsANewerFormat() {
-        refused(HEAD + "\"steps\":[{\"action\":\"do\"}]}", "step 1", "'do'", "newer flow format");
+        refused(HEAD + "\"steps\":[{\"action\":\"do\"}]}", "step 1", "'do'", "newer recorded test format");
         refused(HEAD + "\"steps\":[{\"action\":\"clik\"}]}", "step 1", "there is no step type 'clik'");
     }
 
@@ -200,59 +200,59 @@ class FlowFilesTest {
         Path ok = tmp.resolve("add-to-cart.json");
         Files.write(ok, "{\"version\":1,\"start\":\"reset\",\"steps\":[{\"action\":\"close\"}]}"
                 .getBytes(StandardCharsets.UTF_8));
-        assertThat(FlowFiles.read(ok).name).isEqualTo("add-to-cart");
+        assertThat(RecordedTestFiles.read(ok).name).isEqualTo("add-to-cart");
 
         Path broken = tmp.resolve("broken.json");
         Files.write(broken, "{".getBytes(StandardCharsets.UTF_8));
-        assertThatThrownBy(() -> FlowFiles.read(broken))
+        assertThatThrownBy(() -> RecordedTestFiles.read(broken))
                 .isInstanceOfSatisfying(DriverException.class, e -> {
                     assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
                     assertThat(e.getMessage()).contains(broken.toAbsolutePath().normalize().toString() + ": ");
                 });
 
-        assertThatThrownBy(() -> FlowFiles.read(tmp.resolve("missing.json")))
+        assertThatThrownBy(() -> RecordedTestFiles.read(tmp.resolve("missing.json")))
                 .isInstanceOfSatisfying(DriverException.class, e ->
-                        assertThat(e.getMessage()).contains("cannot read flow file "));
+                        assertThat(e.getMessage()).contains("cannot read recorded test file "));
     }
 
     @Test
     void namesFollowOneRuleOnEveryOs() {
-        assertThat(FlowFiles.checkName("place-order")).isEqualTo("place-order");
-        assertThat(FlowFiles.checkName("Place order 2")).isEqualTo("Place order 2");
-        assertThat(FlowFiles.checkName("place-order.json")).isEqualTo("place-order");
+        assertThat(RecordedTestFiles.checkName("place-order")).isEqualTo("place-order");
+        assertThat(RecordedTestFiles.checkName("Place order 2")).isEqualTo("Place order 2");
+        assertThat(RecordedTestFiles.checkName("place-order.json")).isEqualTo("place-order");
         StringBuilder long101 = new StringBuilder();
         for (int i = 0; i < 101; i++) long101.append('a');
         List<String> bad = Arrays.asList("", "../x", "a/b", "a\\b", ".hidden", "x.", "CON", "nul.txt", "com1", "Lpt9.x",
                 long101.toString());
         for (String name : bad) {
-            assertThatThrownBy(() -> FlowFiles.checkName(name)).as(name)
+            assertThatThrownBy(() -> RecordedTestFiles.checkName(name)).as(name)
                     .isInstanceOfSatisfying(DriverException.class, e ->
                             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT));
         }
-        assertThat(FlowFiles.file(tmp, "a.json")).isEqualTo(tmp.resolve("a.json"));
+        assertThat(RecordedTestFiles.file(tmp, "a.json")).isEqualTo(tmp.resolve("a.json"));
     }
 
     @Test
-    void theListIsSortedAndHoldsOnlyFlowFiles() throws IOException {
+    void theListIsSortedAndHoldsOnlyRecordedTestFiles() throws IOException {
         for (String n : new String[] {"b.json", "a.json", "gate.txt", "notes.md"}) Files.write(tmp.resolve(n), new byte[0]);
         Files.createDirectory(tmp.resolve("sub"));
         Files.createDirectory(tmp.resolve("dir.json"));
 
         List<String> names = new ArrayList<String>();
-        for (Path p : FlowFiles.list(tmp)) names.add(p.getFileName().toString());
+        for (Path p : RecordedTestFiles.list(tmp)) names.add(p.getFileName().toString());
 
         assertThat(names).containsExactly("a.json", "b.json");
-        assertThat(FlowFiles.list(tmp.resolve("nowhere"))).isEmpty();
+        assertThat(RecordedTestFiles.list(tmp.resolve("nowhere"))).isEmpty();
     }
 
     @Test
     void theFolderIsTheAgentOptionElseThePropertyElseUitest() {
-        assertThat(FlowFiles.dir("flows", "prop", tmp)).isEqualTo(tmp.resolve("flows"));
-        assertThat(FlowFiles.dir(" ", "prop", tmp)).isEqualTo(tmp.resolve("prop"));
-        assertThat(FlowFiles.dir(null, null, tmp)).isEqualTo(tmp.resolve("uitest"));
+        assertThat(RecordedTestFiles.dir("recorded", "prop", tmp)).isEqualTo(tmp.resolve("recorded"));
+        assertThat(RecordedTestFiles.dir(" ", "prop", tmp)).isEqualTo(tmp.resolve("prop"));
+        assertThat(RecordedTestFiles.dir(null, null, tmp)).isEqualTo(tmp.resolve("uitest"));
         Path abs = tmp.resolve("elsewhere").toAbsolutePath();
-        assertThat(FlowFiles.dir(abs.toString(), "prop", tmp)).isEqualTo(abs);
-        assertThat(FlowFiles.dir("a/../b", null, tmp)).isEqualTo(tmp.resolve("b"));
+        assertThat(RecordedTestFiles.dir(abs.toString(), "prop", tmp)).isEqualTo(abs);
+        assertThat(RecordedTestFiles.dir("a/../b", null, tmp)).isEqualTo(tmp.resolve("b"));
     }
 
     @Test
@@ -261,11 +261,11 @@ class FlowFilesTest {
         Files.write(blocker, new byte[0]);
         Path dir = blocker.resolve("uitest");
 
-        assertThatThrownBy(() -> FlowFiles.writableDir(dir))
-                .isInstanceOfSatisfying(FlowFolderNotWritable.class, e -> {
+        assertThatThrownBy(() -> RecordedTestFiles.writableDir(dir))
+                .isInstanceOfSatisfying(RecordedTestFolderNotWritable.class, e -> {
                     assertThat(e.getMessage()).contains(dir.toAbsolutePath().toString());
                     assertThat(e.folder()).isEqualTo(dir.toAbsolutePath());
                 });
-        assertThat(FlowFiles.writableDir(tmp.resolve("ok"))).isDirectory();
+        assertThat(RecordedTestFiles.writableDir(tmp.resolve("ok"))).isDirectory();
     }
 }

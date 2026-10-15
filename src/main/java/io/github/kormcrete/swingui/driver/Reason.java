@@ -7,7 +7,7 @@ public enum Reason {
     BUSY;
 
     /**
-     * "The harness can't do this", as opposed to "the app didn't do what the flow expected". The MCP
+     * "The harness can't do this", as opposed to "the app didn't do what the recorded test expected". The MCP
      * layer turns these into tool errors; every other reason is a failed step.
      */
     public boolean isToolError() {

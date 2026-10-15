@@ -142,36 +142,36 @@ class RecordingTest {
     }
 
     @Test
-    void exportOffersAJavaTestOrAFlow() throws Exception {
+    void exportOffersAJavaTestOrARecordedTest() throws Exception {
         ExportPanel panel = exportPanelAfterDone();
         assertThat(panel.kind()).isEqualTo(ExportPanel.JAVA);
         assertThat(panel.names()).containsExactly("RecordedUiIT", "com.example");
         assertThat(panel.actionLabel()).isEqualTo("Export");
 
-        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.FLOW));
-        assertThat(panel.kind()).isEqualTo(ExportPanel.FLOW);
-        assertThat(panel.flowFields()).containsExactly("recorded-flow", sink.flowsFolder.toString());
+        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.RECORDED));
+        assertThat(panel.kind()).isEqualTo(ExportPanel.RECORDED);
+        assertThat(panel.recordedFields()).containsExactly("recorded-test", sink.recordedFolder.toString());
         assertThat(panel.actionLabel()).isEqualTo("Export");
 
         SwingUtilities.invokeAndWait(panel::submit);
         eventually(() -> recording.exportPanel == null ? Boolean.TRUE : null);
-        assertThat(sink.flowExports).containsExactly(sink.flowsFolder.resolve("recorded-flow.json").toString());
+        assertThat(sink.recordedExports).containsExactly(sink.recordedFolder.resolve("recorded-test.json").toString());
         assertThat(sink.exports).isEmpty();
-        assertThat(recording.bar.text()).contains("exported").contains("recorded-flow.json");
+        assertThat(recording.bar.text()).contains("exported").contains("recorded-test.json");
 
         // the kind used last is where the panel opens next time
         SwingUtilities.invokeAndWait(recording::toggleExport);
         ExportPanel again = eventually(() -> recording.exportPanel);
-        assertThat(again.kind()).isEqualTo(ExportPanel.FLOW);
+        assertThat(again.kind()).isEqualTo(ExportPanel.RECORDED);
     }
 
     @Test
     void aFolderThatCannotBeWrittenSaysSoAndOpensChoose() throws Exception {
         ExportPanel panel = exportPanelAfterDone();
         List<java.nio.file.Path> asked = Collections.synchronizedList(new java.util.ArrayList<java.nio.file.Path>());
-        java.nio.file.Path other = sink.flowsFolder.resolveSibling("elsewhere");
+        java.nio.file.Path other = sink.recordedFolder.resolveSibling("elsewhere");
         SwingUtilities.invokeAndWait(() -> {
-            panel.kind(ExportPanel.FLOW);
+            panel.kind(ExportPanel.RECORDED);
             panel.chooser((start, picked) -> asked.add(start));
         });
         sink.refuseFolder = true;
@@ -179,26 +179,26 @@ class RecordingTest {
         String why = eventually(() -> panel.message().trim().isEmpty() ? null : panel.message());
         assertThat(why).contains("Cannot write").contains("choose another folder");
         assertThat(recording.exportPanel).isSameAs(panel);
-        assertThat(asked).containsExactly(sink.flowsFolder);
-        assertThat(sink.flowExports).isEmpty();
+        assertThat(asked).containsExactly(sink.recordedFolder);
+        assertThat(sink.recordedExports).isEmpty();
 
         // the person picks another folder: the field takes it
         SwingUtilities.invokeAndWait(() -> panel.chooser((start, picked) -> picked.accept(other)));
         SwingUtilities.invokeAndWait(panel::choose);
-        assertThat(panel.flowFields()[1]).isEqualTo(other.toString());
+        assertThat(panel.recordedFields()[1]).isEqualTo(other.toString());
     }
 
     @Test
-    void withAFlowLoadedThePanelOpensOnFlowAndSaysSave() throws Exception {
-        sink.loaded = sink.flowsFolder.resolve("place-order.json");
+    void withARecordedTestLoadedThePanelOpensOnRecordedTestAndSaysSave() throws Exception {
+        sink.loaded = sink.recordedFolder.resolve("place-order.json");
         ExportPanel panel = exportPanelAfterDone();
-        assertThat(panel.kind()).isEqualTo(ExportPanel.FLOW);
-        assertThat(panel.flowFields()).containsExactly("place-order", sink.flowsFolder.toString());
+        assertThat(panel.kind()).isEqualTo(ExportPanel.RECORDED);
+        assertThat(panel.recordedFields()).containsExactly("place-order", sink.recordedFolder.toString());
         assertThat(panel.actionLabel()).isEqualTo("Save");
 
-        SwingUtilities.invokeAndWait(() -> panel.flowName("add-to-cart"));
+        SwingUtilities.invokeAndWait(() -> panel.testName("add-to-cart"));
         assertThat(panel.actionLabel()).isEqualTo("Export");
-        SwingUtilities.invokeAndWait(() -> panel.flowName("place-order.json"));
+        SwingUtilities.invokeAndWait(() -> panel.testName("place-order.json"));
         assertThat(panel.actionLabel()).isEqualTo("Save");
         SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.JAVA));
         assertThat(panel.actionLabel()).isEqualTo("Export");
@@ -389,30 +389,30 @@ class RecordingTest {
         });
     }
 
-    // ---- Load flow…, Run -------------------------------------------------------------------------------------------
+    // ---- Load recorded test…, Run -------------------------------------------------------------------------------------------
 
     private static final String ADD_TO_CART = "add-to-cart";
 
-    /** Two flows in the fake folder - one that cannot be read - and the steps the readable one loads. */
-    private void twoFlows() {
-        java.nio.file.Path folder = sink.flowsFolder;
-        sink.flows = Arrays.asList(
-                new Inspector.FlowEntry(ADD_TO_CART, "Adds a product to the cart", 2, null, folder.resolve("add-to-cart.json")),
-                new Inspector.FlowEntry("broken", null, 0, folder.resolve("broken.json") + ": line 1: unexpected end",
+    /** Two recorded tests in the fake folder - one that cannot be read - and the steps the readable one loads. */
+    private void twoRecordedTests() {
+        java.nio.file.Path folder = sink.recordedFolder;
+        sink.recordedTests = Arrays.asList(
+                new Inspector.RecordedTestEntry(ADD_TO_CART, "Adds a product to the cart", 2, null, folder.resolve("add-to-cart.json")),
+                new Inspector.RecordedTestEntry("broken", null, 0, folder.resolve("broken.json") + ": line 1: unexpected end",
                         folder.resolve("broken.json")));
-        sink.flowSteps = Arrays.asList("click(button 'Add to cart')", "click(button 'Checkout…')");
+        sink.loadedSteps = Arrays.asList("click(button 'Add to cart')", "click(button 'Checkout…')");
     }
 
-    /** Load flow… pressed on the idle palette in the frame: the panel as the person sees it. */
-    private FlowsPanel openFlows() throws Exception {
-        SwingUtilities.invokeAndWait(() -> paletteInFrame().bar().press("Load flow…"));
-        return eventually(() -> scene.inspector.flowsPanel);
+    /** Load recorded test… pressed on the idle palette in the frame: the panel as the person sees it. */
+    private RecordedTestsPanel openLoadPanel() throws Exception {
+        SwingUtilities.invokeAndWait(() -> paletteInFrame().bar().press("Load recorded test…"));
+        return eventually(() -> scene.inspector.testsPanel);
     }
 
     /** add-to-cart loaded from the panel: the loaded recording. */
     private Recording loadAddToCart() throws Exception {
-        twoFlows();
-        FlowsPanel panel = openFlows();
+        twoRecordedTests();
+        RecordedTestsPanel panel = openLoadPanel();
         SwingUtilities.invokeAndWait(() -> {
             panel.select(0);
             panel.load();
@@ -431,12 +431,12 @@ class RecordingTest {
     }
 
     @Test
-    void loadFlowOpensTheFolderWithItsFlows() throws Exception {
-        twoFlows();
-        FlowsPanel panel = openFlows();
+    void loadRecordedTestOpensTheFolderWithItsRecordedTests() throws Exception {
+        twoRecordedTests();
+        RecordedTestsPanel panel = openLoadPanel();
         SwingUtilities.invokeAndWait(() -> {
-            assertThat(panel.title()).isEqualTo("Load a flow");
-            assertThat(panel.folder()).isEqualTo(sink.flowsFolder.toString());
+            assertThat(panel.title()).isEqualTo("Load a recorded test");
+            assertThat(panel.folder()).isEqualTo(sink.recordedFolder.toString());
             assertThat(scene.inspector.overlay(frame.getRootPane()).holds(panel)).isTrue();
             assertThat(panel.rows()).hasSize(2);
             assertThat(panel.rows().get(0)).contains(ADD_TO_CART).contains("Adds a product to the cart").contains("2 steps");
@@ -447,16 +447,16 @@ class RecordingTest {
             panel.select(1);
             panel.load();
         });
-        assertThat(sink.listed).containsExactly(sink.flowsFolder);
+        assertThat(sink.listed).containsExactly(sink.recordedFolder);
         Thread.sleep(100);
         SwingUtilities.invokeAndWait(() -> {
-            assertThat(scene.inspector.flowsPanel).isSameAs(panel);
+            assertThat(scene.inspector.testsPanel).isSameAs(panel);
             assertThat(scene.inspector.recording()).isNull();
         });
         assertThat(sink.loaded).isNull();
 
-        // Choose… lists the flows of another folder
-        java.nio.file.Path other = sink.flowsFolder.resolveSibling("other-flows");
+        // Choose… lists the recorded tests of another folder
+        java.nio.file.Path other = sink.recordedFolder.resolveSibling("other-recorded tests");
         SwingUtilities.invokeAndWait(() -> {
             panel.chooser((start, picked) -> picked.accept(other));
             panel.choose();
@@ -467,15 +467,15 @@ class RecordingTest {
         // Cancel closes it
         SwingUtilities.invokeAndWait(panel::cancel);
         SwingUtilities.invokeAndWait(() -> {
-            assertThat(scene.inspector.flowsPanel).isNull();
+            assertThat(scene.inspector.testsPanel).isNull();
             assertThat(scene.inspector.overlay(frame.getRootPane()).holds(panel)).isFalse();
         });
     }
 
     @Test
-    void theFlowsPanelFollowsThePaletteIntoTheDialog() throws Exception {
-        twoFlows();
-        FlowsPanel panel = openFlows();
+    void theRecordedTestsPanelFollowsThePaletteIntoTheDialog() throws Exception {
+        twoRecordedTests();
+        RecordedTestsPanel panel = openLoadPanel();
         SwingUtilities.invokeAndWait(() -> {
             Overlay inDialog = showIn(dialog.getRootPane());
             assertThat(inDialog.holds(panel)).isTrue();
@@ -485,37 +485,37 @@ class RecordingTest {
     }
 
     @Test
-    void loadFlowIsOfferedOnlyWhileNothingIsRecordedOrReplayed() throws Exception {
+    void loadRecordedTestIsOfferedOnlyWhileNothingIsRecordedOrReplayed() throws Exception {
         recordInFrame();
         SwingUtilities.invokeAndWait(() -> {
             assertThat(recording.bar.labels()).containsExactly("Record", "Check", "Steps", "Done");
             recording.done();
-            assertThat(recording.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+            assertThat(recording.bar.labels()).containsExactly("● Record", "Load…", "Steps", "Export…");
         });
     }
 
     @Test
-    void loadingAFlowShowsItsStepsReadyToRun() throws Exception {
+    void loadingARecordedTestShowsItsStepsReadyToRun() throws Exception {
         Recording r = loadAddToCart();
         SwingUtilities.invokeAndWait(() -> {
             assertThat(r.state).isEqualTo(Recording.State.STOPPED);
-            assertThat(r.bar.title()).isEqualTo("Flow");
+            assertThat(r.bar.title()).isEqualTo("Loaded");
             assertThat(r.bar.text()).isEqualTo("add-to-cart - 2 steps");
-            assertThat(r.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+            assertThat(r.bar.labels()).containsExactly("● Record", "Load…", "Steps", "Export…");
             assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(r.bar);
             assertThat(r.panel.replayAllLabel()).isEqualTo("▶ Run");
             assertThat(r.panel.rows()).containsExactly("1  ●  click(button 'Add to cart')", "2  ●  click(button 'Checkout…')");
-            assertThat(scene.inspector.flowsPanel).isNull();
+            assertThat(scene.inspector.testsPanel).isNull();
             assertThat(scene.inspector.engaged()).isNull();
         });
-        assertThat(sink.loaded).isEqualTo(sink.flowsFolder.resolve("add-to-cart.json"));
+        assertThat(sink.loaded).isEqualTo(sink.recordedFolder.resolve("add-to-cart.json"));
     }
 
     @Test
     void aRefusedLoadSaysWhyAndKeepsThePanel() throws Exception {
-        twoFlows();
+        twoRecordedTests();
         sink.refuseLoad = "add-to-cart cannot be loaded into the recording: loginAs is not the first step";
-        FlowsPanel panel = openFlows();
+        RecordedTestsPanel panel = openLoadPanel();
         SwingUtilities.invokeAndWait(() -> {
             panel.select(0);
             panel.load();
@@ -523,7 +523,7 @@ class RecordingTest {
         String why = eventually(() -> panel.message().trim().isEmpty() ? null : panel.message());
         assertThat(why).contains("cannot be loaded").contains("loginAs");
         SwingUtilities.invokeAndWait(() -> {
-            assertThat(scene.inspector.flowsPanel).isSameAs(panel);
+            assertThat(scene.inspector.testsPanel).isSameAs(panel);
             assertThat(scene.inspector.recording()).isNull();
         });
     }
@@ -573,7 +573,7 @@ class RecordingTest {
     }
 
     @Test
-    void whileAFlowRunsOtherDriversAreBusy() throws Exception {
+    void whileARecordedTestRunsOtherDriversAreBusy() throws Exception {
         Recording r = loadAddToCart();
         SwingUtilities.invokeAndWait(() -> assertThat(scene.inspector.driving()).isNull());
         run(r, 3);
@@ -659,15 +659,15 @@ class RecordingTest {
 
     @Test
     void loadingSaysItReplacesTheRecording() throws Exception {
-        twoFlows();
-        FlowsPanel empty = openFlows();
+        twoRecordedTests();
+        RecordedTestsPanel empty = openLoadPanel();
         SwingUtilities.invokeAndWait(() -> {
             assertThat(empty.notice()).isNull();
             empty.cancel();
         });
         sink.person("click(#save)", "click(#new)", "type(#customer, Ada)");
-        SwingUtilities.invokeAndWait(() -> scene.inspector.overlay(frame.getRootPane()).bar().press("Load flow…"));
-        FlowsPanel panel = eventually(() -> scene.inspector.flowsPanel);
+        SwingUtilities.invokeAndWait(() -> scene.inspector.overlay(frame.getRootPane()).bar().press("Load recorded test…"));
+        RecordedTestsPanel panel = eventually(() -> scene.inspector.testsPanel);
         SwingUtilities.invokeAndWait(() ->
                 assertThat(panel.notice()).isEqualTo("Loading replaces the current recording (3 steps)."));
     }
@@ -933,7 +933,7 @@ class RecordingTest {
     }
 
     @Test
-    void redoOnALoadedFlowResetsToo() throws Exception {
+    void redoOnALoadedRecordedTestResetsToo() throws Exception {
         Recording r = loadAddToCart();
         int second = sink.steps.get(1).id;
         SwingUtilities.invokeAndWait(() -> {
@@ -1169,11 +1169,11 @@ class RecordingTest {
     @Test
     void whenTheAgentStartsThePaletteRecordsAndSaysWho() throws Exception {
         asTheInspector(() -> {
-            // Load flow… is open: the agent's start closes it
-            openFlows();
+            // Load recorded test… is open: the agent's start closes it
+            openLoadPanel();
             agentStarts();
             SwingUtilities.invokeAndWait(() -> {
-                assertThat(scene.inspector.flowsPanel).isNull();
+                assertThat(scene.inspector.testsPanel).isNull();
                 assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
                 assertThat(recording.bar.title()).isEqualTo("Recording");
                 assertThat(recording.bar.text()).isEqualTo("The agent started this recording: use the app, your steps join it.");
@@ -1202,7 +1202,7 @@ class RecordingTest {
             assertThat(text).isEqualTo("The agent ended the recording - 2 steps");
             SwingUtilities.invokeAndWait(() -> {
                 assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
-                assertThat(recording.bar.labels()).containsExactly("● Record", "Load flow…", "Steps", "Export…");
+                assertThat(recording.bar.labels()).containsExactly("● Record", "Load…", "Steps", "Export…");
                 assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
                 assertThat(recording.listening()).isFalse();
                 assertThat(scene.inspector.engaged()).isNull();
@@ -1212,19 +1212,19 @@ class RecordingTest {
     }
 
     @Test
-    void theAgentsLoadShowsTheFlowReadyToRun() throws Exception {
+    void theAgentsLoadShowsTheRecordedTestReadyToRun() throws Exception {
         asTheInspector(() -> {
             Recording person = recordInFrame();
             SwingUtilities.invokeAndWait(person::done);
             person.done.get(5, TimeUnit.SECONDS);
-            twoFlows();
-            sink.loadFlow(sink.flowsFolder.resolve("add-to-cart.json"));
+            twoRecordedTests();
+            sink.loadRecordedTest(sink.recordedFolder.resolve("add-to-cart.json"));
             Inspector.agentLoaded("add-to-cart", 2);
             recording = eventually(() -> scene.inspector.recording() != person && scene.inspector.recording().panel != null
                     && scene.inspector.recording().panel.rows().size() == 2 ? scene.inspector.recording() : null);
             SwingUtilities.invokeAndWait(() -> {
                 assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
-                assertThat(recording.bar.title()).isEqualTo("Flow");
+                assertThat(recording.bar.title()).isEqualTo("Loaded");
                 assertThat(recording.bar.text()).isEqualTo("add-to-cart - 2 steps");
                 assertThat(recording.panel.replayAllLabel()).isEqualTo("▶ Run");
                 assertThat(scene.inspector.overlay(frame.getRootPane()).bar()).isSameAs(recording.bar);
@@ -1252,7 +1252,7 @@ class RecordingTest {
             SwingUtilities.invokeAndWait(() -> {
                 Overlay o = scene.inspector.overlay(frame.getRootPane());
                 assertThat(o.bar().title()).isEqualTo("swing-ui-agent");
-                assertThat(o.bar().labels()).containsExactly("● Record", "Load flow…");
+                assertThat(o.bar().labels()).containsExactly("● Record", "Load recorded test…");
                 assertThat(o.holds(panel)).isFalse();
                 assertThat(scene.inspector.engaged()).isNull();
             });

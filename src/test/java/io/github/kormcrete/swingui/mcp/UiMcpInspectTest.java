@@ -6,7 +6,7 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Flow;
-import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -243,45 +243,45 @@ class UiMcpInspectTest {
     }
 
     @Test
-    void thePersonExportsAFlowAndKeepsTheRecording(@TempDir Path flows) throws Exception {
-        session.flowsDir(flows, false);
+    void thePersonExportsARecordedTestAndKeepsTheRecording(@TempDir Path recDir) throws Exception {
+        session.recordedDir(recDir, false);
         sink.done(step("click", Locator.ofId("save")));
-        Inspector.Result r = sink.exportFlow("place-order", flows);
+        Inspector.Result r = sink.exportRecordedTest("place-order", recDir);
         assertThat(r.ok).isTrue();
         assertThat(r.folder).isFalse();
-        Path file = flows.resolve("place-order.json").toAbsolutePath().normalize();
+        Path file = recDir.resolve("place-order.json").toAbsolutePath().normalize();
         assertThat(file).exists();
         assertThat(r.line).startsWith("wrote ").contains("place-order.json");
         assertThat(lines()).containsExactly("click(#save)");
         // the file is now the one the recording came from: the panel offers to save over it
-        assertThat(sink.loadedFlow()).isEqualTo(file);
+        assertThat(sink.loadedTest()).isEqualTo(file);
         assertThat(memory.get()).isEqualTo(file.getParent());
     }
 
     @Test
-    void anExplicitFlowsFolderWinsOverTheRememberedOne(@TempDir Path flows, @TempDir Path remembered) {
+    void anExplicitRecordedTestsFolderWinsOverTheRememberedOne(@TempDir Path recDir, @TempDir Path remembered) {
         memory.put(remembered);
-        session.flowsDir(flows, true);
-        assertThat(sink.flowsFolder()).isEqualTo(flows);
+        session.recordedDir(recDir, true);
+        assertThat(sink.recordedFolder()).isEqualTo(recDir);
     }
 
     @Test
-    void withoutOneThePaletteOffersTheLastFolderUsed(@TempDir Path flows, @TempDir Path other) throws Exception {
-        session.flowsDir(flows, false);
-        assertThat(sink.flowsFolder()).isEqualTo(flows);
+    void withoutOneThePaletteOffersTheLastFolderUsed(@TempDir Path recDir, @TempDir Path other) throws Exception {
+        session.recordedDir(recDir, false);
+        assertThat(sink.recordedFolder()).isEqualTo(recDir);
         sink.done(step("click", Locator.ofId("save")));
-        assertThat(sink.exportFlow("place-order", other).ok).isTrue();
-        assertThat(sink.flowsFolder()).isEqualTo(other.toAbsolutePath().normalize());
+        assertThat(sink.exportRecordedTest("place-order", other).ok).isTrue();
+        assertThat(sink.recordedFolder()).isEqualTo(other.toAbsolutePath().normalize());
     }
 
     @Test
-    void aFolderThatCannotBeWrittenIsAFolderProblem(@TempDir Path flows) throws Exception {
-        session.flowsDir(flows, false);
-        Path aFile = flows.resolve("orders.txt");
+    void aFolderThatCannotBeWrittenIsAFolderProblem(@TempDir Path recDir) throws Exception {
+        session.recordedDir(recDir, false);
+        Path aFile = recDir.resolve("orders.txt");
         Files.write(aFile, "ORD-1640".getBytes(StandardCharsets.UTF_8));
         sink.done(step("click", Locator.ofId("save")));
         // a folder below a regular file cannot be made on any OS
-        Inspector.Result r = sink.exportFlow("place-order", aFile.resolve("flows"));
+        Inspector.Result r = sink.exportRecordedTest("place-order", aFile.resolve("recorded"));
         assertThat(r.ok).isFalse();
         assertThat(r.folder).isTrue();
         assertThat(r.line).contains("Cannot write to").contains("orders.txt");
@@ -304,50 +304,50 @@ class UiMcpInspectTest {
         assertThat(UiMcpSession.mainPackage(null)).isEqualTo("recorded");
     }
 
-    // ---- Load flow… and Run ---------------------------------------------------------------------------------------
+    // ---- Load recorded test… and Run ---------------------------------------------------------------------------------------
 
     @Test
-    void thePaletteListsTheFlowsWithTheirSteps(@TempDir Path flows) throws Exception {
-        session.flowsDir(flows, false);
+    void thePaletteListsTheRecordedTestsWithTheirSteps(@TempDir Path recDir) throws Exception {
+        session.recordedDir(recDir, false);
         sink.done(step("click", Locator.ofId("save")));
-        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
-        Files.write(flows.resolve("broken.json"), "{".getBytes(StandardCharsets.UTF_8));
-        Files.write(flows.resolve("notes.txt"), "ORD-1640".getBytes(StandardCharsets.UTF_8));
+        assertThat(sink.exportRecordedTest("place-order", recDir).ok).isTrue();
+        Files.write(recDir.resolve("broken.json"), "{".getBytes(StandardCharsets.UTF_8));
+        Files.write(recDir.resolve("notes.txt"), "ORD-1640".getBytes(StandardCharsets.UTF_8));
 
-        List<Inspector.FlowEntry> listed = sink.flows(flows);
+        List<Inspector.RecordedTestEntry> listed = sink.recordedTests(recDir);
 
         assertThat(listed).hasSize(2);
-        Inspector.FlowEntry broken = listed.get(0);
+        Inspector.RecordedTestEntry broken = listed.get(0);
         assertThat(broken.name).isEqualTo("broken");
         assertThat(broken.problem).contains("broken.json").doesNotStartWith("BAD_INPUT");
-        assertThat(broken.file).isEqualTo(flows.resolve("broken.json").toAbsolutePath().normalize());
-        Inspector.FlowEntry placeOrder = listed.get(1);
+        assertThat(broken.file).isEqualTo(recDir.resolve("broken.json").toAbsolutePath().normalize());
+        Inspector.RecordedTestEntry placeOrder = listed.get(1);
         assertThat(placeOrder.name).isEqualTo("place-order");
         assertThat(placeOrder.problem).isNull();
         assertThat(placeOrder.steps).isEqualTo(1);
-        // a folder that does not exist (yet) has no flows
-        assertThat(sink.flows(flows.resolve("missing"))).isEmpty();
+        // a folder that does not exist (yet) has no recorded tests
+        assertThat(sink.recordedTests(recDir.resolve("missing"))).isEmpty();
     }
 
     @Test
-    void thePaletteLoadsAFlowIntoTheRecording(@TempDir Path flows, @TempDir Path other) throws Exception {
-        session.flowsDir(flows, false);
+    void thePaletteLoadsARecordedTestIntoTheRecording(@TempDir Path recDir, @TempDir Path other) throws Exception {
+        session.recordedDir(recDir, false);
         sink.done(step("click", Locator.ofId("save")));
-        assertThat(sink.exportFlow("place-order", other).ok).isTrue();
+        assertThat(sink.exportRecordedTest("place-order", other).ok).isTrue();
         Path file = other.resolve("place-order.json").toAbsolutePath().normalize();
-        memory.put(flows);
+        memory.put(recDir);
         session.startRecording(false);
         sink.done(step("click", Locator.ofId("new")));
 
-        Inspector.Result r = sink.loadFlow(file);
+        Inspector.Result r = sink.loadRecordedTest(file);
 
         assertThat(r.ok).isTrue();
         assertThat(r.line).isEqualTo("place-order");
         assertThat(lines()).containsExactly("click(#save)");
-        assertThat(sink.loadedFlow()).isEqualTo(file);
+        assertThat(sink.loadedTest()).isEqualTo(file);
         // the folder the person loaded from is offered next time
         assertThat(memory.get()).isEqualTo(other.toAbsolutePath().normalize());
-        assertThat(sink.flowsFolder()).isEqualTo(other.toAbsolutePath().normalize());
+        assertThat(sink.recordedFolder()).isEqualTo(other.toAbsolutePath().normalize());
         // the loaded recording exports as Java like any other
         Inspector.Result java = sink.export("PlaceOrderUiIT", "com.example");
         assertThat(java.ok).isTrue();
@@ -355,51 +355,51 @@ class UiMcpInspectTest {
 
         // a broken file is refused with the reason and changes nothing
         Path broken = Files.write(other.resolve("broken.json"), "{".getBytes(StandardCharsets.UTF_8));
-        Inspector.Result refused = sink.loadFlow(broken);
+        Inspector.Result refused = sink.loadRecordedTest(broken);
         assertThat(refused.ok).isFalse();
         assertThat(refused.line).contains("broken.json");
         assertThat(lines()).containsExactly("click(#save)");
-        assertThat(sink.loadedFlow()).isEqualTo(file);
+        assertThat(sink.loadedTest()).isEqualTo(file);
     }
 
     @Test
-    void savingALoadedFlowKeepsItsNameAndDescription(@TempDir Path flows) throws Exception {
-        Path file = flows.resolve("place-order.json");
+    void savingALoadedRecordedTestKeepsItsNameAndDescription(@TempDir Path recDir) throws Exception {
+        Path file = recDir.resolve("place-order.json");
         String json = "{\"version\":1,\"name\":\"Place an order\",\"description\":\"Ada orders two gel pens\","
                 + "\"start\":\"reset\",\"steps\":[{\"action\":\"click\",\"target\":{\"id\":\"save\"}}]}";
         Files.write(file, json.getBytes(StandardCharsets.UTF_8));
-        assertThat(sink.loadFlow(file).ok).isTrue();
-        // a loaded flow is stopped: the person goes on from its last step with a redo, which records on
+        assertThat(sink.loadRecordedTest(file).ok).isTrue();
+        // a loaded recorded test is stopped: the person goes on from its last step with a redo, which records on
         sink.resume();
         sink.done(step("click", Locator.ofId("new")));
 
         // the palette's Save gives no description: the file keeps its own, and its own name
-        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
-        Flow saved = FlowFiles.read(file);
+        assertThat(sink.exportRecordedTest("place-order", recDir).ok).isTrue();
+        Flow saved = RecordedTestFiles.read(file);
         assertThat(saved.steps).hasSize(2);
         assertThat(saved.description).isEqualTo("Ada orders two gel pens");
         assertThat(saved.name).isEqualTo("Place an order");
         // and again: what was written is what a further save keeps
-        assertThat(sink.exportFlow("place-order", flows).ok).isTrue();
-        assertThat(FlowFiles.read(file).description).isEqualTo("Ada orders two gel pens");
+        assertThat(sink.exportRecordedTest("place-order", recDir).ok).isTrue();
+        assertThat(RecordedTestFiles.read(file).description).isEqualTo("Ada orders two gel pens");
 
-        // a save under a new name is a new flow: its name is the file's, and it has no description unless given
-        assertThat(sink.exportFlow("place-order-copy", flows).ok).isTrue();
-        Flow copy = FlowFiles.read(flows.resolve("place-order-copy.json"));
+        // a save under a new name is a new recorded test: its name is the file's, and it has no description unless given
+        assertThat(sink.exportRecordedTest("place-order-copy", recDir).ok).isTrue();
+        Flow copy = RecordedTestFiles.read(recDir.resolve("place-order-copy.json"));
         assertThat(copy.name).isEqualTo("place-order-copy");
         assertThat(copy.description).isNull();
 
         // an agent's export with a description replaces the kept one
-        session.exportFlow("place-order-copy", flows.toString(), "Two gel pens for Ada", false);
-        session.exportFlow("place-order-copy", flows.toString(), null, false);
-        assertThat(FlowFiles.read(flows.resolve("place-order-copy.json")).description)
+        session.exportRecordedTest("place-order-copy", recDir.toString(), "Two gel pens for Ada", false);
+        session.exportRecordedTest("place-order-copy", recDir.toString(), null, false);
+        assertThat(RecordedTestFiles.read(recDir.resolve("place-order-copy.json")).description)
                 .isEqualTo("Two gel pens for Ada");
 
         // a fresh recording forgets them
         session.startRecording(true);
         sink.done(step("click", Locator.ofId("save")));
-        assertThat(sink.exportFlow("place-order-new", flows).ok).isTrue();
-        assertThat(FlowFiles.read(flows.resolve("place-order-new.json")).description).isNull();
+        assertThat(sink.exportRecordedTest("place-order-new", recDir).ok).isTrue();
+        assertThat(RecordedTestFiles.read(recDir.resolve("place-order-new.json")).description).isNull();
     }
 
     @Test

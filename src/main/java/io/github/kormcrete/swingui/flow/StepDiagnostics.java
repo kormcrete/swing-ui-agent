@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * What a failed replay step leaves behind so its flow can be fixed WITHOUT a live session: the
+ * What a failed replay step leaves behind so its recorded test can be fixed WITHOUT a live session: the
  * step's locators and what each matches right now, a small scoped tree of where it failed, and
  * optionally a picture. Built by {@link FailureDiagnostics}; printed by {@link FlowReport}.
  */

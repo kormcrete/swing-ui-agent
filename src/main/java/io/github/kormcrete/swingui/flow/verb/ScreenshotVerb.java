@@ -16,24 +16,24 @@ import java.nio.file.Paths;
 import java.util.Map;
 
 /**
- * A flow step that writes a PNG of a window, a scope or one element to a file, so a replay can
+ * A step that writes a PNG of a window, a scope or one element to a file, so a replay can
  * capture screens. The MCP {@code screenshot} tool is the read-only counterpart that returns the image
  * instead of writing it and is never recorded; this step is recorded like any other.
  *
  * <p>A relative {@code path} lands under the screenshot directory: {@code -Dswingui.screenshotDir}, else
- * {@code target/flow-screenshots} of the app plugin's module folder ({@link #moduleDir}) when that exists below
+ * {@code target/ui-screenshots} of the app plugin's module folder ({@link #moduleDir}) when that exists below
  * the working directory, else of the working directory.
  */
 @Doc("Writes a PNG of a window, a scope or one element to 'path', painting the app's own components (no screen "
         + "grab, no focus taken). Give 'window' (main | dialog | dialog:<title> | window:<title>) for a whole "
         + "window, or 'target' for a tab, section or element; neither means the current window. A relative "
-        + "path lands under -Dswingui.screenshotDir, else target/flow-screenshots of the app plugin's module "
-        + "folder, else of the working directory. Recorded as a flow step, so a replay captures it too.")
+        + "path lands under -Dswingui.screenshotDir, else target/ui-screenshots of the app plugin's module "
+        + "folder, else of the working directory. Recorded as a step, so a replay captures it too.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ScreenshotVerb extends VerbAction {
 
     public static final String DIR_PROP = "swingui.screenshotDir";
-    static final String DEFAULT_DIR = "target/flow-screenshots";
+    static final String DEFAULT_DIR = "target/ui-screenshots";
 
     /** The app plugin's module folder (its export defaults), set by the agent's assembly; null: the working directory. */
     public static volatile java.util.function.Supplier<String> moduleDir = () -> null;

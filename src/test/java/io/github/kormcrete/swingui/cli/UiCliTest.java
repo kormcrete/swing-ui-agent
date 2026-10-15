@@ -45,12 +45,12 @@ class UiCliTest {
             return r.toString();
         });
         McpToolDefinition doAction = tool("do_action", "Echoes its arguments.", a -> a.toString());
-        // run_flow answers like the real tool: a failed flow is a result, not an error; the name picks the outcome
-        McpToolDefinition runFlow = tool("run_flow", "A flow.", a -> a.path("name").asText().equals("good")
+        // run_recorded_test answers like the real tool: a failed recorded test is a result, not an error; the name picks the outcome
+        McpToolDefinition runRecordedTest = tool("run_recorded_test", "A recorded test.", a -> a.path("name").asText().equals("good")
                 ? "{\"passed\":true,\"report\":\"Flow 'good' passed:\"}"
-                : "{\"passed\":false,\"report\":\"Flow 'x' failed: [0] FAIL click\"}");
+                : "{\"passed\":false,\"report\":\"Recorded test 'x' failed: [0] FAIL click\"}");
         McpToolDefinition click = tool("click", "A click.", a -> "{\"passed\":false}");
-        UiMcpDispatcher d = new UiMcpDispatcher(mapper, Arrays.asList(echo, fail, linkage, shot, doAction, runFlow, click));
+        UiMcpDispatcher d = new UiMcpDispatcher(mapper, Arrays.asList(echo, fail, linkage, shot, doAction, runRecordedTest, click));
         endpoint = new HttpMcpEndpoint(d, mapper, "127.0.0.1", "/mcp", 0);
         endpoint.start();
         return endpoint.port();
@@ -73,17 +73,17 @@ class UiCliTest {
     }
 
     @Test
-    void aFailedFlowExitsFourWithItsReportOnStderr() throws Exception {
+    void aFailedRecordedTestExitsFourWithItsReportOnStderr() throws Exception {
         int port = start();
-        assertThat(cli("--port", String.valueOf(port), "run_flow", "{\"name\":\"bad\"}")).isEqualTo(4);
+        assertThat(cli("--port", String.valueOf(port), "run_recorded_test", "{\"name\":\"bad\"}")).isEqualTo(4);
         assertThat(mapper.readTree(out.toString()).path("passed").asBoolean()).isFalse();
-        assertThat(err.toString()).contains("Flow 'x' failed: [0] FAIL click");
+        assertThat(err.toString()).contains("Recorded test 'x' failed: [0] FAIL click");
     }
 
     @Test
-    void aPassedFlowExitsZero() throws Exception {
+    void aPassedRecordedTestExitsZero() throws Exception {
         int port = start();
-        assertThat(cli("--port", String.valueOf(port), "run_flow", "{\"name\":\"good\"}")).isEqualTo(0);
+        assertThat(cli("--port", String.valueOf(port), "run_recorded_test", "{\"name\":\"good\"}")).isEqualTo(0);
         assertThat(err.toString()).isEmpty();
     }
 

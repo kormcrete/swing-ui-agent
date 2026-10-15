@@ -21,12 +21,12 @@ import java.util.concurrent.Semaphore;
 
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
- * Done; after Done ● Record, Load flow…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
+ * Done; after Done ● Record, Load…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
  * mode), the steps panel with replay, redo and delete (a replay of everything and every redo begin at the app reset,
- * as the exported test does), and the export panel that writes the recording as a JUnit class or a flow file. The
+ * as the exported test does), and the export panel that writes the recording as a JUnit class or a recorded test file. The
  * person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
  * {@link #stoppedByAgent}); while the agent replays, its bar stands in for the palette's ({@link #agentReplay}). A
- * flow file the person or the agent loads is one too, already stopped ({@link #loaded}): its steps panel runs it - the
+ * recorded test file the person or the agent loads is one too, already stopped ({@link #loaded}): its steps panel runs it - the
  * app reset, then every step. While a replay or run goes on, no other call drives the app
  * ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the panel shows each change
  * at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a method says otherwise.
@@ -47,8 +47,8 @@ final class Recording {
     private final Inspector.Sink sink;
     private final ExecutorService sinkThread;
     private final Runnable recordAgain;
-    /** The name of the flow file this recording was loaded from; null for one the person recorded. */
-    final String flow;
+    /** The name of the recorded test file this recording was loaded from; null for one the person recorded. */
+    final String loadedName;
     Overlay home;
     final List<String> lines = Collections.synchronizedList(new ArrayList<String>());
     private final HumanSteps steps;
@@ -91,9 +91,9 @@ final class Recording {
     }
 
     private Recording(Inspector inspector, Inspector.Sink sink, ExecutorService sinkThread, Overlay home,
-                      Runnable recordAgain, String flow) {
+                      Runnable recordAgain, String loadedName) {
         this.inspector = inspector;
-        this.flow = flow;
+        this.loadedName = loadedName;
         this.sink = sink;
         this.sinkThread = sinkThread;
         this.home = home;
@@ -104,17 +104,17 @@ final class Recording {
                 .button("Check", Overlay.YES, () -> mode(true))
                 .button("Steps", STEPS, this::toggleSteps)
                 .button("Done", Overlay.HOVER, this::done);
-        this.stoppedBar = new Bar(flow != null ? "Flow" : "Recorded", "").dot(new Color(0x8A, 0x96, 0xAD), false)
+        this.stoppedBar = new Bar(loadedName != null ? "Loaded" : "Recorded", "").dot(new Color(0x8A, 0x96, 0xAD), false)
                 .button("● Record", Overlay.NO, recordAgain)
-                .button("Load flow…", Overlay.HOVER, inspector::toggleFlows)
+                .button("Load…", Overlay.HOVER, inspector::toggleLoad)
                 .button("Steps", STEPS, this::toggleSteps)
                 .button("Export…", Overlay.YES, this::toggleExport);
         this.bar = activeBar;
     }
 
     /**
-     * The flow {@code name} (its {@code steps} steps already in the session's recording) shown loaded: stopped, the
-     * bar titled "Flow", the steps panel open with ▶ Run. EDT.
+     * The recorded test {@code name} (its {@code steps} steps already in the session's recording) shown loaded: stopped, the
+     * bar titled "Loaded", the steps panel open with ▶ Run. EDT.
      */
     static Recording loaded(Inspector inspector, Inspector.Sink sink, ExecutorService sinkThread, Overlay home,
                             Runnable recordAgain, String name, int steps) {
@@ -323,9 +323,9 @@ final class Recording {
             return;
         }
         closeExportPanel();
-        inspector.closeFlows();
-        // a replay of everything - a loaded flow's Run too - begins at the reset, as the test will
-        panel = flow != null
+        inspector.closeLoad();
+        // a replay of everything - a loaded recorded test's Run too - begins at the reset, as the test will
+        panel = loadedName != null
                 ? new StepsPanel("▶ Run", this::run, i -> replay(i, -1, null), this::redoFrom, this::delete, this::undo,
                         this::toggleSteps)
                 : new StepsPanel("▶ Replay all", () -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom,
@@ -336,8 +336,8 @@ final class Recording {
     }
 
     /**
-     * Export…: opens (or closes) the panel where the person names the JUnit class or the flow file; it replaces the
-     * steps panel. It opens on Flow when the recording came from a flow file, else on the kind they used last.
+     * Export…: opens (or closes) the panel where the person names the JUnit class or the recorded test file; it replaces the
+     * steps panel. It opens on Recorded test when the recording came from a recorded test file, else on the kind they used last.
      */
     void toggleExport() {
         if (exportPanel != null) {
@@ -348,21 +348,21 @@ final class Recording {
         if (state != State.STOPPED) return;
         sinkThread.submit(() -> {
             String pkg = sink.exportPackage();
-            Path folder = sink.flowsFolder();
-            Path loaded = sink.loadedFlow();
+            Path folder = sink.recordedFolder();
+            Path loaded = sink.loadedTest();
             SwingUtilities.invokeLater(() -> {
                 if (state != State.STOPPED || exportPanel != null) return;
                 if (panel != null) {
                     panel = null;
                     live.stop();
                 }
-                inspector.closeFlows();
+                inspector.closeLoad();
                 exportPanel = new ExportPanel("RecordedUiIT", pkg, folder, loaded, inspector.exportKind, (c, p) -> {
                     inspector.exportKind = ExportPanel.JAVA;
                     exported(export(c, p));
                 }, (name, to) -> {
-                    inspector.exportKind = ExportPanel.FLOW;
-                    exported(exportFlow(name, to));
+                    inspector.exportKind = ExportPanel.RECORDED;
+                    exported(exportRecordedTest(name, to));
                 }, this::toggleExport);
                 home.panel(exportPanel);
             });
@@ -377,7 +377,7 @@ final class Recording {
         }));
     }
 
-    /** The steps or export panel goes: Load flow… opens its own in their place. */
+    /** The steps or export panel goes: Load recorded test… opens its own in their place. */
     void closePanels() {
         if (panel == null && exportPanel == null) return;
         home.panel(null);
@@ -407,13 +407,13 @@ final class Recording {
     }
 
     /**
-     * Writes the recording as the flow {@code <folder>/<name>.json} and says on the bar where it went, or why it did
+     * Writes the recording as the recorded test {@code <folder>/<name>.json} and says on the bar where it went, or why it did
      * not; completes with the result after the bar is updated. Any thread.
      */
-    CompletableFuture<Inspector.Result> exportFlow(String name, Path folder) {
+    CompletableFuture<Inspector.Result> exportRecordedTest(String name, Path folder) {
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
         sinkThread.submit(() -> {
-            Inspector.Result r = sink.exportFlow(name, folder);
+            Inspector.Result r = sink.exportRecordedTest(name, folder);
             SwingUtilities.invokeLater(() -> stoppedBar.text((r.ok ? "exported: " : "✗ not exported: ") + r.line));
             result.complete(r);
         });
@@ -546,7 +546,7 @@ final class Recording {
     }
 
     /**
-     * ▶ Run, for a loaded flow: the app reset as the flow starts, then every step replayed; a reset that fails runs
+     * ▶ Run, for a loaded recorded test: the app reset as the recorded test starts, then every step replayed; a reset that fails runs
      * nothing and says why.
      */
     void run() {
@@ -554,7 +554,7 @@ final class Recording {
     }
 
     /**
-     * {@link #replay(int, int, Runnable)}; {@code run}: a loaded flow's ▶ Run, which says so. A replay from the first
+     * {@link #replay(int, int, Runnable)}; {@code run}: a loaded recorded test's ▶ Run, which says so. A replay from the first
      * step resets the app first; a reset that fails runs nothing and says why.
      */
     private void replay(int from, int to, Runnable after, boolean run) {
@@ -569,7 +569,7 @@ final class Recording {
         next.drainPermits();
         steps.flush();
         steps.active(false);
-        String why = run ? "a person is running " + flow + " in the app" : "a person is replaying their recording in the app";
+        String why = run ? "a person is running " + loadedName + " in the app" : "a person is replaying their recording in the app";
         inspector.recordingBusy(why);
         // the palette's steps go to the session directly: the agent's lease keeps every other call out meanwhile
         inspector.driving(why);

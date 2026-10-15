@@ -3,7 +3,7 @@ package io.github.kormcrete.swingui.spi;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Verbs;
 
-/** What flow steps run against, live and in replay: the driver's verbs, and the three app steps. */
+/** What steps run against, live and in replay: the driver's verbs, and the three app steps. */
 public interface StepHost {
     /** The installed driver's verbs; null when none is installed. */
     Verbs verbs();

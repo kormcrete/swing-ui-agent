@@ -29,7 +29,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
- * Flow files on disk, format version 1: strict where {@link FlowJson} is lenient, so a typo never silently drops a
+ * Recorded test files on disk, format version 1: strict where {@link FlowJson} is lenient, so a typo never silently drops a
  * step's meaning and a file from a newer agent says why it cannot run. A minimal file:
  * <pre>
  * {
@@ -42,15 +42,15 @@ import java.util.regex.Pattern;
  * </pre>
  * Names reserved for later formats are refused with a hint to update the agent. Files always use {@code \n}.
  */
-public final class FlowFiles {
+public final class RecordedTestFiles {
 
     /** The newest format this agent reads and writes. */
     public static final int VERSION = 1;
     /** The only start there is: right after a session reset. */
     public static final String START_RESET = "reset";
-    /** System property naming the flows folder. */
-    public static final String DIR_PROP = "swingui.flowsDir";
-    /** The flows folder, relative to the app's working directory, when nothing names one. */
+    /** System property naming the recorded tests folder. */
+    public static final String DIR_PROP = "swingui.recordedDir";
+    /** The recorded tests folder, relative to the app's working directory, when nothing names one. */
     public static final String DEFAULT_DIR = "uitest";
     public static final String SUFFIX = ".json";
 
@@ -62,14 +62,14 @@ public final class FlowFiles {
     static final Set<String> LATER_STEP_TYPES = set("do");
 
     private static final List<String> TOP_FIELDS = Arrays.asList("version", "name", "description", "start", "steps");
-    private static final String NEWER = "belongs to a newer flow format; update swing-ui-agent";
+    private static final String NEWER = "belongs to a newer recorded test format; update swing-ui-agent";
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 ._-]{0,99}");
     private static final Pattern DEVICE = Pattern.compile("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])");
-    private static final String NAME_RULE = "a flow name is 1-100 characters: letters, digits, space, '.', '_', '-', "
+    private static final String NAME_RULE = "a recorded test name is 1-100 characters: letters, digits, space, '.', '_', '-', "
             + "starting with a letter or digit, not ending in '.' or a space, and not a Windows device name (CON, "
             + "PRN, AUX, NUL, COM1-9, LPT1-9)";
 
-    private FlowFiles() {}
+    private RecordedTestFiles() {}
 
     private static Set<String> set(String... names) {
         return Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(names)));
@@ -79,15 +79,15 @@ public final class FlowFiles {
         return new DriverException(Reason.BAD_INPUT, source + ": " + message);
     }
 
-    /** Parses flow file text strictly; every refusal is BAD_INPUT starting with {@code source}. */
+    /** Parses recorded test file text strictly; every refusal is BAD_INPUT starting with {@code source}. */
     public static Flow parse(String json, String source) {
         JsonNode root;
         try {
             root = FlowJson.mapper().readTree(json);
         } catch (IOException e) {
-            throw bad(source, "not a flow file (not JSON: " + e.getMessage().split("\n")[0] + ")");
+            throw bad(source, "not a recorded test file (not JSON: " + e.getMessage().split("\n")[0] + ")");
         }
-        if (root == null || !root.isObject()) throw bad(source, "not a flow file (a JSON object is expected)");
+        if (root == null || !root.isObject()) throw bad(source, "not a recorded test file (a JSON object is expected)");
 
         JsonNode version = root.get("version");
         if (version == null) throw bad(source, "needs \"version\": " + VERSION);
@@ -95,7 +95,7 @@ public final class FlowFiles {
             throw bad(source, "\"version\" must be a whole number of 1 or more, not " + version);
         }
         if (version.intValue() > VERSION) {
-            throw bad(source, "is flow version " + version.intValue() + ", written by a newer swing-ui-agent; "
+            throw bad(source, "is format version " + version.intValue() + ", written by a newer swing-ui-agent; "
                     + "this one reads version " + VERSION + " - update the agent");
         }
 
@@ -105,7 +105,7 @@ public final class FlowFiles {
             if (TOP_FIELDS.contains(field)) continue;
             unknown.add(LATER_FIELDS.contains(field)
                     ? "'" + field + "' " + NEWER
-                    : "unknown field '" + field + "'; a flow file has version, name, description, start, steps");
+                    : "unknown field '" + field + "'; a recorded test file has version, name, description, start, steps");
         }
         if (!unknown.isEmpty()) throw bad(source, join(unknown, "; "));
 
@@ -118,7 +118,7 @@ public final class FlowFiles {
 
         JsonNode steps = root.get("steps");
         if (steps == null || !steps.isArray()) throw bad(source, "\"steps\" must be an array of steps");
-        if (steps.size() == 0) throw bad(source, "has no steps (a flow that does nothing would always pass)");
+        if (steps.size() == 0) throw bad(source, "has no steps (a recorded test that does nothing would always pass)");
         for (String field : new String[] {"name", "description"}) {
             JsonNode n = root.get(field);
             if (n != null && !n.isTextual()) throw bad(source, "\"" + field + "\" must be text");
@@ -173,14 +173,14 @@ public final class FlowFiles {
         return sb.toString();
     }
 
-    /** Reads a flow file (UTF-8) as {@link #parse} does, naming the file; a missing name becomes the file's base name. */
+    /** Reads a recorded test file (UTF-8) as {@link #parse} does, naming the file; a missing name becomes the file's base name. */
     public static Flow read(Path file) {
         String source = file.toAbsolutePath().normalize().toString();
         String json;
         try {
             json = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot read flow file " + source + ": " + e);
+            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot read recorded test file " + source + ": " + e);
             bad.initCause(e);
             throw bad;
         }
@@ -193,15 +193,15 @@ public final class FlowFiles {
     }
 
     /**
-     * The lowest format version that holds {@code flow}, the one writers write so plain flows stay readable by older
-     * agents: 1 today. A later format returns its version only when the flow uses that format's fields.
+     * The lowest format version that holds the given steps, the one writers write so plain recorded tests stay readable by older
+     * agents: 1 today. A later format returns its version only when the recorded test uses that format's fields.
      */
     public static int versionFor(Flow flow) {
         return 1;
     }
 
     /**
-     * The file text of a flow: pretty-printed, {@code \n} line feeds on every OS, one final line feed. Without a
+     * The file text of a recorded test: pretty-printed, {@code \n} line feeds on every OS, one final line feed. Without a
      * version, the lowest that holds it ({@link #versionFor}).
      */
     public static String write(Flow flow) {
@@ -218,28 +218,28 @@ public final class FlowFiles {
         try {
             return FlowJson.mapper().writer(printer).writeValueAsString(out) + "\n";
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to write flow JSON: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to write recorded test JSON: " + e.getMessage(), e);
         }
     }
 
-    /** Validates a flow name (a trailing {@code .json} is accepted and stripped); BAD_INPUT states the rule. */
+    /** Validates a recorded test name (a trailing {@code .json} is accepted and stripped); BAD_INPUT states the rule. */
     public static String checkName(String name) {
         String n = name == null ? "" : name.trim();
         if (n.endsWith(SUFFIX)) n = n.substring(0, n.length() - SUFFIX.length());
         int dot = n.indexOf('.');
         String stem = dot < 0 ? n : n.substring(0, dot);
         if (!NAME.matcher(n).matches() || n.endsWith(".") || n.endsWith(" ") || DEVICE.matcher(stem).matches()) {
-            throw new DriverException(Reason.BAD_INPUT, "'" + name + "' is not a flow name; " + NAME_RULE);
+            throw new DriverException(Reason.BAD_INPUT, "'" + name + "' is not a recorded test name; " + NAME_RULE);
         }
         return n;
     }
 
-    /** The file of the flow {@code name} in {@code dir}. */
+    /** The file of the recorded test {@code name} in {@code dir}. */
     public static Path file(Path dir, String name) {
         return dir.resolve(checkName(name) + SUFFIX);
     }
 
-    /** The flow files directly in {@code dir}, sorted by file name on every OS; empty when {@code dir} is missing. */
+    /** The recorded test files directly in {@code dir}, sorted by file name on every OS; empty when {@code dir} is missing. */
     public static List<Path> list(Path dir) {
         List<Path> files = new ArrayList<Path>();
         if (!Files.isDirectory(dir)) return files;
@@ -248,7 +248,7 @@ public final class FlowFiles {
                 if (Files.isRegularFile(p) && p.getFileName().toString().endsWith(SUFFIX)) files.add(p);
             }
         } catch (IOException e) {
-            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot list flows in " + dir + ": " + e);
+            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot list recorded tests in " + dir + ": " + e);
             bad.initCause(e);
             throw bad;
         }
@@ -261,7 +261,7 @@ public final class FlowFiles {
     }
 
     /**
-     * The flows folder: the agent option, else the system property, else {@link #DEFAULT_DIR}; a relative one is under
+     * The recorded tests folder: the agent option, else the system property, else {@link #DEFAULT_DIR}; a relative one is under
      * {@code workingDir}.
      */
     public static Path dir(String agentOption, String property, Path workingDir) {
@@ -272,15 +272,15 @@ public final class FlowFiles {
         return (p.isAbsolute() ? p : workingDir.resolve(chosen)).toAbsolutePath().normalize();
     }
 
-    /** Creates {@code dir} if needed and checks it can be written; otherwise {@link FlowFolderNotWritable}. */
+    /** Creates {@code dir} if needed and checks it can be written; otherwise {@link RecordedTestFolderNotWritable}. */
     public static Path writableDir(Path dir) {
         Path abs = dir.toAbsolutePath();
         try {
             Files.createDirectories(abs);
         } catch (IOException | RuntimeException e) {
-            throw new FlowFolderNotWritable(abs, String.valueOf(e), e);
+            throw new RecordedTestFolderNotWritable(abs, String.valueOf(e), e);
         }
-        if (!Files.isWritable(abs)) throw new FlowFolderNotWritable(abs, "the folder is not writable", null);
+        if (!Files.isWritable(abs)) throw new RecordedTestFolderNotWritable(abs, "the folder is not writable", null);
         return abs;
     }
 }

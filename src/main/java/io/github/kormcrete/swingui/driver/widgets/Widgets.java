@@ -27,7 +27,7 @@ public final class Widgets {
         if (c.isFocusOwner()) n.addState("focused");
         if (c instanceof AbstractButton && ((AbstractButton) c).isSelected()) {
             if ("toggle".equals(role)) {
-                // Both: 'checked' matches what check:true sets, 'selected' is what flows read.
+                // Both: 'checked' matches what check:true sets, 'selected' is what recorded tests read.
                 n.addState("selected");
                 n.addState("checked");
             } else if ("checkbox".equals(role) || "radio".equals(role)

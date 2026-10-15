@@ -350,9 +350,17 @@ class UiMcpToolsTest {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : tools) names.add(t.name());
         assertThat(names).containsExactlyInAnyOrder(
                 "describe_ui", "do_action", "do_actions", "batch",
-                "export_test", "export_flow", "run_flow", "snapshot", "read", "screenshot", "inspect", "recording", "read_clipboard", "read_file_chooser",
+                "export_test", "export_recorded_test", "run_recorded_test", "snapshot", "read", "screenshot", "inspect", "recording", "read_clipboard", "read_file_chooser",
                 "click", "type", "press", "check", "select", "pick", "menu", "context_menu",
                 "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard");
+    }
+
+    @Test
+    void noToolDescriptionSaysFlow() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            String text = t.descriptor(mapper).toString().replaceAll("(?i)workflow", "");
+            assertThat(text.toLowerCase()).as(t.name()).doesNotContain("flow");
+        }
     }
 
     @Test
@@ -392,7 +400,7 @@ class UiMcpToolsTest {
         UiMcpSession s = session();
         host.failNavigateTo = "Nowhere";
         // The middle step fails; the third must never run — continuing past a failed step would
-        // drive the UI from a state the flow never established.
+        // drive the UI from a state the recorded test never established.
         JsonNode batch = mapper.readTree("[{\"action\":\"navigate\",\"target\":\"Orders\"},"
                 + "{\"action\":\"navigate\",\"target\":\"Nowhere\"},"
                 + "{\"action\":\"navigate\",\"target\":\"Customers\"}]");

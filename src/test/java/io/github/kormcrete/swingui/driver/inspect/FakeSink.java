@@ -14,13 +14,13 @@ final class FakeSink implements Inspector.Sink {
     final List<Inspector.StepLine> steps = Collections.synchronizedList(new ArrayList<Inspector.StepLine>());
     private int nextId = 1;
     final List<String> exports = Collections.synchronizedList(new ArrayList<String>());
-    final List<String> flowExports = Collections.synchronizedList(new ArrayList<String>());
+    final List<String> recordedExports = Collections.synchronizedList(new ArrayList<String>());
     volatile String refuse;
-    /** The folder the palette offers for a flow. */
-    volatile Path flowsFolder = Paths.get("").toAbsolutePath().resolve("target/fake-flows").normalize();
-    /** The flow the recording came from, or null. */
+    /** The folder the palette offers for a recorded test. */
+    volatile Path recordedFolder = Paths.get("").toAbsolutePath().resolve("target/fake-recorded tests").normalize();
+    /** The recorded test the recording came from, or null. */
     volatile Path loaded;
-    /** A flow export fails as a folder problem. */
+    /** A recorded test export fails as a folder problem. */
     volatile boolean refuseFolder;
     /** Runs at the start of {@link #begin}, on the inspector's thread: what happens while the session lock is awaited. */
     volatile Runnable onBegin;
@@ -32,11 +32,11 @@ final class FakeSink implements Inspector.Sink {
      * ● Record: "begin".
      */
     final List<String> log = Collections.synchronizedList(new ArrayList<String>());
-    /** The flows Load flow… finds, in any folder; and the folders it looked in. */
-    volatile List<Inspector.FlowEntry> flows = new ArrayList<Inspector.FlowEntry>();
+    /** The recorded tests Load recorded test… finds, in any folder; and the folders it looked in. */
+    volatile List<Inspector.RecordedTestEntry> recordedTests = new ArrayList<Inspector.RecordedTestEntry>();
     final List<Path> listed = Collections.synchronizedList(new ArrayList<Path>());
-    /** The steps a loaded flow has; why a load is refused (null: it is not). */
-    volatile List<String> flowSteps = new ArrayList<String>();
+    /** The steps a loaded recorded test has; why a load is refused (null: it is not). */
+    volatile List<String> loadedSteps = new ArrayList<String>();
     volatile String refuseLoad;
     /** What the run's reset does. */
     volatile Inspector.Result reset = new Inspector.Result(true, "reset");
@@ -134,19 +134,19 @@ final class FakeSink implements Inspector.Sink {
         exports.add(pkg + "." + className);
         return new Inspector.Result(true, "wrote src/test/java/" + pkg.replace('.', '/') + "/" + className + ".java");
     }
-    @Override public Path flowsFolder() { return flowsFolder; }
-    @Override public Path loadedFlow() { return loaded; }
-    @Override public Inspector.Result exportFlow(String name, Path folder) {
+    @Override public Path recordedFolder() { return recordedFolder; }
+    @Override public Path loadedTest() { return loaded; }
+    @Override public Inspector.Result exportRecordedTest(String name, Path folder) {
         if (refuseFolder) return new Inspector.Result(false, "Cannot write to " + folder + ": not a folder", true);
         if (refuse != null) return new Inspector.Result(false, refuse);
-        flowExports.add(folder.resolve(name + ".json").toString());
+        recordedExports.add(folder.resolve(name + ".json").toString());
         return new Inspector.Result(true, "wrote uitest/" + name + ".json");
     }
-    @Override public List<Inspector.FlowEntry> flows(Path folder) { listed.add(folder); return new ArrayList<Inspector.FlowEntry>(flows); }
-    @Override public Inspector.Result loadFlow(Path file) {
+    @Override public List<Inspector.RecordedTestEntry> recordedTests(Path folder) { listed.add(folder); return new ArrayList<Inspector.RecordedTestEntry>(recordedTests); }
+    @Override public Inspector.Result loadRecordedTest(Path file) {
         if (refuseLoad != null) return new Inspector.Result(false, refuseLoad);
         steps.clear();
-        for (String l : flowSteps) steps.add(line("flow", l, false));
+        for (String l : loadedSteps) steps.add(line("loaded", l, false));
         loaded = file;
         String name = file.getFileName().toString();
         return new Inspector.Result(true, name.substring(0, name.length() - ".json".length()));

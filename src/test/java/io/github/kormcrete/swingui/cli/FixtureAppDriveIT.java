@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.fixture.FixtureApp;
-import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.junit.Client;
-import io.github.kormcrete.swingui.junit.UiFlows;
+import io.github.kormcrete.swingui.junit.RecordedTests;
 import io.github.kormcrete.swingui.junit.UiTestExtension;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import org.junit.jupiter.api.AfterAll;
@@ -57,7 +57,7 @@ class FixtureAppDriveIT {
     private static Process app;
     private static int port;
     private static final StringBuffer appOutput = new StringBuffer();
-    private static Path flows;
+    private static Path testsDir;
 
     @BeforeAll
     static void startTheAppWithTheAgent() throws Exception {
@@ -91,8 +91,8 @@ class FixtureAppDriveIT {
 
     @AfterAll
     static void stopTheApp() throws Exception {
-        if (flows != null) {
-            try (Stream<Path> all = Files.walk(flows)) {
+        if (testsDir != null) {
+            try (Stream<Path> all = Files.walk(testsDir)) {
                 all.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
             }
         }
@@ -215,31 +215,31 @@ class FixtureAppDriveIT {
 
     @Test
     @Order(11)
-    void aRecordedFlowIsExportedAndRunsAgain() throws Exception {
-        flows = Files.createTempDirectory("swingui-flows-it");
-        String dir = flows.toString().replace('\\', '/');
+    void aRecordedRecordedTestIsExportedAndRunsAgain() throws Exception {
+        testsDir = Files.createTempDirectory("swingui-recorded-it");
+        String dir = testsDir.toString().replace('\\', '/');
         call("session", "{'op':'reset'}");
         step("click", "{'target':{'name':'new'}}");
-        step("type", "{'target':{'name':'customer'},'text':'Flow 1'}");
+        step("type", "{'target':{'name':'customer'},'text':'Recorded test 1'}");
         step("click", "{'target':{'name':'save'}}");
-        step("expect", "{'target':{'name':'status'},'text':'saved Flow 1'}");
-        JsonNode exported = call("export_flow", "{'name':'save-customer','dir':'" + dir + "'}");
+        step("expect", "{'target':{'name':'status'},'text':'saved Recorded test 1'}");
+        JsonNode exported = call("export_recorded_test", "{'name':'save-customer','dir':'" + dir + "'}");
         Path file = Paths.get(exported.path("savedTo").asText());
         assertThat(file).as(exported.path("why").asText()).isRegularFile();
         assertThat(exported.path("steps").asInt()).as(exported.path("why").asText()).isEqualTo(4);
         assertThat(exported.path("startWarning").asText()).as(exported.path("why").asText()).isNotEmpty();
-        assertThat(FlowFiles.read(file).steps).hasSize(4);
+        assertThat(RecordedTestFiles.read(file).steps).hasSize(4);
 
-        JsonNode ran = call("run_flow", "{'path':'" + file.toString().replace('\\', '/') + "'}");
+        JsonNode ran = call("run_recorded_test", "{'path':'" + file.toString().replace('\\', '/') + "'}");
         assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
         assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
     }
 
     @Test
     @Order(12)
-    void aFailingFlowExitsFourWithItsDiagnosis() throws Exception {
-        Path evidence = Files.createDirectory(flows.resolve("evidence"));
-        JsonNode result = callExpecting(4, "run_flow", "{'flow':{'version':1,'name':'never-saved','start':'reset',"
+    void aFailingRecordedTestExitsFourWithItsDiagnosis() throws Exception {
+        Path evidence = Files.createDirectory(testsDir.resolve("evidence"));
+        JsonNode result = callExpecting(4, "run_recorded_test", "{'test':{'version':1,'name':'never-saved','start':'reset',"
                 + "'steps':[{'action':'expect','target':{'name':'status'},'text':'never','timeout':500}]},"
                 + "'evidence':'" + evidence.toString().replace('\\', '/') + "'}");
         String why = result.path("why").asText();
@@ -252,21 +252,21 @@ class FixtureAppDriveIT {
         assertThat(result.path("stderr").asText()).as(why).contains("FAIL");
     }
 
-    /** The folder holds only the exported flow when this runs: the failing one of the step before was inline. */
+    /** The folder holds only the exported recorded test when this runs: the failing one of the step before was inline. */
     @FixtureClass
     static class Runner {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension();
 
         @TestFactory
-        Stream<DynamicTest> flows(Client ui) {
-            return UiFlows.tests(ui, flows);
+        Stream<DynamicTest> recorded(Client ui) {
+            return RecordedTests.of(ui, testsDir);
         }
     }
 
     @Test
     @Order(13)
-    void theJUnitRunnerRunsTheExportedFlow() {
+    void theJUnitRunnerRunsTheExportedRecordedTest() {
         SummaryGeneratingListener listener = new SummaryGeneratingListener();
         LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
                 .selectors(selectClass(Runner.class))
@@ -281,7 +281,7 @@ class FixtureAppDriveIT {
     @Test
     @Order(14)
     void anAgentStartedRecordingIsEditedReplayedAndExported() throws Exception {
-        Path folder = Files.createDirectories(flows.resolve("together"));
+        Path folder = Files.createDirectories(testsDir.resolve("together"));
         String dir = folder.toString().replace('\\', '/');
         String expectSaved = "{'at':4,'step':{'action':'expect','target':{'name':'status'},'text':'saved Rec 1'}}";
         JsonNode started = call("recording", "{'op':'start','reset':true}");
@@ -331,12 +331,12 @@ class FixtureAppDriveIT {
             stopIfStillRecording();
         }
 
-        JsonNode exported = call("recording", "{'op':'export','as':'flow','name':'together','dir':'" + dir + "'}");
+        JsonNode exported = call("recording", "{'op':'export','as':'recorded','name':'together','dir':'" + dir + "'}");
         String why = exported.path("why").asText();
         Path file = Paths.get(exported.path("savedTo").asText());
         assertThat(file).as(why).isRegularFile();
-        assertThat(FlowFiles.read(file).steps).as(why).hasSize(4);
-        JsonNode ran = call("run_flow", "{'path':'" + file.toString().replace('\\', '/') + "'}");
+        assertThat(RecordedTestFiles.read(file).steps).as(why).hasSize(4);
+        JsonNode ran = call("run_recorded_test", "{'path':'" + file.toString().replace('\\', '/') + "'}");
         assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
         assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
     }

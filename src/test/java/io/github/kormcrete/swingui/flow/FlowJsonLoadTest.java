@@ -89,7 +89,7 @@ class FlowJsonLoadTest {
 
         assertThatThrownBy(() -> FlowJson.load(flowFile))
                 .isInstanceOfSatisfying(DriverException.class, e -> assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT))
-                .hasMessageStartingWith("BAD_INPUT: flow file " + flowFile)
+                .hasMessageStartingWith("BAD_INPUT: steps file " + flowFile)
                 .hasMessageContaining("'countRows'")
                 .hasMessageContaining("the step types are");
     }

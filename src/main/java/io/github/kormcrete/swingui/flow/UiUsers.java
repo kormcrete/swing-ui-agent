@@ -9,9 +9,9 @@ import java.util.Properties;
 import java.util.TreeSet;
 
 /**
- * Resolves a flow's credential alias to a username and password.
+ * Resolves a recorded test's credential alias to a username and password.
  *
- * <p>Flows name an alias, never a password -- flow files are committed, and a committed password
+ * <p>Recorded tests name an alias, never a password -- recorded test files are committed, and a committed password
  * is a leaked one. Aliases live in an untracked properties file, one {@code alias=user:password}
  * per line: {@code -Dswingui.users}, else {@code .swing-ui-agent/ui-users.properties} in the working directory
  * or its nearest ancestor that has one.
@@ -22,7 +22,7 @@ import java.util.TreeSet;
  */
 public final class UiUsers {
 
-    /** The identity every flow runs as unless a loginAs step says otherwise. */
+    /** The identity every recorded test runs as unless a loginAs step says otherwise. */
     public static final String DEFAULT_ALIAS = "default";
 
     /** System property overriding the credentials file location; mainly for tests. */
@@ -64,7 +64,7 @@ public final class UiUsers {
 
     /**
      * The credentials of the alias that logs {@code user} in, or null when no alias does: the way back from a
-     * user name an app shows (a locked sign-in field) to the password a flow's alias holds. Never log the password.
+     * user name an app shows (a locked sign-in field) to the password a recorded test's alias holds. Never log the password.
      */
     public static Credentials forUser(String user) {
         if (user == null) return null;

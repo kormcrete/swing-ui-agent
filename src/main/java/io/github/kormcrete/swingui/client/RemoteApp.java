@@ -43,14 +43,14 @@ public final class RemoteApp implements ClientApp {
         return RemoteHooks.of(agent, type, null);
     }
 
-    @Override public String runFlow(String flowJson, String evidenceDir) {
+    @Override public String runRecordedTest(String testJson, String evidenceDir) {
         ObjectNode a = agent.args();
         try {
-            a.set("flow", agent.json().readTree(flowJson));
+            a.set("test", agent.json().readTree(testJson));
         } catch (java.io.IOException e) {
-            throw new DriverException(Reason.BAD_INPUT, "the flow is not JSON: " + e.getMessage());
+            throw new DriverException(Reason.BAD_INPUT, "the recorded test is not JSON: " + e.getMessage());
         }
         if (evidenceDir != null) a.put("evidence", evidenceDir);
-        return AgentClient.firstText(agent.call("run_flow", a));
+        return AgentClient.firstText(agent.call("run_recorded_test", a));
     }
 }

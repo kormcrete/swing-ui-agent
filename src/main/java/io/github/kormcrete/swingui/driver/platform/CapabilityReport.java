@@ -5,7 +5,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/** What the self-check found. Its lines head every flow result. */
+/** What the self-check found. Its lines head every run result. */
 public final class CapabilityReport {
 
     private final String seam;

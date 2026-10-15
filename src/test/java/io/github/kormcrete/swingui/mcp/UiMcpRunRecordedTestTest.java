@@ -4,7 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Flow;
-import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,9 +21,9 @@ import java.util.Collections;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
-class UiMcpRunFlowTest {
+class UiMcpRunRecordedTestTest {
 
-    @TempDir Path flows;
+    @TempDir Path testsDir;
     @TempDir Path evidence;
     private final ObjectMapper mapper = new ObjectMapper();
     private UiMcpReadToolsTest.DriverHost backend;
@@ -33,7 +33,7 @@ class UiMcpRunFlowTest {
     void setUp() {
         backend = new UiMcpReadToolsTest.DriverHost();
         session = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
-        session.flowsDir(flows, true);
+        session.recordedDir(testsDir, true);
         session.appReset(new UiMcpSession.AppReset() {
             @Override public boolean defined() { return false; }
             @Override public void run() { backend.verbs.calls.add("reset"); }
@@ -43,9 +43,9 @@ class UiMcpRunFlowTest {
 
     private Flow flow(String name) {
         Flow f = new Flow();
-        f.version = FlowFiles.VERSION;
+        f.version = RecordedTestFiles.VERSION;
         f.name = name;
-        f.start = FlowFiles.START_RESET;
+        f.start = RecordedTestFiles.START_RESET;
         ClickVerb click = new ClickVerb();
         click.target = Locator.of("button", "Store");
         ExpectVerb expect = new ExpectVerb();
@@ -57,13 +57,13 @@ class UiMcpRunFlowTest {
     }
 
     private Path save(String name) throws Exception {
-        Path file = flows.resolve(name + ".json");
-        Files.write(file, FlowFiles.write(flow(name)).getBytes(StandardCharsets.UTF_8));
+        Path file = testsDir.resolve(name + ".json");
+        Files.write(file, RecordedTestFiles.write(flow(name)).getBytes(StandardCharsets.UTF_8));
         return file;
     }
 
     private JsonNode run(String json) throws Exception {
-        return mapper.readTree(session.runFlow(mapper.readTree(json)));
+        return mapper.readTree(session.runRecordedTest(mapper.readTree(json)));
     }
 
     private String evidenceArg() {
@@ -71,7 +71,7 @@ class UiMcpRunFlowTest {
     }
 
     @Test
-    void aPassingFlowStartsWithAResetRunsEveryStepAndRecordsNothing() throws Exception {
+    void aPassingRecordedTestStartsWithAResetRunsEveryStepAndRecordsNothing() throws Exception {
         save("place-order");
         session.startRecording(true);
         int before = session.humanSink().steps().size();
@@ -79,8 +79,8 @@ class UiMcpRunFlowTest {
         assertThat(out.path("passed").asBoolean()).isTrue();
         assertThat(out.path("ran").asInt()).isEqualTo(2);
         assertThat(out.path("total").asInt()).isEqualTo(2);
-        assertThat(out.path("flow").asText()).isEqualTo("place-order");
-        assertThat(out.path("file").asText()).isEqualTo(flows.resolve("place-order.json").toAbsolutePath().normalize().toString());
+        assertThat(out.path("test").asText()).isEqualTo("place-order");
+        assertThat(out.path("file").asText()).isEqualTo(testsDir.resolve("place-order.json").toAbsolutePath().normalize().toString());
         assertThat(out.path("steps")).hasSize(2);
         assertThat(out.path("steps").get(1).path("index").asInt()).isEqualTo(1);
         assertThat(out.path("report").asText()).contains("passed");
@@ -111,7 +111,7 @@ class UiMcpRunFlowTest {
     }
 
     @Test
-    void byNameItRunsFromTheFlowsFolder() throws Exception {
+    void byNameItRunsFromTheRecordedTestsFolder() throws Exception {
         save("add-to-cart");
         assertThat(run("{\"name\":\"add-to-cart.json\"," + evidenceArg() + "}").path("passed").asBoolean()).isTrue();
     }
@@ -121,55 +121,63 @@ class UiMcpRunFlowTest {
         Path file = save("add-to-cart");
         JsonNode out = run("{\"path\":" + mapper.valueToTree(file.toString()) + "," + evidenceArg() + "}");
         assertThat(out.path("passed").asBoolean()).isTrue();
-        assertThat(out.path("flow").asText()).isEqualTo("add-to-cart");
+        assertThat(out.path("test").asText()).isEqualTo("add-to-cart");
     }
 
     @Test
-    void anUnknownNameListsTheFlowsThere() throws Exception {
+    void anUnknownNameListsTheRecordedTestsThere() throws Exception {
         save("add-to-cart");
         save("place-order");
         DriverException e = catchThrowableOfType(() -> run("{\"name\":\"nope\"}"), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-        assertThat(e.getMessage()).contains("no flow 'nope' in " + flows).contains("[add-to-cart, place-order]");
+        assertThat(e.getMessage()).contains("no recorded test 'nope' in " + testsDir).contains("[add-to-cart, place-order]");
         assertThat(backend.verbs.calls).isEmpty();
     }
 
     @Test
-    void anInlineFlowIsCheckedLikeAFile() throws Exception {
-        String ok = FlowFiles.write(flow("inline"));
-        JsonNode out = run("{\"flow\":" + ok + "," + evidenceArg() + "}");
+    void anInlineRecordedTestIsCheckedLikeAFile() throws Exception {
+        String ok = RecordedTestFiles.write(flow("inline"));
+        JsonNode out = run("{\"test\":" + ok + "," + evidenceArg() + "}");
         assertThat(out.path("passed").asBoolean()).isTrue();
         assertThat(out.has("file")).isFalse();
 
         ObjectMapper m = mapper;
         com.fasterxml.jackson.databind.node.ObjectNode bad = (com.fasterxml.jackson.databind.node.ObjectNode) m.readTree(ok);
         bad.put("version", 2);
-        DriverException e = catchThrowableOfType(() -> session.runFlow(m.createObjectNode().set("flow", bad)),
+        DriverException e = catchThrowableOfType(() -> session.runRecordedTest(m.createObjectNode().set("test", bad)),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-        assertThat(e.getMessage()).contains("the 'flow' argument");
+        assertThat(e.getMessage()).contains("the 'test' argument");
     }
 
     @Test
-    void anInlineFlowGivenAsTextIsReadAsItsJson() throws Exception {
-        String ok = FlowFiles.write(flow("inline"));
-        JsonNode out = run("{\"flow\":" + mapper.valueToTree(ok) + "," + evidenceArg() + "}");
+    void anInlineRecordedTestGivenAsTextIsReadAsItsJson() throws Exception {
+        String ok = RecordedTestFiles.write(flow("inline"));
+        JsonNode out = run("{\"test\":" + mapper.valueToTree(ok) + "," + evidenceArg() + "}");
         assertThat(out.path("passed").asBoolean()).isTrue();
-        assertThat(out.path("flow").asText()).isEqualTo("inline");
+        assertThat(out.path("test").asText()).isEqualTo("inline");
 
-        for (String notAFlow : new String[] {"42", "[1]", "true"}) {
-            DriverException e = catchThrowableOfType(() -> run("{\"flow\":" + notAFlow + "}"), DriverException.class);
-            assertThat(e.reason()).as(notAFlow).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).as(notAFlow).contains("'flow' must be a flow file's JSON object");
+        for (String notATest : new String[] {"42", "[1]", "true"}) {
+            DriverException e = catchThrowableOfType(() -> run("{\"test\":" + notATest + "}"), DriverException.class);
+            assertThat(e.reason()).as(notATest).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).as(notATest).contains("'test' must be a recorded test file's JSON object");
         }
     }
 
     @Test
-    void itTakesExactlyOneOfNamePathOrFlow() {
+    void anInlineTestWithoutANameIsCalledInline() throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode t = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(RecordedTestFiles.write(flow("x")));
+        t.remove("name");
+        JsonNode out = run("{\"test\":" + t + "," + evidenceArg() + "}");
+        assertThat(out.path("test").asText()).isEqualTo("inline");
+    }
+
+    @Test
+    void itTakesExactlyOneOfNamePathOrTest() {
         for (String args : new String[] {"{}", "{\"name\":\"a\",\"path\":\"b\"}"}) {
             DriverException e = catchThrowableOfType(() -> run(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).contains("run_flow takes one of 'name', 'path' or 'flow'");
+            assertThat(e.getMessage()).contains("run_recorded_test takes one of 'name', 'path' or 'test'");
         }
     }
 
@@ -187,20 +195,20 @@ class UiMcpRunFlowTest {
     void withoutAResetThereIsNoRun() throws Exception {
         save("place-order");
         UiMcpSession plain = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
-        plain.flowsDir(flows, true);
+        plain.recordedDir(testsDir, true);
         plain.personBusy = () -> null;
         DriverException e = catchThrowableOfType(
-                () -> plain.runFlow(mapper.readTree("{\"name\":\"place-order\"}")), DriverException.class);
+                () -> plain.runRecordedTest(mapper.readTree("{\"name\":\"place-order\"}")), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
         assertThat(backend.verbs.calls).isEmpty();
     }
 
     @Test
-    void whileARecordingRunsAFlowRunIsRefused() throws Exception {
+    void whileARecordingRunsARecordedTestRunIsRefused() throws Exception {
         save("place-order");
         // the real reason, not the seam
         session = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
-        session.flowsDir(flows, true);
+        session.recordedDir(testsDir, true);
         session.appReset(new UiMcpSession.AppReset() {
             @Override public boolean defined() { return false; }
             @Override public void run() { backend.verbs.calls.add("reset"); }

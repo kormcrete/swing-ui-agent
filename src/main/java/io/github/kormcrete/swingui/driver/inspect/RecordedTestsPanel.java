@@ -31,17 +31,17 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Load flow…: the flow files in a folder (Choose… opens the palette's folder dialog; the folder field is editable too),
+ * Load recorded test…: the recorded test files in a folder (Choose… opens the palette's folder dialog; the folder field is editable too),
  * each with its description and step count; one that cannot be read is greyed with its reason and cannot be loaded.
- * Load (or a double click) makes the chosen flow the recording; a refused load keeps the panel open with the reason.
+ * Load (or a double click) makes the chosen recorded test the recording; a refused load keeps the panel open with the reason.
  */
-final class FlowsPanel extends JPanel {
+final class RecordedTestsPanel extends JPanel {
 
-    private final JLabel title = new JLabel("Load a flow");
+    private final JLabel title = new JLabel("Load a recorded test");
     private final JTextField folder = new JTextField(22);
-    private final DefaultListModel<Inspector.FlowEntry> model = new DefaultListModel<Inspector.FlowEntry>();
-    private final JList<Inspector.FlowEntry> list = new JList<Inspector.FlowEntry>(model);
-    private final JLabel empty = new JLabel("No flows in this folder.");
+    private final DefaultListModel<Inspector.RecordedTestEntry> model = new DefaultListModel<Inspector.RecordedTestEntry>();
+    private final JList<Inspector.RecordedTestEntry> list = new JList<Inspector.RecordedTestEntry>(model);
+    private final JLabel empty = new JLabel("No recorded tests in this folder.");
     private final JLabel notice = new JLabel();
     private final JLabel message = new JLabel(" ");
     private final JButton load = small("Load", this::load);
@@ -60,10 +60,10 @@ final class FlowsPanel extends JPanel {
     };
 
     /**
-     * {@code flows}: those in {@code folder}; {@code current}: how many steps the recording has now (loading replaces
-     * them); {@code relist} lists another folder (answered with {@link #show}); {@code onLoad} loads a flow file.
+     * {@code recorded tests}: those in {@code folder}; {@code current}: how many steps the recording has now (loading replaces
+     * them); {@code relist} lists another folder (answered with {@link #show}); {@code onLoad} loads a recorded test file.
      */
-    FlowsPanel(Path folder, List<Inspector.FlowEntry> flows, int current, Consumer<Path> relist, Consumer<Path> onLoad,
+    RecordedTestsPanel(Path folder, List<Inspector.RecordedTestEntry> tests, int current, Consumer<Path> relist, Consumer<Path> onLoad,
                Runnable close) {
         super(new BorderLayout(0, 6));
         this.relist = relist;
@@ -97,7 +97,7 @@ final class FlowsPanel extends JPanel {
         list.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean selected, boolean focus) {
-                Inspector.FlowEntry f = (Inspector.FlowEntry) value;
+                Inspector.RecordedTestEntry f = (Inspector.RecordedTestEntry) value;
                 super.getListCellRendererComponent(l, text(f), index, selected, focus);
                 if (f.problem != null) {
                     setForeground(Color.GRAY);
@@ -137,19 +137,19 @@ final class FlowsPanel extends JPanel {
         notice.setText(current > 0 ? "Loading replaces the current recording (" + current
                 + (current == 1 ? " step" : " steps") + ")." : null);
         notice.setVisible(current > 0);
-        show(folder, flows);
+        show(folder, tests);
     }
 
-    /** The flows of {@code folder}, the folder field showing it; the first one that can be loaded is selected. */
-    void show(Path folder, List<Inspector.FlowEntry> flows) {
+    /** The recorded tests of {@code folder}, the folder field showing it; the first one that can be loaded is selected. */
+    void show(Path folder, List<Inspector.RecordedTestEntry> tests) {
         shown = folder;
         this.folder.setText(folder == null ? "" : folder.toString());
         model.clear();
-        for (Inspector.FlowEntry f : flows) model.addElement(f);
-        empty.setVisible(flows.isEmpty());
+        for (Inspector.RecordedTestEntry f : tests) model.addElement(f);
+        empty.setVisible(tests.isEmpty());
         message.setText(" ");
         int first = -1;
-        for (int i = 0; i < flows.size() && first < 0; i++) if (flows.get(i).problem == null) first = i;
+        for (int i = 0; i < tests.size() && first < 0; i++) if (tests.get(i).problem == null) first = i;
         if (first >= 0) list.setSelectedIndex(first); else list.clearSelection();
         load.setEnabled(first >= 0);
         revalidate();
@@ -173,7 +173,7 @@ final class FlowsPanel extends JPanel {
         return out;
     }
 
-    /** Whether row {@code i} is a flow that can be loaded. */
+    /** Whether row {@code i} is a recorded test that can be loaded. */
     boolean loadable(int i) {
         return i >= 0 && i < model.size() && model.get(i).problem == null;
     }
@@ -193,7 +193,7 @@ final class FlowsPanel extends JPanel {
         return message.getText();
     }
 
-    /** Load: the selected flow, when it can be loaded. */
+    /** Load: the selected recorded test, when it can be loaded. */
     void load() {
         int i = list.getSelectedIndex();
         if (!loadable(i)) return;
@@ -212,7 +212,7 @@ final class FlowsPanel extends JPanel {
         revalidate();
     }
 
-    /** Choose…: picks a folder, starting in the folder field's, and lists its flows. */
+    /** Choose…: picks a folder, starting in the folder field's, and lists its recorded tests. */
     void choose() {
         Path start = folderPath();
         chooser.choose(start != null ? start : shown, picked -> {
@@ -243,7 +243,7 @@ final class FlowsPanel extends JPanel {
         }
     }
 
-    private static String text(Inspector.FlowEntry f) {
+    private static String text(Inspector.RecordedTestEntry f) {
         if (f.problem != null) return f.name + "  -  " + f.problem;
         String about = f.description == null || f.description.trim().isEmpty() ? "" : "  -  " + f.description.trim();
         return f.name + about + "  (" + f.steps + (f.steps == 1 ? " step)" : " steps)");

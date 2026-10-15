@@ -1,7 +1,7 @@
 package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.Verbs;
-import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.mcp.HttpMcpEndpoint;
 import io.github.kormcrete.swingui.mcp.UiMcpDispatcher;
@@ -38,7 +38,7 @@ final class AgentAssembly {
         Lease lease = new Lease(System::currentTimeMillis);
         // and while one runs, the person's palette leaves the window so it can never cover what the test clicks
         lease.watchedBy(io.github.kormcrete.swingui.driver.inspect.Inspector::testRun);
-        // while the person runs a flow or replays steps from the palette, no other call drives the app
+        // while the person runs a recorded test or replays steps from the palette, no other call drives the app
         lease.drivenBy(io.github.kormcrete.swingui.driver.inspect.Inspector::drivingReason);
         UiMcpSession session = new UiMcpSession(plugins, plugins, mapper, plugins::exportDefaults);
         // a test run must not start while a person records, picks or answers in the app, or a recording runs
@@ -46,9 +46,9 @@ final class AgentAssembly {
             String person = io.github.kormcrete.swingui.driver.inspect.Inspector.engagedReason();
             return person != null ? person : session.recordingReason();
         });
-        String property = System.getProperty(FlowFiles.DIR_PROP);
-        session.flowsDir(flowsDir(args, property, Paths.get("")),
-                args.flows != null || (property != null && !property.trim().isEmpty()));
+        String property = System.getProperty(RecordedTestFiles.DIR_PROP);
+        session.recordedDir(recordedDir(args, property, Paths.get("")),
+                args.recorded != null || (property != null && !property.trim().isEmpty()));
         session.palette(paletteOn(args, GraphicsEnvironment.isHeadless()));
         ScreenshotVerb.moduleDir = () -> plugins.exportDefaults().moduleDir;
         List<McpToolDefinition> raw = new ArrayList<McpToolDefinition>(UiMcpTools.build(session, mapper));
@@ -64,9 +64,9 @@ final class AgentAssembly {
         return new AgentAssembly(lease, session, endpoint);
     }
 
-    /** The flows folder: agent option {@code flows=}, else the system property, else {@code uitest} under {@code cwd}. */
-    static Path flowsDir(AgentArgs a, String property, Path cwd) {
-        return FlowFiles.dir(a.flows, property, cwd);
+    /** The recorded tests folder: agent option {@code recorded=}, else the system property, else {@code uitest} under {@code cwd}. */
+    static Path recordedDir(AgentArgs a, String property, Path cwd) {
+        return RecordedTestFiles.dir(a.recorded, property, cwd);
     }
 
     /** The palette as asked for (on unless {@code palette=off} or {@code mode=background}), and never without a screen. */

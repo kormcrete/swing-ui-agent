@@ -26,7 +26,7 @@ import java.util.function.IntConsumer;
 /**
  * The recording as the person sees it: every step, agent's ("agent: …") and theirs, with what its last replay did
  * (● recorded, ✎ changed since and not replayed, ▶ running, ✓ replayed, ✗ failed), and the buttons to replay all
- * from a reset, as the exported test runs (for a loaded flow: run it), replay from a step, redo from a step (cut the
+ * from a reset, as the exported test runs (for a loaded recorded test: run it), replay from a step, redo from a step (cut the
  * recording there, replay up to it from a reset, record on), delete one, or undo the last edit - the agent's or the
  * person's. Rows know their step's id: what the person deletes or redoes is the step they saw, even when the agent
  * changed the recording since.
@@ -44,7 +44,7 @@ final class StepsPanel extends JPanel {
             new javax.swing.JComboBox<String>(new String[] {"Fast", "Normal", "Slow", "Step by step"});
     private final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 
-    /** {@code replayAllLabel}: what the first button says - "▶ Replay all", or "▶ Run" for a loaded flow. */
+    /** {@code replayAllLabel}: what the first button says - "▶ Replay all", or "▶ Run" for a loaded recorded test. */
     StepsPanel(String replayAllLabel, Runnable replayAll, IntConsumer replayFrom, IntConsumer redoFrom, IntConsumer delete,
                Runnable undo, Runnable close) {
         super(new BorderLayout(0, 6));

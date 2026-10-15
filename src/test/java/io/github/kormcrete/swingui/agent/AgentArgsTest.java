@@ -34,27 +34,34 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, palette, flows, plugins, log");
+                .hasMessageContaining("port, bind, mode, palette, recorded, plugins, log");
     }
 
     @Test
-    void flowsNamesTheFlowsFolder() {
-        assertThat(AgentArgs.parse("flows=uitest/flows").flows).isEqualTo("uitest/flows");
-        assertThat(AgentArgs.parse("port=1").flows).isNull();
+    void recordedNamesTheFolder() {
+        assertThat(AgentArgs.parse("recorded=uitest/mine").recorded).isEqualTo("uitest/mine");
+        assertThat(AgentArgs.parse("port=1").recorded).isNull();
     }
 
     @Test
-    void aBlankFlowsIsRefused() {
-        assertThatThrownBy(() -> AgentArgs.parse("flows="))
+    void aBlankRecordedIsRefused() {
+        assertThatThrownBy(() -> AgentArgs.parse("recorded="))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("flows needs a folder, e.g. flows=uitest");
+                .hasMessage("recorded needs a folder, e.g. recorded=uitest");
     }
 
     @Test
-    void theFlowsFolderIsTheOptionElseThePropertyElseUitest(@org.junit.jupiter.api.io.TempDir java.nio.file.Path cwd) {
-        assertThat(AgentAssembly.flowsDir(AgentArgs.parse("flows=mine"), "prop", cwd)).isEqualTo(cwd.resolve("mine"));
-        assertThat(AgentAssembly.flowsDir(AgentArgs.parse(null), "prop", cwd)).isEqualTo(cwd.resolve("prop"));
-        assertThat(AgentAssembly.flowsDir(AgentArgs.parse(null), null, cwd)).isEqualTo(cwd.resolve("uitest"));
+    void theOldFlowsKeyNamesItsNewName() {
+        assertThatThrownBy(() -> AgentArgs.parse("flows=x"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'flows' is now 'recorded'");
+    }
+
+    @Test
+    void theRecordedTestsFolderIsTheOptionElseThePropertyElseUitest(@org.junit.jupiter.api.io.TempDir java.nio.file.Path cwd) {
+        assertThat(AgentAssembly.recordedDir(AgentArgs.parse("recorded=mine"), "prop", cwd)).isEqualTo(cwd.resolve("mine"));
+        assertThat(AgentAssembly.recordedDir(AgentArgs.parse(null), "prop", cwd)).isEqualTo(cwd.resolve("prop"));
+        assertThat(AgentAssembly.recordedDir(AgentArgs.parse(null), null, cwd)).isEqualTo(cwd.resolve("uitest"));
     }
 
     @Test

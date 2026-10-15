@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 
 /**
- * Choose…: the person picks the folder a flow goes to. A modeless dialog of the palette's own, owned by the palette's
+ * Choose…: the person picks the folder a recorded test goes to. A modeless dialog of the palette's own, owned by the palette's
  * window, so the app stays usable and nothing the agent reads, finds or records ever includes it (its class lives in
  * the palette's package: {@code Roles.agentOwn}, {@code Overlay.ours}). Choose sets the folder; Cancel or closing it
  * leaves it as it was; either way the dialog is disposed. Out of scope: the agent pressing keys without a target while
@@ -23,7 +23,7 @@ final class FolderDialog extends JDialog {
     private Consumer<Path> picked;
 
     FolderDialog(Window owner) {
-        super(owner, "Choose the folder for flows", ModalityType.MODELESS);
+        super(owner, "Choose the folder for recorded tests", ModalityType.MODELESS);
         files.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         files.setApproveButtonText("Choose");
         files.addActionListener(e -> {

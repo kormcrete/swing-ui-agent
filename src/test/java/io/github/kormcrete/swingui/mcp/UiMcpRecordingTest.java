@@ -6,7 +6,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
-import io.github.kormcrete.swingui.flow.FlowFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,21 +73,21 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aLoadedFlowsStepsAreTheFlows() throws Exception {
+    void aLoadedTestsStepsAreTheLoadedOnes() throws Exception {
         Flow flow = new Flow();
-        flow.version = FlowFiles.VERSION;
+        flow.version = RecordedTestFiles.VERSION;
         flow.name = "two clicks";
-        flow.start = FlowFiles.START_RESET;
+        flow.start = RecordedTestFiles.START_RESET;
         ClickVerb a = new ClickVerb(); a.target = Locator.ofId("a");
         ClickVerb b = new ClickVerb(); b.target = Locator.ofId("b");
         flow.steps.add(a);
         flow.steps.add(b);
         Path file = dir.resolve("two.json");
-        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
-        session.loadFlow(file);
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
 
         assertThat(session.recordedSteps()).hasSize(2)
-                .allMatch(s -> s.author == RecordedStep.Author.FLOW);
+                .allMatch(s -> s.author == RecordedStep.Author.LOADED);
     }
 
     // ---- the recording tool: start, stop, list ----------------------------------------------
@@ -191,7 +191,7 @@ class UiMcpRecordingTest {
         String warning = call("{\"op\":\"list\"}").path("startWarning").asText();
         assertThat(warning).contains("did not begin at the app plugin's reset").doesNotContain("no app plugin");
         call("{\"op\":\"stop\"}");
-        JsonNode exported = mapper.readTree(session.exportFlow("first", quoted(dir), null, true));
+        JsonNode exported = mapper.readTree(session.exportRecordedTest("first", quoted(dir), null, true));
         assertThat(exported.path("startWarning").asText()).isEqualTo(warning);
         // after a clearing export the steps that follow have no start of their own
         click("b");
@@ -202,7 +202,7 @@ class UiMcpRecordingTest {
         JsonNode list = call("{\"op\":\"list\"}");
         assertThat(list.path("fromReset").asBoolean()).isTrue();
         assertThat(list.has("startWarning")).isFalse();
-        assertThat(session.exportFlow("second", quoted(dir), null, false)).contains("savedTo");
+        assertThat(session.exportRecordedTest("second", quoted(dir), null, false)).contains("savedTo");
     }
 
     @Test
@@ -213,7 +213,7 @@ class UiMcpRecordingTest {
         JsonNode list = call("{\"op\":\"list\"}");
         assertThat(list.path("fromReset").asBoolean()).isFalse();
         assertThat(list.path("startWarning").asText()).contains("(no app plugin: a reset only closes dialogs)");
-        assertThat(session.exportFlow("shown", quoted(dir), null, false)).contains("savedTo");
+        assertThat(session.exportRecordedTest("shown", quoted(dir), null, false)).contains("savedTo");
     }
 
     @Test
@@ -247,9 +247,9 @@ class UiMcpRecordingTest {
             heard.clear();
             List<org.assertj.core.api.ThrowableAssert.ThrowingCallable> clearing = java.util.Arrays.asList(
                     () -> session.exportTest("ClearUiIT", null, "demo", true),
-                    () -> session.exportFlow("clear", quoted(dir), null, true),
+                    () -> session.exportRecordedTest("clear", quoted(dir), null, true),
                     () -> call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"ClearUiIT\",\"package\":\"demo\",\"clear\":true}"),
-                    () -> call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"clear\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}"));
+                    () -> call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"clear\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}"));
             for (org.assertj.core.api.ThrowableAssert.ThrowingCallable export : clearing) {
                 DriverException e = catchThrowableOfType(export, DriverException.class);
                 assertThat(e.reason()).isEqualTo(Reason.BUSY);
@@ -262,7 +262,7 @@ class UiMcpRecordingTest {
             assertThat(list.path("steps")).hasSize(1);
             assertThat(heard).isEmpty();
             // without clear it writes; once stopped, clear works too
-            assertThat(session.exportFlow("kept", quoted(dir), null, false)).contains("savedTo");
+            assertThat(session.exportRecordedTest("kept", quoted(dir), null, false)).contains("savedTo");
             call("{\"op\":\"stop\"}");
             assertThat(session.exportTest("ClearUiIT", null, "demo", true)).contains("savedTo");
             assertThat(call("{\"op\":\"list\"}").path("steps")).isEmpty();
@@ -349,22 +349,22 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aLoadedFlowListsWhereItCameFrom() throws Exception {
+    void aLoadedRecordedTestListsWhereItCameFrom() throws Exception {
         Flow flow = new Flow();
-        flow.version = FlowFiles.VERSION;
+        flow.version = RecordedTestFiles.VERSION;
         flow.name = "one click";
-        flow.start = FlowFiles.START_RESET;
+        flow.start = RecordedTestFiles.START_RESET;
         ClickVerb a = new ClickVerb(); a.target = Locator.ofId("a");
         flow.steps.add(a);
         Path file = dir.resolve("one.json");
-        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
-        session.loadFlow(file);
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
 
         JsonNode list = call("{\"op\":\"list\"}");
         assertThat(list.path("state").asText()).isEqualTo("stopped");
-        assertThat(list.path("startedBy").asText()).isEqualTo("flow");
+        assertThat(list.path("startedBy").asText()).isEqualTo("loaded");
         assertThat(list.path("loadedFrom").asText()).isEqualTo(file.toAbsolutePath().normalize().toString());
-        assertThat(list.path("steps").get(0).path("author").asText()).isEqualTo("flow");
+        assertThat(list.path("steps").get(0).path("author").asText()).isEqualTo("loaded");
     }
 
     @Test
@@ -635,19 +635,19 @@ class UiMcpRecordingTest {
         click("a");
         call("{\"op\":\"delete\",\"n\":1}");
         Flow flow = new Flow();
-        flow.version = FlowFiles.VERSION;
+        flow.version = RecordedTestFiles.VERSION;
         flow.name = "one";
-        flow.start = FlowFiles.START_RESET;
+        flow.start = RecordedTestFiles.START_RESET;
         ClickVerb a = new ClickVerb(); a.target = Locator.ofId("a");
         flow.steps.add(a);
         Path file = dir.resolve("one.json");
-        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
-        session.loadFlow(file);
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
         assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo");
 
         call("{\"op\":\"delete\",\"n\":1}");
         call("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"menu\",\"path\":[\"File\"]}}");
-        session.exportFlow("out", dir.toString(), null, true);
+        session.exportRecordedTest("out", dir.toString(), null, true);
         assertThat(refused("{\"op\":\"undo\"}").getMessage()).contains("nothing to undo");
     }
 
@@ -791,7 +791,7 @@ class UiMcpRecordingTest {
         call("{\"op\":\"stop\"}");
 
         heard.clear();
-        Path file = savedFlow("three");
+        Path file = savedTest("three");
         call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
         assertThat(heard).containsExactly("loaded three - 3");
 
@@ -799,7 +799,7 @@ class UiMcpRecordingTest {
         heard.clear();
         session.startRecording(true);
         click("c");
-        call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"one\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}");
+        call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"one\",\"dir\":\"" + quoted(dir) + "\",\"clear\":true}");
         assertThat(heard).containsExactly("replaced", "replaced");
     }
 
@@ -815,7 +815,7 @@ class UiMcpRecordingTest {
         call("{\"op\":\"replay\"}");
         call("{\"op\":\"redo\",\"from\":2}");
         call("{\"op\":\"stop\"}");
-        call("{\"op\":\"load\",\"path\":\"" + quoted(savedFlow("three")) + "\"}");
+        call("{\"op\":\"load\",\"path\":\"" + quoted(savedTest("three")) + "\"}");
         session.startRecording(true);
         assertThat(sink.begin().ok).isTrue();
         assertThat(call("{\"op\":\"list\"}").path("shared").asBoolean()).isFalse();
@@ -1119,14 +1119,21 @@ class UiMcpRecordingTest {
             assertThat(r.path("list").path("definedStart").asBoolean()).isTrue();
             click("d");
             call("{\"op\":\"stop\"}");
-            assertThat(session.exportFlow("redo-" + from, quoted(dir), null, false)).contains("savedTo");
+            assertThat(session.exportRecordedTest("redo-" + from, quoted(dir), null, false)).contains("savedTo");
         }
     }
 
     @Test
-    void exportWritesJavaOrAFlowAndKeepsTheRecording() throws Exception {
+    void exportAsFlowIsRefusedNamingJavaOrRecorded() throws Exception {
+        DriverException e = catchThrowableOfType(() -> call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"x\"}"), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("java").contains("recorded");
+    }
+
+    @Test
+    void exportWritesJavaOrARecordedTestAndKeepsTheRecording() throws Exception {
         Path tests = dir.resolve("tests");
-        Path flows = dir.resolve("flows");
+        Path testsDir = dir.resolve("recorded");
         System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
         try {
             fakeReset();
@@ -1134,9 +1141,9 @@ class UiMcpRecordingTest {
             JsonNode java = call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"PlaceUiIT\",\"package\":\"demo\"}");
             assertThat(Files.exists(tests.resolve("demo/PlaceUiIT.java"))).isTrue();
             assertThat(java.path("steps").asInt()).isEqualTo(4);
-            JsonNode flow = call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"place\",\"dir\":\""
-                    + flows.toString().replace("\\", "\\\\") + "\",\"description\":\"four clicks\"}");
-            assertThat(Files.exists(flows.resolve("place.json"))).isTrue();
+            JsonNode flow = call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"place\",\"dir\":\""
+                    + testsDir.toString().replace("\\", "\\\\") + "\",\"description\":\"four clicks\"}");
+            assertThat(Files.exists(testsDir.resolve("place.json"))).isTrue();
             assertThat(flow.path("steps").asInt()).isEqualTo(4);
             assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(4);
             assertThat(refused("{\"op\":\"export\",\"as\":\"xml\"}").reason()).isEqualTo(Reason.BAD_INPUT);
@@ -1148,18 +1155,18 @@ class UiMcpRecordingTest {
         }
     }
 
-    private Path savedFlow(String name) throws Exception {
+    private Path savedTest(String name) throws Exception {
         Flow flow = new Flow();
-        flow.version = FlowFiles.VERSION;
+        flow.version = RecordedTestFiles.VERSION;
         flow.name = name;
-        flow.start = FlowFiles.START_RESET;
+        flow.start = RecordedTestFiles.START_RESET;
         for (String id : new String[] {"a", "b", "c"}) {
             ClickVerb c = new ClickVerb();
             c.target = Locator.ofId(id);
             flow.steps.add(c);
         }
-        Path file = dir.resolve(name + FlowFiles.SUFFIX);
-        Files.write(file, FlowFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        Path file = dir.resolve(name + RecordedTestFiles.SUFFIX);
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
         return file;
     }
 
@@ -1168,13 +1175,13 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void loadMakesAFlowTheRecordingAndRedoContinuesIt() throws Exception {
+    void loadMakesARecordedTestTheRecordingAndRedoContinuesIt() throws Exception {
         fakeReset();
-        Path file = savedFlow("three");
+        Path file = savedTest("three");
         JsonNode list = call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
         assertThat(list.path("state").asText()).isEqualTo("stopped");
         assertThat(list.path("steps")).hasSize(3);
-        assertThat(list.path("steps").get(0).path("author").asText()).isEqualTo("flow");
+        assertThat(list.path("steps").get(0).path("author").asText()).isEqualTo("loaded");
         assertThat(list.path("loadedFrom").asText()).isEqualTo(file.toAbsolutePath().normalize().toString());
         backend.verbs.calls.clear();
         JsonNode r = call("{\"op\":\"redo\",\"from\":3}");
@@ -1184,22 +1191,22 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aLoadByNameReadsTheFlowsFolderAndSaysWhenThereIsNone() throws Exception {
-        savedFlow("three");
+    void aLoadByNameReadsTheRecordedTestsFolderAndSaysWhenThereIsNone() throws Exception {
+        savedTest("three");
         UiMcpSession other = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
         other.folderMemory(FolderMemory.inMemory());
-        other.flowsDir(dir, true);
+        other.recordedDir(dir, true);
         JsonNode list = mapper.readTree(other.recording(mapper.readTree("{\"op\":\"load\",\"name\":\"three\"}")));
         assertThat(list.path("steps")).hasSize(3);
         DriverException e = catchThrowableOfType(
                 () -> other.recording(mapper.readTree("{\"op\":\"load\",\"name\":\"nope\"}")), DriverException.class);
-        assertThat(e.getMessage()).contains("no flow 'nope'");
+        assertThat(e.getMessage()).contains("no recorded test 'nope'");
         assertThat(refused("{\"op\":\"load\"}").reason()).isEqualTo(Reason.BAD_INPUT);
     }
 
     @Test
     void theAgentsStepsAfterALoadDoNotJoinIt() throws Exception {
-        Path file = savedFlow("three");
+        Path file = savedTest("three");
         call("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
         JsonNode ran = mapper.readTree(session.verb("click", mapper.readTree("{\"target\":{\"id\":\"z\"}}")));
         assertThat(ran.has("recorded")).isFalse();
@@ -1209,7 +1216,7 @@ class UiMcpRecordingTest {
 
     @Test
     void aLoadIsRefusedWhileARecordingRuns() throws Exception {
-        Path file = savedFlow("three");
+        Path file = savedTest("three");
         call("{\"op\":\"start\"}");
         click("a");
         DriverException e = refused("{\"op\":\"load\",\"path\":\"" + quoted(file) + "\"}");
@@ -1233,8 +1240,8 @@ class UiMcpRecordingTest {
         assertThat(session.recordingReason()).isNotNull();
         call("{\"op\":\"stop\"}");
         assertThat(session.recordingReason()).isNull();
-        call("{\"op\":\"export\",\"as\":\"flow\",\"name\":\"alone\",\"dir\":\"" + quoted(dir) + "\"}");
-        Flow back = FlowFiles.read(dir.resolve("alone.json"));
+        call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"alone\",\"dir\":\"" + quoted(dir) + "\"}");
+        Flow back = RecordedTestFiles.read(dir.resolve("alone.json"));
         assertThat(back.steps).hasSize(4);
         assertThat(new String(Files.readAllBytes(dir.resolve("alone.json")), StandardCharsets.UTF_8)).doesNotContain("author");
     }
@@ -1243,14 +1250,14 @@ class UiMcpRecordingTest {
         fakeReset();
         four(true);
         call("{\"op\":\"stop\"}");
-        session.exportFlow("first", quoted(dir), null, true);
+        session.exportRecordedTest("first", quoted(dir), null, true);
         for (int i = 1; i <= 3; i++) {
             call("{\"op\":\"insert\",\"at\":" + i + ",\"step\":{\"action\":\"click\",\"target\":{\"id\":\"s" + i + "\"}}}");
         }
     }
 
     private void exportRefusedForNoReset() {
-        assertThat(catchThrowableOfType(() -> session.exportFlow("second", quoted(dir), null, false), IllegalArgumentException.class)
+        assertThat(catchThrowableOfType(() -> session.exportRecordedTest("second", quoted(dir), null, false), IllegalArgumentException.class)
                 .getMessage()).contains("did not begin at a session reset");
     }
 
@@ -1267,6 +1274,6 @@ class UiMcpRecordingTest {
         assertThat(call("{\"op\":\"replay\",\"from\":1,\"to\":2}").path("passed").asBoolean()).isTrue();
         exportRefusedForNoReset();
         assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
-        assertThat(session.exportFlow("second", quoted(dir), null, false)).contains("savedTo");
+        assertThat(session.exportRecordedTest("second", quoted(dir), null, false)).contains("savedTo");
     }
 }

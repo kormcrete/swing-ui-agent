@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * Base type for all flow steps. The JSON discriminator is the {@code action} property: one of the driver
+ * Base type for all steps. The JSON discriminator is the {@code action} property: one of the driver
  * verbs ({@link io.github.kormcrete.swingui.flow.verb.VerbAction} subtypes, {@code contextMenu} included), or one
  * of the three app steps {@code navigate}, {@code close}, {@code loginAs}. Any other name is BAD_INPUT
  * ({@link FlowJson#unknownStepType}).

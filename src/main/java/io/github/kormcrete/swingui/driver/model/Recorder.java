@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Turns a resolved target into the locator a flow stores: the first form that resolves to
+ * Turns a resolved target into the locator a recorded test stores: the first form that resolves to
  * exactly that element. The nth fallback marks the step fragile. EDT.
  */
 public final class Recorder {

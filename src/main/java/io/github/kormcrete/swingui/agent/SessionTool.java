@@ -155,8 +155,8 @@ final class SessionTool implements McpToolDefinition {
     }
 
     /**
-     * The flow start: what {@code session reset} does to the app, without a new recording. No lease handling here: the
-     * callers (run_flow, the palette) are already inside the lease gate or hold the person's engagement.
+     * The recorded test start: what {@code session reset} does to the app, without a new recording. No lease handling here: the
+     * callers (run_recorded_test, the palette) are already inside the lease gate or hold the person's engagement.
      */
     UiMcpSession.AppReset appReset() {
         return new UiMcpSession.AppReset() {
@@ -192,7 +192,7 @@ final class SessionTool implements McpToolDefinition {
         r.putObject("endpoint").put("bind", args.bind).put("port", boundPort.getAsInt());
         r.put("mode", args.mode);
         r.put("palette", session.paletteOn());
-        r.put("flows", session.flowsDir().toAbsolutePath().normalize().toString());
+        r.put("recordedDir", session.recordedDir().toAbsolutePath().normalize().toString());
         ObjectNode app = r.putObject("app");
         app.put("startedAtMillis", appStartedAt).put("startedAt", Instant.ofEpochMilli(appStartedAt).toString());
         ArrayNode classpath = app.putArray("classpath");

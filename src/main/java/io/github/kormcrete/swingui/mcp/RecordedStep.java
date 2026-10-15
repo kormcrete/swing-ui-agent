@@ -8,9 +8,9 @@ import io.github.kormcrete.swingui.flow.Action;
  */
 final class RecordedStep {
 
-    /** Who made the step: the person at the palette, the agent, or a loaded flow. */
+    /** Who made the step: the person at the palette, the agent, or a loaded recorded test. */
     enum Author {
-        PERSON("person"), AGENT("agent"), FLOW("flow");
+        PERSON("person"), AGENT("agent"), LOADED("loaded");
 
         final String json;
 

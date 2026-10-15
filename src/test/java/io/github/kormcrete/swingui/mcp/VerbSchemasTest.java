@@ -26,7 +26,7 @@ class VerbSchemasTest {
     }
 
     @Test
-    void toolNamesMapToFlowActionNames() {
+    void toolNamesMapToRecordedTestActionNames() {
         assertThat(VerbSchemas.TOOLS).hasSize(15);
         assertThat(VerbSchemas.actionName(SetClipboardVerb.class)).isEqualTo("setClipboard");
         assertThat(VerbSchemas.actionName(ClickVerb.class)).isEqualTo("click");

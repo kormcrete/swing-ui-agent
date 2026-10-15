@@ -53,6 +53,11 @@ class VerbJsonTest {
     }
 
     @Test
+    void theDefaultScreenshotFolderIsUiScreenshots() {
+        assertThat(ScreenshotVerb.DEFAULT_DIR).isEqualTo("target/ui-screenshots");
+    }
+
+    @Test
     void aContextMenuTakesATargetAndNothingElse() throws Exception {
         String json = "{\"action\":\"contextMenu\",\"target\":{\"role\":\"table\",\"name\":\"Orders\"},\"path\":[\"Delete\"]}";
         ContextMenuAction a = (ContextMenuAction) FlowJson.mapper().readValue(json, Action.class);

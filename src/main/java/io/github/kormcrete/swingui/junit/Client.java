@@ -65,9 +65,9 @@ public final class Client {
         return app("hooks").hooks(type);
     }
 
-    /** The app side of this client (flow runs); package-private for {@link UiFlows}. */
+    /** The app side of this client (recorded test runs); package-private for {@link RecordedTests}. */
     ClientApp app() {
-        return app("run flows");
+        return app("run recorded tests");
     }
 
     private ClientApp app(String what) {

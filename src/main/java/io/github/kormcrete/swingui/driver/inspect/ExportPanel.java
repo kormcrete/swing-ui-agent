@@ -28,8 +28,8 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
- * Export…: the person writes the recording, without an agent, as a JUnit test (class and package) or as a flow file
- * (name and folder; Choose… opens a folder dialog of the palette's own). Saving over the flow the recording came from
+ * Export…: the person writes the recording, without an agent, as a Java test (class and package) or as a recorded test file
+ * (name and folder; Choose… opens a folder dialog of the palette's own). Saving over the recorded test the recording came from
  * reads "Save"; any other name "Export". A refused export keeps the panel open with the reason, so they can fix it and
  * try again; a folder that cannot be written opens Choose… by itself.
  */
@@ -37,7 +37,7 @@ final class ExportPanel extends JPanel {
 
     /** The kinds the panel writes. */
     static final String JAVA = "java";
-    static final String FLOW = "flow";
+    static final String RECORDED = "recorded";
 
     /** Picks a folder, starting in {@code start}; {@code picked} gets it, never called when the person cancels. */
     interface FolderChooser {
@@ -46,17 +46,17 @@ final class ExportPanel extends JPanel {
 
     private final JTextField className = new JTextField(22);
     private final JTextField packageName = new JTextField(22);
-    private final JTextField flowName = new JTextField(22);
+    private final JTextField testName = new JTextField(22);
     private final JTextField folder = new JTextField(22);
     private final JToggleButton javaKind = toggle("Java test");
-    private final JToggleButton flowKind = toggle("Flow");
+    private final JToggleButton recordedKind = toggle("Recorded test");
     private final JLabel title = new JLabel();
     private final JLabel message = new JLabel(" ");
     private final CardLayout cards = new CardLayout();
     private final JPanel fields = new JPanel(cards);
     private final JButton export;
     private final Path defaultFolder;
-    private final Path loadedFlow;
+    private final Path loadedTest;
     private String kind;
     private FolderDialog dialog;
     /** Where Choose… goes: the folder dialog, or a test's stand-in. */
@@ -69,27 +69,27 @@ final class ExportPanel extends JPanel {
     };
 
     /**
-     * {@code folder}: where a flow goes unless the person picks another; {@code loadedFlow}: the flow file the
-     * recording came from (null: none), which opens the panel on Flow; else it opens on {@code kind}.
+     * {@code folder}: where a recorded test goes unless the person picks another; {@code loadedTest}: the recorded test file the
+     * recording came from (null: none), which opens the panel on Recorded test; else it opens on {@code kind}.
      */
-    ExportPanel(String suggestedClass, String suggestedPackage, Path folder, Path loadedFlow, String kind,
-                BiConsumer<String, String> onExport, BiConsumer<String, Path> onExportFlow, Runnable close) {
+    ExportPanel(String suggestedClass, String suggestedPackage, Path folder, Path loadedTest, String kind,
+                BiConsumer<String, String> onExport, BiConsumer<String, Path> onExportRecorded, Runnable close) {
         super(new BorderLayout(0, 6));
-        this.defaultFolder = loadedFlow != null ? loadedFlow.getParent() : folder;
-        this.loadedFlow = loadedFlow == null ? null : loadedFlow.toAbsolutePath().normalize();
+        this.defaultFolder = loadedTest != null ? loadedTest.getParent() : folder;
+        this.loadedTest = loadedTest == null ? null : loadedTest.toAbsolutePath().normalize();
         setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY, 2),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
         setBackground(Color.WHITE);
 
         ButtonGroup group = new ButtonGroup();
         group.add(javaKind);
-        group.add(flowKind);
+        group.add(recordedKind);
         javaKind.addActionListener(e -> kind(JAVA));
-        flowKind.addActionListener(e -> kind(FLOW));
+        recordedKind.addActionListener(e -> kind(RECORDED));
         JPanel kinds = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         kinds.setOpaque(false);
         kinds.add(javaKind);
-        kinds.add(flowKind);
+        kinds.add(recordedKind);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
         JPanel top = new JPanel(new BorderLayout(0, 6));
         top.setOpaque(false);
@@ -102,18 +102,18 @@ final class ExportPanel extends JPanel {
         JPanel java = form();
         row(java, 0, "Class", className);
         row(java, 1, "Package", packageName);
-        flowName.setText(loadedFlow != null ? baseName(loadedFlow) : "recorded-flow");
+        testName.setText(loadedTest != null ? baseName(loadedTest) : "recorded-test");
         this.folder.setText(defaultFolder == null ? "" : defaultFolder.toString());
         JPanel where = new JPanel(new BorderLayout(4, 0));
         where.setOpaque(false);
         where.add(this.folder, BorderLayout.CENTER);
         where.add(small("Choose…", this::choose), BorderLayout.EAST);
-        JPanel flow = form();
-        row(flow, 0, "Name", flowName);
-        row(flow, 1, "Folder", where);
+        JPanel recordedForm = form();
+        row(recordedForm, 0, "Name", testName);
+        row(recordedForm, 1, "Folder", where);
         fields.setOpaque(false);
         fields.add(java, JAVA);
-        fields.add(flow, FLOW);
+        fields.add(recordedForm, RECORDED);
         JPanel center = new JPanel(new BorderLayout());
         center.setOpaque(false);
         center.add(fields, BorderLayout.CENTER);
@@ -133,14 +133,14 @@ final class ExportPanel extends JPanel {
                 refused("'" + this.folder.getText().trim() + "' is not a folder", false);
                 return;
             }
-            onExportFlow.accept(flowName.getText().trim(), to);
+            onExportRecorded.accept(testName.getText().trim(), to);
         });
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         buttons.setOpaque(false);
         buttons.add(small("Cancel", close));
         buttons.add(export);
         add(buttons, BorderLayout.SOUTH);
-        for (JTextField f : new JTextField[] {className, packageName, flowName, this.folder}) {
+        for (JTextField f : new JTextField[] {className, packageName, testName, this.folder}) {
             f.addActionListener(e -> export.doClick());
         }
         DocumentListener relabel = new DocumentListener() {
@@ -148,26 +148,26 @@ final class ExportPanel extends JPanel {
             @Override public void removeUpdate(DocumentEvent e) { relabel(); }
             @Override public void changedUpdate(DocumentEvent e) { relabel(); }
         };
-        flowName.getDocument().addDocumentListener(relabel);
+        testName.getDocument().addDocumentListener(relabel);
         this.folder.getDocument().addDocumentListener(relabel);
-        kind(loadedFlow != null ? FLOW : FLOW.equals(kind) ? FLOW : JAVA);
+        kind(loadedTest != null ? RECORDED : RECORDED.equals(kind) ? RECORDED : JAVA);
     }
 
-    /** Which kind the panel writes now: {@link #JAVA} or {@link #FLOW}. */
+    /** Which kind the panel writes now: {@link #JAVA} or {@link #RECORDED}. */
     String kind() {
         return kind;
     }
 
     /** Shows the fields of {@code kind}, as if the person pressed its toggle. */
     void kind(String kind) {
-        this.kind = FLOW.equals(kind) ? FLOW : JAVA;
-        boolean flow = FLOW.equals(this.kind);
-        (flow ? flowKind : javaKind).setSelected(true);
+        this.kind = RECORDED.equals(kind) ? RECORDED : JAVA;
+        boolean recorded = RECORDED.equals(this.kind);
+        (recorded ? recordedKind : javaKind).setSelected(true);
         cards.show(fields, this.kind);
-        title.setText(flow ? "Export as a flow" : "Export as a JUnit test");
+        title.setText(recorded ? "Export as a recorded test" : "Export as a Java test");
         message.setText(" ");
         relabel();
-        JTextField first = flow ? flowName : className;
+        JTextField first = recorded ? testName : className;
         SwingUtilities.invokeLater(() -> {
             first.requestFocusInWindow();
             first.selectAll();
@@ -179,17 +179,17 @@ final class ExportPanel extends JPanel {
         return new String[] {className.getText(), packageName.getText()};
     }
 
-    /** What the flow fields hold now: name, folder. */
-    String[] flowFields() {
-        return new String[] {flowName.getText(), folder.getText()};
+    /** What the recorded test fields hold now: name, folder. */
+    String[] recordedFields() {
+        return new String[] {testName.getText(), folder.getText()};
     }
 
-    /** As if the person typed {@code name} as the flow's name. */
-    void flowName(String name) {
-        flowName.setText(name);
+    /** As if the person typed {@code name} as the recorded test's name. */
+    void testName(String name) {
+        testName.setText(name);
     }
 
-    /** The action button's label: "Save" over the flow the recording came from, else "Export". */
+    /** The action button's label: "Save" over the recorded test the recording came from, else "Export". */
     String actionLabel() {
         return export.getText();
     }
@@ -216,7 +216,7 @@ final class ExportPanel extends JPanel {
         if (folder) choose();
     }
 
-    /** Choose…: picks a folder for the flow, starting in the folder field's. */
+    /** Choose…: picks a folder for the recorded test, starting in the folder field's. */
     void choose() {
         Path start = folderPath();
         chooser.choose(start != null ? start : defaultFolder, picked -> folder.setText(picked.toString()));
@@ -244,15 +244,15 @@ final class ExportPanel extends JPanel {
         }
     }
 
-    /** "Save" when the flow fields name the file the recording came from. */
+    /** "Save" when the recorded test fields name the file the recording came from. */
     private void relabel() {
         boolean save = false;
-        if (FLOW.equals(kind) && loadedFlow != null) {
-            String name = flowName.getText().trim();
+        if (RECORDED.equals(kind) && loadedTest != null) {
+            String name = testName.getText().trim();
             if (name.endsWith(".json")) name = name.substring(0, name.length() - ".json".length());
             Path to = folderPath();
             try {
-                save = !name.isEmpty() && to != null && to.resolve(name + ".json").normalize().equals(loadedFlow);
+                save = !name.isEmpty() && to != null && to.resolve(name + ".json").normalize().equals(loadedTest);
             } catch (InvalidPathException e) {
                 save = false;
             }

@@ -61,7 +61,7 @@ import java.util.function.Supplier;
  *       with the {@code recording} tool.</li>
  *   <li>The palette follows the agent: a recording the agent starts shows at once (the person's steps join it), and
  *       so do its stop, its load, a reset that replaces the recording, and its replay ({@link #agentStarted} …).</li>
- *   <li>The person loads a flow file (Load flow…) into the recording and runs it: the app reset, then every step
+ *   <li>The person loads a recorded test file (Load recorded test…) into the recording and runs it: the app reset, then every step
  *       replayed. While a run or replay goes on no other call drives the app ({@link #drivingReason}).</li>
  *   <li>{@link #highlight}: the agent shows what a locator matches - numbered boxes when several - with a question; the
  *       person answers with the check mark on a box, or "None of these" on the question bar.</li>
@@ -149,37 +149,37 @@ public final class Inspector {
         Result export(String className, String pkg);
 
         /**
-         * The folder Export… offers for a flow: one set explicitly (agent option, system property), else the folder
-         * the person last used, else the default flows folder. Absolute.
+         * The folder Export… offers for a recorded test: one set explicitly (agent option, system property), else the folder
+         * the person last used, else the default recorded tests folder. Absolute.
          */
-        Path flowsFolder();
+        Path recordedFolder();
 
-        /** The flow file the recording came from (loaded, or exported before), or null: the one a save goes over. */
-        Path loadedFlow();
+        /** The recorded test file the recording came from (loaded, or exported before), or null: the one a save goes over. */
+        Path loadedTest();
 
         /**
-         * Writes the recording as the flow {@code <folder>/<name>.json}, as {@code export_flow} does, and keeps it. A
+         * Writes the recording as the recorded test {@code <folder>/<name>.json}, as {@code export_recorded_test} does, and keeps it. A
          * folder that cannot be written comes back with {@link Result#folder} set, so the palette asks for another.
          */
-        Result exportFlow(String name, Path folder);
+        Result exportRecordedTest(String name, Path folder);
 
-        /** The flow files in {@code folder}, sorted; one that cannot be read comes with its problem. */
-        List<FlowEntry> flows(Path folder);
+        /** The recorded test files in {@code folder}, sorted; one that cannot be read comes with its problem. */
+        List<RecordedTestEntry> recordedTests(Path folder);
 
         /**
-         * Makes the flow file the recording, as if its steps had just been run after a reset, and remembers its folder.
-         * The result's line is the flow's name, or why it was not loaded (the recording is then unchanged).
+         * Makes the recorded test file the recording, as if its steps had just been run after a reset, and remembers its folder.
+         * The result's line is the recorded test's name, or why it was not loaded (the recording is then unchanged).
          */
-        Result loadFlow(Path file);
+        Result loadRecordedTest(Path file);
 
-        /** Resets the app as a flow starts ({@code session reset} without touching the recording). */
+        /** Resets the app as a recorded test starts ({@code session reset} without touching the recording). */
         Result reset();
     }
 
     /**
      * One step as the steps panel lists it: its id, which it keeps for the whole recording (the person's delete and
      * redo name it, so a step the agent put in meanwhile never shifts them onto another step), who made it ("person",
-     * "agent" or "flow"), its line, and whether it was changed after it was recorded and no replay passed it since.
+     * "agent" or "recorded test"), its line, and whether it was changed after it was recorded and no replay passed it since.
      */
     public static final class StepLine {
         public final int id;
@@ -200,8 +200,8 @@ public final class Inspector {
         }
     }
 
-    /** A flow file as Load flow… lists it. */
-    public static final class FlowEntry {
+    /** A recorded test file as Load recorded test… lists it. */
+    public static final class RecordedTestEntry {
         public final String name;
         /** Null when it has none. */
         public final String description;
@@ -210,7 +210,7 @@ public final class Inspector {
         public final String problem;
         public final Path file;
 
-        public FlowEntry(String name, String description, int steps, String problem, Path file) {
+        public RecordedTestEntry(String name, String description, int steps, String problem, Path file) {
             this.name = name;
             this.description = description;
             this.steps = steps;
@@ -248,7 +248,7 @@ public final class Inspector {
     private volatile String asking;
     /** Why a test run must wait: the person records or replays. */
     private volatile String recordingBusy;
-    /** Why no other call may drive the app: the person runs a flow or replays steps from the palette. */
+    /** Why no other call may drive the app: the person runs a recorded test or replays steps from the palette. */
     private volatile String driving;
 
     /** EDT only. */
@@ -267,10 +267,10 @@ public final class Inspector {
     private Recording recording;
     /** While the agent replays: its bar, without buttons, in place of the palette's. EDT. */
     private Bar agentBar;
-    /** Load flow…'s panel while it is open. EDT. */
-    FlowsPanel flowsPanel;
+    /** Load recorded test…'s panel while it is open. EDT. */
+    RecordedTestsPanel testsPanel;
     private boolean testRun;
-    /** The kind Export… opens on when no flow is loaded: the one the person used last in this JVM. EDT. */
+    /** The kind Export… opens on when no recorded test is loaded: the one the person used last in this JVM. EDT. */
     String exportKind = ExportPanel.JAVA;
     private Component snappedAt;
     private Integer snappedTab;
@@ -315,7 +315,7 @@ public final class Inspector {
     }
 
     /**
-     * Why every mutating call from elsewhere must wait - a person runs a flow or replays steps from the palette, whose
+     * Why every mutating call from elsewhere must wait - a person runs a recorded test or replays steps from the palette, whose
      * own steps go to the session directly - or null; null too when no inspector was ever made.
      */
     public static String drivingReason() {
@@ -431,7 +431,7 @@ public final class Inspector {
         later(Inspector::agentStoppedNow);
     }
 
-    /** The agent loaded the flow {@code name} ({@code steps} steps): shown as the palette's own load shows it. */
+    /** The agent loaded the recorded test {@code name} ({@code steps} steps): shown as the palette's own load shows it. */
     public static void agentLoaded(String name, int steps) {
         later(i -> i.agentLoadedNow(name, steps));
     }
@@ -465,10 +465,10 @@ public final class Inspector {
         });
     }
 
-    /** {@link #agentStarted} on this inspector: Load flow… closes, the old recording goes, the agent's shows. EDT. */
+    /** {@link #agentStarted} on this inspector: Load recorded test… closes, the old recording goes, the agent's shows. EDT. */
     void agentStartedNow() {
         if (sink == null || paletteHome == null) return;
-        closeFlows();
+        closeLoad();
         if (recording != null) recording.dispose();
         recording = new Recording(this, sink, sinkThread, paletteHome, this::startRecording);
         recording.startedByAgent();
@@ -483,7 +483,7 @@ public final class Inspector {
     /** {@link #agentLoaded} on this inspector. EDT. */
     void agentLoadedNow(String name, int steps) {
         if (sink == null || paletteHome == null) return;
-        closeFlows();
+        closeLoad();
         if (recording != null) recording.dispose();
         recording = Recording.loaded(this, sink, sinkThread, paletteHome, this::startRecording, name, steps);
     }
@@ -512,7 +512,7 @@ public final class Inspector {
         }
         agentBar = new Bar("Agent", reason).dot(Overlay.HOVER, false);
         // the person's panels wait too: nothing they press there could run meanwhile
-        closeFlows();
+        closeLoad();
         if (recording != null) recording.agentReplay(agentBar);
         else if (paletteHome != null) paletteHome.bar(agentBar);
     }
@@ -541,7 +541,7 @@ public final class Inspector {
     void install(Sink sink) {
         this.sink = sink;
         idle = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, this::startRecording)
-                .button("Load flow…", Overlay.HOVER, this::toggleFlows);
+                .button("Load recorded test…", Overlay.HOVER, this::toggleLoad);
         HitCheck.cover((c, t, p) -> instance != null && instance.stepOff(c, t, p));
         Toolkit.getDefaultToolkit().addAWTEventListener(e -> {
             int id = e.getID();
@@ -587,10 +587,10 @@ public final class Inspector {
         to.hidePalette(testRun);
         paletteHome = to;
         if (recording != null) recording.rehome(to); else to.bar(agentBar != null ? agentBar : idle);
-        if (flowsPanel != null) {
+        if (testsPanel != null) {
             // out of the old window first: while it still holds the panel, any change there would take it back
             if (from != null) from.panel(null);
-            to.panel(flowsPanel);
+            to.panel(testsPanel);
         }
         if (from == null) return;
         from.bar(null);
@@ -640,7 +640,7 @@ public final class Inspector {
     private void startRecording() {
         if (sink == null || paletteHome == null || agentBar != null) return;
         if (recording != null && recording.replaying) return;
-        closeFlows();
+        closeLoad();
         if (recording != null) recording.dispose();
         recording = null;
         sinkThread.submit(() -> {
@@ -659,7 +659,7 @@ public final class Inspector {
                 // where the palette is now: an agent step may have opened or closed a dialog while begin() waited
                 Overlay home = paletteHome;
                 if (home == null) return;
-                // a flow loaded while begin() waited goes: this ● Record came after it
+                // a recorded test loaded while begin() waited goes: this ● Record came after it
                 if (recording != null) recording.dispose();
                 recording = new Recording(this, sink, sinkThread, home, this::startRecording);
                 recording.start();
@@ -668,76 +668,76 @@ public final class Inspector {
     }
 
     /**
-     * Load flow…: opens (or closes) the panel with the flows in the flows folder; it replaces the steps or export panel.
+     * Load recorded test…: opens (or closes) the panel with the recorded tests in the recorded tests folder; it replaces the steps or export panel.
      * Not while the person records or replays. EDT.
      */
-    void toggleFlows() {
-        if (flowsPanel != null) {
-            closeFlows();
+    void toggleLoad() {
+        if (testsPanel != null) {
+            closeLoad();
             return;
         }
         if (sink == null || paletteHome == null || busyRecording()) return;
         if (recording != null) recording.closePanels();
         sinkThread.submit(() -> {
-            Path folder = sink.flowsFolder();
-            List<FlowEntry> flows = listed(folder);
+            Path folder = sink.recordedFolder();
+            List<RecordedTestEntry> tests = listed(folder);
             int current = sink.steps().size();
             SwingUtilities.invokeLater(() -> {
-                if (flowsPanel != null || paletteHome == null || busyRecording()) return;
-                flowsPanel = new FlowsPanel(folder, flows, current, this::listFlows, this::loadFlow, this::closeFlows);
-                paletteHome.panel(flowsPanel);
+                if (testsPanel != null || paletteHome == null || busyRecording()) return;
+                testsPanel = new RecordedTestsPanel(folder, tests, current, this::listTests, this::loadTest, this::closeLoad);
+                paletteHome.panel(testsPanel);
             });
         });
     }
 
-    /** The person records or replays, or the agent replays: no flow is loaded meanwhile. EDT. */
+    /** The person records or replays, or the agent replays: no recorded test is loaded meanwhile. EDT. */
     private boolean busyRecording() {
         return agentBar != null || recording != null && (recording.active() || recording.replaying);
     }
 
-    /** Load flow…'s panel goes, with its folder dialog. EDT. */
-    void closeFlows() {
-        if (flowsPanel == null) return;
-        flowsPanel.closeChooser();
-        if (paletteHome != null && paletteHome.holds(flowsPanel)) paletteHome.panel(null);
-        flowsPanel = null;
+    /** Load recorded test…'s panel goes, with its folder dialog. EDT. */
+    void closeLoad() {
+        if (testsPanel == null) return;
+        testsPanel.closeChooser();
+        if (paletteHome != null && paletteHome.holds(testsPanel)) paletteHome.panel(null);
+        testsPanel = null;
     }
 
-    /** The flows in {@code folder}; none when it cannot be listed. Sink thread. */
-    private List<FlowEntry> listed(Path folder) {
+    /** The recorded tests in {@code folder}; none when it cannot be listed. Sink thread. */
+    private List<RecordedTestEntry> listed(Path folder) {
         try {
-            return sink.flows(folder);
+            return sink.recordedTests(folder);
         } catch (RuntimeException e) {
-            return new ArrayList<FlowEntry>();
+            return new ArrayList<RecordedTestEntry>();
         }
     }
 
-    /** The person picked another folder in the panel: its flows. EDT. */
-    private void listFlows(Path folder) {
-        FlowsPanel panel = flowsPanel;
+    /** The person picked another folder in the panel: its recorded tests. EDT. */
+    private void listTests(Path folder) {
+        RecordedTestsPanel panel = testsPanel;
         if (panel == null) return;
         sinkThread.submit(() -> {
-            List<FlowEntry> flows = listed(folder);
-            SwingUtilities.invokeLater(() -> { if (flowsPanel == panel) panel.show(folder, flows); });
+            List<RecordedTestEntry> tests = listed(folder);
+            SwingUtilities.invokeLater(() -> { if (testsPanel == panel) panel.show(folder, tests); });
         });
     }
 
     /**
-     * Load: the flow becomes the recording, shown as a loaded {@link Recording} with its steps ready to run; the
+     * Load: the recorded test becomes the recording, shown as a loaded {@link Recording} with its steps ready to run; the
      * previous recording goes. A refused load says why in the panel and changes nothing. EDT.
      */
-    private void loadFlow(Path file) {
-        FlowsPanel panel = flowsPanel;
+    private void loadTest(Path file) {
+        RecordedTestsPanel panel = testsPanel;
         if (panel == null || busyRecording()) return;
         sinkThread.submit(() -> {
-            Result r = sink.loadFlow(file);
+            Result r = sink.loadRecordedTest(file);
             int n = r.ok ? sink.steps().size() : 0;
             SwingUtilities.invokeLater(() -> {
                 if (!r.ok) {
-                    if (flowsPanel == panel) panel.refused(r.line);
+                    if (testsPanel == panel) panel.refused(r.line);
                     return;
                 }
-                closeFlows();
+                closeLoad();
                 Overlay home = paletteHome;
                 if (home == null) return;
                 if (recording != null) recording.dispose();
@@ -746,7 +746,7 @@ public final class Inspector {
         });
     }
 
-    /** The person's recording - or the flow they loaded - or null before their first ● Record or load. EDT. */
+    /** The person's recording - or the recorded test they loaded - or null before their first ● Record or load. EDT. */
     Recording recording() {
         return recording;
     }

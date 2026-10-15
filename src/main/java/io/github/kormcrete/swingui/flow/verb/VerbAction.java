@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** A generic driver verb as a flow step. Replay and live authoring run it through the same executor. */
+/** A generic driver verb as a step. Replay and live authoring run it through the same executor. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public abstract class VerbAction extends Action {
 

@@ -42,7 +42,7 @@ public final class FlowJson {
         return MAPPER;
     }
 
-    /** The step types a flow step may name in its {@code action} field: {@link Action}'s subtypes, in order. */
+    /** The step types a step may name in its {@code action} field: {@link Action}'s subtypes, in order. */
     public static List<String> stepTypes() {
         List<String> names = new ArrayList<String>();
         for (JsonSubTypes.Type t : Action.class.getAnnotation(JsonSubTypes.class).value()) names.add(t.name());
@@ -60,7 +60,7 @@ public final class FlowJson {
         return new DriverException(Reason.BAD_INPUT, named + "; the step types are " + stepTypes());
     }
 
-    /** Parses a flow. Fails as BAD_INPUT: an unknown step type as {@link #unknownStepType}, else invalid JSON. */
+    /** Parses steps. Fails as BAD_INPUT: an unknown step type as {@link #unknownStepType}, else invalid JSON. */
     public static Flow parse(String json) {
         try {
             return MAPPER.readValue(json, Flow.class);
@@ -70,7 +70,7 @@ public final class FlowJson {
             JsonLocation at = e.getLocation();
             String where = at == null ? "" : " (line " + at.getLineNr() + ", column " + at.getColumnNr() + ")";
             DriverException bad = new DriverException(Reason.BAD_INPUT,
-                    "not a valid flow: " + e.getOriginalMessage() + where);
+                    "not valid steps JSON: " + e.getOriginalMessage() + where);
             bad.initCause(e);
             throw bad;
         }
@@ -80,17 +80,17 @@ public final class FlowJson {
         try {
             return MAPPER.writeValueAsString(flow);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to write flow JSON: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to write steps JSON: " + e.getMessage(), e);
         }
     }
 
-    /** Reads and parses a flow file. Fails as {@link #parse} does, or as BAD_INPUT when unreadable, naming the file. */
+    /** Reads and parses a steps file. Fails as {@link #parse} does, or as BAD_INPUT when unreadable, naming the file. */
     public static Flow load(java.nio.file.Path path) {
         String json;
         try {
             json = new String(java.nio.file.Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8);
         } catch (java.io.IOException e) {
-            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot read flow file " + path + ": " + e);
+            DriverException bad = new DriverException(Reason.BAD_INPUT, "cannot read steps file " + path + ": " + e);
             bad.initCause(e);
             throw bad;
         }
@@ -98,7 +98,7 @@ public final class FlowJson {
             return parse(json);
         } catch (DriverException e) {
             DriverException named = new DriverException(e.reason(),
-                    "flow file " + path + ": " + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
+                    "steps file " + path + ": " + DriverException.stripReason(e.getMessage(), e.reason()), e.details());
             named.initCause(e);
             throw named;
         }

@@ -7,7 +7,7 @@ import java.security.MessageDigest;
 import java.util.prefs.Preferences;
 
 /**
- * The flows folder the person last used in the palette, offered first next time unless one was set explicitly. Kept in
+ * The recorded tests folder the person last used in the palette, offered first next time unless one was set explicitly. Kept in
  * the user's Java {@link Preferences}, one entry per app working directory, so nothing is written into their project.
  * Memory only: whatever goes wrong, it forgets rather than fails.
  */
@@ -73,14 +73,14 @@ public interface FolderMemory {
     }
 
     /**
-     * The preferences key for {@code workingDir}: {@code flows-} and the SHA-1 of its absolute, normalized path, short
+     * The preferences key for {@code workingDir}: {@code recorded-} and the SHA-1 of its absolute, normalized path, short
      * enough for {@link Preferences#MAX_KEY_LENGTH} however deep the folder is.
      */
     static String key(Path workingDir) {
         String path = workingDir.toAbsolutePath().normalize().toString();
         try {
             byte[] hash = MessageDigest.getInstance("SHA-1").digest(path.getBytes(StandardCharsets.UTF_8));
-            StringBuilder s = new StringBuilder("flows-");
+            StringBuilder s = new StringBuilder("recorded-");
             for (byte b : hash) s.append(String.format("%02x", b & 0xFF));
             return s.toString();
         } catch (java.security.NoSuchAlgorithmException e) {

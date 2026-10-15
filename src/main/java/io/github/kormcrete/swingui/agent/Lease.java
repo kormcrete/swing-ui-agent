@@ -15,7 +15,7 @@ import java.util.function.Supplier;
  * call without a token runs only while nobody holds the lease (the CLI's one-call lease). A lease ends on release,
  * after {@code ttl} without a call, or when another owner leases an agent idle for {@link #TAKEOVER_IDLE_MS} with
  * no call running: a test JVM stopped mid-test must not lock the client for the whole TTL. A running call keeps
- * the lease alive however long it takes. While a person runs a flow or replays steps from the palette, every mutating
+ * the lease alive however long it takes. While a person runs a recorded test or replays steps from the palette, every mutating
  * call is BUSY ({@link #drivenBy}).
  */
 final class Lease {
@@ -69,7 +69,7 @@ final class Lease {
     }
 
     /**
-     * {@code reason} answers why a mutating call must wait though it may hold the lease - a person runs a flow or
+     * {@code reason} answers why a mutating call must wait though it may hold the lease - a person runs a recorded test or
      * replays their recording through the palette, whose steps do not pass the lease - or null; asked on every
      * {@link #enter}. Reads and renewals are not affected.
      */

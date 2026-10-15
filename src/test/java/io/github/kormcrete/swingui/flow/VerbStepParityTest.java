@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Each verb step, read from flow JSON, makes the same driver call as the verb called directly. */
+/** Each verb step, read from recorded test JSON, makes the same driver call as the verb called directly. */
 class VerbStepParityTest {
 
     private static List<String> viaStep(String json) throws Exception {

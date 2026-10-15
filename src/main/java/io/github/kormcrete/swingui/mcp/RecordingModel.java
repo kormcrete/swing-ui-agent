@@ -17,7 +17,7 @@ import java.util.List;
  */
 final class RecordingModel {
 
-    /** Where the recording stands: nothing started yet, taking steps, or ended (Done, stop, a loaded flow). */
+    /** Where the recording stands: nothing started yet, taking steps, or ended (Done, stop, a loaded recorded test). */
     enum State {
         IDLE("idle"), RECORDING("recording"), STOPPED("stopped");
 
@@ -114,14 +114,14 @@ final class RecordingModel {
         changed("the recording stopped");
     }
 
-    /** The steps are a loaded flow's: stopped, started by the flow. */
+    /** The steps are a loaded recorded test's: stopped, started by the recorded test. */
     void loaded() {
         state = State.STOPPED;
-        startedBy = RecordedStep.Author.FLOW;
+        startedBy = RecordedStep.Author.LOADED;
         explicit = false;
         shared = false;
         notRecorded.clear();
-        changed("a flow was loaded");
+        changed("a recorded test was loaded");
     }
 
     /** A step that ran but could not be recorded, with why. */
@@ -162,7 +162,7 @@ final class RecordingModel {
         steps.clear();
         history.clear();
         for (Action a : actions) steps.add(new RecordedStep(nextId++, author, a, false));
-        changed("a flow was loaded");
+        changed("a recorded test was loaded");
     }
 
     List<Action> actions() {
@@ -231,7 +231,7 @@ final class RecordingModel {
     }
 
     private static String by(RecordedStep.Author a) {
-        return a.json.equals("flow") ? "the flow" : "the " + a.json;
+        return a.json.equals("loaded") ? "the loaded test" : "the " + a.json;
     }
 
     /** Records the edit just made (steps before it in {@code before}) and returns its past-tense text. */

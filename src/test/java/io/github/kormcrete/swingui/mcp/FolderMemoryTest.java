@@ -16,7 +16,7 @@ class FolderMemoryTest {
         StringBuilder deep = new StringBuilder();
         while (deep.length() < 300) deep.append("/orders-archive");
         String key = FolderMemory.key(Paths.get(deep.toString()));
-        assertThat(key).startsWith("flows-");
+        assertThat(key).startsWith("recorded-");
         assertThat(key.length()).isLessThanOrEqualTo(Preferences.MAX_KEY_LENGTH);
     }
 
@@ -32,8 +32,8 @@ class FolderMemoryTest {
     void inMemoryRemembers() {
         FolderMemory memory = FolderMemory.inMemory();
         assertThat(memory.get()).isNull();
-        Path flows = Paths.get("").toAbsolutePath().resolve("uitest");
-        memory.put(flows);
-        assertThat(memory.get()).isEqualTo(flows);
+        Path testsDir = Paths.get("").toAbsolutePath().resolve("uitest");
+        memory.put(testsDir);
+        assertThat(memory.get()).isEqualTo(testsDir);
     }
 }

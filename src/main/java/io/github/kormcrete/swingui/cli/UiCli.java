@@ -19,14 +19,14 @@ import java.util.List;
 /** {@code java -jar swing-ui-agent.jar [--host H] [--port N] [--out FILE] [--lease T] <tool> ['<json args>']}: one call, then exit. */
 public final class UiCli {
 
-    static final int OK = 0, TOOL_ERROR = 1, USAGE = 2, NOT_RUNNING = 3, FLOW_FAILED = 4;
+    static final int OK = 0, TOOL_ERROR = 1, USAGE = 2, NOT_RUNNING = 3, TEST_FAILED = 4;
 
     static final String USAGE_TEXT = String.join("\n",
             "usage: java -jar swing-ui-agent.jar [--host 127.0.0.1] [--port 8765] [--out FILE] <tool> ['<json arguments>']",
             "       java -jar swing-ui-agent.jar [--port N] tools [<tool>]   list the tools, or one tool's full schema",
             "  --lease T   pass a held lease's token (session op 'lease' returns one)",
             "  --out FILE   for a tool that returns an image (screenshot): write the PNG to FILE",
-            "exit: 0 ok, 1 tool or agent error (stderr), 2 usage, 3 no agent reachable, 4 run_flow: the flow failed (report on stderr)");
+            "exit: 0 ok, 1 tool or agent error (stderr), 2 usage, 3 no agent reachable, 4 run_recorded_test: the recorded test failed (report on stderr)");
 
     private UiCli() {}
 
@@ -84,12 +84,12 @@ public final class UiCli {
                 return TOOL_ERROR;
             }
             int code = print(result, outFile == null ? null : Paths.get(outFile), out, err);
-            if (code == OK && "run_flow".equals(tool)) {
+            if (code == OK && "run_recorded_test".equals(tool)) {
                 try {
                     JsonNode answer = mapper.readTree(firstText(result));
                     if (!answer.path("passed").asBoolean(true)) {
                         err.println(answer.path("report").asText(""));
-                        return FLOW_FAILED;
+                        return TEST_FAILED;
                     }
                 } catch (IOException e) {
                     // not JSON: nothing to judge, the text was printed

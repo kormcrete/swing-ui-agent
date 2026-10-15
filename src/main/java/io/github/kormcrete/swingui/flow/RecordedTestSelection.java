@@ -10,32 +10,32 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Which flow files a runner runs: the one named by {@code -Dflow}, else those listed in the folder's
+ * Which recorded test files a runner runs: the one named by {@code -Drecorded}, else those listed in the folder's
  * {@code gate.txt}, else all of them. It never returns an empty list: a run that selects nothing must fail, not pass.
  */
-public final class FlowSelection {
+public final class RecordedTestSelection {
 
-    /** The system property that names one flow to run. */
-    public static final String FLOW_PROPERTY = "flow";
-    /** The file in the flows folder that lists the flows to run, one name per line, in order. */
+    /** The system property that names one recorded test to run. */
+    public static final String PROPERTY = "recorded";
+    /** The file in the recorded tests folder that lists the recorded tests to run, one name per line, in order. */
     public static final String GATE_FILE = "gate.txt";
 
-    private FlowSelection() {
+    private RecordedTestSelection() {
     }
 
-    /** The files to run, in order; {@code requested} is the value of {@code -Dflow} (blank: none). */
+    /** The files to run, in order; {@code requested} is the value of {@code -Drecorded} (blank: none). */
     public static List<Path> select(Path dir, String requested) {
         Path abs = dir.toAbsolutePath();
         if (!Files.isDirectory(dir)) {
-            throw new IllegalArgumentException("no flows folder " + abs + ": export one (export_flow, or Export... in "
-                    + "the palette) or point -D" + FlowFiles.DIR_PROP + " at yours");
+            throw new IllegalArgumentException("no recorded tests folder " + abs + ": export one (export_recorded_test, or Export... in "
+                    + "the palette) or point -D" + RecordedTestFiles.DIR_PROP + " at yours");
         }
         List<Path> out = new ArrayList<Path>();
         if (requested != null && !requested.trim().isEmpty()) {
-            Path file = FlowFiles.file(dir, requested);
+            Path file = RecordedTestFiles.file(dir, requested);
             if (!Files.isRegularFile(file)) {
-                throw new IllegalArgumentException("no flow '" + requested.trim() + "' (named by -D" + FLOW_PROPERTY
-                        + ") in " + abs + "; the flows there: " + names(FlowFiles.list(dir)));
+                throw new IllegalArgumentException("no recorded test '" + requested.trim() + "' (named by -D" + PROPERTY
+                        + ") in " + abs + "; the recorded tests there: " + names(RecordedTestFiles.list(dir)));
             }
             out.add(file);
             return out;
@@ -55,10 +55,10 @@ public final class FlowSelection {
                 if (hash >= 0) line = line.substring(0, hash);
                 line = line.trim();
                 if (line.isEmpty()) continue;
-                Path file = FlowFiles.file(dir, line);
+                Path file = RecordedTestFiles.file(dir, line);
                 if (!Files.isRegularFile(file)) {
-                    throw new IllegalArgumentException(GATE_FILE + " line " + (i + 1) + ": no flow '" + line + "' in "
-                            + abs + "; the flows there: " + names(FlowFiles.list(dir)));
+                    throw new IllegalArgumentException(GATE_FILE + " line " + (i + 1) + ": no recorded test '" + line + "' in "
+                            + abs + "; the recorded tests there: " + names(RecordedTestFiles.list(dir)));
                 }
                 if (!seen.add(file.getFileName().toString())) {
                     throw new IllegalArgumentException(GATE_FILE + " line " + (i + 1) + ": '" + line
@@ -67,12 +67,12 @@ public final class FlowSelection {
                 out.add(file);
             }
             if (out.isEmpty()) {
-                throw new IllegalArgumentException(GATE_FILE + " lists no flows: name at least one, or delete it to run all");
+                throw new IllegalArgumentException(GATE_FILE + " lists no recorded tests: name at least one, or delete it to run all");
             }
             return out;
         }
-        out.addAll(FlowFiles.list(dir));
-        if (out.isEmpty()) throw new IllegalArgumentException("no flow files in " + abs);
+        out.addAll(RecordedTestFiles.list(dir));
+        if (out.isEmpty()) throw new IllegalArgumentException("no recorded test files in " + abs);
         return out;
     }
 
@@ -80,7 +80,7 @@ public final class FlowSelection {
         StringBuilder sb = new StringBuilder();
         for (Path p : files) {
             String n = p.getFileName().toString();
-            if (n.endsWith(FlowFiles.SUFFIX)) n = n.substring(0, n.length() - FlowFiles.SUFFIX.length());
+            if (n.endsWith(RecordedTestFiles.SUFFIX)) n = n.substring(0, n.length() - RecordedTestFiles.SUFFIX.length());
             if (sb.length() > 0) sb.append(", ");
             sb.append(n);
         }

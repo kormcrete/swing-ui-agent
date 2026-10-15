@@ -72,17 +72,17 @@ class PaletteShotTest {
     }
 
     @Test
-    void aCaptureLeavesTheFlowsPanelOutToo() throws Exception {
+    void aCaptureLeavesTheRecordedTestsPanelOutToo() throws Exception {
         withPalette((root, bar, panel) -> {
-            FlowsPanel flows = new FlowsPanel(Paths.get("uitest"), java.util.Collections.<Inspector.FlowEntry>emptyList(),
+            RecordedTestsPanel testsDir = new RecordedTestsPanel(Paths.get("uitest"), java.util.Collections.<Inspector.RecordedTestEntry>emptyList(),
                     0, f -> { }, f -> { }, () -> { });
             // where the panel slot is: over the app, under the bar
-            flows.setBounds(10, 10, 300, 200);
-            flows.validate();
-            root.getLayeredPane().add(flows, javax.swing.JLayeredPane.PALETTE_LAYER);
+            testsDir.setBounds(10, 10, 300, 200);
+            testsDir.validate();
+            root.getLayeredPane().add(testsDir, javax.swing.JLayeredPane.PALETTE_LAYER);
             Shot shot = Screenshots.of(root, null, null, null);
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(shot.png));
-            assertThat(centre(image, flows)).isEqualTo(0xFF0000);
+            assertThat(centre(image, testsDir)).isEqualTo(0xFF0000);
         });
     }
 }

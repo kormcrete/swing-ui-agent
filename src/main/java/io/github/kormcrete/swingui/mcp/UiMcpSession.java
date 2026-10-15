@@ -20,8 +20,8 @@ import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
-import io.github.kormcrete.swingui.flow.FlowFiles;
-import io.github.kormcrete.swingui.flow.FlowFolderNotWritable;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
+import io.github.kormcrete.swingui.flow.RecordedTestFolderNotWritable;
 import io.github.kormcrete.swingui.flow.FailureDiagnostics;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.FlowReport;
@@ -79,14 +79,14 @@ public class UiMcpSession {
     /**
      * The recording began fresh - a session reset, a recording start, the person's ● Record, a load, or a passing replay
      * or redo from the reset - where an exported test starts too; false after a clearing export until one of those.
-     * export_test and export_flow refuse it otherwise.
+     * export_test and export_recorded_test refuse it otherwise.
      */
     private boolean freshStart;
     /** That reset was an app plugin's, to a defined start state, not only dialogs closed. */
     private boolean definedStart;
 
     /**
-     * The start of a flow: what {@code session reset} does to the app - dialogs closed, with an app plugin its reset -
+     * The start of a recorded test: what {@code session reset} does to the app - dialogs closed, with an app plugin its reset -
      * without touching the recording. {@link #defined()}: an app plugin resets the app to a defined state.
      */
     public interface AppReset {
@@ -102,12 +102,12 @@ public class UiMcpSession {
             throw new DriverException(Reason.CAPABILITY_GAP, "this session has no reset");
         }
     };
-    private Path flowsDir = FlowFiles.dir(null, System.getProperty(FlowFiles.DIR_PROP), Paths.get(""));
+    private Path recordedDir = RecordedTestFiles.dir(null, System.getProperty(RecordedTestFiles.DIR_PROP), Paths.get(""));
     /** The folder was chosen (agent option or system property), not the default. */
-    private boolean flowsDirExplicit;
-    /** The flow file the recording came from (loaded, or exported without clear): the one file a save may replace. */
-    private Path loadedFlow;
-    /** The {@code name} and {@code description} written in {@link #loadedFlow}: a save over it without them keeps them. */
+    private boolean recordedDirExplicit;
+    /** The recorded test file the recording came from (loaded, or exported without clear): the one file a save may replace. */
+    private Path loadedTest;
+    /** The {@code name} and {@code description} written in {@link #loadedTest}: a save over it without them keeps them. */
     private String loadedName;
     private String loadedDescription;
     /** The folder the person last used in the palette, offered when no folder was set explicitly. */
@@ -165,7 +165,7 @@ public class UiMcpSession {
         /** The agent stopped a shared recording. */
         default void agentStopped() { }
 
-        /** The agent loaded the flow {@code name}, {@code steps} steps long, as the recording. */
+        /** The agent loaded the recorded test {@code name}, {@code steps} steps long, as the recording. */
         default void agentLoaded(String name, int steps) { }
 
         /** A fresh recording nobody shares replaced the one shown: a session reset's, or none after a clearing export. */
@@ -211,7 +211,7 @@ public class UiMcpSession {
         }
     }
 
-    /** How a flow starts (see {@link AppReset}); the agent sets the session's own reset. */
+    /** How a recorded test starts (see {@link AppReset}); the agent sets the session's own reset. */
     public void appReset(AppReset reset) {
         this.appReset = reset;
     }
@@ -220,18 +220,18 @@ public class UiMcpSession {
         return appReset;
     }
 
-    /** Where flows are saved and loaded from; {@code explicit}: set by the agent option or the system property. */
-    public void flowsDir(Path dir, boolean explicit) {
-        this.flowsDir = dir;
-        this.flowsDirExplicit = explicit;
+    /** Where recorded tests are saved and loaded from; {@code explicit}: set by the agent option or the system property. */
+    public void recordedDir(Path dir, boolean explicit) {
+        this.recordedDir = dir;
+        this.recordedDirExplicit = explicit;
     }
 
-    public Path flowsDir() {
-        return flowsDir;
+    public Path recordedDir() {
+        return recordedDir;
     }
 
-    public boolean flowsDirExplicit() {
-        return flowsDirExplicit;
+    public boolean recordedDirExplicit() {
+        return recordedDirExplicit;
     }
 
     /** Where the palette remembers the last folder the person used (tests: {@link FolderMemory#inMemory}). */
@@ -239,9 +239,9 @@ public class UiMcpSession {
         this.folderMemory = memory;
     }
 
-    /** The flow file the recording came from; null when it came from no file. */
-    public synchronized Path loadedFlow() {
-        return loadedFlow;
+    /** The recorded test file the recording came from; null when it came from no file. */
+    public synchronized Path loadedTest() {
+        return loadedTest;
     }
 
     /** Lets {@code inspect} run: only while the palette is on. Off until the agent says so. */
@@ -582,25 +582,25 @@ public class UiMcpSession {
             }
 
             @Override
-            public Path flowsFolder() {
-                if (flowsDirExplicit) return flowsDir;
+            public Path recordedFolder() {
+                if (recordedDirExplicit) return recordedDir;
                 Path remembered = folderMemory.get();
-                return remembered != null ? remembered : flowsDir;
+                return remembered != null ? remembered : recordedDir;
             }
 
             @Override
-            public Path loadedFlow() {
-                return UiMcpSession.this.loadedFlow();
+            public Path loadedTest() {
+                return UiMcpSession.this.loadedTest();
             }
 
             @Override
-            public Inspector.Result exportFlow(String name, Path folder) {
+            public Inspector.Result exportRecordedTest(String name, Path folder) {
                 try {
                     // kept, like a test export; the file becomes the one a further export saves over
-                    JsonNode result = mapper.readTree(UiMcpSession.this.exportFlow(name, folder.toString(), null, false));
+                    JsonNode result = mapper.readTree(UiMcpSession.this.exportRecordedTest(name, folder.toString(), null, false));
                     folderMemory.put(Paths.get(result.path("savedTo").asText()).getParent());
                     return new Inspector.Result(true, wrote(result));
-                } catch (FlowFolderNotWritable e) {
+                } catch (RecordedTestFolderNotWritable e) {
                     return new Inspector.Result(false, "Cannot write to " + e.folder() + ": " + e.why(), true);
                 } catch (ExportRefused e) {
                     return new Inspector.Result(false, String.join("; ", e.problems()));
@@ -610,27 +610,27 @@ public class UiMcpSession {
             }
 
             @Override
-            public List<Inspector.FlowEntry> flows(Path folder) {
-                List<Inspector.FlowEntry> out = new ArrayList<Inspector.FlowEntry>();
-                for (Path file : FlowFiles.list(folder)) {
+            public List<Inspector.RecordedTestEntry> recordedTests(Path folder) {
+                List<Inspector.RecordedTestEntry> out = new ArrayList<Inspector.RecordedTestEntry>();
+                for (Path file : RecordedTestFiles.list(folder)) {
                     Path abs = file.toAbsolutePath().normalize();
                     String base = abs.getFileName().toString();
-                    String name = base.substring(0, base.length() - FlowFiles.SUFFIX.length());
+                    String name = base.substring(0, base.length() - RecordedTestFiles.SUFFIX.length());
                     try {
-                        Flow flow = FlowFiles.read(abs);
-                        out.add(new Inspector.FlowEntry(name, flow.description, flow.steps.size(), null, abs));
+                        Flow flow = RecordedTestFiles.read(abs);
+                        out.add(new Inspector.RecordedTestEntry(name, flow.description, flow.steps.size(), null, abs));
                     } catch (RuntimeException e) {
-                        out.add(new Inspector.FlowEntry(name, null, 0, message(e), abs));
+                        out.add(new Inspector.RecordedTestEntry(name, null, 0, message(e), abs));
                     }
                 }
                 return out;
             }
 
             @Override
-            public Inspector.Result loadFlow(Path file) {
+            public Inspector.Result loadRecordedTest(Path file) {
                 try {
-                    JsonNode loaded = mapper.readTree(UiMcpSession.this.loadFlow(file));
-                    // the folder the person loaded from is the one Load flow… and Export… offer next
+                    JsonNode loaded = mapper.readTree(UiMcpSession.this.loadRecordedTest(file));
+                    // the folder the person loaded from is the one Load recorded test… and Export… offer next
                     folderMemory.put(Paths.get(loaded.path("loaded").asText()).getParent());
                     return new Inspector.Result(true, loaded.path("name").asText());
                 } catch (Exception e) {
@@ -1072,7 +1072,7 @@ public class UiMcpSession {
      */
     public synchronized String doActions(JsonNode actionsJson) throws Exception {
         if (actionsJson == null || !actionsJson.isArray()) {
-            throw new IllegalArgumentException("'actions' must be an array of flow actions");
+            throw new IllegalArgumentException("'actions' must be an array of step types");
         }
         if (actionsJson.size() == 0) {
             throw new IllegalArgumentException("'actions' must be a non-empty array");
@@ -1123,7 +1123,7 @@ public class UiMcpSession {
         return result;
     }
 
-    /** The step verbs {@code batch} takes besides the verb tools' names and the flow actions' names. */
+    /** The step verbs {@code batch} takes besides the verb tools' names and the step types' names. */
     static final String READ_STEP = "read";
 
     /**
@@ -1131,7 +1131,7 @@ public class UiMcpSession {
      * shaped sibling of {@link #doActions}. Each step is {@code {"verb": <name>, ...that tool's
      * arguments}}: a verb tool's name ({@code click}, {@code type}, {@code choose_file}, ...) runs
      * exactly as that tool would ({@link #verbStep}), {@code read} reads without recording, and any
-     * other name is taken as a flow step type ({@code navigate}, {@code close}, {@code loginAs},
+     * other name is taken as a step type ({@code navigate}, {@code close}, {@code loginAs},
      * {@code screenshot}, ...) and runs as {@code do_actions} runs it; a name that is none is BAD_INPUT. So what is recorded, and what {@code export_test}
      * writes, is the same as issuing the steps one by one.
      *
@@ -1282,7 +1282,7 @@ public class UiMcpSession {
             model.clear();
             recordingFromReset = false;
             freshStart = false;
-            forgetLoadedFlow();
+            forgetLoadedTest();
             publish();
             if (palette) view.replaced();
         }
@@ -1334,45 +1334,45 @@ public class UiMcpSession {
     }
 
     /**
-     * Writes the steps recorded since the last {@link #startRecording} as a flow file {@code <folder>/<name>.json}
-     * ({@link FlowFiles}) and returns a JSON summary ({@code savedTo}, {@code steps}, {@code fragile},
-     * {@code overwrote}, {@code startWarning} when it applies, {@code flow}). The refusals are export_test's (no reset
+     * Writes the steps recorded since the last {@link #startRecording} as a recorded test file {@code <folder>/<name>.json}
+     * ({@link RecordedTestFiles}) and returns a JSON summary ({@code savedTo}, {@code steps}, {@code fragile},
+     * {@code overwrote}, {@code startWarning} when it applies, {@code test}). The refusals are export_test's (no reset
      * start; an empty recording and a bad name together, in one {@link ExportRefused}), plus a folder that cannot be
-     * written ({@code FlowFolderNotWritable}); an existing file is refused unless it is the flow the recording came
+     * written ({@code RecordedTestFolderNotWritable}); an existing file is refused unless it is the recorded test the recording came
      * from, which keeps its own {@code name} and, when no {@code description} is given, its description. A refusal
      * leaves the recording as it was. {@code clear} empties the recording; otherwise the written file becomes the one
      * a further export saves over; a clearing one is refused while a recording someone started runs.
      */
-    public synchronized String exportFlow(String name, String dir, String description, boolean clear) throws Exception {
+    public synchronized String exportRecordedTest(String name, String dir, String description, boolean clear) throws Exception {
         if (clear) refuseClearWhileRecording();
         requireResetStart();
         List<String> problems = new ArrayList<String>();
         if (model.size() == 0) problems.add("nothing was recorded");
         try {
-            FlowFiles.checkName(name);
+            RecordedTestFiles.checkName(name);
         } catch (DriverException e) {
             problems.add(e.getMessage());
         }
         if (!problems.isEmpty()) throw new ExportRefused(problems);
 
-        Path folder = dir == null || dir.trim().isEmpty() ? flowsDir
+        Path folder = dir == null || dir.trim().isEmpty() ? recordedDir
                 : Paths.get("").toAbsolutePath().resolve(dir.trim()).normalize();
-        folder = FlowFiles.writableDir(folder);
-        Path file = FlowFiles.file(folder, name).toAbsolutePath().normalize();
+        folder = RecordedTestFiles.writableDir(folder);
+        Path file = RecordedTestFiles.file(folder, name).toAbsolutePath().normalize();
         boolean exists = Files.exists(file);
-        if (exists && !file.equals(loadedFlow)) {
-            throw new IllegalArgumentException(file + " already exists; choose another name (only the flow the "
+        if (exists && !file.equals(loadedTest)) {
+            throw new IllegalArgumentException(file + " already exists; choose another name (only the recorded test the "
                     + "recording came from is saved over)");
         }
-        // saved over the flow the recording came from: its own name and, unless a new one is given, its description stay
+        // saved over the recorded test the recording came from: its own name and, unless a new one is given, its description stay
         Flow flow = new Flow();
-        flow.name = exists && loadedName != null ? loadedName : FlowFiles.checkName(name);
+        flow.name = exists && loadedName != null ? loadedName : RecordedTestFiles.checkName(name);
         flow.description = description != null && !description.trim().isEmpty() ? description.trim()
                 : exists ? loadedDescription : null;
-        flow.start = FlowFiles.START_RESET;
+        flow.start = RecordedTestFiles.START_RESET;
         flow.steps = model.actions();
-        flow.version = FlowFiles.versionFor(flow);
-        String text = FlowFiles.write(flow);
+        flow.version = RecordedTestFiles.versionFor(flow);
+        String text = RecordedTestFiles.write(flow);
         Files.write(file, text.getBytes(StandardCharsets.UTF_8));
 
         String startWarning = startWarning();
@@ -1382,14 +1382,14 @@ public class UiMcpSession {
         result.put("fragile", fragileSteps());
         result.put("overwrote", exists);
         if (startWarning != null) result.put("startWarning", startWarning);
-        result.set("flow", mapper.readTree(text));
+        result.set("test", mapper.readTree(text));
         if (clear) {
             model.clear();
             recordingFromReset = false;
             freshStart = false;
-            forgetLoadedFlow();
+            forgetLoadedTest();
         } else {
-            loadedFlow = file;
+            loadedTest = file;
             loadedName = flow.name;
             loadedDescription = flow.description;
         }
@@ -1399,40 +1399,40 @@ public class UiMcpSession {
     }
 
     /**
-     * Runs a flow file on the live app and reports it ({@code passed}, {@code flow}, {@code file}, {@code ran},
-     * {@code total}, {@code ms}, {@code steps}, {@code report}). Exactly one of {@code name} (in the flows folder),
-     * {@code path} or {@code flow} (the file's JSON inline). It begins with the app reset, runs every step as
+     * Runs a recorded test file on the live app and reports it ({@code passed}, {@code test}, {@code file}, {@code ran},
+     * {@code total}, {@code ms}, {@code steps}, {@code report}). Exactly one of {@code name} (in the recorded tests folder),
+     * {@code path} or {@code test} (the file's JSON inline). It begins with the app reset, runs every step as
      * {@code do_action} would but records nothing, and stops at the first failing step, which carries its diagnosis
-     * (picture under {@code evidence}). A flow that fails is a result; one that cannot start (bad file, no reset) is an
+     * (picture under {@code evidence}). A recorded test that fails is a result; one that cannot start (bad file, no reset) is an
      * error. Refused (BUSY) while a person records, answers or replays in the palette.
      */
-    public synchronized String runFlow(JsonNode args) {
+    public synchronized String runRecordedTest(JsonNode args) {
         JsonNode name = args == null ? null : args.get("name");
         JsonNode path = args == null ? null : args.get("path");
-        JsonNode inline = args == null ? null : args.get("flow");
+        JsonNode inline = args == null ? null : args.get("test");
         int given = (name != null && !name.isNull() ? 1 : 0) + (path != null && !path.isNull() ? 1 : 0)
                 + (inline != null && !inline.isNull() ? 1 : 0);
         if (given != 1) {
-            throw new DriverException(Reason.BAD_INPUT, "run_flow takes one of 'name', 'path' or 'flow'");
+            throw new DriverException(Reason.BAD_INPUT, "run_recorded_test takes one of 'name', 'path' or 'test'");
         }
         Flow flow;
         Path file = null;
         if (name != null && !name.isNull()) {
-            file = flowFile(name.asText(), null);
-            flow = FlowFiles.read(file);
+            file = recordedTestFile(name.asText(), null);
+            flow = RecordedTestFiles.read(file);
         } else if (path != null && !path.isNull()) {
-            file = flowFile(null, path.asText());
-            flow = FlowFiles.read(file);
+            file = recordedTestFile(null, path.asText());
+            flow = RecordedTestFiles.read(file);
         } else {
             // the file's JSON object, or that JSON as text (agents often send it quoted)
             String text = inline.isObject() ? inline.toString() : inline.isTextual() ? inline.textValue() : null;
-            if (text == null) throw new DriverException(Reason.BAD_INPUT, "'flow' must be a flow file's JSON object");
-            flow = FlowFiles.parse(text, "the 'flow' argument");
-            if (flow.name == null || flow.name.isEmpty()) flow.name = "flow";
+            if (text == null) throw new DriverException(Reason.BAD_INPUT, "'test' must be a recorded test file's JSON object");
+            flow = RecordedTestFiles.parse(text, "the 'test' argument");
+            if (flow.name == null || flow.name.isEmpty()) flow.name = "inline";
         }
         String busy = personBusy.get();
         if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
-        if (host.verbs() == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed: nothing to run the flow on");
+        if (host.verbs() == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed: nothing to run the recorded test on");
         JsonNode ev = args.get("evidence");
         Path evidence = ev != null && ev.isTextual() && !ev.asText().trim().isEmpty()
                 ? Paths.get("").toAbsolutePath().resolve(ev.asText().trim()).normalize()
@@ -1451,7 +1451,7 @@ public class UiMcpSession {
 
         ObjectNode r = mapper.createObjectNode();
         r.put("passed", result.passed());
-        r.put("flow", flow.name);
+        r.put("test", flow.name);
         if (file != null) r.put("file", file.toString());
         r.put("ran", result.steps.size());
         r.put("total", flow.steps.size());
@@ -1462,17 +1462,17 @@ public class UiMcpSession {
         return r.toString();
     }
 
-    /** The flow file {@code name} (in the flows folder, which must have it) or {@code path} (relative to the working directory) names. */
-    private Path flowFile(String name, String path) {
+    /** The recorded test file {@code name} (in the recorded tests folder, which must have it) or {@code path} (relative to the working directory) names. */
+    private Path recordedTestFile(String name, String path) {
         if (name != null) {
-            Path file = FlowFiles.file(flowsDir, name).toAbsolutePath().normalize();
+            Path file = RecordedTestFiles.file(recordedDir, name).toAbsolutePath().normalize();
             if (!Files.isRegularFile(file)) {
                 List<String> there = new ArrayList<String>();
-                for (Path p : FlowFiles.list(flowsDir)) {
+                for (Path p : RecordedTestFiles.list(recordedDir)) {
                     String base = p.getFileName().toString();
-                    there.add(base.endsWith(FlowFiles.SUFFIX) ? base.substring(0, base.length() - FlowFiles.SUFFIX.length()) : base);
+                    there.add(base.endsWith(RecordedTestFiles.SUFFIX) ? base.substring(0, base.length() - RecordedTestFiles.SUFFIX.length()) : base);
                 }
-                throw new DriverException(Reason.BAD_INPUT, "no flow '" + name + "' in " + flowsDir + "; the flows there: " + there);
+                throw new DriverException(Reason.BAD_INPUT, "no recorded test '" + name + "' in " + recordedDir + "; the recorded tests there: " + there);
             }
             return file;
         }
@@ -1517,25 +1517,25 @@ public class UiMcpSession {
     }
 
     /**
-     * Makes the recording the steps of a flow file, as if they had just been run after a reset: every step needs a Java
+     * Makes the recording the steps of a recorded test file, as if they had just been run after a reset: every step needs a Java
      * form (the recording stays exportable as a test), else this refuses and changes nothing. A broken file fails
-     * with {@link FlowFiles}' message. Returns {@code {loaded, name, description, steps}}.
+     * with {@link RecordedTestFiles}' message. Returns {@code {loaded, name, description, steps}}.
      */
-    public synchronized String loadFlow(Path file) {
-        Flow flow = FlowFiles.read(file);
+    public synchronized String loadRecordedTest(Path file) {
+        Flow flow = RecordedTestFiles.read(file);
         try {
             JavaTestWriter.write(new ArrayList<Action>(flow.steps), CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
         } catch (ExportRefused e) {
             throw new IllegalArgumentException(flow.name + " cannot be loaded into the recording: "
-                    + String.join("; ", e.problems()) + "; run it with run_flow or the JUnit runner instead");
+                    + String.join("; ", e.problems()) + "; run it with run_recorded_test or the JUnit runner instead");
         }
         Path abs = file.toAbsolutePath().normalize();
-        model.load(flow.steps, RecordedStep.Author.FLOW);
+        model.load(flow.steps, RecordedStep.Author.LOADED);
         model.loaded();
         recordingFromReset = true;
         freshStart = true;
         definedStart = appReset.defined();
-        loadedFlow = abs;
+        loadedTest = abs;
         loadedName = flow.name;
         loadedDescription = flow.description;
         publish();
@@ -1591,7 +1591,7 @@ public class UiMcpSession {
         recordingFromReset = fromReset;
         freshStart = true;
         this.definedStart = definedStart;
-        forgetLoadedFlow();
+        forgetLoadedTest();
         publish();
     }
 
@@ -1600,7 +1600,7 @@ public class UiMcpSession {
 
     /**
      * Why a recording that someone started on purpose is running, or null: the reset, test runs, another start and
-     * flow runs wait for it, since each would wipe or derail the steps being made. A recording that only follows a
+     * recorded test runs wait for it, since each would wipe or derail the steps being made. A recording that only follows a
      * session reset never blocks anything. Read without the session's lock.
      */
     public String recordingReason() {
@@ -1667,7 +1667,7 @@ public class UiMcpSession {
             case "insert": {
                 Integer at = integer(args, "at");
                 if (at == null) throw new DriverException(Reason.BAD_INPUT, "insert needs 'at' (the position) and 'step'");
-                if (!args.path("step").isObject()) throw new DriverException(Reason.BAD_INPUT, "insert needs 'step': a flow step");
+                if (!args.path("step").isObject()) throw new DriverException(Reason.BAD_INPUT, "insert needs 'step': a step");
                 return recordingInsert(at, args.get("step"), integer(args, "rev"));
             }
             case "delete":
@@ -1699,7 +1699,7 @@ public class UiMcpSession {
                 String name = text(args, "name");
                 String path = text(args, "path");
                 if ((name == null) == (path == null)) {
-                    throw new DriverException(Reason.BAD_INPUT, "load takes one of 'name' (a flow in the flows folder) or 'path'");
+                    throw new DriverException(Reason.BAD_INPUT, "load takes one of 'name' (a recorded test in the recorded tests folder) or 'path'");
                 }
                 return recordingLoad(name, path);
             }
@@ -1931,7 +1931,7 @@ public class UiMcpSession {
         return r;
     }
 
-    /** As export_test / export_flow ({@code as} java | flow), but the recording stays unless {@code clear}. */
+    /** As export_test / export_recorded_test ({@code as} java | recorded), but the recording stays unless {@code clear}. */
     public String recordingExport(JsonNode args) throws Exception {
         String as = text(args, "as");
         boolean clear = args.path("clear").asBoolean(false);
@@ -1939,18 +1939,18 @@ public class UiMcpSession {
             return exportTest(args.path("class").asText(""), args.path("method").asText(""),
                     args.path("package").asText(""), clear);
         }
-        if ("flow".equals(as)) {
-            return exportFlow(args.path("name").asText(""), args.path("dir").asText(""),
+        if ("recorded".equals(as)) {
+            return exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
                     args.path("description").asText(""), clear);
         }
-        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': java (class, method?, package?) or flow (name, dir?, description?)");
+        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': java (class, method?, package?) or recorded (name, dir?, description?)");
     }
 
-    /** Makes the flow file the recording (stopped); refused while a recording runs or a person is busy. */
+    /** Makes the recorded test file the recording (stopped); refused while a recording runs or a person is busy. */
     public synchronized String recordingLoad(String name, String path) {
         String busy = personBusy.get();
         if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
-        loadFlow(flowFile(name, path));
+        loadRecordedTest(recordedTestFile(name, path));
         if (palette) view.agentLoaded(loadedName, model.size());
         return published.json;
     }
@@ -2125,7 +2125,7 @@ public class UiMcpSession {
         r.put("shared", snap.shared);
         r.put("fromReset", recordingFromReset);
         r.put("definedStart", definedStart);
-        if (loadedFlow != null) r.put("loadedFrom", loadedFlow.toString());
+        if (loadedTest != null) r.put("loadedFrom", loadedTest.toString());
         r.put("rev", snap.rev);
         ArrayNode steps = r.putArray("steps");
         List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
@@ -2163,8 +2163,8 @@ public class UiMcpSession {
         view.changed(notice);
     }
 
-    private void forgetLoadedFlow() {
-        loadedFlow = null;
+    private void forgetLoadedTest() {
+        loadedTest = null;
         loadedName = null;
         loadedDescription = null;
     }

@@ -11,7 +11,7 @@ import java.util.Objects;
 
 /**
  * A serialisable address of one UI element: a snapshot {@code ref}, or a locator. Plain
- * public fields so the MCP, flow and JUnit layers can read and write it as JSON; the driver never serialises.
+ * public fields so the MCP, recorded test and JUnit layers can read and write it as JSON; the driver never serialises.
  * {@code row}, {@code column}, {@code item} and {@code point} are sub-targets inside the element.
  */
 public final class Locator {

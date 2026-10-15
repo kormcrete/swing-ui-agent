@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Diagnoses a failed replay step (see {@link StepDiagnostics}) so an offline-authored flow can be
+ * Diagnoses a failed replay step (see {@link StepDiagnostics}) so an offline-authored recorded test can be
  * corrected from the run's output alone. Three parts, each best effort:
  *
  * <ol>
@@ -49,7 +49,7 @@ public final class FailureDiagnostics {
         return diagnose(targets, verbs, flowName, index);
     }
 
-    /** The same diagnosis for any named locators - a flow step's, or a Java UI test's failed target. */
+    /** The same diagnosis for any named locators - a step's, or a Java UI test's failed target. */
     public StepDiagnostics diagnose(Map<String, Locator> targets, Verbs verbs, String name, int index) {
         StepDiagnostics d = new StepDiagnostics();
         if (verbs == null) {
@@ -167,8 +167,8 @@ public final class FailureDiagnostics {
     }
 
     private static String safe(String name) {
-        String s = name == null ? "flow" : name.replaceAll("[^a-zA-Z0-9._-]+", "-");
-        return s.isEmpty() ? "flow" : s;
+        String s = name == null ? "steps" : name.replaceAll("[^a-zA-Z0-9._-]+", "-");
+        return s.isEmpty() ? "steps" : s;
     }
 
     /** A timed-out action usually means a busy EDT: its stack says what it was busy with. */

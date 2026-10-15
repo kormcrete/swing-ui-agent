@@ -100,7 +100,7 @@ class JavaTestWriterTest {
 
     @Test
     void everyProblemIsListedInOneRefusal() {
-        // A step type with no Java form: the flow schema has none, so a bare Action stands in.
+        // A step type with no Java form: the recorded test schema has none, so a bare Action stands in.
         Action noJavaForm = new Action() {
             @Override public String describe() { return "noJavaForm"; }
         };

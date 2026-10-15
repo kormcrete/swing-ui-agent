@@ -70,7 +70,7 @@ final class VerbSchemas {
         for (JsonSubTypes.Type t : Action.class.getAnnotation(JsonSubTypes.class).value()) {
             if (t.value() == type) return t.name();
         }
-        throw new IllegalStateException(type.getName() + " is not a registered flow action");
+        throw new IllegalStateException(type.getName() + " is not a registered step type");
     }
 
     static String description(Class<?> type) {

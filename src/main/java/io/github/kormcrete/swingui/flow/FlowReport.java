@@ -3,8 +3,8 @@ package io.github.kormcrete.swingui.flow;
 import java.util.List;
 
 /**
- * A flow result as text, for a replay's output. Capability report first. A passing step is one line with its
- * timing (plus its note, if any); a failing step adds what is needed to fix the flow without a live session: its
+ * A run result as text, for a replay's output. Capability report first. A passing step is one line with its
+ * timing (plus its note, if any); a failing step adds what is needed to fix the recorded test without a live session: its
  * reason and details, what each locator matches now, a scoped compact tree, and a screenshot path
  * ({@link StepDiagnostics}).
  *
@@ -16,7 +16,7 @@ import java.util.List;
  *       tree of tab 'Customer' (depth 4, compact, 9 nodes):
  *         section 'Header'
  *           button 'Store' #save
- *       screenshot: /.../target/failsafe-reports/flow-screens/my-flow-step1.png
+ *       screenshot: /.../target/failsafe-reports/recorded-test-failures/place-order-step1.png
  * </pre>
  */
 public final class FlowReport {
@@ -27,7 +27,8 @@ public final class FlowReport {
     private FlowReport() {}
 
     public static String format(Flow flow, FlowResult result) {
-        StringBuilder sb = new StringBuilder("Flow '" + flow.name + "' " + (result.passed() ? "passed" : "failed") + ":\n");
+        String title = flow.name;
+        StringBuilder sb = new StringBuilder("Recorded test '" + title + "' " + (result.passed() ? "passed" : "failed") + ":\n");
         if (result.capabilities != null) sb.append("  driver: ").append(result.capabilities).append('\n');
         for (StepResult s : result.steps) step(sb, s);
         return sb.toString();

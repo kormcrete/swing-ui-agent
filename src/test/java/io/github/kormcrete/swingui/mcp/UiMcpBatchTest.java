@@ -85,8 +85,8 @@ class UiMcpBatchTest {
     }
 
     @Test
-    void theRecordedFlowIsTheSameAsTheStepsIssuedOneByOne() throws Exception {
-        // navigate is a flow action with a Java form: the batch runs it as do_action would
+    void theRecordedRecordedTestIsTheSameAsTheStepsIssuedOneByOne() throws Exception {
+        // navigate is a step type with a Java form: the batch runs it as do_action would
         batch("{\"verb\":\"navigate\",\"target\":\"Orders\"}", CLICK, TYPE, PRESS);
         String batched = mapper.readTree(session.exportTest("XUiIT", "x", "p", true)).path("source").asText();
 
@@ -106,7 +106,7 @@ class UiMcpBatchTest {
     }
 
     @Test
-    void theVerbToolNamesMapToTheirFlowActions() throws Exception {
+    void theVerbToolNamesMapToTheirRecordedTestActions() throws Exception {
         backend.verbs.outcome.recorded.clear(); // chooseFile has no target to record
         JsonNode r = batch("{\"verb\":\"choose_file\",\"path\":\"/tmp/x.xlsx\"}");
         assertThat(r.path("steps").get(0).path("recorded").path("action").asText()).isEqualTo("chooseFile");

@@ -13,11 +13,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class FlowSelectionTest {
+class RecordedTestSelectionTest {
 
     @TempDir Path dir;
 
-    private void flows(String... names) throws IOException {
+    private void writeTests(String... names) throws IOException {
         for (String n : names) Files.write(dir.resolve(n + ".json"), "{}".getBytes(StandardCharsets.UTF_8));
     }
 
@@ -27,28 +27,28 @@ class FlowSelectionTest {
 
     private List<String> names(String requested) {
         List<String> out = new ArrayList<String>();
-        for (Path p : FlowSelection.select(dir, requested)) out.add(p.getFileName().toString());
+        for (Path p : RecordedTestSelection.select(dir, requested)) out.add(p.getFileName().toString());
         return out;
     }
 
     @Test
-    void aNamedFlowIsTheOnlyOne() throws IOException {
-        flows("x", "y");
+    void aNamedRecordedTestIsTheOnlyOne() throws IOException {
+        writeTests("x", "y");
         assertThat(names("x")).containsExactly("x.json");
         assertThat(names("x.json")).containsExactly("x.json");
     }
 
     @Test
-    void anUnknownNamedFlowListsTheOthers() throws IOException {
-        flows("a", "b");
+    void anUnknownNamedRecordedTestListsTheOthers() throws IOException {
+        writeTests("a", "b");
         assertThatThrownBy(() -> names("zz")).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no flow 'zz' (named by -Dflow) in " + dir.toAbsolutePath())
-                .hasMessageContaining("the flows there: a, b");
+                .hasMessageContaining("no recorded test 'zz' (named by -Drecorded) in " + dir.toAbsolutePath())
+                .hasMessageContaining("the recorded tests there: a, b");
     }
 
     @Test
     void theGateDecidesWhichAndInWhatOrder() throws IOException {
-        flows("a", "b", "c");
+        writeTests("a", "b", "c");
         gate("# the order\n\nc  # last in the folder, first here\n  a\n");
         assertThat(names(null)).containsExactly("c.json", "a.json");
         assertThat(names("  ")).containsExactly("c.json", "a.json");
@@ -56,15 +56,15 @@ class FlowSelectionTest {
 
     @Test
     void anEmptyGateFails() throws IOException {
-        flows("a");
+        writeTests("a");
         gate("# nothing\n\n");
         assertThatThrownBy(() -> names(null)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("gate.txt lists no flows: name at least one, or delete it to run all");
+                .hasMessageContaining("gate.txt lists no recorded tests: name at least one, or delete it to run all");
     }
 
     @Test
     void anUnknownGateEntryNamesItsLine() throws IOException {
-        flows("a");
+        writeTests("a");
         gate("a\n\nnope\n");
         assertThatThrownBy(() -> names(null)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("gate.txt line 3").hasMessageContaining("nope");
@@ -72,7 +72,7 @@ class FlowSelectionTest {
 
     @Test
     void aGateEntryTwiceFails() throws IOException {
-        flows("a", "b");
+        writeTests("a", "b");
         gate("a\nb\na.json\n");
         assertThatThrownBy(() -> names(null)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("gate.txt line 3").hasMessageContaining("listed twice");
@@ -80,21 +80,21 @@ class FlowSelectionTest {
 
     @Test
     void withoutAGateAllRunSorted() throws IOException {
-        flows("b", "a", "c");
+        writeTests("b", "a", "c");
         assertThat(names(null)).containsExactly("a.json", "b.json", "c.json");
     }
 
     @Test
     void noFolderFails() {
         Path missing = dir.resolve("nope");
-        assertThatThrownBy(() -> FlowSelection.select(missing, null)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no flows folder " + missing.toAbsolutePath())
-                .hasMessageContaining("export_flow").hasMessageContaining("-Dswingui.flowsDir");
+        assertThatThrownBy(() -> RecordedTestSelection.select(missing, null)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no recorded tests folder " + missing.toAbsolutePath())
+                .hasMessageContaining("export_recorded_test").hasMessageContaining("-Dswingui.recordedDir");
     }
 
     @Test
-    void aFolderWithoutFlowsFails() {
+    void aFolderWithoutRecordedTestsFails() {
         assertThatThrownBy(() -> names(null)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no flow files in " + dir.toAbsolutePath());
+                .hasMessageContaining("no recorded test files in " + dir.toAbsolutePath());
     }
 }
