@@ -1740,17 +1740,48 @@ class RecordingTest {
     }
 
     @Test
-    void oneFieldAtATime() throws Exception {
+    void oneFieldAtATimeAnotherRowsEndsTheOpenOneSavingItsChange() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        scene.inspector.focusOwner = () -> new JTextField("Ada");
+        scene.inspector.giveFocus = given::add;
+        JTextField first = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            // the same row again keeps the field
+            recording.panel.select(0);
+            key(recording.panel.stepsList(), KeyEvent.VK_F2);
+            assertThat(recording.panel.nameField()).isSameAs(first);
+            first.setText("Open it");
+            recording.panel.select(1);
+            key(recording.panel.stepsList(), KeyEvent.VK_F2);
+            assertThat(recording.panel.namingRow()).isEqualTo(1);
+            assertThat(recording.panel.nameField()).isNotSameAs(first);
+            assertThat(first.getParent()).isNull();
+        });
+        eventually(() -> sink.log.isEmpty() ? null : Boolean.TRUE);
+        assertThat(sink.log).containsExactly("describe 1-1 Open it");
+        // the keyboard goes from field to field, not back to the app in between
+        assertThat(given).isEmpty();
+    }
+
+    @Test
+    void theRowMenusDescribeWhileAFieldIsOpenEndsItFirst() throws Exception {
         sink.add("1", "click(#new)");
         sink.add("2", "click(#save)");
         withSteps();
         JTextField first = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> first.setText("Open it"));
+        StepMenu menu = menuOn(1);
+        assertThat(menu.enabled("Describe this step…")).isTrue();
+        SwingUtilities.invokeAndWait(() -> menu.choose("Describe this step…"));
         SwingUtilities.invokeAndWait(() -> {
-            recording.panel.select(1);
-            key(recording.panel.stepsList(), KeyEvent.VK_F2);
-            assertThat(recording.panel.nameField()).isSameAs(first);
-            assertThat(recording.panel.namingRow()).isEqualTo(0);
+            assertThat(recording.panel.namingRow()).isEqualTo(1);
+            assertThat(first.getParent()).isNull();
         });
+        eventually(() -> sink.log.isEmpty() ? null : Boolean.TRUE);
+        assertThat(sink.log).containsExactly("describe 1-1 Open it");
     }
 
     @Test
@@ -1858,10 +1889,14 @@ class RecordingTest {
     }
 
     @Test
-    void noFieldOpensWhileAReplayRunsAndAReplayClosesAnOpenOne() throws Exception {
+    void noFieldOpensWhileAReplayRunsAndTheReplaySavesTheOpenOneFirst() throws Exception {
         sink.add("1", "click(#new)");
         sink.add("2", "click(#save)");
         withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        scene.inspector.giveFocus = given::add;
         JTextField field = doubleClick(0);
         SwingUtilities.invokeAndWait(() -> field.setText("Open it"));
         CountDownLatch inReplay = new CountDownLatch(1);
@@ -1873,9 +1908,11 @@ class RecordingTest {
         SwingUtilities.invokeAndWait(() -> {
             recording.panel.speed(0);
             recording.panel.press("▶ Replay all");
-            // the replay closed the field, saving nothing
+            // the replay closed the field as a click elsewhere would: saved, the keyboard back with the app
             assertThat(recording.panel.naming()).isFalse();
+            assertThat(field.getParent()).isNull();
         });
+        assertThat(given).containsExactly(customer);
         assertThat(inReplay.await(5, TimeUnit.SECONDS)).isTrue();
         SwingUtilities.invokeAndWait(() -> {
             recording.panel.select(1);
@@ -1884,7 +1921,29 @@ class RecordingTest {
         });
         letGo.countDown();
         eventually(() -> !recording.replaying ? Boolean.TRUE : null);
-        assertThat(sink.log).doesNotContain("describe 1-1 Open it");
+        // the sentence went on ahead of the replay
+        assertThat(sink.log).startsWith("describe 1-1 Open it", "reset");
+    }
+
+    @Test
+    void theAgentsReplayDropsTheSentenceBeingTypedAndGivesTheKeyboardBack() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        scene.inspector.giveFocus = given::add;
+        JTextField field = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open it");
+            recording.agentReplay(new Bar("Agent replaying", ""));
+            assertThat(recording.panel.naming()).isFalse();
+            assertThat(field.getParent()).isNull();
+            recording.agentReplayEnded();
+        });
+        settle();
+        assertThat(sink.log).isEmpty();
+        assertThat(given).containsExactly(customer);
     }
 
     @Test
@@ -2269,6 +2328,353 @@ class RecordingTest {
         });
         assertThat(sink.log).isEmpty();
         assertThat(given).containsExactly(customer);
+    }
+
+    // ---- a sentence being typed when the panel goes, the keyboard's way back, refusals --------------------------------
+
+    /**
+     * Step 1 in the steps panel, "Open a new order" typed in its field and the app's Customer field known as the one
+     * the keyboard came from; {@code goes} (EDT) takes the panel away. Returns the components given the keyboard back.
+     */
+    private List<Component> typingWhenThePanelGoes(Runnable goes) throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        JTextField field = doubleClick(0);
+        // the keyboard goes back while the field is still in the list: AWT never hands it on from a field it removes
+        List<Object> parentAtGiveBack = new java.util.concurrent.CopyOnWriteArrayList<Object>();
+        scene.inspector.giveFocus = c -> {
+            parentAtGiveBack.add(String.valueOf(field.getParent() != null));
+            return given.add(c);
+        };
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open a new order");
+            goes.run();
+            assertThat(field.getParent()).isNull();
+        });
+        eventually(() -> sink.log.contains("describe 1-1 Open a new order") ? Boolean.TRUE : null);
+        assertThat(given).containsExactly(customer);
+        assertThat(parentAtGiveBack).containsExactly("true");
+        return given;
+    }
+
+    @Test
+    void closingTheStepsPanelWhileTypingSavesTheSentence() throws Exception {
+        typingWhenThePanelGoes(() -> recording.toggleSteps());
+        assertThat(recording.panel).isNull();
+    }
+
+    @Test
+    void loadRecordedTestTakingThePanelsPlaceSavesTheSentence() throws Exception {
+        typingWhenThePanelGoes(() -> recording.closePanels());
+    }
+
+    @Test
+    void aNewRecordingReplacingThisOneGivesTheKeyboardBackAndSavesNothing() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        scene.inspector.giveFocus = given::add;
+        JTextField field = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open a new order");
+            recording.dispose();
+            assertThat(field.getParent()).isNull();
+        });
+        settle();
+        // its records went with it
+        assertThat(sink.log).isEmpty();
+        assertThat(given).containsExactly(customer);
+    }
+
+    @Test
+    void aModalDialogTakingThePaletteWhileTypingSavesTheSentence() throws Exception {
+        typingWhenThePanelGoes(() -> recording.rehome(scene.inspector.overlay(dialog.getRootPane())));
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(scene.inspector.overlay(dialog.getRootPane()).holds(recording.panel)).isTrue();
+            assertThat(recording.panel.naming()).isFalse();
+        });
+    }
+
+    @Test
+    void exportTakingThePanelsPlaceSavesTheSentence() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        SwingUtilities.invokeAndWait(recording::done);
+        recording.done.get(5, TimeUnit.SECONDS);
+        JTextField field = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open a new order");
+            recording.toggleExport();
+        });
+        eventually(() -> recording.exportPanel);
+        SwingUtilities.invokeAndWait(() -> assertThat(field.getParent()).isNull());
+        assertThat(sink.log).contains("describe 1-1 Open a new order");
+    }
+
+    @Test
+    void escAndEnterGiveTheKeyboardBackBeforeTheFieldLeavesTheList() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        for (int code : new int[] {KeyEvent.VK_ESCAPE, KeyEvent.VK_ENTER}) {
+            JTextField field = doubleClick(0);
+            List<Boolean> inTheList = new java.util.concurrent.CopyOnWriteArrayList<Boolean>();
+            scene.inspector.giveFocus = c -> inTheList.add(field.getParent() != null);
+            SwingUtilities.invokeAndWait(() -> {
+                field.setText("Open a new order");
+                key(field, code);
+            });
+            closed();
+            SwingUtilities.invokeAndWait(() -> assertThat(field.getParent()).isNull());
+            assertThat(inTheList).containsExactly(true);
+        }
+    }
+
+    @Test
+    void aClickOnAnotherRowSavesAndGivesTheKeyboardBack() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        withSteps();
+        List<Component> given = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField customer = new JTextField("Ada");
+        scene.inspector.focusOwner = () -> customer;
+        scene.inspector.giveFocus = given::add;
+        // unchanged: closes, the keyboard leaves the list for the app
+        JTextField same = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> focusLeaves(same, recording.panel.stepsList()));
+        assertThat(given).containsExactly(customer);
+        // changed: saved, then the same
+        JTextField changed = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            changed.setText("Open a new order");
+            focusLeaves(changed, recording.panel.stepsList());
+        });
+        closed();
+        assertThat(sink.log).containsExactly("describe 1-1 Open a new order");
+        assertThat(given).containsExactly(customer, customer);
+    }
+
+    @Test
+    void aRefusalAfterAClickElsewherePutsTheKeyboardBackInTheField() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        sink.refuseDescribe = "a sentence is one line";
+        withSteps();
+        JButton save = appButton();
+        List<Component> taken = new java.util.concurrent.CopyOnWriteArrayList<Component>();
+        JTextField field = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.takeFocus = taken::add;
+            field.setText("Open it");
+            focusLeaves(field, save);
+        });
+        eventually(() -> recording.bar.text().contains("one line") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.nameField()).isSameAs(field);
+            assertThat(field.isEditable()).isTrue();
+        });
+        assertThat(taken).containsExactly(field);
+        // a double click on another row does something: the open field ends (its change handed on again), a new one opens
+        JTextField other = doubleClick(1);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(other).isNotSameAs(field);
+            assertThat(recording.panel.namingRow()).isEqualTo(1);
+        });
+        eventually(() -> sink.log.size() == 2 ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("describe 1-1 Open it", "describe 1-1 Open it");
+    }
+
+    @Test
+    void escOnTheAppWhileAFieldIsOpenStillLeavesCheckMode() throws Exception {
+        JButton save = appButton();
+        recordInFrame();
+        sink.person("click(#new)");
+        SwingUtilities.invokeAndWait(() -> {
+            recording.toggleSteps();
+            recording.live.stop();
+            recording.mode(true);
+        });
+        settleRefresh();
+        doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.naming()).isTrue();
+            assertThat(taken(esc(save, KeyEvent.KEY_PRESSED))).isTrue();
+            assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
+        });
+    }
+
+    @Test
+    void aDoubleClickWhoseRowsChangedBetweenItsPressesNamesTheRowUnderTheMouse() throws Exception {
+        sink.add("1", "click(#1)");
+        sink.add("2", "click(#2)");
+        sink.add("3", "click(#3)");
+        sink.add("4", "click(#4)");
+        withSteps();
+        // steps 2-3 named as a new group: a header row of its own above them, they stay selected (rows 2-3)
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.selectRange(1, 2);
+            key(recording.panel.stepsList(), KeyEvent.VK_F2);
+        });
+        JTextField field = onEdt(() -> recording.panel.nameField());
+        SwingUtilities.invokeAndWait(() -> {
+            javax.swing.JList<String> list = recording.panel.stepsList();
+            layOut(recording.panel, 460, 300);
+            Rectangle cell = list.getCellBounds(3, 3);
+            int x = cell.x + 8;
+            int y = cell.y + cell.height / 2;
+            long now = System.currentTimeMillis();
+            // the first press, inside the selection: then the field closes on it and its header row goes
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, x, y, 1,
+                    false, MouseEvent.BUTTON1));
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_RELEASED, now, 0, x, y, 1, false, MouseEvent.BUTTON1));
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_CLICKED, now, 0, x, y, 1, false, MouseEvent.BUTTON1));
+            focusLeaves(field, list);
+            assertThat(recording.panel.rows()).hasSize(4);
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, x, y, 2,
+                    false, MouseEvent.BUTTON1));
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_RELEASED, now, 0, x, y, 2, false, MouseEvent.BUTTON1));
+            list.dispatchEvent(new MouseEvent(list, MouseEvent.MOUSE_CLICKED, now, 0, x, y, 2, false, MouseEvent.BUTTON1));
+            // row 3 is step 4 now: it alone is named, no group of the rows the first press saw
+            assertThat(recording.panel.rows()).hasSize(4);
+            assertThat(recording.panel.namingRow()).isEqualTo(3);
+            assertThat(recording.panel.nameHint()).isEqualTo("click(#4)");
+        });
+    }
+
+    @Test
+    void someStepsOfAGroupGetAHeaderOfTheirOwnNotTheGroupsName() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("person", "2", "click(#a)", null, 7, "Fill the order", null);
+        sink.add("person", "3", "click(#b)", null, 7, "Fill the order", null);
+        sink.add("person", "4", "click(#c)", null, 7, "Fill the order", null);
+        withSteps();
+        // rows: 1, header, 2, 3, 4: steps 2-3 of the group's three
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.selectRange(2, 3);
+            key(recording.panel.stepsList(), KeyEvent.VK_F2);
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#new)", "▾ Fill the order", "▾ ",
+                    "  2  ●  click(#a)", "  3  ●  click(#b)", "  4  ●  click(#c)");
+            assertThat(recording.panel.namingRow()).isEqualTo(2);
+            assertThat(recording.panel.nameField().getText()).isEmpty();
+            assertThat(recording.panel.nameHint()).isEqualTo("steps 2-3");
+            key(recording.panel.nameField(), KeyEvent.VK_ESCAPE);
+            // all three: the group's own header, its sentence to rename
+            recording.panel.selectRange(2, 4);
+            key(recording.panel.stepsList(), KeyEvent.VK_F2);
+            assertThat(recording.panel.namingRow()).isEqualTo(1);
+            assertThat(recording.panel.nameField().getText()).isEqualTo("Fill the order");
+        });
+    }
+
+    @Test
+    void aSavedSentenceShowsAsTheFieldClosesWithoutAnotherReRead() throws Exception {
+        sink.add("1", "click(#new)");
+        withSteps();
+        sink.onDescribe = () -> {
+            Inspector.StepLine s = sink.steps.get(0);
+            sink.steps.set(0, new Inspector.StepLine(s.id, s.author, s.line, false, s.label, "Open a new order", false, 0, null));
+        };
+        JTextField field = doubleClick(0);
+        CountDownLatch hold = new CountDownLatch(1);
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open a new order");
+            key(field, KeyEvent.VK_ENTER);
+            // the sink thread is busy after the describe: a re-read would wait
+            sinkThread.submit(() -> {
+                try { hold.await(5, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            });
+        });
+        try {
+            closed();
+            assertThat(rows()).containsExactly("1  ●  Open a new order");
+        } finally {
+            hold.countDown();
+        }
+    }
+
+    @Test
+    void theKeyboardIsNeverGivenToAnAppComponentThatIsGone() throws Exception {
+        int[] asked = {0};
+        JTextField gone = new JTextField("Ada") {
+            @Override public boolean requestFocusInWindow() {
+                asked[0]++;
+                return super.requestFocusInWindow();
+            }
+        };
+        // a field of a dialog that closed: not showing
+        boolean took = onEdt(() -> scene.inspector.giveFocus.test(gone));
+        assertThat(took).isFalse();
+        assertThat(asked[0]).isZero();
+    }
+
+    @Test
+    void enterAndEscInTheFieldNeverReachTheWindowsDefaultButtonOrItsEscAction() throws Exception {
+        int[] pressed = {0};
+        int[] escaped = {0};
+        JTextField app = new JTextField("Ada");
+        SwingUtilities.invokeAndWait(() -> {
+            JButton ok = new JButton("OK");
+            ok.addActionListener(e -> pressed[0]++);
+            javax.swing.JPanel content = new javax.swing.JPanel();
+            content.add(app);
+            content.add(ok);
+            frame.setContentPane(content);
+            frame.getRootPane().setDefaultButton(ok);
+            // the window's Enter and Esc (a default button, a dialog's Esc), also bound for the root pane's descendants:
+            // Swing asks those before the window's own bindings, and they work in a window that is not shown
+            KeyStroke enter = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0);
+            KeyStroke esc = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+            for (int when : new int[] {JComponent.WHEN_IN_FOCUSED_WINDOW, JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT}) {
+                frame.getRootPane().getInputMap(when).put(enter, "ok");
+                frame.getRootPane().getInputMap(when).put(esc, "close");
+            }
+            frame.getRootPane().getActionMap().put("ok", new javax.swing.AbstractAction() {
+                @Override public void actionPerformed(java.awt.event.ActionEvent e) { ok.doClick(); }
+            });
+            frame.getRootPane().getActionMap().put("close", new javax.swing.AbstractAction() {
+                @Override public void actionPerformed(java.awt.event.ActionEvent e) { escaped[0]++; }
+            });
+            // an app field's Enter and Esc reach them
+            stroke(app, KeyEvent.VK_ENTER);
+            stroke(app, KeyEvent.VK_ESCAPE);
+        });
+        assertThat(pressed[0]).isEqualTo(1);
+        assertThat(escaped[0]).isEqualTo(1);
+
+        sink.add("1", "click(#new)");
+        withSteps();
+        JTextField field = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> {
+            field.setText("Open a new order");
+            // taken by the field itself: Swing asks nobody after it
+            assertThat(stroke(field, KeyEvent.VK_ENTER)).isTrue();
+        });
+        closed();
+        assertThat(sink.log).containsExactly("describe 1-1 Open a new order");
+        JTextField again = doubleClick(0);
+        SwingUtilities.invokeAndWait(() -> assertThat(stroke(again, KeyEvent.VK_ESCAPE)).isTrue());
+        closed();
+        assertThat(pressed[0]).isEqualTo(1);
+        assertThat(escaped[0]).isEqualTo(1);
+    }
+
+    /**
+     * Presses and releases {@code code} on {@code on} as it has the keyboard: Swing's key bindings in their order - the
+     * component's own, its ancestors', then the window's (a default button, a dialog's Esc). Whether the press was
+     * taken. EDT.
+     */
+    private static boolean stroke(JComponent on, int code) {
+        char c = code == KeyEvent.VK_ENTER ? '\n' : '\u001b';
+        boolean taken = SwingUtilities.processKeyBindings(
+                new KeyEvent(on, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, code, c));
+        SwingUtilities.processKeyBindings(new KeyEvent(on, KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, code, c));
+        return taken;
     }
 
     @Test

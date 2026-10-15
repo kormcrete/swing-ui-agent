@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -207,8 +208,9 @@ final class Recording {
         if (!esc) return false;
         if (e.getID() == KeyEvent.KEY_PRESSED) {
             swallowing = false;
-            // Esc in a sentence typed in the Steps list cancels that, nothing more
-            if (state != State.CHECKING || replaying || agentReplay != null || panel != null && panel.naming()
+            // Esc in a sentence typed in the Steps list cancels that, nothing more; Esc elsewhere leaves Check mode
+            if (state != State.CHECKING || replaying || agentReplay != null
+                    || panel != null && panel.naming() && e.getComponent() == panel.nameField()
                     || MenuSelectionManager.defaultManager().getSelectedPath().length > 0) {
                 listenForEscape(state == State.CHECKING);
                 return false;
@@ -251,6 +253,8 @@ final class Recording {
         Overlay from = home;
         if (to == from) return;
         Bar shown = from.bar() != null ? from.bar() : bar;
+        // a sentence being typed is saved first: the field would leave the window with the keyboard
+        if (panel != null) panel.commitNaming();
         JComponent open = panel != null ? panel : exportPanel;
         from.bar(null);
         if (open != null) from.panel(null);
@@ -311,6 +315,7 @@ final class Recording {
     void agentReplay(Bar agentBar) {
         if (agentReplay != null) return;
         agentReplay = agentBar;
+        // the agent's replay is not the person's doing: what they typed goes, the keyboard goes back to the app
         if (panel != null) panel.cancelNaming();
         steps.flush();
         steps.active(false);
@@ -350,6 +355,8 @@ final class Recording {
         if (noteTimer != null) noteTimer.stop();
         steps.active(false);
         stopListeningForEscape();
+        // the records a sentence was typed for are gone with this recording: the keyboard goes back, nothing is saved
+        if (panel != null) panel.cancelNaming();
         if (panel != null || exportPanel != null) home.panel(null);
         panel = null;
         closeExportPanel();
@@ -401,6 +408,8 @@ final class Recording {
 
     void toggleSteps() {
         if (panel != null) {
+            // Close or Steps while a sentence is typed: saved, as a click elsewhere would
+            panel.commitNaming();
             home.panel(null);
             panel = null;
             live.stop();
@@ -417,7 +426,7 @@ final class Recording {
                         this::delete, this::undo, this::toggleSteps);
         StepsPanel shown = panel;
         panel.edits(new StepsPanel.Edits() {
-            @Override public Runnable naming() {
+            @Override public BooleanSupplier naming() {
                 return startNaming(shown);
             }
             @Override public CompletableFuture<Inspector.Result> describe(int fromId, int toId, String say) {
@@ -453,6 +462,7 @@ final class Recording {
             SwingUtilities.invokeLater(() -> {
                 if (state != State.STOPPED || exportPanel != null) return;
                 if (panel != null) {
+                    panel.commitNaming();
                     panel = null;
                     live.stop();
                 }
@@ -480,6 +490,7 @@ final class Recording {
     /** The steps or export panel goes: Load recorded test… opens its own in their place. */
     void closePanels() {
         if (panel == null && exportPanel == null) return;
+        if (panel != null) panel.commitNaming();
         home.panel(null);
         panel = null;
         live.stop();
@@ -567,24 +578,23 @@ final class Recording {
 
     /**
      * The person starts typing a sentence in place of a row of {@code shown} (a double click, F2, Enter, or Describe…):
-     * not while a replay runs. Returns what gives the keyboard back, at Enter or Esc, to the app's component that had
-     * it - the one that has it now, else the one the list took it from when the person clicked a row (never the
-     * palette's own) - or null when no naming may start.
+     * not while a replay runs. Returns what gives the keyboard back when the field ends (Enter, Esc, a click on the
+     * palette, the panel going, its records gone) to the app's component that had it - the one that has it now, else
+     * the one the list took it from when the person clicked a row (never the palette's own) - and says whether it
+     * took it (not one gone with a closed dialog); null when no naming may start.
      */
-    private Runnable startNaming(StepsPanel shown) {
+    private BooleanSupplier startNaming(StepsPanel shown) {
         if (replaying || agentReplay != null) return null;
         Component typing = inspector.focusOwner.get();
         if (typing == null || Overlay.ours(typing)) typing = shown.appFocus();
         Component back = typing;
-        return () -> {
-            if (back != null) inspector.giveFocus.accept(back);
-        };
+        return () -> back != null && inspector.giveFocus.test(back);
     }
 
     /**
      * An edit from the row menu or a sentence typed in place, on the sink thread: its result goes on the bar
-     * ({@code refused} before a refusal's reason) and the panel re-reads the recording; completes with the result
-     * after the bar is updated.
+     * ({@code refused} before a refusal's reason) and the panel shows the recording as the edit left it, in the same
+     * turn of the EDT; completes with the result after both, so a field closing on it never shows the rows before it.
      */
     private CompletableFuture<Inspector.Result> edit(Supplier<Inspector.Result> call, String refused) {
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
@@ -596,11 +606,23 @@ final class Recording {
                 r = new Inspector.Result(false, why(e));
             }
             Inspector.Result done = r;
+            List<Inspector.StepLine> read;
+            String label;
+            try {
+                read = sink.steps();
+                label = sink.undoLabel();
+            } catch (RuntimeException e) {
+                // the edit's answer still comes: a field waiting for it never stays uneditable
+                read = null;
+                label = null;
+            }
+            List<Inspector.StepLine> all = read;
+            String undoLabel = label;
             SwingUtilities.invokeLater(() -> {
                 bar.text(done.ok ? done.line : refused + done.line);
-                refresh(-1);
+                if (all != null) showSteps(all, undoLabel, -1); else refresh(-1);
+                result.complete(done);
             });
-            result.complete(done);
         });
         return result;
     }
@@ -621,16 +643,17 @@ final class Recording {
         sinkThread.submit(() -> {
             List<Inspector.StepLine> all = sink.steps();
             String undoLabel = sink.undoLabel();
-            SwingUtilities.invokeLater(() -> {
-                Set<Integer> ids = new HashSet<Integer>();
-                for (Inspector.StepLine s : all) ids.add(s.id);
-                marks.keySet().retainAll(ids);
-                int row = Math.min(select, all.size() - 1);
-                if (panel != null) {
-                    panel.show(all, marks, row, replaying || !active() ? null : steps.pending(), undoLabel);
-                }
-            });
+            SwingUtilities.invokeLater(() -> showSteps(all, undoLabel, select));
         });
+    }
+
+    /** Shows the recording {@code all} as read on the sink thread; {@code select} as for {@link #refresh}. EDT. */
+    private void showSteps(List<Inspector.StepLine> all, String undoLabel, int select) {
+        Set<Integer> ids = new HashSet<Integer>();
+        for (Inspector.StepLine s : all) ids.add(s.id);
+        marks.keySet().retainAll(ids);
+        int row = Math.min(select, all.size() - 1);
+        if (panel != null) panel.show(all, marks, row, replaying || !active() ? null : steps.pending(), undoLabel);
     }
 
     /**
@@ -642,6 +665,8 @@ final class Recording {
     private void redoFrom(int record) {
         int id = panel == null ? -1 : panel.idOfRecord(record);
         if (id < 0) return;
+        // a sentence being typed is saved before the cut, which may take its records
+        panel.commitNaming();
         steps.flush();
         sinkThread.submit(() -> {
             Inspector.Result cut = sink.cutFrom(id);
@@ -705,9 +730,9 @@ final class Recording {
     private void replay(int from, int to, Runnable after, boolean run) {
         if (replaying || agentReplay != null) return;
         boolean reset = from == 0;
+        // no sentence is typed while the steps run: one being typed is saved, on the sink thread ahead of the replay
+        if (panel != null) panel.commitNaming();
         replaying = true;
-        // no sentence is typed while the steps run
-        if (panel != null) panel.cancelNaming();
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
         final long delay = speed == 0 ? 0 : speed == 1 ? 700 : 1500;

@@ -144,9 +144,12 @@ final class FakeSink implements Inspector.Sink {
     }
     /** Why a describe is refused (null: it is not). */
     volatile String refuseDescribe;
+    /** Runs in an accepted {@link #describe}, on the inspector's thread: what the session changes in the recording. */
+    volatile Runnable onDescribe;
     @Override public Inspector.Result describe(int fromId, int toId, String say) {
         log.add("describe " + fromId + "-" + toId + " " + say);
         if (refuseDescribe != null) return new Inspector.Result(false, refuseDescribe);
+        if (onDescribe != null) onDescribe.run();
         return new Inspector.Result(true, "described");
     }
     @Override public Inspector.Result ungroup(int id) {

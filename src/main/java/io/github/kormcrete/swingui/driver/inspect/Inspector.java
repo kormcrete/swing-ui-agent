@@ -49,6 +49,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -337,8 +338,11 @@ public final class Inspector {
     Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
     /** The component that has the keyboard now: a sentence typed in the Steps list gives it back ({@link #giveFocus}). */
     Supplier<Component> focusOwner = () -> KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-    /** Gives the keyboard back to an app component. */
-    Consumer<Component> giveFocus = Component::requestFocusInWindow;
+    /**
+     * Gives the keyboard back to an app component; false when it cannot have it: gone with a closed dialog, or in a
+     * window that is not the focused one.
+     */
+    Predicate<Component> giveFocus = c -> c.isShowing() && c.requestFocusInWindow();
     /** The app's windows, which Check mode covers. */
     Supplier<List<JRootPane>> roots = Inspector::appRoots;
     /** The person's drag in each window the palette left (null: none there); outlives the window's overlay. */

@@ -25,6 +25,7 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Insets;
+import java.awt.KeyboardFocusManager;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
@@ -42,7 +43,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
+import java.util.function.Predicate;
 
 /**
  * The recording as the person sees it: steps and their checks, numbered {@code 7} and {@code 7.1}, each with what its
@@ -63,9 +66,10 @@ final class StepsPanel extends JPanel {
     interface Edits {
         /**
          * The person starts naming a row: null when they may not now (a replay runs), else what gives the keyboard back
-         * to the app when they end with Enter or Esc.
+         * to the app's component when the field ends - Enter, Esc, a click on the palette, the panel going, its records
+         * gone - and says whether that component took it.
          */
-        Runnable naming();
+        BooleanSupplier naming();
 
         /**
          * Sets the sentence of records {@code fromId}-{@code toId} (one check, one step, or the steps of a group);
@@ -148,19 +152,24 @@ final class StepsPanel extends JPanel {
         boolean fresh() {
             return group && groupId == 0;
         }
+
+        /** Whether {@code o} names the same records in the same row. */
+        boolean same(Spec o) {
+            return group == o.group && fromId == o.fromId && toId == o.toId && hostId == o.hostId && groupId == o.groupId;
+        }
     }
 
     /** A sentence being typed in place of a row's text. */
     private static final class Naming {
         final Spec spec;
-        final Runnable giveBack;
+        final BooleanSupplier giveBack;
         final SentenceField field;
         /** The row the field covers, as last shown. */
         int row = -1;
         /** Enter or a click elsewhere handed the sentence on and its result is not back yet. */
         boolean saving;
 
-        Naming(Spec spec, Runnable giveBack, SentenceField field) {
+        Naming(Spec spec, BooleanSupplier giveBack, SentenceField field) {
             this.spec = spec;
             this.giveBack = giveBack;
             this.field = field;
@@ -204,7 +213,7 @@ final class StepsPanel extends JPanel {
             if (e.getID() == MouseEvent.MOUSE_PRESSED && e.getClickCount() == 1) {
                 int extend = InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.META_DOWN_MASK;
                 pressedOn = (e.getModifiersEx() & extend) == 0 && getMinSelectionIndex() >= 0
-                        ? new int[] {getMinSelectionIndex(), getMaxSelectionIndex()} : null;
+                        ? new int[] {getMinSelectionIndex(), getMaxSelectionIndex(), shownRows} : null;
             }
             super.processMouseEvent(e);
         }
@@ -221,7 +230,7 @@ final class StepsPanel extends JPanel {
     private final JButton more;
     private final JButton delete;
     private Edits edits = new Edits() {
-        @Override public Runnable naming() { return () -> { }; }
+        @Override public BooleanSupplier naming() { return () -> false; }
         @Override public CompletableFuture<Inspector.Result> describe(int fromId, int toId, String say) {
             return CompletableFuture.completedFuture(new Inspector.Result(true, "described"));
         }
@@ -234,10 +243,17 @@ final class StepsPanel extends JPanel {
     private boolean widening;
     /** The sentence being typed in place of a row; null when none. One at a time. */
     private Naming naming;
-    /** The selection when the last click began (first and last row); null when none, or the click changed it on purpose. */
+    /**
+     * The selection when the last click began (first and last row, and {@link #shownRows} then); null when none, or the
+     * click changed it on purpose.
+     */
     private int[] pressedOn;
+    /** Counts the times the rows changed: a selection kept from before a change names other rows. */
+    private int shownRows;
     /** The app's component the list last took the keyboard from: naming gives it back there. */
     private Component appFocus;
+    /** Puts the keyboard in a field of the palette's: the field that opens, or one a refusal left open. */
+    Predicate<Component> takeFocus = Component::requestFocusInWindow;
     /** As last shown, so the field's own header row can come and go between the recording's refreshes. */
     private List<Inspector.StepLine> lastSteps = new ArrayList<Inspector.StepLine>();
     private Map<Integer, String> lastMarks = new HashMap<Integer, String>();
@@ -309,7 +325,9 @@ final class StepsPanel extends JPanel {
                 int row = rowAt(e);
                 if (row < 0) return;
                 int[] before = pressedOn;
-                if (before != null && before[1] > before[0] && row >= before[0] && row <= before[1]) {
+                // rows that came or went between the presses (a new group's header closing with its field, a step
+                // recorded) make the first press's rows other rows: only the row under the mouse counts then
+                if (before != null && before[2] == shownRows && before[1] > before[0] && row >= before[0] && row <= before[1]) {
                     list.setSelectionInterval(before[0], before[1]);
                 } else if (!list.isSelectedIndex(row)) {
                     list.setSelectedIndex(row);
@@ -528,7 +546,9 @@ final class StepsPanel extends JPanel {
         Set<String> steps = new LinkedHashSet<String>();
         for (Row r : sel) steps.add(r.step());
         if (steps.size() >= 2) {
-            boolean oneGroup = first.line.groupId != 0;
+            // a group's whole steps rename it; some of them only get a header of their own (the session says no to a
+            // group in a group, under the header the person sees)
+            boolean oneGroup = first.line.groupId != 0 && steps.equals(stepsOf(first.line.groupId));
             for (Row r : sel) oneGroup &= r.line.groupId == first.line.groupId;
             return new Spec("Describe these steps…", true, first.id(), last.id(), first.id(), oneGroup ? first.line.groupId : 0,
                     oneGroup ? first.line.groupSay : null, "steps " + first.step() + "-" + last.step());
@@ -542,17 +562,33 @@ final class StepsPanel extends JPanel {
         return new Spec("Describe this step…", false, first.id(), last.id(), a.id, 0, a.say, a.line);
     }
 
+    /** The steps of group {@code group}, as last shown. */
+    private Set<String> stepsOf(int group) {
+        Set<String> out = new LinkedHashSet<String>();
+        for (int i = 0; i < records.size(); i++) if (records.get(i).groupId == group) out.add(stepOf(labels.get(i)));
+        return out;
+    }
+
     /** Double click, F2 or Enter: the selected rows' sentence typed in place, when they can have one. */
     void describeSelection() {
         List<Row> sel = selectedRows();
         if (!sel.isEmpty()) open(specFor(sel));
     }
 
-    /** Opens the field for {@code s} over its row, unless one is open already or the person may not name rows now. */
+    /**
+     * Opens the field for {@code s} over its row, unless the person may not name rows now. A field open on other rows
+     * ends first, as a click elsewhere ends it (its change is saved); one open on the same rows keeps the keyboard.
+     */
     private void open(Spec s) {
-        if (s == null || naming != null) return;
-        Runnable giveBack = edits.naming();
+        if (s == null) return;
+        if (naming != null && naming.spec.same(s)) {
+            takeFocus.test(naming.field);
+            return;
+        }
+        BooleanSupplier giveBack = edits.naming();
         if (giveBack == null) return;
+        // the keyboard goes from the old field to the new one, not back to the app in between
+        if (naming != null) commit(naming, false);
         SentenceField field = new SentenceField(s.initial, s.hint);
         Naming n = new Naming(s, giveBack, field);
         field.setFont(list.getFont());
@@ -571,23 +607,27 @@ final class StepsPanel extends JPanel {
         });
         field.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) { remember(e.getOppositeComponent()); }
-            @Override public void focusLost(FocusEvent e) { if (!e.isTemporary()) clickedAway(n); }
+            @Override public void focusLost(FocusEvent e) { if (!e.isTemporary()) clickedAway(n, e.getOppositeComponent()); }
         });
         naming = n;
         rerender();
         if (naming != n) return;
         SwingUtilities.invokeLater(() -> {
             if (naming != n) return;
-            field.requestFocusInWindow();
+            takeFocus.test(field);
             field.selectAll();
         });
     }
 
-    /** Enter, or a click elsewhere after a change: the sentence goes on; refused, the field stays open (the bar says why). */
-    private void save(Naming n, boolean byKey) {
+    /**
+     * Enter, or a click elsewhere: a change goes on, an unchanged field just closes. Accepted, the field closes -
+     * {@code giveBack}: the keyboard goes back to the app's component; refused, it stays open with the keyboard in it,
+     * also when a click elsewhere took the keyboard, and the bar says why.
+     */
+    private void save(Naming n, boolean giveBack) {
         if (naming != n || n.saving) return;
         if (!n.changed()) {
-            end(n, byKey);
+            end(n, giveBack);
             return;
         }
         n.saving = true;
@@ -596,29 +636,63 @@ final class StepsPanel extends JPanel {
             if (naming != n) return;
             n.saving = false;
             n.field.setEditable(true);
-            if (r.ok) end(n, byKey);
+            if (r.ok) end(n, giveBack);
+            // a field left open without the keyboard would take no Enter or Esc, and a double click elsewhere nothing
+            else if (!n.field.isFocusOwner()) takeFocus.test(n.field);
         }));
     }
 
-    /** The keyboard went elsewhere: a change is saved, an unchanged field just closes; the keyboard stays where it went. */
-    private void clickedAway(Naming n) {
-        // the panel left the window (closed, or replaced) and took the field with it: nothing to save
+    /**
+     * The keyboard went to {@code to}: a change is saved, an unchanged field just closes. A click in the app keeps the
+     * keyboard there; a click on the palette (another row) or nowhere gives it back to the app's component.
+     */
+    private void clickedAway(Naming n, Component to) {
+        // the panel left the window and took the field with it: commitNaming ended it before
         if (naming != n || n.saving || getTopLevelAncestor() == null) return;
-        if (n.changed()) save(n, false); else end(n, false);
+        save(n, to == null || Overlay.ours(to));
     }
 
-    /** The field closes; {@code giveBack} (Enter, Esc): the keyboard goes back to the app's component that had it. */
+    /**
+     * The field closes; {@code giveBack}: the keyboard goes back to the app's component that had it. The field leaves
+     * the list only after a focus request is on its way: a focus owner that leaves its window hands the keyboard to the
+     * next focusable component (an app field, which the recorder would take for the person leaving the field they
+     * typed in), unless a request is pending.
+     */
     private void end(Naming n, boolean giveBack) {
         if (naming != n) return;
         naming = null;
+        boolean held = n.field.isFocusOwner();
+        boolean given = giveBack && n.giveBack.getAsBoolean();
+        if (held && !given) {
+            // the next field takes it from the list; with no app component to give it back to (or one gone), nobody has it
+            if (giveBack) KeyboardFocusManager.getCurrentKeyboardFocusManager().clearGlobalFocusOwner();
+            else list.requestFocusInWindow();
+        }
         list.remove(n.field);
         rerender();
-        if (giveBack) n.giveBack.run();
     }
 
-    /** Closes an open field without saving and leaves the keyboard where it is: a replay starts. */
+    /**
+     * The panel goes (closed, replaced, moved with the palette) or the person's replay starts: the open field ends as a
+     * click elsewhere ends it - a change is saved, a refusal shows on the bar - and the keyboard goes back to the app.
+     */
+    void commitNaming() {
+        if (naming != null) commit(naming, true);
+    }
+
+    /** Closes {@code n}, its change handed on without waiting for the answer. */
+    private void commit(Naming n, boolean giveBack) {
+        // saving: Enter or a click elsewhere handed it on already
+        if (n.changed() && !n.saving) edits.describe(n.spec.fromId, n.spec.toId, n.field.getText().trim());
+        end(n, giveBack);
+    }
+
+    /**
+     * The agent's replay starts, or a new recording replaces this one: the open field closes without saving, and the
+     * keyboard goes back to the app.
+     */
     void cancelNaming() {
-        if (naming != null) end(naming, false);
+        if (naming != null) end(naming, true);
     }
 
     /** Whether a sentence is being typed in place of a row. */
@@ -715,9 +789,17 @@ final class StepsPanel extends JPanel {
     /** The first and last rows of the steps under the header in {@code header}. */
     private int[] groupSpan(int header) {
         int group = rows.get(header).group;
+        int first = -1;
         int last = header;
-        while (last + 1 < rows.size() && rows.get(last + 1).line != null && rows.get(last + 1).line.groupId == group) last++;
-        return new int[] {Math.min(header + 1, last), last};
+        for (int r = header + 1; r < rows.size(); r++) {
+            Row row = rows.get(r);
+            // a new group's header typed in among its steps (the session will say no to a group in a group)
+            if (row.fresh) continue;
+            if (row.line == null || row.line.groupId != group) break;
+            if (first < 0) first = r;
+            last = r;
+        }
+        return new int[] {first < 0 ? header : first, last};
     }
 
     /** Whether Undo can be pressed: something can be taken back. */
@@ -854,6 +936,7 @@ final class StepsPanel extends JPanel {
             afterShow(lost);
             return;
         }
+        shownRows++;
         widening = true;
         try {
             model.clear();
