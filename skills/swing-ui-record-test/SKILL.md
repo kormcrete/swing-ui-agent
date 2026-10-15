@@ -1,18 +1,19 @@
 ---
 name: swing-ui-record-test
-description: Records a UI test for a Swing app by driving the live app through swing-ui-agent - saved as a recorded test file (export_recorded_test) or a JUnit 5 @UiTest class (export_test) - names its steps on request, and proves the test passes from another screen. Use when asked to write, record, name or describe a UI test for an app running with the swing-ui-agent Java agent.
+description: Records a UI test by driving a live Swing app through swing-ui-agent and saves it as a recorded test or a Java @UiTest class. Use when asked to write, record, name or describe a UI test.
 ---
 
 # Record a UI test
 
 You drive the real app, swing-ui-agent records each step, and you save the steps as a test: a recorded test file
-(`export_recorded_test`: JSON that runs without compiling) or a `@UiTest` class (`export_test`). The user says what
-the test must prove. You choose the steps; the user chooses which checks matter. Ask when that is unclear; do not
-invent assertions. Tests are written this way, by the agent; a human reviews and runs them.
+(`export_recorded_test`: JSON that runs without compiling) or a Java `@UiTest` class (`export_test`). The user says
+what the test must prove and which checks matter; you choose the steps. Ask when that is unclear; never invent
+assertions. A human reviews and runs the test.
 
 ## Setup
 
-The app runs with `-javaagent:swing-ui-agent-<version>-agent.jar`. Every tool is one shell call:
+The app runs with `-javaagent:swing-ui-agent-<version>-agent.jar`. Every tool is one shell call; the same tools are
+served over MCP at `http://127.0.0.1:8765/mcp`:
 
 ```sh
 UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"
@@ -20,9 +21,8 @@ $UI session                 # agent up? which plugins, in which state
 $UI tools                   # every tool; `$UI tools expect` prints one tool's schema
 ```
 
-The same tools are served over MCP at `http://127.0.0.1:8765/mcp`.
 Exit codes: 0 ok, 1 tool error (message on stderr), 2 usage, 3 no agent reachable (the app is not running with the
-agent: stop and say so). A step that ran and failed exits 0 with `"passed":false`, so always read `passed`.
+agent: stop and say so). A step that ran and failed exits 0 with `"passed":false`: always read `passed`.
 
 `busy: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
 agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner":"recorder"}'`, pass
@@ -31,28 +31,28 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 ## How recording works
 
 - A test is a list of steps. A step is one action and the checks after it: steps are numbered 1..n, and `7.2` is
-  the second check of step 7; checks before any action form step 1, which holds only checks. Every number you see
-  (in `recording list`, a replay, a run report, a refusal) is a step number or a check label.
-- `$UI recording '{"op":"start","reset":true}'` resets the app and starts a fresh recording. Every successful step
-  with a Java form after it is recorded. (`$UI session '{"op":"reset"}'` starts one too, but the palette does not
-  show it.)
-- Reads are never recorded: `snapshot`, `read`, `screenshot`, `describe_ui`, `read_clipboard`, `read_file_chooser`.
-- A test replays from the state right after a reset. Without an app plugin a reset only closes modal dialogs, so
-  the app may be on ANY screen. The recording must BEGIN by reaching its own starting screen from anywhere: the
-  menu bar (`menu`), a keyboard shortcut (`press`), or with a plugin `navigate`. The exports answer with a
-  `startWarning` when a plugin-less recording begins otherwise, and refuse one that did not begin at a reset.
-- With an app plugin, its reset brings the app to a defined start state (tabs closed, logged in);
-  `{"op":"reset","alias":"clerk"}` picks the user from `.swing-ui-agent/ui-users.properties`.
-- Mistakes are recorded too: a wrong click followed by Escape is two steps of the test.
+  the second check of step 7; checks before any action form step 1. Every number you see (in `recording list`, a
+  replay, a run report, a refusal) is a step number or a check label.
+- A recording starts at a reset (step 2 below). Every successful step with a Java form is recorded, mistakes
+  included: a wrong click followed by Escape is two steps. Reads never are: `snapshot`, `read`, `screenshot`,
+  `describe_ui`, `read_clipboard`, `read_file_chooser`.
+- A test replays from the state right after a reset. Without an app plugin a reset only closes modal dialogs, so the
+  app may be on ANY screen: the recording must BEGIN by reaching its own starting screen with `menu` or `press`. The
+  exports refuse a recording that did not begin at a reset, and answer with a `startWarning` when one without a
+  plugin begins otherwise.
+- `navigate`, `close` and `loginAs` need an app plugin (else CAPABILITY_GAP). With one, its reset brings the app to
+  a defined start (tabs closed, logged in); `{"op":"reset","alias":"clerk"}` picks the user from
+  `.swing-ui-agent/ui-users.properties`.
 
 ## Steps
 
 1. **Explore with reads first.** Find the route and every target before recording: scoped `snapshot`, `read`
-   (see the swing-ui-targeting skill). Nothing you read lands in the test.
-2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`.
+   (see the swing-ui-targeting skill).
+2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`. (`session '{"op":"reset"}'` starts a
+   recording too, but the palette does not show it.)
 3. **Reach the start screen** as the first step: `$UI menu '{"path":["File","New order"]}'`.
 4. **Act.** Read each result: `passed`, `message`, `recorded` (the step as it will be saved), `notRecorded`
-   (it ran but has no Java form, and why), `dialog` (a message waits: `answer` it). Once the next steps are
+   (it ran but has no Java form, and why), `pending` (a dialog waits: `answer` it). Once the next steps are
    certain, send them as one `batch`; it stops at the first step that does not pass:
    ```sh
    $UI batch '{"steps":[
@@ -66,12 +66,12 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
    $UI expect '{"target":{"role":"label","name":"€31.32"},"state":["!hidden"]}'
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
    ```
-   A recorded test holds exact values: check data the test creates or data known to exist. A value the app makes
-   up (a new order number, today's date) only when the start makes it predictable; otherwise check something
+   A recorded test holds exact values: check data the test creates or data known to exist. Check a value the app
+   makes up (a new order number, today's date) only when the start makes it predictable; otherwise check something
    else, or write a Java test.
 6. **A step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'` cuts step 3
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
-   with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit.
+   with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
 7. **Stop and save:** `$UI recording '{"op":"stop"}'`, then
    `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'`, or a Java
    class with `export_test` (below). `recording '{"op":"export","as":"recorded","name":"place-order"}'` saves
@@ -89,8 +89,8 @@ $UI recording '{"op":"edit","n":"5.1","say":"The cart total is €31.32","rev":1
 $UI recording '{"op":"group","from":3,"to":5,"say":"Fill the cart","rev":16}'
 ```
 
-- A sentence is one line, short, in the person's words, and says what the step achieves, not which button it
-  presses. A check reads as a fact. Never name a value that is not on the screen or in the step.
+- A sentence is one short line in the person's words. It says what the step achieves, not which button it
+  presses; a check reads as a fact. Never name a value that is not on the screen or in the step.
 - `group` puts steps that belong together under one sentence (the same range again renames it);
   `{"op":"ungroup","n":4}` ends the group that holds step 4, its steps stay.
 - `"say":""` removes a step's or check's sentence; a group always has one. A check-only step 1 has no sentence of
@@ -99,18 +99,17 @@ $UI recording '{"op":"group","from":3,"to":5,"say":"Fill the cart","rev":16}'
 
 ## When a person works with you
 
-If `$UI session` shows `"palette": true` (the default; not with `palette=off` or `mode=background`), the person at
+If `$UI session` shows `"palette": true` (the default; off with `palette=off` or `mode=background`), the person at
 the app sees a palette in its window:
 
-- **One recording, two authors.** A recording you start shows in the palette at once: the person watches each
-  step arrive (Steps), and may delete, redo or undo there. They can record too (● Record), add checks (Check
-  mode), and name steps (Describe… in a step's row menu); `list` shows who made each step and every sentence.
-  There is one undo history for both of you: `undo` takes back the last edit, theirs or yours. Pass the `rev` from
-  your last `list`; an edit is refused when they changed the recording meanwhile: list again.
+- **One recording, two authors.** A recording you start shows in the palette at once (Steps). The person can record
+  too (● Record), add checks (Check), name steps (Describe… in a step's row menu), and delete, redo or undo; `list`
+  shows who made each step. Pass the `rev` from your last `list`: an edit is refused when they changed the
+  recording meanwhile, so list again.
 - **They record, you save.** When they ask you to wait, `$UI recording '{"op":"list","wait":540000}'` returns once
-  they press Done. Their steps were recorded, not run by you: `replay` before you trust them.
-- **Or they export.** After Done the palette offers Export…; the file is written without you. When they ask you to
-  check it, verify it as below.
+  they press Done. You did not run their steps: `replay` before you trust them.
+- **Or they export.** After Done the palette offers Export…, which writes the file without you. When they ask you
+  to check it, verify it as below.
 - **Ask, don't guess.** When a target is unclear,
   `$UI inspect '{"op":"highlight","target":{...},"question":"Is this the Customer field?"}'` boxes every match in
   the app; the answer names the one they confirmed and its locator (`outcome` `confirmed` / `rejected`).
@@ -124,15 +123,14 @@ the app sees a palette in its window:
   the step runs and the result says `notRecorded`. Pick another locator, or add the step to the class by hand.
 - A `{"ref":"e12"}` target is recorded as a locator the recorder derives. `fragile:true` means it needed `nth`;
   find a better locator, reset and redo.
-- Inside a `batch`, `{"verb":"screenshot","path":"..."}` is the step that writes a PNG and IS recorded;
-  add `"scale":2` for a HiDPI (2x) image. To just look, call the `screenshot` tool.
+- Inside a `batch`, `{"verb":"screenshot","path":"..."}` writes a PNG and IS recorded; add `"scale":2` for a HiDPI
+  (2x) image. To just look, call the `screenshot` tool.
 
 ## Keep it a regression test
 
 - Prefer steps and checks that hold on every run: a row by a value the test created or one known to exist, counts
   with `gte`, values the test typed.
 - Drive the controls a user would: the real button, the real menu item. Assert only what the user asked for.
-- `navigate`, `close` and `loginAs` need an app plugin; without one they fail with CAPABILITY_GAP. Use `menu`/`press`.
 
 ## Export as a Java test
 
@@ -141,11 +139,10 @@ $UI export_test '{"class":"PlaceOrderUiIT"}'
 ```
 
 `class` is required and ends in `UiIT`; `method` defaults to `recorded`; `package` to the plugin's export
-package, else `recorded`; `clear` to true. The file goes under `-Dswingui.testsDir` of the app JVM, else
-`src/test/java` of the plugin's module or of the app's working directory; `savedTo` names it. It refuses a
-recording that did not begin at a reset, an empty recording, bad names and an existing file, naming each problem; a
-refusal keeps the recording, so fix and retry. Read `warning` (where the file went) and `startWarning` (the test
-does not begin by reaching its own screen: reset and re-record with a `menu`/`press` first step).
+package, else `recorded`; `clear` to true (refused while a `recording start` recording runs: stop it first). The
+file goes under `-Dswingui.testsDir` of the app JVM, else `src/test/java` of the plugin's module or of the app's
+working directory; `savedTo` names it. A refusal names each problem and keeps the recording: fix and retry. Read
+`warning` (where the file went) and `startWarning` (reset and re-record with a `menu`/`press` first step).
 
 Review the source. Rename the method if useful. Add by hand only checks no verb expresses, with the Client API
 (`ui.describeModal()`, `ui.clipboardText()`, `UiAssertions.eventually(...)`) or the plugin's `ui.hooks(...)`.
@@ -159,7 +156,7 @@ Re-record rather than hand-editing recorded steps.
    while the app is up, `mvn -Dtest=PlaceOrderUiIT verify` or the project's equivalent (failsafe picks up `*IT`
    classes and filters with `-Dit.test=PlaceOrderUiIT`).
 3. It must pass from there. On a Java failure read `target/ui-failures/<Class>/<method>/evidence.txt` and the PNG
-   beside it; `target/ui-runs/latest.txt` lists the run (`STARTED`, a `PASS`/`FAIL` line per test, `DONE`).
-   Usually the start route is at fault: reset and re-record.
+   beside it; with the run report registered, `target/ui-runs/latest.txt` lists the run (`STARTED`, a
+   `PASS`/`FAIL` line per test, `DONE`). Usually the start route is at fault: reset and re-record.
 
 Report the file, the steps, the checks, and the verify result.

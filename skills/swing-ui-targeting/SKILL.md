@@ -1,6 +1,6 @@
 ---
 name: swing-ui-targeting
-description: Turns a human phrase ("open order ORD-1640", "the Customer field", "hit Save", "the Line items tab") into a concrete swing-ui-agent target, says which route reaches it, and says what to report when it cannot be reached. Use whenever a live Swing app is driven through swing-ui-agent (CLI or MCP) and a word has to become a locator, alongside the swing-ui-record-test and swing-ui-driver skills.
+description: Turns a human phrase ("open order ORD-1640", "the Customer field", "Add to cart", "the Items tab") into a concrete swing-ui-agent target, says which route reaches it, and says what to report when it cannot be reached. Use whenever a live Swing app is driven through swing-ui-agent (CLI or MCP) and a word has to become a locator, alongside the swing-ui-record-test and swing-ui-driver skills.
 ---
 
 # Targeting the live UI from words
@@ -12,8 +12,8 @@ over MCP at `http://127.0.0.1:8765/mcp`.
 ## The rule
 
 **Actions go through the control a user would use. Values go into the input a user would type in.**
-Clicking the real Save button proves it exists, is enabled and is wired. Reaching the same effect any other way
-passes even when the button is broken, which makes the test worthless.
+Clicking the real Place order button proves it exists, is enabled and is wired. Reaching the same effect any other
+way passes even when the button is broken, which makes the test worthless.
 
 ## A locator
 
@@ -36,13 +36,13 @@ passes even when the button is broken, which makes the test worthless.
 
 | The user says | Level | Resolve by |
 |---|---|---|
-| "the Orders screen" | Screen | `menu {"path":["Orders","Open orders"]}`, a shortcut via `press`, or `navigate` with a plugin |
+| "a new order" | Screen | `menu {"path":["File","New order"]}`, a shortcut via `press`, or `navigate` with a plugin |
 | "order ORD-1640", "the first order" | Row | `click` with `count:2` on `{"role":"table","row":{"Order":"ORD-1640"}}`; `{"index":0}` is data-agnostic |
-| "the Line items tab" | Tab or section | `click` `{"role":"tab","name":"Line items"}`; later targets carry `scope:["tab:Line items"]` |
-| "Customer", "the status field" | Field | `type` / `expect value` on `{"role":"text","name":"Customer"}` (`combo` for a combo) |
-| "Save", "Cancel" | Button | `click` `{"role":"button","name":"Save"}` |
-| "Orders > New order" | Menu | `menu {"path":["Orders","New order"]}` |
-| "the confirmation" | Dialog | `describe_ui {"fields":["dialog"]}` (plugin) or `snapshot {"window":"dialog"}`; `answer {"button":"Yes"}` |
+| "the Items tab" | Tab or section | `click` `{"role":"tab","name":"Items"}`; later targets carry `scope:["tab:Items"]` |
+| "Customer", "the status filter" | Field | `type` / `expect value` on `{"role":"text","name":"Customer"}` (`combo` for a combo) |
+| "Add to cart", "Checkout…" | Button | `click` `{"role":"button","name":"Add to cart"}` |
+| "File > New order" | Menu | `menu {"path":["File","New order"]}` |
+| "the confirmation" | Dialog | `describe_ui {"fields":["dialog"]}` (plugin) or `snapshot {"window":"dialog"}`; `answer {"button":"Place order"}` |
 
 Work down the levels in order: a field cannot be reached before its tab, a tab before its screen. Most "it didn't
 work" is a skipped level. Job-by-job recipes, with the Java each step exports to: `references/recipes.md`.
@@ -53,7 +53,7 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
   it is the whole app. `size.scoped:false` in the answer means scope the next one.
 - `read {"target":...}` for one element (a table's columns and rows; `maxRows` limits them).
   `read {"form":"candidates","target":...}` lists what a near-miss locator could mean.
-  `read {"form":"menuItems","path":["Orders"]}` lists a menu without opening it.
+  `read {"form":"menuItems","path":["File"]}` lists a menu without opening it.
 - A target that does not resolve fails `NOT_FOUND` or `AMBIGUOUS` with candidates. Read them before guessing.
 
 ## Prefer the stable name
@@ -94,7 +94,7 @@ Plugins are optional. Without one, everything in this skill works on any Swing a
 ## Behaviours worth knowing
 
 - `type` refuses a disabled or read-only target and says which, so a passing `type` really set the value.
-- A step that raises a message or confirmation returns at once with `dialog` (title, message, buttons).
+- A step that raises a message or confirmation returns at once with `pending` (title, message, buttons).
   `navigate`, `close` and `loginAs` refuse to run until it is answered; `answer {"button":"escape"}` dismisses it.
 - `expect {"selected":[0,1]}` asserts exactly which rows are selected. A table target with a `row` and no
   `column` plus `state:["selected"]` is that row's selection; a cell's `state` is its editability.

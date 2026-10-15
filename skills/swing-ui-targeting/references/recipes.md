@@ -6,30 +6,31 @@ the form `export_test` writes (the recorder may add a window or scope to the cha
 
 | Job | Live step | Java |
 |---|---|---|
-| open a screen by menu | `menu {"path":["Orders","Open orders"]}` | `ui.menu("Orders", "Open orders");` |
-| open a screen by shortcut | `press {"keys":"Mod+O"}` | `ui.press("Mod+O");` |
+| open a screen by menu | `menu {"path":["File","New order"]}` | `ui.menu("File", "New order");` |
+| open a screen by shortcut | `press {"keys":"Mod+N"}` | `ui.press("Mod+N");` |
 | open a screen (plugin) | `do_action {"action":{"action":"navigate","target":"orders"}}` | `ui.navigate("orders");` |
-| open a row by values | `click {"target":{"role":"table","name":"Orders","row":{"Order":"ORD-1640"}},"count":2}` | `ui.table("Orders").row("Order", "ORD-1640").doubleClick();` |
+| open a row by values | `click {"target":{"scope":["tab:Orders"],"role":"table","row":{"Order":"ORD-1640"}},"count":2}` | `ui.tab("Orders").table().row("Order", "ORD-1640").doubleClick();` |
 | open the first row | `click {"target":{"role":"table","row":{"index":0}},"count":2}` | `ui.table().rowAt(0).doubleClick();` |
 | add a row to the selection | `click {"target":{...,"row":{"index":2}},"modifiers":["Mod"]}` | `.rowAt(2).click("left", 0, "Mod");` |
-| select a tab | `click {"target":{"role":"tab","name":"Line items"}}` | `ui.tab("Line items").click();` |
-| a table on that tab | `{"scope":["tab:Line items"],"role":"table"}` | `ui.tab("Line items").table()` |
-| fill a field | `type {"target":{"role":"text","name":"Customer"},"text":"Acme","replace":true,"commit":true}` | `ui.field("Customer").fill("Acme");` |
-| edit a cell | `type {"target":{"role":"table","row":{"index":0},"column":"Quantity"},"text":"3","commit":true}` | `.rowAt(0).cell("Quantity").type("3", null, true);` |
-| pick a combo value | `select {"target":{"role":"combo","name":"Status"},"item":"Open"}` | `ui.combo("Status").select("Open");` |
-| tick a check box | `check {"target":{"role":"checkbox","name":"Express"},"checked":true}` | `ui.checkbox("Express").check();` |
-| a button | `click {"target":{"role":"button","name":"Save"}}` | `ui.button("Save").click();` |
-| a dropdown button's item | `click` the button, then `pick {"path":["Export","PDF"]}` | `ui.pick("Export", "PDF");` |
-| a context menu | `context_menu {"target":{"role":"table","row":{"index":0}},"path":["Duplicate"]}` | `.rowAt(0).rightClick("Duplicate");` |
-| answer a dialog | `answer {"button":"Yes"}` (`"escape"` dismisses) | `ui.answer("Yes");` |
-| choose a file | `choose_file {"path":"/tmp/orders.csv"}` | `ui.chooseFile("/tmp/orders.csv");` |
+| select a tab | `click {"target":{"role":"tab","name":"Items"}}` | `ui.tab("Items").click();` |
+| a table on that tab | `{"scope":["tab:Items"],"role":"table"}` | `ui.tab("Items").table()` |
+| fill a field | `type {"target":{"role":"text","name":"PO number"},"text":"PO-7781","replace":true,"commit":true}` | `ui.field("PO number").fill("PO-7781");` |
+| edit a cell | `type {"target":{"role":"table","row":{"Product":"Gel pen, black"},"column":"Qty"},"text":"10","commit":true}` | `.row("Product", "Gel pen, black").cell("Qty").type("10", null, true);` |
+| pick a combo value | `select {"target":{"role":"combo","name":"Status"},"item":"Placed"}` | `ui.combo("Status").select("Placed");` |
+| choose a radio button | `click {"target":{"window":"dialog","role":"radio","name":"Express · next business day"}}` | `ui.dialog().radio("Express · next business day").click();` |
+| tick a check box | `check {"target":{"role":"checkbox","name":"<label>"},"checked":true}` | `ui.checkbox("<label>").check();` |
+| a button | `click {"target":{"role":"button","name":"Add to cart"}}` | `ui.button("Add to cart").click();` |
+| a dropdown button's item | `click` the button, then `pick {"path":["Ada Shop Ltd"]}` | `ui.pick("Ada Shop Ltd");` |
+| a context menu | `context_menu {"target":{"role":"table","row":{"Order":"ORD-1636"}},"path":["Copy order number"]}` | `.row("Order", "ORD-1636").rightClick("Copy order number");` |
+| answer a dialog | `answer {"button":"Place order"}` (`"escape"` dismisses) | `ui.answer("Place order");` |
+| choose a file | `choose_file {"path":"/tmp/ORD-1640.txt"}` | `ui.chooseFile("/tmp/ORD-1640.txt");` |
 | paste a block | `set_clipboard {"text":"a\tb\n1\t2"}`, click the anchor cell, `press {"keys":"Mod+V"}` | `ui.setClipboard(...); ...; ui.press("Mod+V");` |
-| scroll a table | `scroll {"target":{"role":"table","name":"Orders"},"to":"bottom"}` | `ui.table("Orders").scrollTo("bottom");` |
-| check a field | `expect {"target":{"role":"text","name":"Customer"},"value":"Acme"}` | `assertThat(ui.field("Customer")).hasValue("Acme");` |
-| check a cell | `expect {"target":{"role":"table","name":"Orders"},"cell":{"row":{"Order":"ORD-1640"},"column":"Status","expected":"Open"}}` | `assertThat(ui.table("Orders")).hasCell(row("Order", "ORD-1640"), "Status", "Open");` |
-| check a row count | `expect {"target":{"role":"table","name":"Orders"},"rows":{"op":"gte","value":1}}` | `assertThat(ui.table("Orders")).hasRowCount("gte", 1);` |
-| check enabled | `expect {"target":{"role":"button","name":"Save"},"state":["!disabled"]}` | `assertThat(ui.button("Save")).isEnabled();` |
-| check the selection | `expect {"target":{"role":"table","name":"Orders"},"selected":[0]}` | `assertThat(ui.table("Orders")).hasSelectedRows(0);` |
+| scroll a table | `scroll {"target":{"scope":["tab:Orders"],"role":"table"},"to":"bottom"}` | `ui.tab("Orders").table().scrollTo("bottom");` |
+| check a field | `expect {"target":{"window":"dialog","role":"text","name":"Postal code"},"value":"10119"}` | `assertThat(ui.dialog().field("Postal code")).hasValue("10119");` |
+| check a cell | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"cell":{"row":{"Order":"ORD-1639"},"column":"Status","expected":"Placed"}}` | `assertThat(ui.tab("Orders").table()).hasCell(row("Order", "ORD-1639"), "Status", "Placed");` |
+| check a row count | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"rows":{"op":"gte","value":1}}` | `assertThat(ui.tab("Orders").table()).hasRowCount("gte", 1);` |
+| check enabled | `expect {"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}` | `assertThat(ui.button("Checkout…")).isEnabled();` |
+| check the selection | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"selected":[0]}` | `assertThat(ui.tab("Orders").table()).hasSelectedRows(0);` |
 | close the active tab (plugin) | `do_action {"action":{"action":"close"}}` | `ui.closeActiveTab();` |
 
 Read-only, never recorded: `snapshot`, `read`, `screenshot`, `describe_ui`, `read_clipboard`, `read_file_chooser`.
