@@ -229,7 +229,9 @@ public final class UiMcpTools {
                         + "(dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT "
                         + "recording, and stops at the first that fails; that step carries what its locators match "
                         + "now, a scoped tree and a picture of the window (written under 'evidence', default "
-                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are [{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step number (7) or a check label (\"7.2\"); action is the step's technical line. After a "
+                        + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are "
+                        + "[{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step "
+                        + "number (7) or a check label (\"7.2\"); action is the step's technical line. After a "
                         + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
                         + "answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.", schema);
             }
@@ -418,8 +420,9 @@ public final class UiMcpTools {
                         + "person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action "
                         + "and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: "
                         + "state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, "
-                        + "its step JSON, say and its checks nested under it ({n: \"7.1\", ...}), plus groups "
-                        + "[{from, to, say}] in step numbers; wait (ms) waits until it stops (not for a session reset's). "
+                        + "its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its "
+                        + "checks nested under it ({n: \"7.1\", ...}), plus groups "
+                        + "[{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). "
                         + "insert {at, step}: an action at a step number (before the step now there) or a check at a "
                         + "label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a "
                         + "check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. "

@@ -663,7 +663,7 @@ public class UiMcpSession {
                     String name = base.substring(0, base.length() - RecordedTestFiles.SUFFIX.length());
                     try {
                         Flow flow = RecordedTestFiles.read(abs);
-                        out.add(new Inspector.RecordedTestEntry(name, flow.description, flow.steps.size(), null, abs));
+                        out.add(new Inspector.RecordedTestEntry(name, flow.description, StepNumbers.of(flow.steps).size(), null, abs));
                     } catch (RuntimeException e) {
                         out.add(new Inspector.RecordedTestEntry(name, null, 0, message(e), abs));
                     }
@@ -992,7 +992,7 @@ public class UiMcpSession {
      * recording is always exportable, and such steps stay usable for exploring.
      */
     private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author) {
-        Action action = action(actionJson);
+        Action action = sentenced(action(actionJson), "the step's sentence");
         Flow flow = new Flow();
         flow.name = "step";
         flow.steps = new ArrayList<Action>();
@@ -1048,6 +1048,29 @@ public class UiMcpSession {
         PendingDialog dialog = host.openDialog();
         if (dialog != null) r.set("dialog", mapper.valueToTree(dialog));
         return r;
+    }
+
+    /** The number of checks (expect steps) among {@code actions}. */
+    private static int checkCount(List<Action> actions) {
+        int n = 0;
+        for (Action a : actions) if (StepNumbers.isCheck(a)) n++;
+        return n;
+    }
+
+    /**
+     * A sentence given inside a step object: trimmed, a blank one dropped, otherwise one line of at most 200
+     * characters (BAD_INPUT naming {@code what} when not).
+     */
+    private static Action sentenced(Action action, String what) {
+        if (action.say == null) return action;
+        String say = action.say.trim();
+        if (say.isEmpty()) {
+            action.say = null;
+        } else {
+            RecordedTestFiles.checkSay(say, what);
+            action.say = say;
+        }
+        return action;
     }
 
     private Action action(JsonNode json) {
@@ -1325,7 +1348,8 @@ public class UiMcpSession {
         Files.createDirectories(file.getParent());
         Files.write(file, source.getBytes(StandardCharsets.UTF_8));
 
-        int steps = model.size();
+        int steps = model.steps();
+        int checks = checkCount(model.actions());
         int fragile = fragileSteps();
         String startWarning = startWarning();
         if (clear) {
@@ -1340,6 +1364,7 @@ public class UiMcpSession {
         ObjectNode result = mapper.createObjectNode();
         result.put("savedTo", file.toAbsolutePath().normalize().toString());
         result.put("steps", steps);
+        result.put("checks", checks);
         result.put("fragile", fragile);
         if (genericLocation) {
             result.put("warning", "no app plugin is ready, so the file went to the generic location "
@@ -1430,7 +1455,8 @@ public class UiMcpSession {
         String startWarning = startWarning();
         ObjectNode result = mapper.createObjectNode();
         result.put("savedTo", file.toString());
-        result.put("steps", model.size());
+        result.put("steps", model.steps());
+        result.put("checks", checkCount(model.actions()));
         result.put("fragile", fragileSteps());
         result.put("overwrote", exists);
         if (startWarning != null) result.put("startWarning", startWarning);
@@ -1603,7 +1629,8 @@ public class UiMcpSession {
         result.put("loaded", abs.toString());
         result.put("name", flow.name);
         if (flow.description == null) result.putNull("description"); else result.put("description", flow.description);
-        result.put("steps", flow.steps.size());
+        result.put("steps", StepNumbers.of(flow.steps).size());
+        result.put("checks", checkCount(flow.steps));
         return result.toString();
     }
 
@@ -2024,7 +2051,7 @@ public class UiMcpSession {
         String busy = personBusy.get();
         if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
         loadRecordedTest(recordedTestFile(name, path));
-        if (palette) view.agentLoaded(loadedName, model.size());
+        if (palette) view.agentLoaded(loadedName, model.steps());
         return published.json;
     }
 
@@ -2070,6 +2097,7 @@ public class UiMcpSession {
     synchronized String recordingInsert(StepAddress at, JsonNode step, Integer rev) {
         checkRev(rev);
         Action action = action(step);
+        sentenced(action, (StepNumbers.isCheck(action) ? "check " : "step ") + at);
         RecordingModel scratch = model.copy();
         scratch.insert(at, action, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
@@ -2158,7 +2186,7 @@ public class UiMcpSession {
             if (sentence.isEmpty()) tree.remove("say");
             else tree.put("say", sentence);
         }
-        Action replaced = action(tree);
+        Action replaced = sentenced(action(tree), what);
         RecordingModel scratch = model.copy();
         scratch.replace(n, replaced, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());

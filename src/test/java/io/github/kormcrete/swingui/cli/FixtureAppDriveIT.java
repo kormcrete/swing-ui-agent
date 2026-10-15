@@ -226,7 +226,8 @@ class FixtureAppDriveIT {
         JsonNode exported = call("export_recorded_test", "{'name':'save-customer','dir':'" + dir + "'}");
         Path file = Paths.get(exported.path("savedTo").asText());
         assertThat(file).as(exported.path("why").asText()).isRegularFile();
-        assertThat(exported.path("steps").asInt()).as(exported.path("why").asText()).isEqualTo(4);
+        assertThat(exported.path("steps").asInt()).as(exported.path("why").asText()).isEqualTo(3);
+        assertThat(exported.path("checks").asInt()).as(exported.path("why").asText()).isEqualTo(1);
         assertThat(exported.path("startWarning").asText()).as(exported.path("why").asText()).isNotEmpty();
         assertThat(RecordedTestFiles.read(file).steps).hasSize(4);
 

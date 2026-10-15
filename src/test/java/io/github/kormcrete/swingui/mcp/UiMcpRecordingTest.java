@@ -645,6 +645,38 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aSentenceInsideAStepObjectIsTrimmedAndCheckedOnInsertEditAndDoAction() throws Exception {
+        four();
+        int rev = call("{\"op\":\"list\"}").path("rev").asInt();
+        String click = "\"action\":\"click\",\"target\":{\"id\":\"x\"}";
+        // insert: trimmed; a blank one is dropped; a bad one refused
+        JsonNode r = call("{\"op\":\"insert\",\"at\":2,\"step\":{" + click + ",\"say\":\"  Open x \"}}");
+        assertThat(r.path("steps").get(1).path("say").asText()).isEqualTo("Open x");
+        r = call("{\"op\":\"insert\",\"at\":3,\"step\":{" + click + ",\"say\":\"   \"}}");
+        assertThat(r.path("steps").get(2).has("say")).isFalse();
+        rev = r.path("rev").asInt();
+        for (String bad : new String[] {"a\\nb", new String(new char[201]).replace('\0', 'x')}) {
+            DriverException e = refused("{\"op\":\"insert\",\"at\":2,\"step\":{" + click + ",\"say\":\"" + bad + "\"}}");
+            assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).contains("step 2");
+        }
+        // whole-step edit: "" removes, a bad one is refused
+        r = call("{\"op\":\"edit\",\"n\":2,\"step\":{" + click + ",\"say\":\"\"}}");
+        assertThat(r.path("steps").get(1).has("say")).isFalse();
+        rev = r.path("rev").asInt();
+        assertThat(refused("{\"op\":\"edit\",\"n\":2,\"step\":{" + click + ",\"say\":\"a\\nb\"}}").getMessage()).contains("one line");
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
+        // an agent step run while recording: refused before it acts, or recorded trimmed
+        int calls = backend.verbs.calls.size();
+        DriverException e = catchThrowableOfType(
+                () -> session.verb("click", mapper.readTree("{\"target\":{\"id\":\"q\"},\"say\":\"a\\nb\"}")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(backend.verbs.calls).hasSize(calls);
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"q\"},\"say\":\" Go \"}"));
+        assertThat(call("{\"op\":\"list\"}").path("steps").get(6).path("say").asText()).isEqualTo("Go");
+    }
+
+    @Test
     void groupPutsStepsUnderOneSentence() throws Exception {
         four();
         JsonNode r = call("{\"op\":\"group\",\"from\":2,\"to\":3,\"say\":\"Pick two\"}");
@@ -962,7 +994,9 @@ class UiMcpRecordingTest {
             call("{\"op\":\"edit\",\"n\":2,\"say\":\"Open the second\"}");
             call("{\"op\":\"group\",\"from\":2,\"to\":3,\"say\":\"Pick two\"}");
             call("{\"op\":\"stop\"}");
-            call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"nested\",\"dir\":\"" + quoted(dir) + "\"}");
+            JsonNode written = call("{\"op\":\"export\",\"as\":\"recorded\",\"name\":\"nested\",\"dir\":\"" + quoted(dir) + "\"}");
+            assertThat(written.path("steps").asInt()).isEqualTo(4);    // steps, not the 5 records
+            assertThat(written.path("checks").asInt()).isEqualTo(1);
             JsonNode file = mapper.readTree(Files.readAllBytes(dir.resolve("nested.json")));
             assertThat(file.path("version").asInt()).isEqualTo(2);
             assertThat(file.path("steps")).hasSize(3);
@@ -972,7 +1006,9 @@ class UiMcpRecordingTest {
             assertThat(file.path("steps").get(1).path("steps")).hasSize(2);
             assertThat(file.path("steps").get(1).path("steps").get(0).path("say").asText()).isEqualTo("Open the second");
             assertThat(file.path("steps").get(2).path("target").path("id").asText()).isEqualTo("d");
-            call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"NestedUiIT\",\"package\":\"demo\"}");
+            JsonNode java = call("{\"op\":\"export\",\"as\":\"java\",\"class\":\"NestedUiIT\",\"package\":\"demo\"}");
+            assertThat(java.path("steps").asInt()).isEqualTo(4);
+            assertThat(java.path("checks").asInt()).isEqualTo(1);
             String source = new String(Files.readAllBytes(tests.resolve("demo/NestedUiIT.java")), StandardCharsets.UTF_8);
             assertThat(source).contains("// The status is ok").contains("// Pick two").contains("// Open the second");
             assertThat(source.indexOf("// Pick two")).isLessThan(source.indexOf("// Open the second"));
