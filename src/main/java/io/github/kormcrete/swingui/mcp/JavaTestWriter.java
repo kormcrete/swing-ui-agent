@@ -3,6 +3,8 @@ package io.github.kormcrete.swingui.mcp;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
@@ -48,7 +50,18 @@ public final class JavaTestWriter {
     private JavaTestWriter() {}
 
     public static String write(List<Action> steps, String packageName, String className, String methodName) {
-        return new Writer(steps, packageName, className, methodName).build();
+        return write(plain(steps), packageName, className, methodName);
+    }
+
+    /** The class for a recorded test: a step (its action and its checks) is one block; sentences and groups become comments. */
+    public static String write(Flow flow, String packageName, String className, String methodName) {
+        return new Writer(flow, packageName, className, methodName).build();
+    }
+
+    private static Flow plain(List<Action> steps) {
+        Flow f = new Flow();
+        f.steps = steps;
+        return f;
     }
 
     /**
@@ -57,7 +70,12 @@ public final class JavaTestWriter {
      * its statement). Refuses exactly what {@code write} refuses.
      */
     public static List<String> lines(List<Action> steps) {
-        Writer w = new Writer(steps, "lines", "LinesUiIT", "lines");
+        return lines(plain(steps));
+    }
+
+    /** {@link #lines(List)} of a recorded test: still one entry per record (action or check), without comments. */
+    public static List<String> lines(Flow flow) {
+        Writer w = new Writer(flow, "lines", "LinesUiIT", "lines");
         w.build();
         return new ArrayList<String>(w.stepLines);
     }
@@ -83,8 +101,11 @@ public final class JavaTestWriter {
         private boolean usesRowsIndex;
         private boolean usesAssertThat;
 
-        Writer(List<Action> steps, String packageName, String className, String methodName) {
-            this.steps = steps;
+        private final List<FlowGroup> groups;
+
+        Writer(Flow flow, String packageName, String className, String methodName) {
+            this.steps = flow.steps;
+            this.groups = flow.groups == null ? new ArrayList<FlowGroup>() : flow.groups;
             this.packageName = packageName;
             this.className = className;
             this.methodName = methodName;
@@ -133,6 +154,9 @@ public final class JavaTestWriter {
                     loginAlias = as;
                 }
                 stepLines.add(as == null ? "" : "@LoginAs(" + quote(as) + ")");
+                // its group and sentence cannot sit on an annotation: they are the first body lines
+                for (FlowGroup g : groups) if (g.from == 0) addComment(g.say);
+                addComment(steps.get(0).say);
                 start = 1;
             }
             for (int i = start; i < steps.size(); i++) {
@@ -150,14 +174,14 @@ public final class JavaTestWriter {
                     if (target == null || target.trim().isEmpty()) {
                         problems.add("step " + stepNum + ": navigate needs a target");
                     } else {
-                        group(false);
+                        begin(i, a, false);
                         statements.add(indent("ui.navigate(" + quote(target) + ");"));
                         stepLines.set(i, "ui.navigate(" + quote(target) + ");");
                     }
                     continue;
                 }
                 if (a instanceof CloseAction) {
-                    group(false);
+                    begin(i, a, false);
                     statements.add(indent("ui.closeActiveTab();"));
                     stepLines.set(i, "ui.closeActiveTab();");
                     continue;
@@ -176,8 +200,8 @@ public final class JavaTestWriter {
                     continue;
                 }
 
-                // a screenshot belongs to the group before it: it shows what those steps left on screen
-                group(v instanceof ScreenshotVerb ? Boolean.TRUE.equals(checking) : v instanceof ExpectVerb);
+                // a screenshot belongs to the block before it: it shows what those steps left on screen
+                begin(i, v, v instanceof ExpectVerb);
                 if (v instanceof ScreenshotVerb && ((ScreenshotVerb) v).maxSize != null) {
                     statements.add(indent("// maxSize " + ((ScreenshotVerb) v).maxSize + " dropped"));
                 }
@@ -191,12 +215,30 @@ public final class JavaTestWriter {
         }
 
         /**
-         * Actions and the checks after them read as groups: a blank line wherever the body turns from acting to checking
-         * or back. {@code checking} is null before the first statement.
+         * Opens the statement of record {@code i}: a blank line where checking turns back to acting and before a step with
+         * a sentence or a group (never first, never twice), then the group's comment, then the step's own sentence (a
+         * check's sentence goes right above its line). A screenshot joins the block before it. {@code checking} is null
+         * before the first statement.
          */
-        private void group(boolean check) {
-            if (checking != null && checking != check) statements.add("");
-            checking = check;
+        private void begin(int i, Action a, boolean check) {
+            boolean screenshot = a instanceof ScreenshotVerb;
+            boolean groupStart = false;
+            for (FlowGroup g : groups) if (g.from == i) groupStart = true;
+            boolean hasSay = !check && a.say != null && !a.say.trim().isEmpty();
+            boolean turn = !check && !screenshot && Boolean.TRUE.equals(checking);
+            if (turn || groupStart || hasSay) blank();
+            for (FlowGroup g : groups) if (g.from == i) addComment(g.say);
+            addComment(a.say);
+            checking = screenshot ? Boolean.valueOf(Boolean.TRUE.equals(checking)) : Boolean.valueOf(check);
+        }
+
+        private void blank() {
+            if (!statements.isEmpty() && !statements.get(statements.size() - 1).isEmpty()) statements.add("");
+        }
+
+        private void addComment(String say) {
+            if (say == null || say.trim().isEmpty()) return;
+            statements.add(indent("// " + comment(say)));
         }
 
         /** True (and a problem recorded per bad locator) when any of this verb's targets uses ref, point or item. */
@@ -642,6 +684,27 @@ public final class JavaTestWriter {
             }
             sb.append("    }\n");
             sb.append("}\n");
+            return sb.toString();
+        }
+
+        /**
+         * A sentence as comment text: one line, and no backslash-u that javac would translate before it reads the comment
+         * (a backslash is only eligible after an even run of backslashes, so a run before a u is made even).
+         */
+        static String comment(String say) {
+            String oneLine = say.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ').trim();
+            StringBuilder sb = new StringBuilder();
+            int run = 0;
+            for (int k = 0; k < oneLine.length(); k++) {
+                char c = oneLine.charAt(k);
+                if (c == '\\') {
+                    run++;
+                } else {
+                    if (c == 'u' && run % 2 == 1) sb.append('\\');
+                    run = 0;
+                }
+                sb.append(c);
+            }
             return sb.toString();
         }
 

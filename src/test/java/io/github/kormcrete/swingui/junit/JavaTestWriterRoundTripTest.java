@@ -117,11 +117,32 @@ class JavaTestWriterRoundTripTest {
     }
 
     @Test
-    void theGoldenSourceIsUnchanged() throws Exception {
+    void theGoldenSourceMatches() throws Exception {
         String src = JavaTestWriter.write(allSteps(), "rt", "RoundTripUiIT", "walk");
         String golden = new String(Files.readAllBytes(
                 java.nio.file.Paths.get("src", "test", "resources", "export", "all-verbs.java.txt")), StandardCharsets.UTF_8);
         assertThat(src).isEqualTo(golden);
+    }
+
+    @Test
+    void aDescribedExportCompilesAndMakesTheRecordedCalls() throws Exception {
+        Locator add = Locator.of("button", "Add to cart");
+        ClickVerb first = new ClickVerb(); first.target = add; first.say = "Add the first product";
+        ExpectVerb shown = new ExpectVerb(); shown.target = Locator.of("label", "Total"); shown.state = Collections.singletonList("!hidden");
+        shown.say = "The total is shown";
+        ClickVerb second = new ClickVerb(); second.target = Locator.of("button", "Checkout"); second.say = "Go to checkout";
+        io.github.kormcrete.swingui.flow.Flow flow = new io.github.kormcrete.swingui.flow.Flow();
+        flow.steps.addAll(Arrays.<Action>asList(first, shown, second));
+        flow.groups.add(new io.github.kormcrete.swingui.flow.FlowGroup(0, 1, "Fill the cart"));
+
+        RecordingVerbs direct = new RecordingVerbs();
+        for (Action a : flow.steps) ((VerbAction) a).run(direct);
+
+        String src = JavaTestWriter.write(flow, "rt", "RoundTripUiIT", "walk");
+        assertThat(src).contains("// Fill the cart", "// Add the first product", "// The total is shown", "// Go to checkout");
+        RecordingVerbs viaJava = new RecordingVerbs();
+        run(src, new Client(viaJava, new RecordingApp(viaJava.calls), "rt"));
+        assertThat(viaJava.calls).containsExactlyElementsOf(direct.calls);
     }
 
     @Test

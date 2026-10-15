@@ -4,6 +4,8 @@ import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
@@ -30,32 +32,155 @@ class JavaTestWriterTest {
         return JavaTestWriter.write(Arrays.asList(steps), "com.example.uitest.recorded", "SmokeUiIT", "walk");
     }
 
+    // ---- Java layout: a step is one block (action + its checks), sentences and groups as comments
+
+    private static ExpectVerb stateCheck(String role, String name, String state) {
+        ExpectVerb e = new ExpectVerb();
+        e.target = Locator.of(role, name);
+        e.state = Collections.singletonList(state);
+        return e;
+    }
+
+    private static <A extends Action> A say(A a, String say) { a.say = say; return a; }
+
+    private static Flow flow(Action... steps) {
+        Flow f = new Flow();
+        f.steps.addAll(Arrays.asList(steps));
+        return f;
+    }
+
+    private static String[] body(String java) {
+        String head = "(Client ui) {\n";
+        String b = java.substring(java.indexOf(head) + head.length(), java.lastIndexOf("    }\n}"));
+        return b.split("\n", -1);
+    }
+
+    private static String[] bodyOf(Flow f) {
+        return body(JavaTestWriter.write(f, "com.example.uitest.recorded", "SmokeUiIT", "walk"));
+    }
+
     @Test
-    void actionsAndTheChecksAfterThemAreGroupsWithABlankLineBetween() {
-        ExpectVerb tabOpen = new ExpectVerb();
-        tabOpen.target = Locator.of("tab", "New order");
-        tabOpen.state = Collections.singletonList("selected");
+    void anActionAndItsChecksAreOneBlock() {
         ScreenshotVerb shot = new ScreenshotVerb();
-        shot.path = "01-new-order.png";
-        ExpectVerb total = new ExpectVerb();
-        total.target = Locator.of("label", "€31.32");
-        total.state = Collections.singletonList("!hidden");
-        String java = write(click(Locator.of("button", "New order")), tabOpen, shot,
-                click(Locator.of("button", "Add to cart")), click(Locator.of("button", "Add to cart")), total);
-        String body = java.substring(java.indexOf("(Client ui) {\n") + "(Client ui) {\n".length(), java.lastIndexOf("    }\n}"));
-        String[] lines = body.split("\n", -1);
-        // click | check + its screenshot | two clicks | check: three blank lines, none at the start or the end
+        shot.path = "01.png";
+        String[] lines = body(write(click(Locator.of("button", "New order")), stateCheck("tab", "New order", "selected"), shot,
+                click(Locator.of("button", "Add to cart")), click(Locator.of("button", "Add to cart")),
+                stateCheck("label", "€31.32", "!hidden")));
         assertThat(lines[0]).contains("button(\"New order\").click()");
-        assertThat(lines[1]).isEmpty();
-        assertThat(lines[2]).contains("assertThat(ui.tab(\"New order\"))");
-        assertThat(lines[3]).contains("saveScreenshot");
-        assertThat(lines[4]).isEmpty();
-        assertThat(lines[5]).contains("Add to cart");
-        assertThat(lines[6]).contains("Add to cart");
+        assertThat(lines[1]).contains("assertThat(ui.tab(\"New order\"))");
+        assertThat(lines[2]).contains("saveScreenshot");
+        assertThat(lines[3]).isEmpty();                       // checking turns back to acting
+        assertThat(lines[4]).contains("Add to cart");
+        assertThat(lines[5]).contains("Add to cart");         // check-less steps read as one sequence
+        assertThat(lines[6]).contains("€31.32");              // no blank between action and its check
+        assertThat(lines).hasSize(8);
         assertThat(lines[7]).isEmpty();
-        assertThat(lines[8]).contains("€31.32");
-        assertThat(lines).hasSize(10);
-        assertThat(lines[9]).isEmpty();
+    }
+
+    @Test
+    void checklessStepsReadAsOneSequence() {
+        String[] lines = body(write(click(Locator.of("button", "A")), click(Locator.of("button", "B")),
+                click(Locator.of("button", "C"))));
+        assertThat(lines).hasSize(4);
+        assertThat(lines[0]).contains("\"A\"");
+        assertThat(lines[2]).contains("\"C\"");
+    }
+
+    @Test
+    void aStepSentenceIsACommentAboveItsBlock() {
+        String[] lines = bodyOf(flow(click(Locator.of("button", "A")),
+                say(click(Locator.of("button", "B")), "Add the second product"),
+                stateCheck("label", "x", "!hidden")));
+        assertThat(lines[0]).contains("\"A\"");
+        assertThat(lines[1]).isEmpty();
+        assertThat(lines[2]).isEqualTo("        // Add the second product");
+        assertThat(lines[3]).contains("\"B\"");
+        assertThat(lines[4]).contains("assertThat");
+    }
+
+    @Test
+    void aCheckSentenceIsACommentAboveTheCheck() {
+        String[] lines = bodyOf(flow(click(Locator.of("button", "A")),
+                say(stateCheck("label", "x", "!hidden"), "The total is shown"),
+                stateCheck("label", "y", "!hidden")));
+        assertThat(lines[0]).contains("\"A\"");
+        assertThat(lines[1]).isEqualTo("        // The total is shown");
+        assertThat(lines[2]).contains("assertThat(ui.label(\"x\"))");
+        assertThat(lines[3]).contains("assertThat(ui.label(\"y\"))");
+    }
+
+    @Test
+    void aGroupIsACommentAboveItsFirstStep() {
+        Flow f = flow(click(Locator.of("button", "A")), click(Locator.of("button", "B")),
+                say(click(Locator.of("button", "C")), "Third"), click(Locator.of("button", "D")));
+        f.groups.add(new FlowGroup(1, 2, "Fill the cart"));
+        String[] lines = bodyOf(f);
+        assertThat(lines[0]).contains("\"A\"");
+        assertThat(lines[1]).isEmpty();
+        assertThat(lines[2]).isEqualTo("        // Fill the cart");
+        assertThat(lines[3]).contains("\"B\"");
+        assertThat(lines[4]).isEmpty();                       // the step with a sentence
+        assertThat(lines[5]).isEqualTo("        // Third");
+        assertThat(lines[6]).contains("\"C\"");
+        assertThat(lines[7]).contains("\"D\"");
+    }
+
+    @Test
+    void aGroupAndTheSentenceOfItsFirstStepShareOneBlankLine() {
+        Flow f = flow(click(Locator.of("button", "A")), say(click(Locator.of("button", "B")), "Second"));
+        f.groups.add(new FlowGroup(1, 1, "Group"));
+        String[] lines = bodyOf(f);
+        assertThat(lines[1]).isEmpty();
+        assertThat(lines[2]).isEqualTo("        // Group");
+        assertThat(lines[3]).isEqualTo("        // Second");
+        assertThat(lines[4]).contains("\"B\"");
+    }
+
+    @Test
+    void aSentenceOnTheLeadingLoginIsTheFirstBodyLine() {
+        LoginAsAction login = new LoginAsAction();
+        login.as = "ada";
+        login.say = "Sign in as Ada";
+        Flow f = flow(login, click(Locator.of("button", "A")));
+        f.groups.add(new FlowGroup(0, 1, "Whole test"));
+        String java = JavaTestWriter.write(f, "p", "SmokeUiIT", "walk");
+        assertThat(java).contains("@LoginAs(\"ada\")");
+        String[] lines = body(java);
+        assertThat(lines[0]).isEqualTo("        // Whole test");
+        assertThat(lines[1]).isEqualTo("        // Sign in as Ada");
+        assertThat(lines[2]).contains("\"A\"");
+    }
+
+    @Test
+    void commentsAreSafeForJavac() throws Exception {
+        Flow f = flow(say(click(Locator.of("button", "A")), "evil \\u000a ui.hack(); */ and \\\\u000a and \r\n more"));
+        f.groups.add(new FlowGroup(0, 0, "grp \\u000d"));
+        String src = JavaTestWriter.write(f, "p", "SmokeUiIT", "walk");
+        // every line of the comment stays a comment: no raw line break and no eligible unicode escape
+        for (String line : src.split("\n")) {
+            if (line.contains("evil") || line.contains("grp")) assertThat(line.trim()).startsWith("//");
+        }
+        assertThat(src).doesNotContain("\r");
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("jw");
+        java.nio.file.Path file = dir.resolve("SmokeUiIT.java");
+        java.nio.file.Files.write(file, src.getBytes("UTF-8"));
+        javax.tools.JavaCompiler javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertThat(javac).isNotNull();
+        int rc = javac.run(null, null, null, "-encoding", "UTF-8", "-classpath", System.getProperty("java.class.path"),
+                "-d", dir.toString(), file.toString());
+        assertThat(rc).as("generated source compiles:\n" + src).isZero();
+    }
+
+    @Test
+    void linesStayOneEntryPerRecordWithoutComments() {
+        Flow f = flow(say(click(Locator.of("button", "A")), "First"), say(stateCheck("label", "x", "!hidden"), "Shown"),
+                click(Locator.of("button", "B")));
+        f.groups.add(new FlowGroup(0, 1, "Group"));
+        List<String> lines = JavaTestWriter.lines(f);
+        assertThat(lines).hasSize(3);
+        assertThat(lines.get(0)).isEqualTo("ui.button(\"A\").click();");
+        assertThat(lines.get(1)).startsWith("assertThat(ui.label(\"x\"))");
+        assertThat(lines.get(2)).isEqualTo("ui.button(\"B\").click();");
     }
 
     @Test

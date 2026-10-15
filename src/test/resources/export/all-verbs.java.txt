@@ -46,7 +46,6 @@ class RoundTripUiIT {
         ui.button("Next").nth(1).click();
         // FRAGILE: the recorder needed nth to make this target unique
         ui.field(null).nth(3).click();
-
         assertThat(ui.button("Save")).isEnabled();
         assertThat(ui.button("Save")).hasStates("editable", "!disabled");
         assertThat(ui.table("Orders")).within(Duration.ofMillis(20000L)).hasRowCount("gte", 1);
