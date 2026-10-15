@@ -134,6 +134,7 @@ class RecordingTest {
         recording.done.get(5, TimeUnit.SECONDS);
         SwingUtilities.invokeAndWait(recording::toggleExport);
         ExportPanel panel = eventually(() -> recording.exportPanel);
+        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.JAVA));
         assertThat(panel.names()).containsExactly("RecordedUiIT", "com.example");
 
         sink.refuse = "RecordedUiIT already exists";
@@ -161,13 +162,9 @@ class RecordingTest {
     }
 
     @Test
-    void exportOffersAJavaTestOrARecordedTest() throws Exception {
+    void exportOffersARecordedTestFirstAndOpensOnIt() throws Exception {
         ExportPanel panel = exportPanelAfterDone();
-        assertThat(panel.kind()).isEqualTo(ExportPanel.JAVA);
-        assertThat(panel.names()).containsExactly("RecordedUiIT", "com.example");
-        assertThat(panel.actionLabel()).isEqualTo("Export");
-
-        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.RECORDED));
+        assertThat(panel.kindLabels()).containsExactly("Recorded test", "Java test");
         assertThat(panel.kind()).isEqualTo(ExportPanel.RECORDED);
         assertThat(panel.recordedFields()).containsExactly("recorded-test", sink.recordedFolder.toString());
         assertThat(panel.actionLabel()).isEqualTo("Export");
@@ -177,11 +174,24 @@ class RecordingTest {
         assertThat(sink.recordedExports).containsExactly(sink.recordedFolder.resolve("recorded-test.json").toString());
         assertThat(sink.exports).isEmpty();
         assertThat(recording.bar.text()).contains("exported").contains("recorded-test.json");
+    }
+
+    @Test
+    void exportOffersAJavaTestTooAndOpensOnTheKindUsedLast() throws Exception {
+        ExportPanel panel = exportPanelAfterDone();
+        SwingUtilities.invokeAndWait(() -> panel.kind(ExportPanel.JAVA));
+        assertThat(panel.kind()).isEqualTo(ExportPanel.JAVA);
+        assertThat(panel.names()).containsExactly("RecordedUiIT", "com.example");
+        assertThat(panel.actionLabel()).isEqualTo("Export");
+
+        SwingUtilities.invokeAndWait(panel::submit);
+        eventually(() -> recording.exportPanel == null ? Boolean.TRUE : null);
+        assertThat(sink.exports).containsExactly("com.example.RecordedUiIT");
 
         // the kind used last is where the panel opens next time
         SwingUtilities.invokeAndWait(recording::toggleExport);
         ExportPanel again = eventually(() -> recording.exportPanel);
-        assertThat(again.kind()).isEqualTo(ExportPanel.RECORDED);
+        assertThat(again.kind()).isEqualTo(ExportPanel.JAVA);
     }
 
     @Test

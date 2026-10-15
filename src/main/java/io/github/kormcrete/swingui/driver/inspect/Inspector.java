@@ -354,8 +354,11 @@ public final class Inspector {
     /** Load recorded test…'s panel while it is open. EDT. */
     RecordedTestsPanel testsPanel;
     private boolean testRun;
-    /** The kind Export… opens on when no recorded test is loaded: the one the person used last in this JVM. EDT. */
-    String exportKind = ExportPanel.JAVA;
+    /**
+     * The kind Export… opens on when no recorded test is loaded: the one the person used last in this JVM, a recorded
+     * test until they choose otherwise. EDT.
+     */
+    String exportKind = ExportPanel.RECORDED;
     private Component snappedAt;
     private Integer snappedTab;
     private int snappedRow = -2;

@@ -108,8 +108,8 @@ the app sees a palette in its window:
   edit is refused when they changed the recording meanwhile, so list again.
 - **They record, you save.** When they ask you to wait, `$UI recording '{"op":"list","wait":540000}'` returns once
   they press Done. You did not run their steps: `replay` before you trust them.
-- **Or they export.** After Done the palette offers Export…, which writes the file without you. When they ask you
-  to check it, verify it as below.
+- **Or they export.** After Done the palette offers Export…, which writes the file without you (a recorded test
+  unless they choose Java test). When they ask you to check it, verify it as below.
 - **Ask, don't guess.** When a target is unclear,
   `$UI inspect '{"op":"highlight","target":{...},"question":"Is this the Customer field?"}'` boxes every match in
   the app; the answer names the one they confirmed and its locator (`outcome` `confirmed` / `rejected`).

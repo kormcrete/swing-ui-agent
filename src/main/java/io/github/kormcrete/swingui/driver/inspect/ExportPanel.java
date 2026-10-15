@@ -14,6 +14,7 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -24,12 +25,16 @@ import java.awt.Insets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
- * Export…: the person writes the recording, without an agent, as a Java test (class and package) or as a recorded test file
- * (name and folder; Choose… opens a folder dialog of the palette's own). Saving over the recorded test the recording came from
+ * Export…: the person writes the recording, without an agent, as a recorded test file (name and folder; Choose… opens a
+ * folder dialog of the palette's own) or as a Java test (class and package). Recorded test comes first and is where the
+ * panel opens unless they chose Java test before: it is what a person showing the app makes, and it runs without
+ * compiling. Saving over the recorded test the recording came from
  * reads "Save"; any other name "Export". A refused export keeps the panel open with the reason, so they can fix it and
  * try again; a folder that cannot be written opens Choose… by itself.
  */
@@ -48,8 +53,9 @@ final class ExportPanel extends JPanel {
     private final JTextField packageName = new JTextField(22);
     private final JTextField testName = new JTextField(22);
     private final JTextField folder = new JTextField(22);
-    private final JToggleButton javaKind = toggle("Java test");
     private final JToggleButton recordedKind = toggle("Recorded test");
+    private final JToggleButton javaKind = toggle("Java test");
+    private final JPanel kinds = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
     private final JLabel title = new JLabel();
     private final JLabel message = new JLabel(" ");
     private final CardLayout cards = new CardLayout();
@@ -70,7 +76,8 @@ final class ExportPanel extends JPanel {
 
     /**
      * {@code folder}: where a recorded test goes unless the person picks another; {@code loadedTest}: the recorded test file the
-     * recording came from (null: none), which opens the panel on Recorded test; else it opens on {@code kind}.
+     * recording came from (null: none), which opens the panel on Recorded test; else it opens on {@code kind}, Recorded
+     * test unless that is {@link #JAVA}.
      */
     ExportPanel(String suggestedClass, String suggestedPackage, Path folder, Path loadedTest, String kind,
                 BiConsumer<String, String> onExport, BiConsumer<String, Path> onExportRecorded, Runnable close) {
@@ -82,14 +89,13 @@ final class ExportPanel extends JPanel {
         setBackground(Color.WHITE);
 
         ButtonGroup group = new ButtonGroup();
-        group.add(javaKind);
         group.add(recordedKind);
-        javaKind.addActionListener(e -> kind(JAVA));
+        group.add(javaKind);
         recordedKind.addActionListener(e -> kind(RECORDED));
-        JPanel kinds = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        javaKind.addActionListener(e -> kind(JAVA));
         kinds.setOpaque(false);
-        kinds.add(javaKind);
         kinds.add(recordedKind);
+        kinds.add(javaKind);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
         JPanel top = new JPanel(new BorderLayout(0, 6));
         top.setOpaque(false);
@@ -150,7 +156,7 @@ final class ExportPanel extends JPanel {
         };
         testName.getDocument().addDocumentListener(relabel);
         this.folder.getDocument().addDocumentListener(relabel);
-        kind(loadedTest != null ? RECORDED : RECORDED.equals(kind) ? RECORDED : JAVA);
+        kind(loadedTest != null ? RECORDED : JAVA.equals(kind) ? JAVA : RECORDED);
     }
 
     /** Which kind the panel writes now: {@link #JAVA} or {@link #RECORDED}. */
@@ -158,9 +164,16 @@ final class ExportPanel extends JPanel {
         return kind;
     }
 
+    /** The kind toggles' labels, in the order the person sees them. */
+    List<String> kindLabels() {
+        List<String> out = new ArrayList<String>();
+        for (Component c : kinds.getComponents()) out.add(((JToggleButton) c).getText());
+        return out;
+    }
+
     /** Shows the fields of {@code kind}, as if the person pressed its toggle. */
     void kind(String kind) {
-        this.kind = RECORDED.equals(kind) ? RECORDED : JAVA;
+        this.kind = JAVA.equals(kind) ? JAVA : RECORDED;
         boolean recorded = RECORDED.equals(this.kind);
         (recorded ? recordedKind : javaKind).setSelected(true);
         cards.show(fields, this.kind);
@@ -271,7 +284,7 @@ final class ExportPanel extends JPanel {
         return p;
     }
 
-    private static void row(JPanel to, int y, String label, java.awt.Component field) {
+    private static void row(JPanel to, int y, String label, Component field) {
         GridBagConstraints c = new GridBagConstraints();
         c.gridy = y;
         c.anchor = GridBagConstraints.WEST;

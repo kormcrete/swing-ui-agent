@@ -2175,7 +2175,7 @@ public class UiMcpSession {
         return r;
     }
 
-    /** As export_test / export_recorded_test ({@code as} java | recorded), but the recording stays unless {@code clear}. */
+    /** As export_recorded_test / export_test ({@code as} recorded | java), but the recording stays unless {@code clear}. */
     public String recordingExport(JsonNode args) throws Exception {
         String as = text(args, "as");
         boolean clear = args.path("clear").asBoolean(false);
@@ -2187,7 +2187,7 @@ public class UiMcpSession {
             return exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
                     args.path("description").asText(""), clear);
         }
-        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': java (class, method?, package?) or recorded (name, dir?, description?)");
+        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': recorded (name, dir?, description?) or java (class, method?, package?)");
     }
 
     /** Makes the recorded test file the recording (stopped); refused while a recording runs or a person is busy. */

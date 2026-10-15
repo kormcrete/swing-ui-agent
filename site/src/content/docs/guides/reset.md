@@ -59,7 +59,7 @@ The agent records the steps it runs, and `export_test` writes them as a test. Th
 1. `session {"op":"reset"}` closes dialogs and starts a fresh recording. `recording {"op":"start","reset":true}` does the same, and the palette shows the recording.
 2. The first step gets to the starting screen (a menu, a shortcut, or `navigate`).
 3. The steps and checks follow.
-4. `export_test` writes the class, or `export_recorded_test` a recorded test file.
+4. `export_recorded_test` writes a recorded test file, or `export_test` the Java class.
 
 Both refuse a recording that did not begin at a reset:
 

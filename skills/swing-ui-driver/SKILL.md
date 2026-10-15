@@ -67,7 +67,7 @@ Expect back at most a few lines: verdict, counts (passed / failed / gaps), the r
   `plugin_call` to fake a step, no `nth` to force a match, no raw component paths. A gap is a result.
 - **Answer dialogs deliberately.** A result with `pending` means a dialog waits; answer it only as the dispatch
   intends (`answer {"button":"Cancel"}` or `"escape"`), never by clicking whatever is offered.
-- **No export unless asked** (`export_test`, `export_recorded_test`). Steps are recorded either way; exporting
+- **No export unless asked** (`export_recorded_test`, `export_test`). Steps are recorded either way; exporting
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
   the first step reaches the start screen; `recording` `edit`/`group` with `say` for names).
 - **Busy agent.** `busy: leased by <owner> since ...` means a test run holds the app. Never take the lease from a

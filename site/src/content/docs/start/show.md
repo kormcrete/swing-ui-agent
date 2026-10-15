@@ -108,10 +108,11 @@ Press **Done** when the steps are right. The bar shows **Recorded** and offers:
 - **● Record:** a new recording, which replaces this one.
 - **Load…:** a recorded test file instead of this recording, to replay or run.
 - **Steps:** this recording, to replay or fix.
-- **Export…:** writes the recording as a Java test or a recorded test file, without an agent.
+- **Export…:** writes the recording as a recorded test file or a Java test, without an agent.
 
-**Export it yourself.** Press **Export…** and choose **Java test** (a class name ending in `UiIT` and a package,
-filled in with the app's own) or **Recorded test** (a name and a folder). Press **Export**. The palette says where
+**Export it yourself.** Press **Export…**. It opens on **Recorded test** (a name and a folder); choose **Java test**
+for a class name ending in `UiIT` and a package, filled in with the app's own. The next Export… opens on the kind you
+chose last. Press **Export**. The palette says where
 the file went, and when the first step does not get the app to a known screen it says that too. The recording stays,
 so you can still fix it and export again under another name. An existing file is never overwritten.
 

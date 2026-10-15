@@ -387,8 +387,8 @@ public final class UiMcpTools {
                         + "again (steps+1 continues).");
                 p.putObject("speed").put("type", "string").put("description",
                         "replay: pauses for a person watching.").putArray("enum").add("fast").add("normal").add("slow");
-                p.putObject("as").put("type", "string").put("description", "export: the format.")
-                        .putArray("enum").add("java").add("recorded");
+                p.putObject("as").put("type", "string").put("description", "export: the format (required).")
+                        .putArray("enum").add("recorded").add("java");
                 p.putObject("class").put("type", "string").put("description", "export java: the test class name.");
                 p.putObject("method").put("type", "string").put("description", "export java: the test method (default recorded).");
                 p.putObject("package").put("type", "string").put("description", "export java: the package.");
@@ -453,7 +453,7 @@ public final class UiMcpTools {
                         + "message?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo "
                         + "{from}: cuts step from and the ones after it, replays the steps before it from a reset, and "
                         + "records on (from = the number after the last step continues a stopped recording). export "
-                        + "{as: java|recorded, ...}: as export_test / export_recorded_test, but keeps the recording. load "
+                        + "{as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load "
                         + "{name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
                         schema);
             }
