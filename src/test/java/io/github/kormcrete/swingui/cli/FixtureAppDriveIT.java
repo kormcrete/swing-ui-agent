@@ -111,8 +111,10 @@ class FixtureAppDriveIT {
     @Order(2)
     void thePaletteIsOnByDefaultAndTheAgentClicksUnderIt() throws Exception {
         assertThat(call("session", "{'op':'info'}").path("palette").asBoolean()).isTrue();
-        // the window is up: the palette is put in at the end of this step (never while the agent acts)
         step("expect", "{'target':{'name':'status'},'text':'idle'}");
+        // the window is up; the palette comes in between the agent's steps, never during one (so not while an expect
+        // waits for it): reads are no steps, and the fixture enables Palette over Archive once the palette is there
+        awaitEnabled("paletteOverArchive");
         // the palette's default spot covers no button, so the person drags it over Archive (their spot wins there);
         // the bar steps off it for the agent's click
         step("click", "{'target':{'name':'paletteOverArchive'}}");
@@ -469,6 +471,19 @@ class FixtureAppDriveIT {
     private static void step(String tool, String args) throws Exception {
         JsonNode result = call(tool, args);
         assertThat(result.path("passed").asBoolean()).as(result.path("why").asText()).isTrue();
+    }
+
+    /** Reads {@code name} until it shows enabled; a read is not one of the agent's steps. */
+    private static void awaitEnabled(String name) throws Exception {
+        long end = System.currentTimeMillis() + 10_000;
+        while (true) {
+            JsonNode read = call("read", "{'target':{'name':'" + name + "'}}");
+            boolean found = read.path("found").asBoolean();
+            boolean disabled = read.path("node").path("state").toString().contains("\"disabled\"");
+            if (found && !disabled) return;
+            assertThat(System.currentTimeMillis()).as("%s never enabled: %s", name, read.path("why").asText()).isLessThan(end);
+            Thread.sleep(50);
+        }
     }
 
     /** Runs one CLI call and requires it to be refused as NOT_ACTIONABLE with a message holding {@code because}. */

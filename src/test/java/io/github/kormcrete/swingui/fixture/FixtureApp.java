@@ -30,6 +30,8 @@ import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
+import java.awt.event.ContainerAdapter;
+import java.awt.event.ContainerEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
@@ -39,7 +41,7 @@ import java.util.function.Consumer;
  * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
  * an attachments drop target with a context menu, a lines table, a status label that tells what happened and an
  * Archive button bottom right, with a button beside it that drags the person's palette over Archive (as a person
- * would: the palette's default spot covers no button).
+ * would: the palette's default spot covers no button). That button is enabled once the palette is in the window.
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
  */
@@ -127,6 +129,13 @@ public final class FixtureApp {
             JButton paletteOver = new JButton("Palette over Archive");
             paletteOver.setName("paletteOverArchive");
             paletteOver.addActionListener(e -> status.setText(dragPaletteOver(archive) ? "palette over archive" : "no palette"));
+            // the palette comes into the window between the agent's steps, never during one: a test waits for it here
+            paletteOver.setEnabled(false);
+            frame.getLayeredPane().addContainerListener(new ContainerAdapter() {
+                @Override public void componentAdded(ContainerEvent e) {
+                    if (isBar(e.getChild())) paletteOver.setEnabled(true);
+                }
+            });
             JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
             south.add(paletteOver);
             south.add(archive);
@@ -147,7 +156,7 @@ public final class FixtureApp {
     static boolean dragPaletteOver(JComponent target) {
         JLayeredPane layers = target.getRootPane().getLayeredPane();
         for (Component bar : layers.getComponents()) {
-            if (!bar.getClass().getName().endsWith(".inspect.Bar")) continue;
+            if (!isBar(bar)) continue;
             Point to = SwingUtilities.convertPoint(target.getParent(), target.getLocation(), layers);
             int x = 5 + to.x - bar.getX();
             int y = 5 + to.y - bar.getY();
@@ -161,6 +170,11 @@ public final class FixtureApp {
             return SwingUtilities.convertRectangle(target.getParent(), target.getBounds(), layers).intersects(bar.getBounds());
         }
         return false;
+    }
+
+    /** {@code c} is the person's palette (or the agent's bar in its place). */
+    private static boolean isBar(Component c) {
+        return c.getClass().getName().endsWith(".inspect.Bar");
     }
 
     /** A spinner cell editor as an app would write it in a hurry: the value is the spinner's, nothing more. */
