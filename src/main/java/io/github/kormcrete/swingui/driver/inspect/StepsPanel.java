@@ -2,30 +2,46 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
+import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.IntConsumer;
 
 /**
@@ -35,19 +51,27 @@ import java.util.function.IntConsumer;
  * indented steps. Below, the buttons to replay all from a reset, as the exported test runs (for a loaded recorded test:
  * run it), replay from a step, redo from a step (cut the recording there, replay up to it from a reset, record on),
  * delete a step or a check, or undo the last edit - the agent's or the person's; the row menu (right click, or ⋯)
- * describes, ungroups and says how a table row is named. Rows know their record's id: what the person deletes, redoes
- * or describes is what they saw, even when the agent changed the recording since. The callbacks get flat record
+ * describes, ungroups and says how a table row is named. A double click on a row, or F2 or Enter, names it in place: a
+ * field over the row's text holds its sentence (Enter saves, Esc cancels, a click elsewhere saves a change); several
+ * steps get a header row of their own for a group's sentence. Rows know their record's id: what the person deletes,
+ * redoes or describes is what they saw, even when the agent changed the recording since. The callbacks get flat record
  * indexes (the session's order), never rows: a header row is no record.
  */
 final class StepsPanel extends JPanel {
 
-    /** The row menu's edits; ids are the records the person saw. */
+    /** The row menu's edits and the sentences typed in place; ids are the records the person saw. */
     interface Edits {
         /**
-         * Opens the ask panel titled {@code title} for the sentence of records {@code fromId}-{@code toId}: a group's
-         * ({@code group}) or one step's or check's.
+         * The person starts naming a row: null when they may not now (a replay runs), else what gives the keyboard back
+         * to the app when they end with Enter or Esc.
          */
-        void describe(String title, boolean group, int fromId, int toId, String initial);
+        Runnable naming();
+
+        /**
+         * Sets the sentence of records {@code fromId}-{@code toId} (one check, one step, or the steps of a group);
+         * completes with what became of it, on any thread.
+         */
+        CompletableFuture<Inspector.Result> describe(int fromId, int toId, String say);
 
         void ungroup(int id);
 
@@ -65,13 +89,20 @@ final class StepsPanel extends JPanel {
         final String mark;
         /** For a header: its group. */
         final int group;
+        /** The header row a group's sentence is typed in before the group exists; no header otherwise. */
+        final boolean fresh;
 
         Row(int record, Inspector.StepLine line, String label, String mark, int group) {
+            this(record, line, label, mark, group, false);
+        }
+
+        Row(int record, Inspector.StepLine line, String label, String mark, int group, boolean fresh) {
             this.record = record;
             this.line = line;
             this.label = label;
             this.mark = mark;
             this.group = group;
+            this.fresh = fresh;
         }
 
         boolean header() {
@@ -88,8 +119,96 @@ final class StepsPanel extends JPanel {
         }
     }
 
+    /** What naming a selection names: its sentence's records, where the field shows and what it starts with. */
+    private static final class Spec {
+        /** The row menu's item for it. */
+        final String item;
+        final boolean group;
+        final int fromId;
+        final int toId;
+        /** The record whose row holds the field; for a group, the first record under its header. */
+        final int hostId;
+        /** A group that exists: its header holds the field; 0 for a record or a new group (a header row of its own). */
+        final int groupId;
+        final String initial;
+        /** What the empty field shows greyed: the row's technical line, or a new group's steps. */
+        final String hint;
+
+        Spec(String item, boolean group, int fromId, int toId, int hostId, int groupId, String initial, String hint) {
+            this.item = item;
+            this.group = group;
+            this.fromId = fromId;
+            this.toId = toId;
+            this.hostId = hostId;
+            this.groupId = groupId;
+            this.initial = initial == null ? "" : initial;
+            this.hint = hint;
+        }
+
+        boolean fresh() {
+            return group && groupId == 0;
+        }
+    }
+
+    /** A sentence being typed in place of a row's text. */
+    private static final class Naming {
+        final Spec spec;
+        final Runnable giveBack;
+        final SentenceField field;
+        /** The row the field covers, as last shown. */
+        int row = -1;
+        /** Enter or a click elsewhere handed the sentence on and its result is not back yet. */
+        boolean saving;
+
+        Naming(Spec spec, Runnable giveBack, SentenceField field) {
+            this.spec = spec;
+            this.giveBack = giveBack;
+            this.field = field;
+        }
+
+        boolean changed() {
+            return !field.getText().trim().equals(spec.initial.trim());
+        }
+    }
+
+    /** One line over a row, the row's technical line greyed while it is empty. */
+    private static final class SentenceField extends JTextField {
+        private final String hint;
+
+        SentenceField(String text, String hint) {
+            super(text);
+            this.hint = hint;
+        }
+
+        String hint() {
+            return hint;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (!getText().isEmpty() || hint == null) return;
+            g.setColor(Color.GRAY);
+            g.setFont(getFont().deriveFont(Font.ITALIC));
+            FontMetrics fm = g.getFontMetrics();
+            Insets in = getInsets();
+            g.drawString(hint, in.left, (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+        }
+    }
+
     private final DefaultListModel<String> model = new DefaultListModel<String>();
-    private final JList<String> list = new JList<String>(model);
+    private final JList<String> list = new JList<String>(model) {
+        @Override
+        protected void processMouseEvent(MouseEvent e) {
+            // seen before the list's own handling collapses it: a double click on a selected row names all of them
+            if (e.getID() == MouseEvent.MOUSE_PRESSED && e.getClickCount() == 1) {
+                int extend = InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.META_DOWN_MASK;
+                pressedOn = (e.getModifiersEx() & extend) == 0 && getMinSelectionIndex() >= 0
+                        ? new int[] {getMinSelectionIndex(), getMaxSelectionIndex()} : null;
+            }
+            super.processMouseEvent(e);
+        }
+    };
     private final JLabel title = new JLabel("Steps");
     /** As last shown: the rows, and the records and their labels in the session's order. */
     private final List<Row> rows = new ArrayList<Row>();
@@ -102,7 +221,10 @@ final class StepsPanel extends JPanel {
     private final JButton more;
     private final JButton delete;
     private Edits edits = new Edits() {
-        @Override public void describe(String title, boolean group, int fromId, int toId, String initial) { }
+        @Override public Runnable naming() { return () -> { }; }
+        @Override public CompletableFuture<Inspector.Result> describe(int fromId, int toId, String say) {
+            return CompletableFuture.completedFuture(new Inspector.Result(true, "described"));
+        }
         @Override public void ungroup(int id) { }
         @Override public void rowBy(int id, String by) { }
     };
@@ -110,6 +232,17 @@ final class StepsPanel extends JPanel {
     private StepMenu menu;
     /** Set while a header's selection is widened to its steps, so the widening does not widen again. */
     private boolean widening;
+    /** The sentence being typed in place of a row; null when none. One at a time. */
+    private Naming naming;
+    /** The selection when the last click began (first and last row); null when none, or the click changed it on purpose. */
+    private int[] pressedOn;
+    /** The app's component the list last took the keyboard from: naming gives it back there. */
+    private Component appFocus;
+    /** As last shown, so the field's own header row can come and go between the recording's refreshes. */
+    private List<Inspector.StepLine> lastSteps = new ArrayList<Inspector.StepLine>();
+    private Map<Integer, String> lastMarks = new HashMap<Integer, String>();
+    private String lastPending;
+    private String lastUndo;
 
     /**
      * {@code replayAllLabel}: what the first button says - "▶ Replay all", or "▶ Run" for a loaded recorded test.
@@ -148,12 +281,13 @@ final class StepsPanel extends JPanel {
                 Row row = index < rows.size() ? rows.get(index) : null;
                 // the technical line on hover (the JList asks its renderer)
                 setToolTipText(tooltipAt(index));
-                if (row == null || row.line == null && !row.header()) {
+                if (row == null || row.line == null && !row.header() && !row.fresh) {
                     setForeground(Color.GRAY);
                     setFont(getFont().deriveFont(Font.ITALIC));
                     return this;
                 }
-                if (row.header()) {
+                // a new group's header looks like any group's while its sentence is typed
+                if (row.header() || row.fresh) {
                     setFont(getFont().deriveFont(Font.BOLD));
                     if (!selected) setForeground(Overlay.NAVY);
                     return this;
@@ -170,12 +304,42 @@ final class StepsPanel extends JPanel {
             @Override public void mousePressed(MouseEvent e) { popup(e); }
             @Override public void mouseReleased(MouseEvent e) { popup(e); }
 
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
+                int row = rowAt(e);
+                if (row < 0) return;
+                int[] before = pressedOn;
+                if (before != null && before[1] > before[0] && row >= before[0] && row <= before[1]) {
+                    list.setSelectionInterval(before[0], before[1]);
+                } else if (!list.isSelectedIndex(row)) {
+                    list.setSelectedIndex(row);
+                }
+                describeSelection();
+            }
+
             private void popup(MouseEvent e) {
                 if (!e.isPopupTrigger()) return;
+                int row = rowAt(e);
+                if (row >= 0) openMenu(row, e.getX(), e.getY());
+            }
+
+            private int rowAt(MouseEvent e) {
                 int row = list.locationToIndex(e.getPoint());
                 Rectangle cell = row < 0 ? null : list.getCellBounds(row, row);
-                if (cell != null && cell.contains(e.getPoint())) openMenu(row, e.getX(), e.getY());
+                return cell != null && cell.contains(e.getPoint()) ? row : -1;
             }
+        });
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), "describe");
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "describe");
+        list.getActionMap().put("describe", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { describeSelection(); }
+        });
+        list.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) { remember(e.getOppositeComponent()); }
+        });
+        // the field follows its row when the list is laid out anew
+        list.addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) { placeField(); }
         });
         JScrollPane scroll = new JScrollPane(list);
         scroll.setPreferredSize(new Dimension(460, 200));
@@ -328,28 +492,11 @@ final class StepsPanel extends JPanel {
     private StepMenu menuFor(List<Row> sel) {
         StepMenu m = new StepMenu();
         Row first = sel.get(0);
-        Row last = sel.get(sel.size() - 1);
         Set<String> steps = new LinkedHashSet<String>();
         for (Row r : sel) steps.add(r.step());
-        if (steps.size() >= 2) {
-            // a group of the whole steps the rows touch; the same steps again rename their group
-            boolean oneGroup = first.line.groupId != 0;
-            for (Row r : sel) oneGroup &= r.line.groupId == first.line.groupId;
-            String initial = oneGroup ? first.line.groupSay : null;
-            m.item("Describe these steps…", true, () -> edits.describe("Describe steps " + first.step() + "-" + last.step(),
-                    true, first.id(), last.id(), initial));
-        } else if (sel.size() == 1 && first.line.check) {
-            m.item("Describe this check…", true, () -> edits.describe("Describe check " + first.label, false, first.id(), first.id(),
-                    first.line.say));
-        } else {
-            int action = stepRecordAt(rows.indexOf(first));
-            Inspector.StepLine a = records.get(action);
-            // a step of checks only has no sentence of its own: its checks are described one by one
-            if (!a.check) {
-                m.item("Describe this step…", true, () -> edits.describe("Describe step " + first.step(), false, first.id(), last.id(),
-                        a.say));
-            }
-        }
+        // the same field as a double click opens: here for those who look in the menu first
+        Spec describe = specFor(sel);
+        if (describe != null) m.item(describe.item, true, () -> open(describe));
         m.item("Ungroup", first.line.groupId != 0, () -> edits.ungroup(first.id()));
         Inspector.RowLine row = first.line.row;
         // how a table row is named is the step's or the check's own: offered for rows of one step
@@ -368,6 +515,171 @@ final class StepsPanel extends JPanel {
             });
         }
         return m;
+    }
+
+    /**
+     * What naming the records {@code sel} (in order, at least one) names: rows of several steps a group of the whole
+     * steps they touch (the same steps again rename their group), one check alone that check, else the step; null for
+     * a step of checks only, which has no sentence of its own (its checks are named one by one).
+     */
+    private Spec specFor(List<Row> sel) {
+        Row first = sel.get(0);
+        Row last = sel.get(sel.size() - 1);
+        Set<String> steps = new LinkedHashSet<String>();
+        for (Row r : sel) steps.add(r.step());
+        if (steps.size() >= 2) {
+            boolean oneGroup = first.line.groupId != 0;
+            for (Row r : sel) oneGroup &= r.line.groupId == first.line.groupId;
+            return new Spec("Describe these steps…", true, first.id(), last.id(), first.id(), oneGroup ? first.line.groupId : 0,
+                    oneGroup ? first.line.groupSay : null, "steps " + first.step() + "-" + last.step());
+        }
+        if (sel.size() == 1 && first.line.check) {
+            return new Spec("Describe this check…", false, first.id(), first.id(), first.id(), 0, first.line.say,
+                    "check: " + checkText(first.line.line));
+        }
+        Inspector.StepLine a = records.get(stepRecordAt(rows.indexOf(first)));
+        if (a.check) return null;
+        return new Spec("Describe this step…", false, first.id(), last.id(), a.id, 0, a.say, a.line);
+    }
+
+    /** Double click, F2 or Enter: the selected rows' sentence typed in place, when they can have one. */
+    void describeSelection() {
+        List<Row> sel = selectedRows();
+        if (!sel.isEmpty()) open(specFor(sel));
+    }
+
+    /** Opens the field for {@code s} over its row, unless one is open already or the person may not name rows now. */
+    private void open(Spec s) {
+        if (s == null || naming != null) return;
+        Runnable giveBack = edits.naming();
+        if (giveBack == null) return;
+        SentenceField field = new SentenceField(s.initial, s.hint);
+        Naming n = new Naming(s, giveBack, field);
+        field.setFont(list.getFont());
+        field.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY),
+                BorderFactory.createEmptyBorder(0, 2, 0, 2)));
+        field.setToolTipText("Enter saves, Esc cancels. One line, at most 200 characters. " + (s.group
+                ? "A group keeps a sentence: Ungroup ends it." : "Empty removes the sentence."));
+        // the field's own keys: Enter never reaches the window's default button, nor Esc the app's dialog
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "save");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancel");
+        field.getActionMap().put("save", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { save(n, true); }
+        });
+        field.getActionMap().put("cancel", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { end(n, true); }
+        });
+        field.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) { remember(e.getOppositeComponent()); }
+            @Override public void focusLost(FocusEvent e) { if (!e.isTemporary()) clickedAway(n); }
+        });
+        naming = n;
+        rerender();
+        if (naming != n) return;
+        SwingUtilities.invokeLater(() -> {
+            if (naming != n) return;
+            field.requestFocusInWindow();
+            field.selectAll();
+        });
+    }
+
+    /** Enter, or a click elsewhere after a change: the sentence goes on; refused, the field stays open (the bar says why). */
+    private void save(Naming n, boolean byKey) {
+        if (naming != n || n.saving) return;
+        if (!n.changed()) {
+            end(n, byKey);
+            return;
+        }
+        n.saving = true;
+        n.field.setEditable(false);
+        edits.describe(n.spec.fromId, n.spec.toId, n.field.getText().trim()).thenAccept(r -> SwingUtilities.invokeLater(() -> {
+            if (naming != n) return;
+            n.saving = false;
+            n.field.setEditable(true);
+            if (r.ok) end(n, byKey);
+        }));
+    }
+
+    /** The keyboard went elsewhere: a change is saved, an unchanged field just closes; the keyboard stays where it went. */
+    private void clickedAway(Naming n) {
+        // the panel left the window (closed, or replaced) and took the field with it: nothing to save
+        if (naming != n || n.saving || getTopLevelAncestor() == null) return;
+        if (n.changed()) save(n, false); else end(n, false);
+    }
+
+    /** The field closes; {@code giveBack} (Enter, Esc): the keyboard goes back to the app's component that had it. */
+    private void end(Naming n, boolean giveBack) {
+        if (naming != n) return;
+        naming = null;
+        list.remove(n.field);
+        rerender();
+        if (giveBack) n.giveBack.run();
+    }
+
+    /** Closes an open field without saving and leaves the keyboard where it is: a replay starts. */
+    void cancelNaming() {
+        if (naming != null) end(naming, false);
+    }
+
+    /** Whether a sentence is being typed in place of a row. */
+    boolean naming() {
+        return naming != null;
+    }
+
+    /** The field a sentence is typed in, null when none. */
+    JTextField nameField() {
+        return naming == null ? null : naming.field;
+    }
+
+    /** What the open field shows greyed while empty; null when none is open. */
+    String nameHint() {
+        return naming == null ? null : naming.field.hint();
+    }
+
+    /** The row the field covers, -1 when none. */
+    int namingRow() {
+        return naming == null ? -1 : naming.row;
+    }
+
+    /** The list, for the person's clicks and keys. */
+    JList<String> stepsList() {
+        return list;
+    }
+
+    /** The app's component the list last took the keyboard from; null when none. */
+    Component appFocus() {
+        return appFocus;
+    }
+
+    private void remember(Component from) {
+        if (from != null && !Overlay.ours(from)) appFocus = from;
+    }
+
+    /** Shows the recording as last shown again: the field's own header row comes or goes. */
+    private void rerender() {
+        show(lastSteps, lastMarks, -1, lastPending, lastUndo);
+    }
+
+    /** Puts the field over its row's text, after the number and mark, which stay in view. */
+    private void placeField() {
+        if (naming == null || naming.row < 0 || naming.row >= model.size()) return;
+        int row = naming.row;
+        Rectangle cell = list.getCellBounds(row, row);
+        if (cell == null) return;
+        Component shown = list.getCellRenderer().getListCellRendererComponent(list, model.get(row), row, false, false);
+        Insets in = shown instanceof JComponent ? ((JComponent) shown).getInsets() : new Insets(0, 0, 0, 0);
+        int x = in.left + shown.getFontMetrics(shown.getFont()).stringWidth(prefixAt(row)) - 3;
+        x = Math.max(0, Math.min(x, cell.width - 40));
+        naming.field.setBounds(cell.x + x, cell.y, Math.max(40, cell.width - x), cell.height);
+        if (naming.field.getParent() != list) list.add(naming.field);
+        naming.field.revalidate();
+        list.repaint();
+    }
+
+    /** The text before a row's sentence: number, mark and who for a record, the fold mark for a header. */
+    private String prefixAt(int row) {
+        Row r = rows.get(row);
+        return r.line == null ? "▾ " : prefix(r.label, r.mark, r.line);
     }
 
     /** The selected rows that are records, in order. */
@@ -471,6 +783,10 @@ final class StepsPanel extends JPanel {
      * moves the selection onto another; records that are gone leave nothing selected.
      */
     void show(List<Inspector.StepLine> steps, Map<Integer, String> marks, int select, String pending, String undoLabel) {
+        lastSteps = new ArrayList<Inspector.StepLine>(steps);
+        lastMarks = new HashMap<Integer, String>(marks);
+        lastPending = pending;
+        lastUndo = undoLabel;
         Set<Integer> keptIds = new LinkedHashSet<Integer>();
         Set<Integer> keptGroups = new LinkedHashSet<Integer>();
         if (select < 0) {
@@ -500,6 +816,18 @@ final class StepsPanel extends JPanel {
             shown.add(new Row(-1, null, null, "…", 0));
             texts.add("   …  " + pending);
         }
+        // an open field stays with the records it names, by their ids; when the agent took them out it closes
+        boolean lost = false;
+        if (naming != null) {
+            int at = hostIn(shown, naming.spec);
+            if (at < 0) {
+                lost = true;
+            } else if (naming.spec.fresh()) {
+                shown.add(at, new Row(-1, null, null, null, 0, true));
+                texts.add(at, "▾ ");
+            }
+            naming.row = at;
+        }
         int from = -1;
         int to = -1;
         for (int r = 0; r < shown.size(); r++) {
@@ -523,6 +851,7 @@ final class StepsPanel extends JPanel {
         labels = numbers;
         if (same && select < 0 && from == list.getMinSelectionIndex() && to == list.getMaxSelectionIndex()) {
             list.repaint();
+            afterShow(lost);
             return;
         }
         widening = true;
@@ -540,6 +869,24 @@ final class StepsPanel extends JPanel {
             widening = false;
         }
         list.repaint();
+        afterShow(lost);
+    }
+
+    /** The field over its row again, or - its records gone - closed, the keyboard back with the app. */
+    private void afterShow(boolean lost) {
+        if (lost) end(naming, true); else placeField();
+    }
+
+    /**
+     * Where the field for {@code s} goes in {@code shown}: its record's row, its group's header, or for a new group the
+     * row a header of its own goes above; -1 when the agent took them out meanwhile.
+     */
+    private static int hostIn(List<Row> shown, Spec s) {
+        for (int r = 0; r < shown.size(); r++) {
+            Row row = shown.get(r);
+            if (s.groupId != 0 ? row.header() && row.group == s.groupId : row.id() == s.hostId) return r;
+        }
+        return -1;
     }
 
     /**
@@ -583,10 +930,15 @@ final class StepsPanel extends JPanel {
      * its line; a check is indented under its step, a group's member by two more.
      */
     static String row(String label, String mark, Inspector.StepLine s) {
+        if (!s.check()) return prefix(label, mark, s) + (s.say != null ? s.say : s.line);
+        return prefix(label, mark, s) + (s.say != null ? s.say : "check: " + checkText(s.line));
+    }
+
+    /** A record's row up to its sentence or line. */
+    private static String prefix(String label, String mark, Inspector.StepLine s) {
         String who = "agent".equals(s.author) ? "agent: " : "";
         String indent = s.groupId != 0 ? "  " : "";
-        if (!s.check()) return indent + label + "  " + mark + "  " + who + (s.say != null ? s.say : s.line);
-        return indent + "      └ " + label + "  " + mark + "  " + who + (s.say != null ? s.say : "check: " + checkText(s.line));
+        return indent + (s.check() ? "      └ " : "") + label + "  " + mark + "  " + who;
     }
 
     /** What a check checks: its line without {@code expect( )}. */

@@ -121,18 +121,26 @@ class PaletteShotTest {
     }
 
     @Test
-    void aCaptureLeavesTheAskPanelOut() throws Exception {
+    void aCaptureLeavesASentenceTypedInTheStepsListOut() throws Exception {
         withPalette((root, bar, panel) -> {
-            AskPanel ask = new AskPanel("Describe step 3", false, "Save the order", null, say -> null, () -> { });
-            ask.setBounds(10, 10, 300, 120);
-            ask.validate();
-            root.getLayeredPane().add(ask, javax.swing.JLayeredPane.PALETTE_LAYER);
+            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
+            steps.setBounds(10, 10, 460, 260);
+            root.getLayeredPane().add(steps, javax.swing.JLayeredPane.PALETTE_LAYER);
+            steps.show(java.util.Collections.singletonList(new Inspector.StepLine(1, "person", "click(#save)", false)),
+                    new java.util.HashMap<Integer, String>(), 0, null, null);
+            layOut(steps);
+            steps.describeSelection();
+            javax.swing.JTextField field = steps.nameField();
+            field.setText("Save the order");
+            java.awt.Rectangle at = SwingUtilities.convertRectangle(field.getParent(), field.getBounds(), root);
+            int x = at.x + at.width / 2;
+            int y = at.y + at.height / 2;
             BufferedImage plain = new BufferedImage(600, 400, BufferedImage.TYPE_INT_RGB);
             root.paint(plain.createGraphics());
-            assertThat(centre(plain, ask)).isNotEqualTo(0xFF0000);
+            assertThat(plain.getRGB(x, y) & 0xFFFFFF).isNotEqualTo(0xFF0000);
             Shot shot = Screenshots.of(root, null, null, null);
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(shot.png));
-            assertThat(centre(image, ask)).isEqualTo(0xFF0000);
+            assertThat(image.getRGB(x, y) & 0xFFFFFF).isEqualTo(0xFF0000);
         });
     }
 
@@ -243,5 +251,10 @@ class PaletteShotTest {
                 check.setVisible(false);
             }
         });
+    }
+
+    private static void layOut(java.awt.Container c) {
+        c.doLayout();
+        for (Component k : c.getComponents()) if (k instanceof java.awt.Container) layOut((java.awt.Container) k);
     }
 }

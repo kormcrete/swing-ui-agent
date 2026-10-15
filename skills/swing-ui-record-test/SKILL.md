@@ -103,9 +103,9 @@ If `$UI session` shows `"palette": true` (the default; off with `palette=off` or
 the app sees a palette in its window:
 
 - **One recording, two authors.** A recording you start shows in the palette at once (Steps). The person can record
-  too (● Record), add checks (Check), name steps (Describe… in a step's row menu), and delete, redo or undo; `list`
-  shows who made each step. Pass the `rev` from your last `list`: an edit is refused when they changed the
-  recording meanwhile, so list again.
+  too (● Record), add checks (Check), name steps (double-click a row in Steps, or F2/Enter; also Describe… in the
+  row menu), and delete, redo or undo; `list` shows who made each step. Pass the `rev` from your last `list`: an
+  edit is refused when they changed the recording meanwhile, so list again.
 - **They record, you save.** When they ask you to wait, `$UI recording '{"op":"list","wait":540000}'` returns once
   they press Done. You did not run their steps: `replay` before you trust them.
 - **Or they export.** After Done the palette offers Export…, which writes the file without you. When they ask you

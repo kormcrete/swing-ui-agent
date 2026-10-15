@@ -94,7 +94,9 @@ Press **Steps** to open the list of what has been recorded so far, your steps an
   from there.
 - **✕ Delete** removes one step with its checks, or one check. **↶ Undo** takes back the last edit, yours or the
   agent's.
-- **⋯** (or a right click on a row) describes a step in a sentence of your own.
+- **Double-click a row** (or select it and press F2 or Enter) to describe a step or a check in a sentence of your
+  own, right in the list: Enter saves, Esc cancels. Select several steps first to give them one sentence as a group;
+  double-click a group's header to rename it. **⋯** (or a right click on a row) offers the same as **Describe…**.
 
 Results stay on the steps as ✓ and ✗ until the next replay. **Replay all** and a redo begin with a reset, as the test
 will; without a plugin that only closes dialogs, so the first step has to get to the starting screen.

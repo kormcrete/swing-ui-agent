@@ -335,7 +335,7 @@ public final class Inspector {
     private Overlay paletteHome;
     /** The palette's window: the open modal dialog nothing blocks, else the main window ({@link #attachPalette}). */
     Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
-    /** The component that has the keyboard now: the ask panel gives it back when it closes ({@link #giveFocus}). */
+    /** The component that has the keyboard now: a sentence typed in the Steps list gives it back ({@link #giveFocus}). */
     Supplier<Component> focusOwner = () -> KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
     /** Gives the keyboard back to an app component. */
     Consumer<Component> giveFocus = Component::requestFocusInWindow;

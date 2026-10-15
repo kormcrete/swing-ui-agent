@@ -29,8 +29,8 @@ import java.util.function.Supplier;
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
  * Done; after Done ● Record, Load…, Steps, Export…), the person's own steps (Record mode), the check catcher (Check
  * mode), the steps panel with replay, redo and delete (a replay of everything and every redo begin at the app reset,
- * as the exported test does) and its row menu (Describe… in an ask panel, Ungroup, how a table row is named), and the
- * export panel that writes the recording as a JUnit class or a recorded test file. The
+ * as the exported test does), sentences typed in place of its rows, its row menu (Describe…, Ungroup, how a table row
+ * is named), and the export panel that writes the recording as a JUnit class or a recorded test file. The
  * person starts and ends it with ● Record and Done, or the agent does ({@link #startedByAgent},
  * {@link #stoppedByAgent}); while the agent replays, its bar stands in for the palette's ({@link #agentReplay}). A
  * recorded test file the person or the agent loads is one too, already stopped ({@link #loaded}): its steps panel runs it - the
@@ -72,8 +72,6 @@ final class Recording {
     private final Map<Integer, String> marks = new HashMap<Integer, String>();
     StepsPanel panel;
     ExportPanel exportPanel;
-    /** The person's sentence being asked for, in the steps panel's place; null when none. */
-    AskPanel askPanel;
     State state = State.RECORDING;
     boolean replaying;
     /** The agent's bar while the agent replays, else null. */
@@ -209,7 +207,8 @@ final class Recording {
         if (!esc) return false;
         if (e.getID() == KeyEvent.KEY_PRESSED) {
             swallowing = false;
-            if (state != State.CHECKING || replaying || agentReplay != null
+            // Esc in a sentence typed in the Steps list cancels that, nothing more
+            if (state != State.CHECKING || replaying || agentReplay != null || panel != null && panel.naming()
                     || MenuSelectionManager.defaultManager().getSelectedPath().length > 0) {
                 listenForEscape(state == State.CHECKING);
                 return false;
@@ -252,7 +251,7 @@ final class Recording {
         Overlay from = home;
         if (to == from) return;
         Bar shown = from.bar() != null ? from.bar() : bar;
-        JComponent open = askPanel != null ? askPanel : panel != null ? panel : exportPanel;
+        JComponent open = panel != null ? panel : exportPanel;
         from.bar(null);
         if (open != null) from.panel(null);
         if (replaying || agentReplay != null) {
@@ -312,6 +311,7 @@ final class Recording {
     void agentReplay(Bar agentBar) {
         if (agentReplay != null) return;
         agentReplay = agentBar;
+        if (panel != null) panel.cancelNaming();
         steps.flush();
         steps.active(false);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
@@ -350,9 +350,8 @@ final class Recording {
         if (noteTimer != null) noteTimer.stop();
         steps.active(false);
         stopListeningForEscape();
-        if (panel != null || exportPanel != null || askPanel != null) home.panel(null);
+        if (panel != null || exportPanel != null) home.panel(null);
         panel = null;
-        askPanel = null;
         closeExportPanel();
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         if (!done.isDone()) done.complete(new ArrayList<String>(lines));
@@ -404,7 +403,6 @@ final class Recording {
         if (panel != null) {
             home.panel(null);
             panel = null;
-            askPanel = null;
             live.stop();
             return;
         }
@@ -417,9 +415,13 @@ final class Recording {
                         this::toggleSteps)
                 : new StepsPanel("▶ Replay all", () -> replay(0, -1, null), i -> replay(i, -1, null), this::redoFrom,
                         this::delete, this::undo, this::toggleSteps);
+        StepsPanel shown = panel;
         panel.edits(new StepsPanel.Edits() {
-            @Override public void describe(String title, boolean group, int fromId, int toId, String initial) {
-                ask(title, group, fromId, toId, initial);
+            @Override public Runnable naming() {
+                return startNaming(shown);
+            }
+            @Override public CompletableFuture<Inspector.Result> describe(int fromId, int toId, String say) {
+                return edit(() -> sink.describe(fromId, toId, say), "✗ not described: ");
             }
             @Override public void ungroup(int id) {
                 edit(() -> sink.ungroup(id), "✗ not ungrouped: ");
@@ -452,7 +454,6 @@ final class Recording {
                 if (state != State.STOPPED || exportPanel != null) return;
                 if (panel != null) {
                     panel = null;
-                    askPanel = null;
                     live.stop();
                 }
                 inspector.closeLoad();
@@ -478,10 +479,9 @@ final class Recording {
 
     /** The steps or export panel goes: Load recorded test… opens its own in their place. */
     void closePanels() {
-        if (panel == null && exportPanel == null && askPanel == null) return;
+        if (panel == null && exportPanel == null) return;
         home.panel(null);
         panel = null;
-        askPanel = null;
         live.stop();
         closeExportPanel();
     }
@@ -566,33 +566,25 @@ final class Recording {
     }
 
     /**
-     * Describe…: the ask panel takes the steps panel's place, for the sentence of the records {@code fromId} to
-     * {@code toId} (one check, one step, or the steps of a group); OK sets it, a refusal keeps the panel open with
-     * the reason, Cancel or an accepted sentence brings the steps back. The ids are those the person saw: the agent's
-     * changes meanwhile do not move them. {@code group}: the sentence of a group, which an empty one cannot remove.
+     * The person starts typing a sentence in place of a row of {@code shown} (a double click, F2, Enter, or Describe…):
+     * not while a replay runs. Returns what gives the keyboard back, at Enter or Esc, to the app's component that had
+     * it - the one that has it now, else the one the list took it from when the person clicked a row (never the
+     * palette's own) - or null when no naming may start.
      */
-    private void ask(String title, boolean group, int fromId, int toId, String initial) {
-        if (panel == null || askPanel != null || replaying || agentReplay != null) return;
-        AskPanel[] ask = new AskPanel[1];
-        // the app's component that has the keyboard gets it back when the panel closes
+    private Runnable startNaming(StepsPanel shown) {
+        if (replaying || agentReplay != null) return null;
         Component typing = inspector.focusOwner.get();
-        Runnable giveBack = typing == null || Overlay.ours(typing) ? null : () -> inspector.giveFocus.accept(typing);
-        ask[0] = new AskPanel(title, group, initial, giveBack,
-                say -> edit(() -> sink.describe(fromId, toId, say), "✗ not described: "), () -> closeAsk(ask[0]));
-        askPanel = ask[0];
-        home.panel(askPanel);
-    }
-
-    /** The ask panel {@code which} goes, and the steps panel comes back in its place. */
-    private void closeAsk(AskPanel which) {
-        if (askPanel == null || askPanel != which) return;
-        askPanel = null;
-        home.panel(panel);
+        if (typing == null || Overlay.ours(typing)) typing = shown.appFocus();
+        Component back = typing;
+        return () -> {
+            if (back != null) inspector.giveFocus.accept(back);
+        };
     }
 
     /**
-     * An edit from the row menu, on the sink thread: its result goes on the bar ({@code refused} before a refusal's
-     * reason) and the panel re-reads the recording; completes with the result after the bar is updated.
+     * An edit from the row menu or a sentence typed in place, on the sink thread: its result goes on the bar
+     * ({@code refused} before a refusal's reason) and the panel re-reads the recording; completes with the result
+     * after the bar is updated.
      */
     private CompletableFuture<Inspector.Result> edit(Supplier<Inspector.Result> call, String refused) {
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
@@ -714,6 +706,8 @@ final class Recording {
         if (replaying || agentReplay != null) return;
         boolean reset = from == 0;
         replaying = true;
+        // no sentence is typed while the steps run
+        if (panel != null) panel.cancelNaming();
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
         final long delay = speed == 0 ? 0 : speed == 1 ? 700 : 1500;

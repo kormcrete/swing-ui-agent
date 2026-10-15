@@ -151,31 +151,39 @@ class PaletteUnseenTest {
     }
 
     @Test
-    void theStepMenuAndTheAskPanelAreNeverSeen() throws Exception {
+    void theStepMenuAndASentenceTypedInTheStepsListAreNeverSeen() throws Exception {
         onEdt(() -> {
             JButton save = new JButton("Save the order");
             save.setBounds(320, 50, 120, 24);
             scene.content.add(save);
-            AskPanel ask = new AskPanel("Describe step 3", false, "Save the order", null, say -> null, () -> { });
-            ask.setBounds(10, 130, 300, 120);
-            ask.validate();
-            scene.content.add(ask);
+            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
+            steps.setBounds(10, 130, 300, 200);
+            steps.validate();
+            scene.content.add(steps);
+            steps.show(java.util.Collections.singletonList(new Inspector.StepLine(1, "person", "click(#save)", false)),
+                    new java.util.HashMap<Integer, String>(), 0, null, null);
+            steps.describeSelection();
+            // a text field like the app's, with the app button's name in it
+            JTextField field = steps.nameField();
+            field.setText("Save the order");
             StepMenu menu = new StepMenu().item("Describe this step…", true, () -> { });
             try {
                 String json = new ObjectMapper().writeValueAsString(new Snapshot(Visibility.TREE, scene.names,
                         scene.refs, scene).build(null, null, 400, 20));
-                assertThat(json).contains("Save the order").doesNotContain("Describe step");
+                // the button's name once: the field's text is not in it, nor the steps list's line
+                assertThat(json.split("Save the order", -1)).hasSize(2);
+                assertThat(json).doesNotContain("click(#save)");
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            // the app's button is found and recorded as if the ask panel were not there
+            // the app's button is found and recorded as if the field were not there
             List<Resolved> found = scene.resolver.matches(Locator.of("button", "Save the order"));
             assertThat(found).hasSize(1);
             assertThat(found.get(0).component).isSameAs(save);
             assertThat(scene.inspector.component(save).locator.nth).isNull();
             assertThat(Roles.agentOwn(menu)).isTrue();
             assertThat(Overlay.ours(menu.getComponent(0))).isTrue();
-            assertThat(Overlay.ours(ask)).isTrue();
+            assertThat(Overlay.ours(field)).isTrue();
         });
     }
 
