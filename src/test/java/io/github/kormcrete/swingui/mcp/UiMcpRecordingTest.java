@@ -1799,6 +1799,46 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void thisValueComesBackAsTheColumnTheStepWasRecordedWith() throws Exception {
+        // the table's first unique column is Order; the step names its row by the Customer column
+        backend.verbs.outcome.row = new RowChoice(0, java.util.Collections.<String, Object>singletonMap("Order", "ORD-1640"));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Orders\","
+                + "\"row\":{\"Customer\":\"Ada Shop Ltd\"},\"column\":\"Status\"}}"));
+        JsonNode step = call("{\"op\":\"list\"}").path("steps").get(0);
+        assertThat(step.path("row").path("value").toString()).isEqualTo("{\"Customer\":\"Ada Shop Ltd\"}");
+
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        step = call("{\"op\":\"list\"}").path("steps").get(0);
+        assertThat(step.path("row").path("value").toString()).isEqualTo("{\"Customer\":\"Ada Shop Ltd\"}");
+        JsonNode r = call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}");
+        assertThat(r.path("steps").get(0).path("step").path("target").path("row").toString())
+                .isEqualTo("{\"Customer\":\"Ada Shop Ltd\"}");
+    }
+
+    @Test
+    void aLoadedStepByAnotherColumnKeepsItWhenItLearnsItsRow() throws Exception {
+        fakeReset();
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "row click";
+        flow.start = RecordedTestFiles.START_RESET;
+        ClickVerb c = new ClickVerb();
+        c.target = Locator.of("table", "Orders");
+        c.target.row = java.util.Collections.<String, Object>singletonMap("Customer", "Ada Shop Ltd");
+        flow.steps.add(c);
+        Path file = dir.resolve("row.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
+
+        backend.verbs.outcome.row = new RowChoice(0, java.util.Collections.<String, Object>singletonMap("Order", "ORD-1640"));
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        JsonNode r = call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}");
+        assertThat(r.path("steps").get(0).path("step").path("target").path("row").toString())
+                .isEqualTo("{\"Customer\":\"Ada Shop Ltd\"}");
+    }
+
+    @Test
     void aValueColumnNamedIndexIsStillThisValue() throws Exception {
         backend.verbs.outcome.row = new RowChoice(2, java.util.Collections.<String, Object>singletonMap("index", "A-7"));
         session.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"row\":{\"index\":\"A-7\"},\"column\":\"Customer\"}}"));

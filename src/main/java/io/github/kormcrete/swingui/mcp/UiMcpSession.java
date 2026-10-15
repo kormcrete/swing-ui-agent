@@ -1098,16 +1098,22 @@ public class UiMcpSession {
 
     /**
      * The alternatives of the table row {@code action} names: those the run saw (a locator's row, or a cell check's),
-     * else {@code given}; null when the action names no row.
+     * else {@code given}; null when the action names no row. "This value" is the row as the step names it when it names
+     * it by value (any column); the table's first unique column only for a step by position.
      */
     private RowChoice rowOf(Action action, VerbOutcome outcome, RowChoice given) {
-        if (rowHolder(mapper.valueToTree(action)) == null) return null;
+        ObjectNode holder = rowHolder(mapper.valueToTree(action));
+        if (holder == null) return null;
         RowChoice seen = outcome == null ? null : outcome.row;
         if (seen == null && outcome != null) {
             Recorder.Recorded target = outcome.recorded.get("target");
             if (target != null) seen = target.row;
         }
-        return seen != null ? seen : given;
+        RowChoice choice = seen != null ? seen : given;
+        if (choice == null) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = mapper.convertValue(holder.get("row"), Map.class);
+        return byPosition(row, choice) || row.equals(choice.byValue()) ? choice : new RowChoice(choice.index, row);
     }
 
     /** The node of {@code step} that holds a table row ({@code cell.row} of a cell check, else {@code target.row}), or null. */
