@@ -64,7 +64,7 @@ public final class UiMcpTools {
                         + "\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step "
                         + "that opens a message or confirmation returns at once with 'dialog' (title, message, "
                         + "buttons); navigate, close and loginAs refuse to run until it is answered with the "
-                        + "'answer' verb.", schema);
+                        + "'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test).", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 JsonNode action = args.path("action");
@@ -94,7 +94,7 @@ public final class UiMcpTools {
                         + "steps are recorded for export_test exactly as do_action records them. "
                         + "Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},"
                         + "{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},"
-                        + "{\"action\":\"close\"}]}.", schema);
+                        + "{\"action\":\"close\"}]}. A step may carry say: its sentence.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 JsonNode actions = args.path("actions");
@@ -166,7 +166,7 @@ public final class UiMcpTools {
                         + "(verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a "
                         + "recording that did not begin at a reset or a recording start, a bad class/method/package "
                         + "name, an existing file, or an empty recording, naming each problem; a refusal keeps the "
-                        + "recording.",
+                        + "recording. A step and its checks are one block; sentences become comments.",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
@@ -201,7 +201,8 @@ public final class UiMcpTools {
                         + "palette, or exported before without clear). A folder that cannot be written is refused, "
                         + "naming it. A recorded test holds exact values: check data the test creates or data known to exist; "
                         + "a value the app makes up (a new order number, today's date) only when your start makes it "
-                        + "predictable - otherwise check something else or write a Java test.", schema);
+                        + "predictable - otherwise check something else or write a Java test. Format version 2: each step with its "
+                        + "checks nested, sentences and groups kept.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
@@ -442,7 +443,8 @@ public final class UiMcpTools {
                         + "along; pass rev from your last list so an edit is refused if the person changed the recording "
                         + "meanwhile. Every edit returns the new list. While one runs, session reset and test runs are "
                         + "refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again "
-                        + "without recording them; from step 1 it resets the app first, as the exported test starts. redo "
+                        + "without recording them and returns {passed, ran, total, reset, steps} with one {n, action, passed, ms, "
+                        + "message?} per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo "
                         + "{from}: cuts step from and the ones after it, replays the steps before it from a reset, and "
                         + "records on (from = the number after the last step continues a stopped recording). export "
                         + "{as: java|recorded, ...}: as export_test / export_recorded_test, but keeps the recording. load "

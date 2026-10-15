@@ -77,9 +77,11 @@ you instead of describing:
 - **They record, you export.** The person presses ● Record in the palette in the app window (or you start it when
   they ask: `$UI recording '{"op":"start","reset":true}'`), uses the app (every step is recorded as if you had run
   it), adds checks in Check mode, replays or fixes steps, and presses Done. `$UI recording '{"op":"list","wait":540000}'`
-  waits for their Done and returns the recording. Edit it with `insert`, `delete`, `move` and `edit`, passing the
+  waits for their Done and returns the recording. Steps are numbered 1..n (an action and the checks after it), a check
+  is `7.2`; `delete {"n":3}` takes a step's checks with it, `delete {"n":"3.1"}` only that check. Edit it with `insert`,
+  `delete`, `move`, `edit` (`target`, `text` or `step`), `row`, `group` and `ungroup`, passing the
   `rev` from your last `list` so a change made meanwhile refuses yours; `undo` takes back the last edit, and
-  `replay` / `redo {"from":3}` run it again. Export with `recording export` or `export_test` / `export_recorded_test`.
+  `replay` / `redo {"from":3}` (step 3 and later are cut) run it again. Export with `recording export` or `export_test` / `export_recorded_test`.
   A recorded test checks exact values: data the test creates, or data known to exist; for numbers the app makes up,
   check something else or write a Java test. Then verify as always: their steps were recorded, not re-run, until a replay. While a recording runs, `session reset`
   is refused: stop it first.

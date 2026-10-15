@@ -1299,12 +1299,33 @@ class UiMcpRecordingTest {
         assertThat(backend.verbs.calls.get(0)).isEqualTo("reset");
         assertThat(r.path("steps")).hasSize(5);
         assertThat(r.path("steps").get(1).path("n").asInt()).isEqualTo(2);
-        assertThat(r.path("steps").get(1).path("line").asText()).startsWith("click(");
+        assertThat(r.path("steps").get(1).path("action").asText()).startsWith("click(");
         assertThat(r.path("steps").get(1).path("passed").asBoolean()).isTrue();
         JsonNode list = call("{\"op\":\"list\"}");
         assertThat(list.path("steps")).hasSize(5);
         assertThat(list.path("steps").get(1).has("edited")).isFalse();
         assertThat(list.path("rev").asInt()).isEqualTo(r.path("rev").asInt());
+    }
+
+    @Test
+    void theAgentsReplayBarCountsStepsAndNamesTheCheckAfterThem() throws Exception {
+        session.palette(true);
+        fakeReset();
+        List<String> heard = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        session.recordingView(hearing(heard));
+        call("{\"op\":\"start\"}");
+        click("a");
+        click("b");
+        call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        call("{\"op\":\"stop\"}");
+        heard.clear();
+        call("{\"op\":\"replay\"}");
+        List<String> bars = new java.util.ArrayList<String>();
+        for (String h : heard) if (h.startsWith("replaying: replaying ")) bars.add(h.substring("replaying: replaying ".length()));
+        assertThat(bars).hasSize(3);
+        assertThat(bars.get(0)).isEqualTo("1/2  click(#a)");
+        assertThat(bars.get(1)).startsWith("1/2  check 1.1: ").doesNotContain("expect(");
+        assertThat(bars.get(2)).isEqualTo("2/2  click(#b)");
     }
 
     @Test

@@ -374,6 +374,65 @@ class FixtureAppDriveIT {
         }
     }
 
+    @Test
+    @Order(16)
+    void oneNumberingInListReportAndFile() throws Exception {
+        Path folder = Files.createDirectories(testsDir.resolve("described"));
+        String dir = folder.toString().replace('\\', '/');
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            // a check before any action is step 1; the save button is not disabled whatever earlier cases left in the status
+            step("expect", "{'target':{'name':'save'},'state':['!disabled']}");
+            step("click", "{'target':{'name':'new'}}");
+            step("type", "{'target':{'name':'customer'},'text':'Said 1'}");
+            step("click", "{'target':{'name':'save'}}");
+            step("expect", "{'target':{'name':'status'},'text':'saved Said 1'}");
+            call("recording", "{'op':'edit','n':2,'say':'Start a new customer'}");
+            call("recording", "{'op':'edit','n':'4.1','say':'It is saved'}");
+            call("recording", "{'op':'group','from':3,'to':4,'say':'Save Said 1'}");
+
+            JsonNode list = call("recording", "{'op':'list'}");
+            String why = list.path("why").asText();
+            assertThat(list.path("steps")).as(why).hasSize(4);
+            assertThat(list.path("steps").path(0).path("checks").path(0).path("n").asText()).as(why).isEqualTo("1.1");
+            assertThat(list.path("steps").path(3).path("checks").path(0).path("n").asText()).as(why).isEqualTo("4.1");
+            assertThat(list.path("steps").path(3).path("checks").path(0).path("say").asText()).as(why).isEqualTo("It is saved");
+            assertThat(list.path("groups")).as(why).hasSize(1);
+            assertThat(list.path("groups").path(0).path("from").asInt()).as(why).isEqualTo(3);
+            assertThat(list.path("groups").path(0).path("to").asInt()).as(why).isEqualTo(4);
+            call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
+        }
+
+        JsonNode exported = call("recording", "{'op':'export','as':'recorded','name':'said','dir':'" + dir + "'}");
+        String why = exported.path("why").asText();
+        Path file = Paths.get(exported.path("savedTo").asText());
+        assertThat(file).as(why).isRegularFile();
+        JsonNode json = JSON.readTree(new String(Files.readAllBytes(file), StandardCharsets.UTF_8));
+        assertThat(json.path("version").asInt()).as(why).isEqualTo(2);
+        // the check-only step first, then a step, then the group holding two steps
+        assertThat(json.path("steps")).as(why).hasSize(3);
+        assertThat(json.path("steps").path(0).path("checks")).as(why).hasSize(1);
+        JsonNode group = json.path("steps").path(2);
+        assertThat(group.path("say").asText()).as(why).isEqualTo("Save Said 1");
+        assertThat(group.path("steps")).as(why).hasSize(2);
+        assertThat(group.path("steps").path(1).path("checks").path(0).path("say").asText()).as(why).isEqualTo("It is saved");
+
+        JsonNode ran = call("run_recorded_test", "{'path':'" + file.toString().replace('\\', '/') + "'}");
+        why = ran.path("why").asText();
+        assertThat(ran.path("passed").asBoolean()).as(why).isTrue();
+        String report = ran.path("report").asText();
+        assertThat(report).as(why).contains("[1.1]").contains("[4.1]").contains("Start a new customer").contains("\u2014 Save Said 1");
+        JsonNode steps = ran.path("steps");
+        assertThat(steps).as(why).hasSize(5);
+        assertThat(steps.path(0).path("n").asText()).as(why).isEqualTo("1.1");
+        assertThat(steps.path(1).path("n").asInt()).as(why).isEqualTo(2);
+        assertThat(steps.path(2).path("n").asInt()).as(why).isEqualTo(3);
+        assertThat(steps.path(3).path("n").asInt()).as(why).isEqualTo(4);
+        assertThat(steps.path(4).path("n").asText()).as(why).isEqualTo("4.1");
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {

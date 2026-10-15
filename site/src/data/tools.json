@@ -21,7 +21,7 @@
     },
     {
       "name": "do_action",
-      "description": "Execute ONE step against the live client and return pass/fail and its duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the app steps navigate, close, loginAs. A successful step with a Java form is recorded for export_test; one without (a loginAs after the first step, a target by ref) runs but is not recorded, and 'notRecorded' says why. The 'action' object uses the step schema, e.g. {\"action\":\"navigate\",\"target\":\"home\"} or {\"action\":\"expect\",\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step that opens a message or confirmation returns at once with 'dialog' (title, message, buttons); navigate, close and loginAs refuse to run until it is answered with the 'answer' verb.",
+      "description": "Execute ONE step against the live client and return pass/fail and its duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the app steps navigate, close, loginAs. A successful step with a Java form is recorded for export_test; one without (a loginAs after the first step, a target by ref) runs but is not recorded, and 'notRecorded' says why. The 'action' object uses the step schema, e.g. {\"action\":\"navigate\",\"target\":\"home\"} or {\"action\":\"expect\",\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step that opens a message or confirmation returns at once with 'dialog' (title, message, buttons); navigate, close and loginAs refuse to run until it is answered with the 'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -80,7 +80,7 @@
     },
     {
       "name": "do_actions",
-      "description": "Execute SEVERAL steps in order against the live client, in one call, stopping at the first failure. Prefer this over repeated do_action when the next steps are already known. Returns {passed, ran, total, steps:[{passed, action, message}]}; successful steps are recorded for export_test exactly as do_action records them. Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"action\":\"close\"}]}.",
+      "description": "Execute SEVERAL steps in order against the live client, in one call, stopping at the first failure. Prefer this over repeated do_action when the next steps are already known. Returns {passed, ran, total, steps:[{passed, action, message}]}; successful steps are recorded for export_test exactly as do_action records them. Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"action\":\"close\"}]}. A step may carry say: its sentence.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -173,7 +173,7 @@
     },
     {
       "name": "export_test",
-      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a recording that did not begin at a reset or a recording start, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording.",
+      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs). Refuses a recording that did not begin at a reset or a recording start, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording. A step and its checks are one block; sentences become comments.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -205,7 +205,7 @@
     },
     {
       "name": "export_recorded_test",
-      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values: check data the test creates or data known to exist; a value the app makes up (a new order number, today's date) only when your start makes it predictable - otherwise check something else or write a Java test.",
+      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values: check data the test creates or data known to exist; a value the app makes up (a new order number, today's date) only when your start makes it predictable - otherwise check something else or write a Java test. Format version 2: each step with its checks nested, sentences and groups kept.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -238,7 +238,7 @@
     },
     {
       "name": "run_recorded_test",
-      "description": "Run a recorded test file on the live app and report it: one of 'name' (in the recorded tests folder), 'path', or 'test' (the file's JSON inline). It begins as every recorded test does, with a reset (dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT recording, and stops at the first that fails; that step carries what its locators match now, a scoped tree and a picture of the window (written under 'evidence', default target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}. After a failure take a new snapshot before using refs. Refused (BUSY) while a person records, answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.",
+      "description": "Run a recorded test file on the live app and report it: one of 'name' (in the recorded tests folder), 'path', or 'test' (the file's JSON inline). It begins as every recorded test does, with a reset (dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT recording, and stops at the first that fails; that step carries what its locators match now, a scoped tree and a picture of the window (written under 'evidence', default target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; steps are [{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step number (7) or a check label (\"7.2\"); action is the step's technical line. After a failure take a new snapshot before using refs. Refused (BUSY) while a person records, answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -798,7 +798,7 @@
     },
     {
       "name": "recording",
-      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java and its step JSON; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: a step or check at position at, NOT run (marked edited until a replay passes it). delete {n | from, to}. move {n, to}. edit {n, target | text | step}. undo: takes back the last edit, by you or the person. Positions close up after a delete; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps again without recording them; from step 1 it resets the app first, as the exported test starts. redo {from}: cuts the steps from there, replays up to it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: java|recorded, ...}: as export_test / export_recorded_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
+      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its checks nested under it ({n: \"7.1\", ...}), plus groups [{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: an action at a step number (before the step now there) or a check at a label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) and may come with target, text or step. group {from, to, say}: steps from..to (two or more, whole steps, groups do not nest or overlap) under one sentence; the same range renames it. ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a table row names it by value (the key column's text: it still finds the row after a sort or a new row) or by position (its index); list shows each one's row {by, value, index}; the other way is known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, by you or the person. Numbers close up after a delete; deleting or moving a step takes its checks along; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again without recording them and returns {passed, ran, total, reset, steps} with one {n, action, passed, ms, message?} per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: java|recorded, ...}: as export_test / export_recorded_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -812,6 +812,9 @@
               "delete",
               "move",
               "edit",
+              "group",
+              "ungroup",
+              "row",
               "undo",
               "replay",
               "redo",
@@ -820,16 +823,22 @@
             ]
           },
           "at": {
-            "type": "integer",
-            "description": "insert: the position the step gets (1 to size+1)."
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "insert: where it goes. An action: the step number it gets (1 to steps+1), before the step now there. A check: the label it gets, a step number and its place under it (\"7.2\"; k up to the step's checks + 1), or 1 for a check-only step 1. A step number (7) or a check label (\"7.2\")."
           },
           "n": {
-            "type": "integer",
-            "description": "delete, move, edit: the step's position (1-based)."
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "delete, move, edit, ungroup, row: a step number (7) or a check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group."
           },
           "from": {
             "type": "integer",
-            "description": "delete: first step of a range; replay: first step (default 1); redo: the step to record again."
+            "description": "delete, group: first step of a range; replay: first step (default 1); redo: the step to record again (steps+1 continues)."
           },
           "speed": {
             "type": "string",
@@ -882,11 +891,23 @@
           },
           "to": {
             "type": "integer",
-            "description": "delete: last step of a range; move: the position the step has afterwards; replay: last step (default: the last)."
+            "description": "delete, group: last step of a range; move: the step number it has afterwards; replay: last step (default: the last)."
+          },
+          "say": {
+            "type": "string",
+            "description": "edit: the step's or check's sentence, one line of at most 200 characters (\"\" removes it), alone or with target, text or step; group: the group's sentence."
+          },
+          "by": {
+            "type": "string",
+            "description": "row: how the table row of step or check n is named: value (its key column's text, as recorded when a column told the rows apart) or position (its index).",
+            "enum": [
+              "value",
+              "position"
+            ]
           },
           "step": {
             "type": "object",
-            "description": "insert, edit: a step as do_action takes it."
+            "description": "insert, edit: a step or check as do_action takes it."
           },
           "target": {
             "type": "object",
@@ -984,11 +1005,11 @@
           },
           "text": {
             "type": "string",
-            "description": "edit: the new text of a type, expect, setClipboard or drop step."
+            "description": "edit: the new text of a type, expect, setClipboard or drop step or check."
           },
           "rev": {
             "type": "integer",
-            "description": "insert, delete, move, edit, undo, redo: the rev of your last list; refused if the recording changed since."
+            "description": "insert, delete, move, edit, group, ungroup, row, undo, redo: the rev of your last list; refused if the recording changed since."
           },
           "reset": {
             "type": "boolean",

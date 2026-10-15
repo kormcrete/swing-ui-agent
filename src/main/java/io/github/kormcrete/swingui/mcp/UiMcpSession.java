@@ -2016,7 +2016,14 @@ public class UiMcpSession {
                 boolean check = StepNumbers.isCheck(recorded.action);
                 String what = (check ? "check " : "step ") + labels.get(i);
                 if (pause > 0 && (i == range[0] || !check)) sleep(pause);
-                if (palette) view.agentReplaying("replaying " + labels.get(i) + "/" + b + "  " + recorded.action.describe());
+                if (palette) {
+                    // the counter counts steps only; a check is named after it, as the palette's own replay does
+                    String label = labels.get(i);
+                    String text = recorded.action.describe();
+                    view.agentReplaying("replaying " + (check ? label.substring(0, label.indexOf('.')) + "/" + b + "  check " + label + ": "
+                            + (text.startsWith("expect(") && text.endsWith(")") ? text.substring(7, text.length() - 1) : text)
+                            : label + "/" + b + "  " + text));
+                }
                 JsonNode json = stripNulls(mapper.valueToTree(recorded.action));
                 ObjectNode step;
                 RowChoice row;
@@ -2034,7 +2041,7 @@ public class UiMcpSession {
                 if (palette) view.replayed(recorded.id, ok);
                 ObjectNode o = results.addObject();
                 putLabel(o, labels.get(i));
-                o.put("line", recorded.action.describe());
+                o.put("action", recorded.action.describe());
                 o.put("passed", ok);
                 o.put("ms", step.path("ms").asLong());
                 if (!ok) {
