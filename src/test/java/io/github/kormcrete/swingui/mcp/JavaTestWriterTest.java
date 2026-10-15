@@ -99,6 +99,19 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void aScreenshotWithASentenceIsABlockOfItsOwn() {
+        ScreenshotVerb shot = say(new ScreenshotVerb(), "Keep a picture of the cart");
+        shot.path = "cart.png";
+        String[] lines = bodyOf(flow(click(Locator.of("button", "Add to cart")),
+                stateCheck("label", "€4.99", "!hidden"), shot));
+        assertThat(lines[0]).contains("Add to cart");
+        assertThat(lines[1]).contains("€4.99");
+        assertThat(lines[2]).isEmpty();
+        assertThat(lines[3]).isEqualTo("        // Keep a picture of the cart");
+        assertThat(lines[4]).contains("saveScreenshot(\"cart.png\"");
+    }
+
+    @Test
     void aCheckSentenceIsACommentAboveTheCheck() {
         String[] lines = bodyOf(flow(click(Locator.of("button", "A")),
                 say(stateCheck("label", "x", "!hidden"), "The total is shown"),
@@ -239,6 +252,19 @@ class JavaTestWriterTest {
         assertThat(p.get(1)).contains("step 2", "ref");
         assertThat(p.get(2)).contains("step 3", "loginAs");
         assertThat(p.get(3)).contains("step 4", "navigate needs a target");
+    }
+
+    @Test
+    void aRefusalNamesTheStepOrCheckAsTheListNumbersIt() {
+        ExpectVerb nothing = new ExpectVerb();
+        nothing.target = Locator.of("label", "Total");
+        NavigateAction nowhere = new NavigateAction();
+        ExportRefused e = catchThrowableOfType(() -> write(click(Locator.of("button", "Add to cart")),
+                stateCheck("button", "Checkout…", "enabled"), nothing, nowhere), ExportRefused.class);
+        List<String> p = e.problems();
+        assertThat(p).hasSize(2);
+        assertThat(p.get(0)).startsWith("check 1.2: ").contains("has nothing to check");
+        assertThat(p.get(1)).startsWith("step 2: ").contains("navigate needs a target");
     }
 
     @Test

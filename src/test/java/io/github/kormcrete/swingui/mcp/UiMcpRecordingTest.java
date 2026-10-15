@@ -487,6 +487,17 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aRefusedInsertBehindChecksSaysTheStepItWouldBe() throws Exception {
+        call("{\"op\":\"start\"}");
+        click("a");
+        call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":" + CHECK + "}");
+        call("{\"op\":\"insert\",\"at\":\"1.2\",\"step\":" + CHECK + "}");
+        click("d");
+        DriverException e = refused("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"click\",\"target\":{\"ref\":\"e3\"}}}");
+        assertThat(e.getMessage()).startsWith("BAD_INPUT: step 3: ");
+    }
+
+    @Test
     void anUnknownStepTypeIsRefused() throws Exception {
         four();
         DriverException e = refused("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"dance\"}}");
@@ -610,6 +621,23 @@ class UiMcpRecordingTest {
         assertThat(r.path("did").asText()).isEqualTo("removed the sentence of step 1");
         assertThat(r.path("steps").get(0).has("say")).isFalse();
         assertThat(r.path("steps").get(0).path("checks").get(0).has("say")).isTrue();
+    }
+
+    @Test
+    void removingASentenceThatIsNotThereChangesNothing() throws Exception {
+        fourWithChecks();
+        call("{\"op\":\"edit\",\"n\":1,\"say\":\"Open it\"}");
+        JsonNode before = call("{\"op\":\"list\"}");
+        String undo = sink.undoLabel();
+
+        JsonNode r = call("{\"op\":\"edit\",\"n\":3,\"say\":\"\"}");
+        assertThat(r.path("did").asText()).isEqualTo("step 3 has no sentence");
+        r = call("{\"op\":\"edit\",\"n\":\"1.1\",\"say\":\"\"}");
+        assertThat(r.path("did").asText()).isEqualTo("check 1.1 has no sentence");
+
+        assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(before.path("rev").asInt());
+        assertThat(sink.undoLabel()).isEqualTo(undo);
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the sentence of step 1 by the agent");
     }
 
     @Test

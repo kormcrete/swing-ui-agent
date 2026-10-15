@@ -438,6 +438,29 @@ class RecordedTestFilesTest {
     }
 
     @Test
+    void sentencesAreTrimmedOnRead() {
+        Flow f = RecordedTestFiles.parse(HEAD + "\"steps\":[{\"say\":\"  Fill the cart \",\"steps\":["
+                + "{\"action\":\"close\",\"say\":\" Add paper \",\"checks\":[{\"say\":\" The total is €4.99 \","
+                + "\"target\":{\"role\":\"label\"},\"text\":\"€4.99\"}]},{\"action\":\"close\"}]}]}", "x");
+        assertThat(f.steps.get(0).say).isEqualTo("Add paper");
+        assertThat(f.steps.get(1).say).isEqualTo("The total is €4.99");
+        assertThat(f.groups.get(0).say).isEqualTo("Fill the cart");
+    }
+
+    @Test
+    void anEmptyGroupSaysWhereItIs() {
+        refused(HEAD + "\"steps\":[{\"action\":\"close\"},{\"say\":\"Nothing\",\"steps\":[]}]}",
+                "the group at step 2 has no steps");
+    }
+
+    @Test
+    void aBadCheckSentenceIsNamedAsACheck() throws Exception {
+        Flow f = stepsOf("{\"action\":\"close\"}", "{\"action\":\"expect\",\"target\":{\"role\":\"label\"},\"text\":\"1\"}");
+        f.steps.get(1).say = "a\nb";
+        assertThat(RecordedTestFiles.structureProblems(f)).containsExactly("check 1.1: a sentence is one line, without line breaks");
+    }
+
+    @Test
     void paramsAndCaptureSayValuesBelongInAJavaTest() {
         refused("{\"version\":2,\"start\":\"reset\",\"params\":{},\"steps\":[{\"action\":\"close\"}]}",
                 "'params'", "exact values only", "Java test");

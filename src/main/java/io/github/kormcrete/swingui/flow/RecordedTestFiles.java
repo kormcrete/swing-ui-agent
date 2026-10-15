@@ -180,12 +180,13 @@ public final class RecordedTestFiles {
             if (member.isObject() && member.has("steps")) throw bad(source, where + ": groups do not nest");
             step(reader, member, flow, number, true, source);
         }
+        if (members.size() == 0) throw bad(source, "the group at step " + first + " has no steps: a group holds at least 2 steps");
         String range = "the group of steps " + first + "-" + number[0];
         if (members.size() < 2) throw bad(source, range + ": a group holds at least 2 steps");
         JsonNode say = node.get("say");
         if (!say.isTextual()) throw bad(source, range + ": the sentence must be text");
         sayOrThrow(say.textValue(), range, source);
-        flow.groups.add(new FlowGroup(from, flow.steps.size() - 1, say.textValue()));
+        flow.groups.add(new FlowGroup(from, flow.steps.size() - 1, say.textValue().trim()));
     }
 
     /** Reads one step element (an action with its checks, or a check-only first step) and appends it to the flat list. */
@@ -222,6 +223,7 @@ public final class RecordedTestFiles {
             own.remove("checks");
             Action a = action(reader, own, "step " + n, source);
             sayOrThrow(a.say, "step " + n + " (" + typeOf(own) + ")", source);
+            if (a.say != null) a.say = a.say.trim();
             flow.steps.add(a);
         }
         if (checks == null) return;
@@ -238,6 +240,7 @@ public final class RecordedTestFiles {
             own.put("action", "expect");
             Action c = action(reader, own, label, source);
             sayOrThrow(c.say, label + " (expect)", source);
+            if (c.say != null) c.say = c.say.trim();
             flow.steps.add(c);
         }
     }
@@ -297,7 +300,7 @@ public final class RecordedTestFiles {
             String say = flow.steps.get(i).say;
             if (say == null) continue;
             try {
-                checkSay(say, "step " + labels.get(i));
+                checkSay(say, (StepNumbers.isCheck(flow.steps.get(i)) ? "check " : "step ") + labels.get(i));
             } catch (DriverException e) {
                 problems.add(DriverException.stripReason(e.getMessage(), e.reason()));
             }

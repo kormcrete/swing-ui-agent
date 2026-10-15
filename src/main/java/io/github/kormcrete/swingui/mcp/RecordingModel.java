@@ -586,10 +586,14 @@ final class RecordingModel {
         return finish(label + what + labelSuffix, past + what, author, before, false);
     }
 
-    /** Sets, changes or (with {@code ""} or null) removes the sentence of the step or check at {@code at}. Not a behaviour change. */
+    /**
+     * Sets, changes or (with {@code ""} or null) removes the sentence of the step or check at {@code at}. Not a behaviour
+     * change. Removing a sentence that is not there changes nothing (no revision, no undo entry): null.
+     */
     String say(StepAddress at, String say, RecordedStep.Author author) {
         RecordedStep old = at(at);
         String text = say == null ? "" : say.trim();
+        if (text.isEmpty() && old.action.say == null) return null;
         if (!text.isEmpty()) RecordedTestFiles.checkSay(text, (at.isCheck() ? "check " : "step ") + at);
         List<RecordedStep> before = copyOfRecords();
         steps.set(flatOf(at.step, at.check, false), old.with(withSay(old.action, text.isEmpty() ? null : text), old.edited));

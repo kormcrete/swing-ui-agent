@@ -569,8 +569,9 @@ public class UiMcpSession {
                         String did;
                         if (a.step == b.step) {
                             // one check: its own sentence; anything else within the step: the step's
-                            did = model.say(a.isCheck() && a.equals(b) ? a : StepAddress.ofStep(a.step), say,
-                                    RecordedStep.Author.PERSON);
+                            StepAddress at = a.isCheck() && a.equals(b) ? a : StepAddress.ofStep(a.step);
+                            did = model.say(at, say, RecordedStep.Author.PERSON);
+                            if (did == null) return new Inspector.Result(true, (at.isCheck() ? "check " : "step ") + at + " has no sentence");
                         } else {
                             did = model.group(Math.min(a.step, b.step), Math.max(a.step, b.step), say,
                                     RecordedStep.Author.PERSON);
@@ -1515,8 +1516,8 @@ public class UiMcpSession {
 
     /**
      * Writes the steps recorded since the last {@link #startRecording} as a recorded test file {@code <folder>/<name>.json}
-     * ({@link RecordedTestFiles}) and returns a JSON summary ({@code savedTo}, {@code steps}, {@code fragile},
-     * {@code overwrote}, {@code startWarning} when it applies, {@code test}). The refusals are export_test's (no reset
+     * ({@link RecordedTestFiles}) and returns a JSON summary ({@code savedTo}, {@code steps}, {@code checks},
+     * {@code fragile}, {@code overwrote}, {@code startWarning} when it applies, {@code test}). The refusals are export_test's (no reset
      * start; an empty recording and a bad name together, in one {@link ExportRefused}), plus a folder that cannot be
      * written ({@code RecordedTestFolderNotWritable}); an existing file is refused unless it is the recorded test the recording came
      * from, which keeps its own {@code name} and, when no {@code description} is given, its description. A refusal
@@ -1983,8 +1984,8 @@ public class UiMcpSession {
      * Runs steps {@code from} to {@code to} (default: all; step numbers, a step with its checks) again on the live app
      * without recording them. From step 1 the app is reset first, as the exported test starts. Stops at the first
      * failing record. A record that passes no longer counts as edited. Result: {@code passed, ran, total, reset, rev,
-     * steps:[{n, line, passed, ms, message?, reason?}]}, n a step number or a check label like "7.2"; {@code ran} and
-     * {@code total} count actions and checks.
+     * steps:[{n, action, passed, ms, message?, reason?}]}, n a step number or a check label like "7.2"; {@code ran} (the
+     * steps reached) and {@code total} (the steps in the range) count steps, never checks.
      */
     public synchronized String recordingReplay(Integer from, Integer to, String speed) {
         long pause = pauseFor(speed);
@@ -2294,7 +2295,13 @@ public class UiMcpSession {
         }
         String sentence = say == null ? null : say.trim();
         if (sentence != null && !sentence.isEmpty()) RecordedTestFiles.checkSay(sentence, what);
-        if (!changes) return edited(model.say(n, sentence, RecordedStep.Author.AGENT));
+        if (!changes) {
+            String did = model.say(n, sentence, RecordedStep.Author.AGENT);
+            if (did != null) return edited(did);
+            ObjectNode unchanged = (ObjectNode) readTree(published.json);
+            unchanged.put("did", what + " has no sentence");
+            return unchanged.toString();
+        }
         ObjectNode tree;
         if (whole) {
             if (!step.isObject()) throw new DriverException(Reason.BAD_INPUT, "edit 'step' must be a step object");

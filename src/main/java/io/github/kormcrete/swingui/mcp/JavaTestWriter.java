@@ -8,6 +8,7 @@ import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
+import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.verb.AnswerVerb;
 import io.github.kormcrete.swingui.flow.verb.CheckVerb;
 import io.github.kormcrete.swingui.flow.verb.ChooseFileVerb;
@@ -159,20 +160,22 @@ public final class JavaTestWriter {
                 addComment(steps.get(0).say);
                 start = 1;
             }
+            // a problem names the record as the list numbers it: "step 7" or "check 7.2"
+            List<String> labels = StepNumbers.labels(steps);
             for (int i = start; i < steps.size(); i++) {
-                int stepNum = i + 1;
+                String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
                 Action a = steps.get(i);
                 stepLines.add(null);
 
                 if (a instanceof LoginAsAction) {
-                    problems.add("step " + stepNum + ": loginAs is only exportable as the first step");
+                    problems.add(what + ": loginAs is only exportable as the first step");
                     continue;
                 }
                 // The app steps the Client has a 1:1 form for; any other non-verb step is refused.
                 if (a instanceof NavigateAction) {
                     String target = ((NavigateAction) a).target;
                     if (target == null || target.trim().isEmpty()) {
-                        problems.add("step " + stepNum + ": navigate needs a target");
+                        problems.add(what + ": navigate needs a target");
                     } else {
                         begin(i, a, false);
                         statements.add(indent("ui.navigate(" + quote(target) + ");"));
@@ -187,14 +190,14 @@ public final class JavaTestWriter {
                     continue;
                 }
                 if (!(a instanceof VerbAction) || (a instanceof ContextMenuAction && ((ContextMenuAction) a).target == null)) {
-                    problems.add("step " + stepNum + ": " + a.describe() + " is not a step the Client API has a Java form for");
+                    problems.add(what + ": " + a.describe() + " is not a step the Client API has a Java form for");
                     continue;
                 }
 
                 VerbAction v = (VerbAction) a;
-                if (hasBadLocator(v, stepNum)) continue;
+                if (hasBadLocator(v, what)) continue;
 
-                String stmt = buildStatement(v, stepNum);
+                String stmt = buildStatement(v, what);
                 if (stmt == null) {
                     // A problem (e.g. a row with more than two keys) was already recorded; nothing to emit.
                     continue;
@@ -242,43 +245,43 @@ public final class JavaTestWriter {
         }
 
         /** True (and a problem recorded per bad locator) when any of this verb's targets uses ref, point or item. */
-        private boolean hasBadLocator(VerbAction v, int stepNum) {
+        private boolean hasBadLocator(VerbAction v, String what) {
             boolean bad = false;
             for (Locator l : v.targets().values()) {
                 if (l == null) continue;
                 if (l.ref != null || l.point != null || l.item != null) {
-                    problems.add("step " + stepNum + ": locator " + l + " uses ref/point/item, which a test cannot express");
+                    problems.add(what + ": locator " + l + " uses ref/point/item, which a test cannot express");
                     bad = true;
                 }
             }
             return bad;
         }
 
-        private String buildStatement(VerbAction v, int stepNum) {
-            if (v instanceof ClickVerb) return buildClick((ClickVerb) v, stepNum);
-            if (v instanceof TypeVerb) return buildType((TypeVerb) v, stepNum);
-            if (v instanceof PressVerb) return buildPress((PressVerb) v, stepNum);
-            if (v instanceof CheckVerb) return buildCheck((CheckVerb) v, stepNum);
-            if (v instanceof SelectVerb) return buildSelect((SelectVerb) v, stepNum);
+        private String buildStatement(VerbAction v, String what) {
+            if (v instanceof ClickVerb) return buildClick((ClickVerb) v, what);
+            if (v instanceof TypeVerb) return buildType((TypeVerb) v, what);
+            if (v instanceof PressVerb) return buildPress((PressVerb) v, what);
+            if (v instanceof CheckVerb) return buildCheck((CheckVerb) v, what);
+            if (v instanceof SelectVerb) return buildSelect((SelectVerb) v, what);
             if (v instanceof PickVerb) return buildPick((PickVerb) v);
             if (v instanceof MenuVerb) return buildMenu((MenuVerb) v);
             if (v instanceof AnswerVerb) return buildAnswer((AnswerVerb) v);
             if (v instanceof ChooseFileVerb) return buildChooseFile((ChooseFileVerb) v);
-            if (v instanceof DragVerb) return buildDrag((DragVerb) v, stepNum);
-            if (v instanceof DropVerb) return buildDrop((DropVerb) v, stepNum);
-            if (v instanceof ScrollVerb) return buildScroll((ScrollVerb) v, stepNum);
+            if (v instanceof DragVerb) return buildDrag((DragVerb) v, what);
+            if (v instanceof DropVerb) return buildDrop((DropVerb) v, what);
+            if (v instanceof ScrollVerb) return buildScroll((ScrollVerb) v, what);
             if (v instanceof SetClipboardVerb) return clientRoot(v.timeout) + ".setClipboard(" + quote(((SetClipboardVerb) v).text) + ");";
-            if (v instanceof ScreenshotVerb) return buildScreenshot((ScreenshotVerb) v, stepNum);
-            if (v instanceof ContextMenuAction) return buildContextMenu((ContextMenuAction) v, stepNum);
-            if (v instanceof ExpectVerb) return buildExpect((ExpectVerb) v, stepNum);
+            if (v instanceof ScreenshotVerb) return buildScreenshot((ScreenshotVerb) v, what);
+            if (v instanceof ContextMenuAction) return buildContextMenu((ContextMenuAction) v, what);
+            if (v instanceof ExpectVerb) return buildExpect((ExpectVerb) v, what);
             if (v instanceof HoverVerb) {
                 HoverVerb h = (HoverVerb) v;
-                String chain = actionChain(h.target, h.timeout, stepNum);
+                String chain = actionChain(h.target, h.timeout, what);
                 return chain == null ? null : chain + (Boolean.FALSE.equals(h.inside) ? ".unhover();" : ".hover();");
             }
             if (v instanceof ResizeColumnVerb) {
                 ResizeColumnVerb r = (ResizeColumnVerb) v;
-                String chain = actionChain(r.target, r.timeout, stepNum);
+                String chain = actionChain(r.target, r.timeout, what);
                 return chain == null ? null : chain + ".resizeColumn(" + r.delta + ");";
             }
             if (v instanceof ResizeWindowVerb) {
@@ -290,14 +293,14 @@ public final class JavaTestWriter {
             }
             if (v instanceof FocusFileChooserNameVerb) return clientRoot(v.timeout) + ".focusFileChooserName();";
             // Every VerbAction subtype is one of the above; a new one needs a table row here too.
-            problems.add("step " + stepNum + ": " + v.describe() + " is a verb this writer has no Java form for");
+            problems.add(what + ": " + v.describe() + " is a verb this writer has no Java form for");
             return null;
         }
 
         // ---- per-verb statements
 
-        private String buildClick(ClickVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildClick(ClickVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             boolean leftOrNull = v.button == null || "left".equals(v.button);
             boolean countDefault = v.count == null || v.count == 1;
@@ -314,8 +317,8 @@ public final class JavaTestWriter {
             return chain + ".click(" + args + ");";
         }
 
-        private String buildType(TypeVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildType(TypeVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             if (Boolean.TRUE.equals(v.replace) && Boolean.TRUE.equals(v.commit)) {
                 return chain + ".fill(" + quote(v.text) + ");";
@@ -326,24 +329,24 @@ public final class JavaTestWriter {
             return chain + ".type(" + quote(v.text) + ", " + boolLiteral(v.replace) + ", " + boolLiteral(v.commit) + ");";
         }
 
-        private String buildPress(PressVerb v, int stepNum) {
+        private String buildPress(PressVerb v, String what) {
             if (v.target == null) {
                 return clientRoot(v.timeout) + ".press(" + quote(v.keys) + ");";
             }
-            String chain = actionChain(v.target, v.timeout, stepNum);
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             return chain + ".press(" + quote(v.keys) + ");";
         }
 
-        private String buildCheck(CheckVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildCheck(CheckVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             boolean on = v.checked == null || v.checked;
             return chain + (on ? ".check();" : ".uncheck();");
         }
 
-        private String buildSelect(SelectVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildSelect(SelectVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             if (v.item != null) return chain + ".select(" + quote(v.item) + ");";
             return chain + ".select(" + joinQuoted(v.items) + ");";
@@ -367,36 +370,36 @@ public final class JavaTestWriter {
             return clientRoot(v.timeout) + ".chooseFile(" + args + ");";
         }
 
-        private String buildDrag(DragVerb v, int stepNum) {
-            String fromChain = actionChain(v.from, v.timeout, stepNum);
+        private String buildDrag(DragVerb v, String what) {
+            String fromChain = actionChain(v.from, v.timeout, what);
             if (fromChain == null) return null;
-            String toChain = chain(v.to, stepNum);
+            String toChain = chain(v.to, what);
             if (toChain == null) return null;
             return fromChain + ".dragTo(" + toChain + ");";
         }
 
-        private String buildDrop(DropVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildDrop(DropVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             if (v.files != null) return chain + ".drop(" + joinQuoted(v.files) + ");";
             return chain + ".dropText(" + quote(v.text) + ");";
         }
 
         /** Exactly one of to/pages/row: a row scroll is the target's row chain plus {@code scrollIntoView()}. */
-        private String buildScroll(ScrollVerb v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildScroll(ScrollVerb v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             if (v.to != null) return chain + ".scrollTo(" + quote(v.to) + ");";
             if (v.pages != null) return chain + ".scrollBy(" + v.pages + ");";
             return chain + ".scrollIntoView();";
         }
 
-        private String buildScreenshot(ScreenshotVerb v, int stepNum) {
+        private String buildScreenshot(ScreenshotVerb v, String what) {
             if (v.window == null && v.target == null) {
                 return clientRoot(v.timeout) + ".saveScreenshot(" + quote(v.path) + scaleArg(v.scale) + ");";
             }
             if (v.target != null) {
-                String chain = actionChain(v.target, v.timeout, stepNum);
+                String chain = actionChain(v.target, v.timeout, what);
                 if (chain == null) return null;
                 return chain + ".saveScreenshot(" + quote(v.path) + scaleArg(v.scale) + ");";
             }
@@ -415,15 +418,15 @@ public final class JavaTestWriter {
             return scale == Math.rint(scale) ? ", " + scale.longValue() : ", " + scale;
         }
 
-        private String buildContextMenu(ContextMenuAction v, int stepNum) {
-            String chain = actionChain(v.target, v.timeout, stepNum);
+        private String buildContextMenu(ContextMenuAction v, String what) {
+            String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             return chain + ".rightClick(" + joinQuoted(v.path) + ");";
         }
 
-        private String buildExpect(ExpectVerb v, int stepNum) {
+        private String buildExpect(ExpectVerb v, String what) {
             usesAssertThat = true;
-            String chain = chain(v.target, stepNum);
+            String chain = chain(v.target, what);
             if (chain == null) return null;
             StringBuilder sb = new StringBuilder("assertThat(").append(chain).append(")");
             if (v.timeout != null) {
@@ -445,14 +448,14 @@ public final class JavaTestWriter {
                     sb.append(".hasRowCount(").append(quote(v.rows.op)).append(", ").append(v.rows.value).append(")");
                 }
             } else if (v.cell != null) {
-                String rowExpr = rowValueExpr(v.cell.row, stepNum);
+                String rowExpr = rowValueExpr(v.cell.row, what);
                 if (rowExpr == null) return null;
                 sb.append(".hasCell(").append(rowExpr).append(", ").append(quote(v.cell.column))
                         .append(", ").append(quote(v.cell.expected)).append(")");
             } else if (v.selected != null) {
                 sb.append(".hasSelectedRows(").append(joinInts(v.selected)).append(")");
             } else {
-                problems.add("step " + stepNum + ": " + v.describe() + " has nothing to check");
+                problems.add(what + ": " + v.describe() + " has nothing to check");
                 return null;
             }
             sb.append(";");
@@ -480,8 +483,8 @@ public final class JavaTestWriter {
         // ---- locator chains
 
         /** A Target chain with a trailing {@code .timeout(...)} when the step recorded one. */
-        private String actionChain(Locator l, Long timeout, int stepNum) {
-            String c = chain(l, stepNum);
+        private String actionChain(Locator l, Long timeout, String what) {
+            String c = chain(l, what);
             if (c == null) return null;
             if (timeout != null) {
                 usesDuration = true;
@@ -512,7 +515,7 @@ public final class JavaTestWriter {
         }
 
         /** {@code null} when the locator's row has more than two keys - the problem is already recorded. */
-        private String chain(Locator l, int stepNum) {
+        private String chain(Locator l, String what) {
             StringBuilder sb = new StringBuilder("ui");
             appendWindow(sb, l.window);
             if (l.scope != null) {
@@ -520,7 +523,7 @@ public final class JavaTestWriter {
             }
             appendLeaf(sb, l);
             if (l.row != null) {
-                String rowChain = rowChain(l.row, stepNum);
+                String rowChain = rowChain(l.row, what);
                 if (rowChain == null) return null;
                 sb.append(rowChain);
             }
@@ -594,7 +597,7 @@ public final class JavaTestWriter {
         // ---- rows
 
         /** The chain suffix for a locator's row: {@code .rowAt(n)}, {@code .row("c", v)} or {@code .row(row(...))}. */
-        private String rowChain(Map<String, Object> row, int stepNum) {
+        private String rowChain(Map<String, Object> row, String what) {
             if (isIndexRow(row)) return ".rowAt(" + intLiteral(row) + ")";
             if (row.size() == 1) {
                 Map.Entry<String, Object> e = row.entrySet().iterator().next();
@@ -604,12 +607,12 @@ public final class JavaTestWriter {
                 usesRowsRow = true;
                 return ".row(row(" + rowArgs(row) + "))";
             }
-            problems.add("step " + stepNum + ": row with more than two keys");
+            problems.add(what + ": row with more than two keys");
             return null;
         }
 
         /** The value expression for a row used as an argument (e.g. {@code hasCell}'s row), not a chain call. */
-        private String rowValueExpr(Map<String, Object> row, int stepNum) {
+        private String rowValueExpr(Map<String, Object> row, String what) {
             if (isIndexRow(row)) {
                 usesRowsIndex = true;
                 return "index(" + intLiteral(row) + ")";
@@ -618,7 +621,7 @@ public final class JavaTestWriter {
                 usesRowsRow = true;
                 return "row(" + rowArgs(row) + ")";
             }
-            problems.add("step " + stepNum + ": row with more than two keys");
+            problems.add(what + ": row with more than two keys");
             return null;
         }
 
