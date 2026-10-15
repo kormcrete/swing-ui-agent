@@ -104,4 +104,30 @@ class RecorderTest {
         assertThat(r.locator.name).isNull();
         assertThat(scene.resolver.resolve(r.locator).component).isSameAs(unnamed);
     }
+
+    @Test
+    void rowChoiceHasThePositionAndTheValue() {
+        for (int r = 0; r < 3; r++) {
+            scene.table.setValueAt("ORD-" + (r + 1), r, 0);
+            scene.table.setValueAt("open", r, 1);
+        }
+        String ref = snapshot.build(null, null, 400, 20).find("table", "Orders").ref;
+        Locator l = Locator.ofRef(ref);
+        l.row = Collections.<String, Object>singletonMap("index", 1);
+        l.column = "A";
+        RowChoice choice = Recorder.rowChoice(scene.resolver.resolve(l));
+        assertThat(choice.index).isEqualTo(1);
+        assertThat(choice.byPosition()).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
+        assertThat(choice.byValue()).isEqualTo(Collections.<String, Object>singletonMap("A", "ORD-2"));
+
+        // no column tells the rows apart: no "this value", only the position
+        for (int r = 0; r < 3; r++) scene.table.setValueAt("same", r, 0);
+        for (int r = 0; r < 3; r++) scene.table.setValueAt("same", r, 1);
+        RowChoice twins = Recorder.rowChoice(scene.resolver.resolve(l));
+        assertThat(twins.index).isEqualTo(1);
+        assertThat(twins.byValue()).isNull();
+
+        // a locator without a row has none
+        assertThat(Recorder.rowChoice(scene.resolver.resolve(Locator.ofRef(ref)))).isNull();
+    }
 }

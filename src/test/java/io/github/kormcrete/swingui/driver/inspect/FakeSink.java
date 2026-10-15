@@ -127,6 +127,10 @@ final class FakeSink implements Inspector.Sink {
         log.add("ungroup " + id);
         return new Inspector.Result(true, "ungrouped");
     }
+    @Override public Inspector.Result rowBy(int id, String by) {
+        log.add("row " + id + " " + by);
+        return new Inspector.Result(true, "row by " + by);
+    }
     @Override public Inspector.Result undo() {
         log.add("undo");
         if (refuseUndo != null) return new Inspector.Result(false, refuseUndo);

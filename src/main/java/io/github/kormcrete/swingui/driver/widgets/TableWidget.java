@@ -15,6 +15,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Rectangle;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -125,6 +126,41 @@ public final class TableWidget {
             if (identity != null && !identity.equals(headers.get(i))) names.add(headers.get(i) + "@" + identity);
         }
         return names.isEmpty() ? "" : "; address one as '<header>@<identifier>', e.g. " + names;
+    }
+
+    /**
+     * The row by its first column whose text is non-empty and unique in the table - an order number, not an index -
+     * so a step still finds the row after sorting or a new row; by index only when no column is unique.
+     */
+    public static Map<String, Object> rowKey(JTable table, int row) {
+        Map<String, Object> key = uniqueRowKey(table, row);
+        if (key != null) return key;
+        key = new LinkedHashMap<String, Object>();
+        key.put("index", row);
+        return key;
+    }
+
+    /** As {@link #rowKey}, but null when no column tells this row from the others. */
+    public static Map<String, Object> uniqueRowKey(JTable table, int row) {
+        List<String> headers = headers(table);
+        for (int c = 0; c < table.getColumnCount(); c++) {
+            String v = Cells.table(table, row, c).text;
+            if (v == null || v.trim().isEmpty()) continue;
+            boolean unique = true;
+            for (int r = 0; r < table.getRowCount() && unique; r++) {
+                if (r != row && v.equals(Cells.table(table, r, c).text)) unique = false;
+            }
+            if (!unique || headers.indexOf(headers.get(c)) != c) continue;
+            Map<String, Object> key = new LinkedHashMap<String, Object>();
+            key.put(headers.get(c), v);
+            // the spec must resolve back to this row
+            try {
+                if (row(table, RowSpec.of(key)) == row) return key;
+            } catch (DriverException ignored) {
+                // try the next column
+            }
+        }
+        return null;
     }
 
     /**

@@ -707,9 +707,11 @@ class RecordingModelTest {
     void aRowEditMarksTheStepAndSaysWhich() {
         three();
         ClickVerb rewritten = click("b");
-        assertThat(model.row(StepAddress.ofStep(2), rewritten, AGENT)).isEqualTo("changed the row of step 2");
+        assertThat(model.row(StepAddress.ofStep(2), rewritten, AGENT, true)).isEqualTo("changed the row of step 2");
         assertThat(model.at(StepAddress.ofStep(2)).edited).isTrue();
-        assertThat(model.undoLabel()).startsWith("row of step 2 by ");
+        assertThat(model.undoLabel()).isEqualTo("row of step 2 by position by the agent");
+        model.row(StepAddress.ofStep(2), rewritten, AGENT, false);
+        assertThat(model.undoLabel()).isEqualTo("row of step 2 by value by the agent");
     }
 
     @Test

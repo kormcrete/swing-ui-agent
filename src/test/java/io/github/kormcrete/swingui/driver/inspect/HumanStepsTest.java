@@ -54,6 +54,17 @@ class HumanStepsTest {
     }
 
     @Test
+    void aRowClickCarriesItsViewRow() {
+        java.awt.Rectangle cell = scene.orders.getCellRect(2, 1, true);
+        click(scene.orders, cell.x + 2, cell.y + 2, 1);
+        human.flush();
+        assertThat(steps.get(0)).containsEntry(Inspector.ROW_INDEX, 2);
+        click(scene.save, 1);
+        human.flush();
+        assertThat(steps.get(1)).doesNotContainKey(Inspector.ROW_INDEX);
+    }
+
+    @Test
     void aChoiceFromAButtonsDropdownIsAPickOfItsPath() {
         javax.swing.JPopupMenu dropdown = new javax.swing.JPopupMenu();
         javax.swing.JMenu recent = new javax.swing.JMenu("Recent");

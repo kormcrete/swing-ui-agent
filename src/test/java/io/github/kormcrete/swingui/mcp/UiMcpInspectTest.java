@@ -93,6 +93,48 @@ class UiMcpInspectTest {
         assertThat(target.column).isEqualTo("Status");
     }
 
+    private static Map<String, Object> rowClick(Map<String, Object> row, int viewRow) {
+        Locator at = Locator.of("table", "Orders");
+        at.row = row;
+        at.column = "Customer";
+        Map<String, Object> s = step("click", at);
+        s.put(Inspector.ROW_INDEX, viewRow);
+        return s;
+    }
+
+    @Test
+    void thePersonsRowStepKnowsBothMeanings() throws Exception {
+        assertThat(sink.done(rowClick(Collections.<String, Object>singletonMap("Order", "ORD-1642"), 2)).ok).isTrue();
+        assertThat(sink.done(rowClick(Collections.<String, Object>singletonMap("index", 3), 3)).ok).isTrue();
+        // the extra key is the palette's: it is never recorded
+        assertThat(mapper.valueToTree(session.recordedSteps().get(0).action).has(Inspector.ROW_INDEX)).isFalse();
+        Inspector.StepLine byValue = sink.steps().get(0);
+        assertThat(byValue.row.by).isEqualTo("value");
+        assertThat(byValue.row.index).isEqualTo(2);
+        assertThat(byValue.row.value).containsEntry("Order", "ORD-1642");
+        assertThat(byValue.row.indexKnown).isTrue();
+        assertThat(byValue.row.valueKnown).isTrue();
+        Inspector.StepLine byIndex = sink.steps().get(1);
+        assertThat(byIndex.row.by).isEqualTo("position");
+        assertThat(byIndex.row.index).isEqualTo(3);
+        assertThat(byIndex.row.valueKnown).isFalse();
+        assertThat(sink.rowBy(byIndex.id, "value").ok).isFalse();
+    }
+
+    @Test
+    void thePersonsRowByIsUndoable() throws Exception {
+        sink.done(rowClick(Collections.<String, Object>singletonMap("Order", "ORD-1642"), 2));
+        Inspector.Result r = sink.rowBy(id(0), "position");
+        assertThat(r.ok).isTrue();
+        assertThat(sink.undoLabel()).isEqualTo("row of step 1 by position by the person");
+        assertThat(session.recordedSteps().get(0).edited).isTrue();
+        assertThat(sink.target(0).row).isEqualTo(Collections.<String, Object>singletonMap("index", 2));
+        assertThat(sink.steps().get(0).row.by).isEqualTo("position");
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(sink.target(0).row).containsEntry("Order", "ORD-1642");
+        assertThat(sink.rowBy(9999, "value").ok).isFalse();
+    }
+
     @Test
     void replayRunsAStepAgainWithoutRecordingIt() {
         sink.done(step("click", Locator.ofId("save")));

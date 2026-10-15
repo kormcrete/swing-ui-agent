@@ -141,4 +141,14 @@ class TableWidgetTest {
         assertThat(catchThrowableOfType(() -> TableWidget.row(main, key("Line items", "Screws")), DriverException.class)
                 .reason()).isEqualTo(Reason.NOT_FOUND);
     }
+
+    @Test
+    void rowKeyIsTheFirstUniqueColumnElseTheIndex() {
+        JTable byCustomer = new JTable(new Object[][] {{"Acme", "ORD-1"}, {"Acme", "ORD-2"}}, new Object[] {"Customer", "Order"});
+        assertThat(TableWidget.rowKey(byCustomer, 1)).isEqualTo(Collections.<String, Object>singletonMap("Order", "ORD-2"));
+        assertThat(TableWidget.uniqueRowKey(byCustomer, 1)).isEqualTo(Collections.<String, Object>singletonMap("Order", "ORD-2"));
+        JTable twins = new JTable(new Object[][] {{"Acme", "Open"}, {"Acme", "Open"}}, new Object[] {"Customer", "Status"});
+        assertThat(TableWidget.rowKey(twins, 1)).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
+        assertThat(TableWidget.uniqueRowKey(twins, 1)).isNull();
+    }
 }

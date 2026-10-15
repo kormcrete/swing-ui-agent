@@ -17,6 +17,7 @@ import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.inspect.Target;
 import io.github.kormcrete.swingui.driver.model.Recorder;
 import io.github.kormcrete.swingui.driver.model.Resolved;
+import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.Flow;
@@ -426,7 +427,9 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result done(Map<String, Object> step) {
-                JsonNode json = stripNulls(mapper.valueToTree(step));
+                Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
+                Object viewIndex = plain.remove(Inspector.ROW_INDEX);
+                JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
                     synchronized (UiMcpSession.this) {
                         if (model.state() == RecordingModel.State.STOPPED) {
@@ -440,7 +443,7 @@ public class UiMcpSession {
                             publish();
                             return new Inspector.Result(false, line);
                         }
-                        model.append(action, RecordedStep.Author.PERSON);
+                        model.append(action, RecordedStep.Author.PERSON, personRow(json, viewIndex));
                         publish();
                         return new Inspector.Result(true, action.describe());
                     }
@@ -494,14 +497,17 @@ public class UiMcpSession {
                     json = stripNulls(mapper.valueToTree(step.action));
                 }
                 try {
-                    JsonNode result = mapper.readTree(doAction(json, false));
+                    StepRun run = replayStep(json);
+                    JsonNode result = run.result;
                     boolean passed = result.path("passed").asBoolean(false);
                     String line = result.path("action").asText(json.toString());
                     if (!passed) line += " - " + result.path("message").asText("");
-                    // a step the agent inserted or edited is proven by passing a replay: its edit mark goes
+                    // a step the agent inserted or edited is proven by passing a replay: its edit mark goes, and the
+                    // table row it names is known both ways
                     if (passed) {
                         synchronized (UiMcpSession.this) {
-                            if (model.markReplayed(id)) publish();
+                            boolean learned = model.rowKnown(id, run.row);
+                            if (model.markReplayed(id) || learned) publish();
                         }
                     }
                     return new Inspector.Result(passed, line);
@@ -585,6 +591,22 @@ public class UiMcpSession {
                     if (at == null) return gone("nothing ungrouped");
                     try {
                         String did = model.ungroup(at.step, RecordedStep.Author.PERSON);
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
+                }
+            }
+
+            @Override
+            public Inspector.Result rowBy(int id, String by) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
+                synchronized (UiMcpSession.this) {
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("row not changed");
+                    try {
+                        String did = changeRow(at, by, RecordedStep.Author.PERSON);
                         publish();
                         return new Inspector.Result(true, did);
                     } catch (DriverException e) {
@@ -708,9 +730,11 @@ public class UiMcpSession {
             public Inspector.Result check(Map<String, Object> step) {
                 // a check runs on the screen as it is: not on one the agent's replay is changing
                 if (agentReplaying != null) return AGENT_REPLAYING;
-                JsonNode json = stripNulls(mapper.valueToTree(step));
+                Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
+                Object viewIndex = plain.remove(Inspector.ROW_INDEX);
+                JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
-                    JsonNode result = mapper.readTree(doAction(json, true, RecordedStep.Author.PERSON));
+                    JsonNode result = runStepLocked(json, personRow(json, viewIndex));
                     boolean passed = result.path("passed").asBoolean(false) && result.has("recorded");
                     String line = result.path("action").asText(json.toString());
                     if (!passed) line += " - " + result.path("message").asText(result.path("notRecorded").asText(""));
@@ -992,6 +1016,25 @@ public class UiMcpSession {
      * recording is always exportable, and such steps stay usable for exploring.
      */
     private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author) {
+        return runStep(actionJson, record, author, null).result;
+    }
+
+    /** What one step did: its report, and the alternatives of the table row it names (null when it names none). */
+    private static final class StepRun {
+        final ObjectNode result;
+        final RowChoice row;
+
+        StepRun(ObjectNode result, RowChoice row) {
+            this.result = result;
+            this.row = row;
+        }
+    }
+
+    /**
+     * {@link #runAndRecord}, with the row alternatives too. {@code given} is what the person's palette said of the row, used
+     * when the run's own outcome has none.
+     */
+    private StepRun runStep(JsonNode actionJson, boolean record, RecordedStep.Author author, RowChoice given) {
         Action action = sentenced(action(actionJson), "the step's sentence");
         Flow flow = new Flow();
         flow.name = "step";
@@ -1015,6 +1058,7 @@ public class UiMcpSession {
         }
         boolean passed = step != null && step.passed;
         ObjectNode r = mapper.createObjectNode();
+        RowChoice row = null;
         r.put("passed", passed);
         r.put("action", step != null ? step.action : action.describe());
         if (step != null && step.reason != null) r.put("reason", step.reason);
@@ -1027,9 +1071,10 @@ public class UiMcpSession {
                         + "continues it, recording start begins a new one");
             } else {
                 Action recordedAction = recordable(action, step.outcome);
+                row = rowOf(recordedAction, step.outcome, given);
                 List<String> problems = exportProblems(recordedAction);
                 if (problems.isEmpty()) {
-                    model.append(recordedAction, author);
+                    model.append(recordedAction, author, row);
                     r.set("recorded", mapper.valueToTree(recordedAction));
                 } else {
                     model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
@@ -1047,7 +1092,51 @@ public class UiMcpSession {
         // learns what it says and which answers it offers, to choose the next step.
         PendingDialog dialog = host.openDialog();
         if (dialog != null) r.set("dialog", mapper.valueToTree(dialog));
-        return r;
+        if (passed && !record) row = rowOf(action, step.outcome, given);
+        return new StepRun(r, row);
+    }
+
+    /**
+     * The alternatives of the table row {@code action} names: those the run saw (a locator's row, or a cell check's),
+     * else {@code given}; null when the action names no row.
+     */
+    private RowChoice rowOf(Action action, VerbOutcome outcome, RowChoice given) {
+        if (rowHolder(mapper.valueToTree(action)) == null) return null;
+        RowChoice seen = outcome == null ? null : outcome.row;
+        if (seen == null && outcome != null) {
+            Recorder.Recorded target = outcome.recorded.get("target");
+            if (target != null) seen = target.row;
+        }
+        return seen != null ? seen : given;
+    }
+
+    /** The node of {@code step} that holds a table row ({@code cell.row} of a cell check, else {@code target.row}), or null. */
+    private static ObjectNode rowHolder(JsonNode step) {
+        JsonNode cell = step.path("cell");
+        if (cell.path("row").isObject()) return (ObjectNode) cell;
+        JsonNode target = step.path("target");
+        if (target.path("row").isObject()) return (ObjectNode) target;
+        return null;
+    }
+
+    /** True when {@code row} (as recorded in a step) names its row by position, else by value; see {@link RowChoice}. */
+    private static boolean byPosition(Map<String, Object> row, RowChoice choice) {
+        if (choice != null) {
+            if (choice.byPosition().equals(row)) return true;
+            if (row.equals(choice.byValue())) return false;
+        }
+        return row.size() == 1 && row.get("index") instanceof Number;
+    }
+
+    /** The choice for a row the person's palette named: its view index and the row the step carries (null: not known). */
+    private RowChoice personRow(JsonNode step, Object viewIndex) {
+        if (!(viewIndex instanceof Number)) return null;
+        ObjectNode holder = rowHolder(step);
+        if (holder == null) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = mapper.convertValue(holder.get("row"), Map.class);
+        int index = ((Number) viewIndex).intValue();
+        return new RowChoice(index, row.size() == 1 && row.get("index") instanceof Number ? null : row);
     }
 
     /** The number of checks (expect steps) among {@code actions}. */
@@ -1123,6 +1212,16 @@ public class UiMcpSession {
         if ("api".equals(outcome.via)) tree.put("via", "api");
         if (fragile) tree.put("fragile", true);
         return action(tree);
+    }
+
+    /** The palette's replay of a recorded step: it runs, nothing is recorded. */
+    private synchronized StepRun replayStep(JsonNode json) {
+        return runStep(json, false, RecordedStep.Author.AGENT, null);
+    }
+
+    /** The person's check: it runs and is recorded when it passes. */
+    private synchronized ObjectNode runStepLocked(JsonNode json, RowChoice given) {
+        return runStep(json, true, RecordedStep.Author.PERSON, given).result;
     }
 
     public synchronized String doAction(JsonNode actionJson) {
@@ -1786,6 +1885,14 @@ public class UiMcpSession {
                 if (n == null) throw new DriverException(Reason.BAD_INPUT, "ungroup needs 'n' (a step of the group)");
                 return recordingUngroup(n.step, integer(args, "rev"));
             }
+            case "row": {
+                StepAddress n = address(args, "n");
+                String by = text(args, "by");
+                if (n == null || by == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "row needs 'n' (a step or check naming a table row) and 'by': value or position");
+                }
+                return recordingRow(n, by, integer(args, "rev"));
+            }
             case "undo":
                 return recordingUndo(integer(args, "rev"));
             case "replay":
@@ -1811,10 +1918,10 @@ public class UiMcpSession {
     }
 
     /** Every op of the recording tool, as its errors list them. */
-    private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, undo, replay, redo, export, load";
+    private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, replay, redo, export, load";
 
     private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
-            java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "undo"));
+            java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "row", "undo"));
 
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
@@ -1912,8 +2019,11 @@ public class UiMcpSession {
                 if (palette) view.agentReplaying("replaying " + labels.get(i) + "/" + b + "  " + recorded.action.describe());
                 JsonNode json = stripNulls(mapper.valueToTree(recorded.action));
                 ObjectNode step;
+                RowChoice row;
                 try {
-                    step = runAndRecord(json, false, RecordedStep.Author.AGENT);
+                    StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null);
+                    step = run.result;
+                    row = run.row;
                 } catch (DriverException e) {
                     if (palette) view.replayed(recorded.id, false);
                     throw new DriverException(e.reason(), what + ": "
@@ -1934,6 +2044,7 @@ public class UiMcpSession {
                     break;
                 }
                 model.markReplayed(recorded.id);
+                model.rowKnown(recorded.id, row);
                 publish();
             }
             r.put("passed", passed);
@@ -2205,6 +2316,45 @@ public class UiMcpSession {
         return edited(model.ungroup(n, RecordedStep.Author.AGENT));
     }
 
+    /**
+     * Names the table row of step or check {@code at} another way: {@code by} "value" (the key column's text, as the row
+     * was recorded when a column told rows apart) or "position" (its index). Counts as an edit, like a change of target.
+     */
+    synchronized String recordingRow(StepAddress at, String by, Integer rev) {
+        checkRev(rev);
+        return edited(changeRow(at, by, RecordedStep.Author.AGENT));
+    }
+
+    /** The row of {@code at} by {@code by} ("value" or "position"); BAD_INPUT says why not. The caller publishes. */
+    private String changeRow(StepAddress at, String by, RecordedStep.Author author) {
+        if (!"value".equals(by) && !"position".equals(by)) {
+            throw new DriverException(Reason.BAD_INPUT, "'by' must be value or position, not '" + by + "'");
+        }
+        boolean toPosition = "position".equals(by);
+        RecordedStep old = model.at(at);
+        ObjectNode tree = (ObjectNode) stripNulls(mapper.valueToTree(old.action));
+        String what = (at.isCheck() ? "check " : "step ") + at;
+        ObjectNode holder = rowHolder(tree);
+        if (holder == null) throw new DriverException(Reason.BAD_INPUT, what + " (" + tree.path("action").asText() + ") has no row");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> current = mapper.convertValue(holder.get("row"), Map.class);
+        if (byPosition(current, old.row) == toPosition) {
+            throw new DriverException(Reason.BAD_INPUT, what + "'s row is already by " + by);
+        }
+        Map<String, Object> to = old.row == null ? null : toPosition ? old.row.byPosition() : old.row.byValue();
+        if (to == null) {
+            throw new DriverException(Reason.BAD_INPUT, old.row == null
+                    ? what + "'s row by " + by + " is not known yet: replay the step once"
+                    : what + "'s row by " + by + " is not known: no column tells the rows of its table apart");
+        }
+        holder.set("row", mapper.valueToTree(to));
+        Action rewritten = action(tree);
+        RecordingModel scratch = model.copy();
+        scratch.row(at, rewritten, author, toPosition);
+        validateEdit(scratch.actions());
+        return model.row(at, rewritten, author, toPosition);
+    }
+
     /** Takes back the last edit, whoever made it. */
     synchronized String recordingUndo(Integer rev) {
         checkRev(rev);
@@ -2280,6 +2430,7 @@ public class UiMcpSession {
                 o.set("step", stripNulls(mapper.valueToTree(a.action)));
                 if (a.action.say != null) o.put("say", a.action.say);
                 if (a.edited) o.put("edited", true);
+                putRow(o, rowLine(a));
             }
             if (first.group != null) o.put("group", groupNumbers.get(first.group.id));
             ArrayNode checks = o.putArray("checks");
@@ -2293,6 +2444,7 @@ public class UiMcpSession {
                 co.set("step", stripNulls(mapper.valueToTree(c.action)));
                 if (c.action.say != null) co.put("say", c.action.say);
                 if (c.edited) co.put("edited", true);
+                putRow(co, rowLine(c));
             }
         }
         ArrayNode groups = r.putArray("groups");
@@ -2306,7 +2458,8 @@ public class UiMcpSession {
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
             listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited, labels.get(i), s.action.say,
-                    StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say));
+                    StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say,
+                    rowLine(s)));
         }
         if (!snap.notRecorded.isEmpty()) {
             ArrayNode lines = r.putArray("notRecorded");
@@ -2329,6 +2482,28 @@ public class UiMcpSession {
             }
         }
         view.changed(notice);
+    }
+
+    /** What the table row a record names is, and how it is named now; null for a record with no row. */
+    private Inspector.RowLine rowLine(RecordedStep s) {
+        ObjectNode holder = rowHolder(mapper.valueToTree(s.action));
+        if (holder == null) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = mapper.convertValue(holder.get("row"), Map.class);
+        boolean position = byPosition(row, s.row);
+        if (position) {
+            Integer index = s.row != null ? Integer.valueOf(s.row.index) : ((Number) row.get("index")).intValue();
+            return new Inspector.RowLine("position", s.row == null ? null : s.row.byValue(), index);
+        }
+        return new Inspector.RowLine("value", row, s.row == null ? null : Integer.valueOf(s.row.index));
+    }
+
+    private void putRow(ObjectNode into, Inspector.RowLine line) {
+        if (line == null) return;
+        ObjectNode r = into.putObject("row");
+        r.put("by", line.by);
+        if (line.value != null) r.set("value", mapper.valueToTree(line.value));
+        if (line.index != null) r.put("index", line.index.intValue());
     }
 
     private void forgetLoadedTest() {

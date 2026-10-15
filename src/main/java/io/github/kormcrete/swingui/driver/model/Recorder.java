@@ -5,7 +5,9 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.window.WindowRoot;
 import io.github.kormcrete.swingui.driver.window.WindowRoots;
 import io.github.kormcrete.swingui.driver.window.WindowSource;
+import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 
+import javax.swing.JTable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,10 +20,17 @@ public final class Recorder {
     public static final class Recorded {
         public final Locator locator;
         public final boolean fragile;
+        /** The table row the locator names, both ways (see {@link #rowChoice}); null when it names none. */
+        public final RowChoice row;
 
         public Recorded(Locator locator, boolean fragile) {
+            this(locator, fragile, null);
+        }
+
+        public Recorded(Locator locator, boolean fragile, RowChoice row) {
             this.locator = locator;
             this.fragile = fragile;
+            this.row = row;
         }
     }
 
@@ -31,6 +40,21 @@ public final class Recorder {
     public Recorder(Resolver resolver, WindowSource windows) {
         this.resolver = resolver;
         this.windows = windows;
+    }
+
+    /**
+     * The table row {@code r} names, as its position and as its value (the first column whose text is unique; null
+     * when none is). Null when {@code r} is no table row. EDT.
+     */
+    public static RowChoice rowChoice(Resolved r) {
+        if (!(r.component instanceof JTable) || r.row() == null) return null;
+        JTable table = (JTable) r.component;
+        return rowChoice(table, TableWidget.row(table, r.row()));
+    }
+
+    /** The row at view index {@code index} of {@code table}, both ways. EDT. */
+    public static RowChoice rowChoice(JTable table, int index) {
+        return new RowChoice(index, TableWidget.uniqueRowKey(table, index));
     }
 
     public Recorded record(Resolved target) {

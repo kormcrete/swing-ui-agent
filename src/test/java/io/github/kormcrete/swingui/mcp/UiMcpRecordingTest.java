@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
+import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
@@ -175,7 +176,7 @@ class UiMcpRecordingTest {
         for (String args : new String[] {"{}", "{\"op\":\"dance\"}"}) {
             DriverException e = catchThrowableOfType(() -> call(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, undo, replay, redo, export, load");
+            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, replay, redo, export, load");
         }
     }
 
@@ -1741,5 +1742,160 @@ class UiMcpRecordingTest {
         exportRefusedForNoReset();
         assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
         assertThat(session.exportRecordedTest("second", quoted(dir), null, false)).contains("savedTo");
+    }
+
+    // ---- row: this value or by position -------------------------------------------------------
+
+    private static final String ROW_CLICK = "{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Order\":\"ORD-1642\"},"
+            + "\"column\":\"Customer\"}}";
+
+    private static RowChoice ord1642() {
+        return new RowChoice(2, java.util.Collections.<String, Object>singletonMap("Order", "ORD-1642"));
+    }
+
+    @Test
+    void rowSwitchesBetweenValueAndPosition() throws Exception {
+        backend.verbs.outcome.row = ord1642();
+        session.verb("click", mapper.readTree(ROW_CLICK));
+        JsonNode step = call("{\"op\":\"list\"}").path("steps").get(0);
+        assertThat(step.path("row").path("by").asText()).isEqualTo("value");
+        assertThat(step.path("row").path("value").toString()).isEqualTo("{\"Order\":\"ORD-1642\"}");
+        assertThat(step.path("row").path("index").asInt()).isEqualTo(2);
+        assertThat(step.has("edited")).isFalse();
+
+        JsonNode r = call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        assertThat(r.path("did").asText()).isEqualTo("changed the row of step 1");
+        step = r.path("steps").get(0);
+        assertThat(step.path("step").path("target").path("row").toString()).isEqualTo("{\"index\":2}");
+        assertThat(step.path("row").path("by").asText()).isEqualTo("position");
+        assertThat(step.path("edited").asBoolean()).isTrue();
+
+        r = call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}");
+        step = r.path("steps").get(0);
+        assertThat(step.path("step").path("target").path("row").toString()).isEqualTo("{\"Order\":\"ORD-1642\"}");
+        assertThat(step.path("row").path("by").asText()).isEqualTo("value");
+        assertThat(step.path("step").path("target").path("column").asText()).isEqualTo("Customer");
+    }
+
+    @Test
+    void aValueColumnNamedIndexIsStillThisValue() throws Exception {
+        backend.verbs.outcome.row = new RowChoice(2, java.util.Collections.<String, Object>singletonMap("index", "A-7"));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"row\":{\"index\":\"A-7\"},\"column\":\"Customer\"}}"));
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}");
+        assertThat(sink.undoLabel()).isEqualTo("row of step 1 by value by the agent");
+        call("{\"op\":\"undo\"}");
+        assertThat(sink.undoLabel()).isEqualTo("row of step 1 by position by the agent");
+    }
+
+    @Test
+    void aCellCheckRowSwitchesToo() throws Exception {
+        click("save");
+        backend.verbs.outcome.row = new RowChoice(0, java.util.Collections.<String, Object>singletonMap("Order", "ORD-1640"));
+        session.verb("expect", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Orders\"},"
+                + "\"cell\":{\"row\":{\"Order\":\"ORD-1640\"},\"column\":\"Status\",\"expected\":\"Open\"}}"));
+        JsonNode r = call("{\"op\":\"row\",\"n\":\"1.1\",\"by\":\"position\"}");
+        JsonNode check = r.path("steps").get(0).path("checks").get(0);
+        assertThat(check.path("step").path("cell").path("row").toString()).isEqualTo("{\"index\":0}");
+        assertThat(check.path("row").path("by").asText()).isEqualTo("position");
+        assertThat(check.path("edited").asBoolean()).isTrue();
+        assertThat(r.path("steps").get(0).has("edited")).isFalse();
+        assertThat(sink.undoLabel()).isEqualTo("row of check 1.1 by position by the agent");
+    }
+
+    @Test
+    void rowWithoutAKnownPositionSaysReplayIt() throws Exception {
+        fakeReset();
+        call("{\"op\":\"insert\",\"at\":1,\"step\":" + ROW_CLICK.replace("{\"target\"", "{\"action\":\"click\",\"target\"") + "}");
+        DriverException e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}"), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 1's row by position is not known yet: replay the step once");
+        JsonNode step = call("{\"op\":\"list\"}").path("steps").get(0);
+        assertThat(step.path("row").path("by").asText()).isEqualTo("value");
+        assertThat(step.path("row").has("index")).isFalse();
+        assertThat(step.path("row").path("value").toString()).isEqualTo("{\"Order\":\"ORD-1642\"}");
+
+        backend.verbs.outcome.row = ord1642();
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        step = call("{\"op\":\"list\"}").path("steps").get(0);
+        assertThat(step.path("row").path("index").asInt()).isEqualTo(2);
+        JsonNode r = call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        assertThat(r.path("steps").get(0).path("step").path("target").path("row").toString()).isEqualTo("{\"index\":2}");
+    }
+
+    @Test
+    void aLoadedStepLearnsItsRowOnAPassingReplay() throws Exception {
+        fakeReset();
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "row click";
+        flow.start = RecordedTestFiles.START_RESET;
+        ClickVerb c = new ClickVerb();
+        c.target = Locator.of("table", "Orders");
+        c.target.row = java.util.Collections.<String, Object>singletonMap("Order", "ORD-1642");
+        flow.steps.add(c);
+        Path file = dir.resolve("row.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
+        assertThat(call("{\"op\":\"list\"}").path("steps").get(0).path("row").has("index")).isFalse();
+        String revBefore = call("{\"op\":\"list\"}").path("rev").asText();
+
+        backend.verbs.outcome.row = ord1642();
+        // the palette's own replay of the step teaches it too
+        assertThat(sink.replay(0).ok).isTrue();
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("steps").get(0).path("row").path("index").asInt()).isEqualTo(2);
+        assertThat(list.path("rev").asText()).isNotEqualTo(revBefore);
+        assertThat(call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}").path("did").asText()).contains("row of step 1");
+    }
+
+    @Test
+    void rowOnAStepWithoutARowIsRefused() throws Exception {
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"save\"}}"));
+        session.verb("menu", mapper.readTree("{\"path\":[\"File\",\"Open\"]}"));
+        DriverException e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":2,\"by\":\"value\"}"), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("step 2 (menu) has no row");
+        e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}"), DriverException.class);
+        assertThat(e.getMessage()).contains("step 1 (click) has no row");
+        e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":1,\"by\":\"sideways\"}"), DriverException.class);
+        assertThat(e.getMessage()).contains("'by' must be value or position");
+    }
+
+    @Test
+    void rowIsUndoableAndMarksTheStepEdited() throws Exception {
+        fakeReset();
+        backend.verbs.outcome.row = ord1642();
+        session.verb("click", mapper.readTree(ROW_CLICK));
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        assertThat(sink.undoLabel()).isEqualTo("row of step 1 by position by the agent");
+        JsonNode r = call("{\"op\":\"undo\"}");
+        JsonNode step = r.path("steps").get(0);
+        assertThat(step.path("step").path("target").path("row").toString()).isEqualTo("{\"Order\":\"ORD-1642\"}");
+        assertThat(step.has("edited")).isFalse();
+        assertThat(step.path("row").path("index").asInt()).isEqualTo(2);   // what was learned survives
+        call("{\"op\":\"row\",\"n\":1,\"by\":\"position\"}");
+        call("{\"op\":\"replay\"}");
+        assertThat(call("{\"op\":\"list\"}").path("steps").get(0).has("edited")).isFalse();
+    }
+
+    @Test
+    void theListShowsEachRowStepsMeaning() throws Exception {
+        backend.verbs.outcome.row = new RowChoice(3, null);   // no unique column
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"row\":{\"index\":3}}}"));
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"save\"}}"));
+        List<Inspector.StepLine> lines = sink.steps();
+        assertThat(lines.get(0).row).isNotNull();
+        assertThat(lines.get(0).row.by).isEqualTo("position");
+        assertThat(lines.get(0).row.index).isEqualTo(3);
+        assertThat(lines.get(0).row.indexKnown).isTrue();
+        assertThat(lines.get(0).row.valueKnown).isFalse();
+        JsonNode steps = call("{\"op\":\"list\"}").path("steps");
+        assertThat(steps.get(0).path("row").path("by").asText()).isEqualTo("position");
+        assertThat(steps.get(0).path("row").has("value")).isFalse();
+        assertThat(steps.get(1).has("row")).isFalse();
+        // the table has no value to name the row by
+        DriverException e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}"), DriverException.class);
+        assertThat(e.getMessage()).contains("step 1's row by value is not known");
     }
 }

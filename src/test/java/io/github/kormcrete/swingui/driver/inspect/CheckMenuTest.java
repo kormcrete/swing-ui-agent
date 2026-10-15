@@ -45,6 +45,18 @@ class CheckMenuTest {
     }
 
     @Test
+    void aCellCheckCarriesItsViewRow() {
+        List<CheckMenu.Choice> choices = CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 2));
+        assertThat(first(choices).step).containsEntry(Inspector.ROW_INDEX, 1);
+        scene.orders.setRowSelectionInterval(1, 1);
+        List<CheckMenu.Choice> selected = CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 2));
+        CheckMenu.Choice row = selected.stream().filter(c -> c.label.equals("This row is selected")).findFirst().get();
+        assertThat(row.step).containsEntry(Inspector.ROW_INDEX, 1);
+        CheckMenu.Choice rows = selected.stream().filter(c -> c.label.startsWith("Has exactly")).findFirst().get();
+        assertThat(rows.step).doesNotContainKey(Inspector.ROW_INDEX);
+    }
+
+    @Test
     void aColumnShowsTheChecksExpectCannotMakeYetGreyed() {
         List<CheckMenu.Choice> choices = CheckMenu.choices(scene.inspector.column(scene.orders, 2));
         assertThat(first(choices).step).containsEntry("text", "Status");

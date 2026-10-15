@@ -518,6 +518,8 @@ final class HumanSteps implements AWTEventListener {
         Map<String, Object> step = new LinkedHashMap<String, Object>();
         step.put("action", action);
         step.put("target", t.locator);
+        // the person's click on a row: the session keeps the row's position beside its value
+        if (t.row >= 0 && t.locator.row != null) step.put(Inspector.ROW_INDEX, t.row);
         return step;
     }
 

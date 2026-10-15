@@ -61,6 +61,12 @@ final class CheckMenu extends JPopupMenu {
         menu.show(e.getComponent(), e.getX(), e.getY());
     }
 
+    /** The check also says which view row it is about (see {@link Inspector#ROW_INDEX}). */
+    private static Map<String, Object> withRow(Map<String, Object> step, Target t) {
+        step.put(Inspector.ROW_INDEX, t.row);
+        return step;
+    }
+
     static List<Choice> choices(Target t) {
         List<Choice> out = new ArrayList<Choice>();
         Component c = t.component;
@@ -72,10 +78,12 @@ final class CheckMenu extends JPopupMenu {
             cell.put("row", t.locator.row);
             cell.put("column", t.locator.column);
             cell.put("expected", text);
-            out.add(new Choice(t.locator.column + " is “" + text + "” in this row", expect(element, "cell", cell)));
+            out.add(new Choice(t.locator.column + " is “" + text + "” in this row", withRow(expect(element, "cell", cell), t)));
             Locator row = element.copy();
             row.row = t.locator.row;
-            if (table.isRowSelected(t.row)) out.add(new Choice("This row is selected", expect(row, "state", list("selected"))));
+            if (table.isRowSelected(t.row)) {
+                out.add(new Choice("This row is selected", withRow(expect(row, "state", list("selected")), t)));
+            }
             String tip = Cells.tableTooltip(table, t.row, t.column);
             if (tip != null && !tip.isEmpty()) out.add(new Choice("Its tooltip is “" + tip + "”", expect(t.locator, "tooltip", tip)));
             rows(out, element, table.getRowCount());

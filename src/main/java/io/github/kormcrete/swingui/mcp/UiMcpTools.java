@@ -362,7 +362,7 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
-                        .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("undo").add("replay").add("redo")
+                        .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("row").add("undo").add("replay").add("redo")
                         .add("export").add("load");
                 ObjectNode at = p.putObject("at");
                 at.putArray("type").add("integer").add("string");
@@ -372,7 +372,7 @@ public final class UiMcpTools {
                         + "or a check label (\"7.2\").");
                 ObjectNode n = p.putObject("n");
                 n.putArray("type").add("integer").add("string");
-                n.put("description", "delete, move, edit, ungroup: a step number (7) or a check label (\"7.2\"). "
+                n.put("description", "delete, move, edit, ungroup, row: a step number (7) or a check label (\"7.2\"). "
                         + "delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step "
                         + "(with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group.");
                 p.putObject("from").put("type", "integer").put("description",
@@ -399,13 +399,17 @@ public final class UiMcpTools {
                 p.putObject("say").put("type", "string").put("description",
                         "edit: the step's or check's sentence, one line of at most 200 characters (\"\" removes it), "
                         + "alone or with target, text or step; group: the group's sentence.");
+                p.putObject("by").put("type", "string").put("description",
+                        "row: how the table row of step or check n is named: value (its key column's text, as recorded "
+                        + "when a column told the rows apart) or position (its index).").putArray("enum")
+                        .add("value").add("position");
                 p.putObject("step").put("type", "object").put("description",
                         "insert, edit: a step or check as do_action takes it.");
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("text").put("type", "string").put("description",
                         "edit: the new text of a type, expect, setClipboard or drop step or check.");
                 p.putObject("rev").put("type", "integer").put("description",
-                        "insert, delete, move, edit, group, ungroup, undo, redo: the rev of your last list; refused if the recording "
+                        "insert, delete, move, edit, group, ungroup, row, undo, redo: the rev of your last list; refused if the recording "
                         + "changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
                         "start: reset the app first, as a test starts (default false).");
@@ -430,7 +434,10 @@ public final class UiMcpTools {
                         + "text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) "
                         + "and may come with target, text or step. group {from, to, say}: steps from..to (two or more, "
                         + "whole steps, groups do not nest or overlap) under one sentence; the same range renames it. "
-                        + "ungroup {n}: ends the group that holds step n, its steps stay. undo: takes back the last edit, "
+                        + "ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a "
+                        + "table row names it by value (the key column's text: it still finds the row after a sort or a new "
+                        + "row) or by position (its index); list shows each one's row {by, value, index}; the other way is "
+                        + "known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, "
                         + "by you or the person. Numbers close up after a delete; deleting or moving a step takes its checks "
                         + "along; pass rev from your last list so an edit is refused if the person changed the recording "
                         + "meanwhile. Every edit returns the new list. While one runs, session reset and test runs are "

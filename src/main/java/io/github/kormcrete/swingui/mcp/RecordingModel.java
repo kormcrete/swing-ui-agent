@@ -199,9 +199,14 @@ final class RecordingModel {
 
     /** Adds an action as a new step at the end, or a check under the last step; never joins a group by placement. */
     RecordedStep append(Action action, RecordedStep.Author author) {
+        return append(action, author, null);
+    }
+
+    /** As {@link #append(Action, RecordedStep.Author)}, with the alternatives of the table row the action names (null: none known). */
+    RecordedStep append(Action action, RecordedStep.Author author, RowChoice row) {
         boolean isCheck = StepNumbers.isCheck(action);
         RecordedStep.Group group = isCheck && !steps.isEmpty() ? steps.get(steps.size() - 1).group : null;
-        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, null);
+        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, row);
         steps.add(step);
         changed("the " + author.json + " recorded " + (isCheck ? "check " : "step ") + addressOf(step.id));
         return step;
@@ -555,22 +560,19 @@ final class RecordingModel {
 
     /** Replaces the action at {@code at} (a step's or a check's, the same kind); the record keeps its id and counts as edited. */
     String replace(StepAddress at, Action action, RecordedStep.Author author) {
-        return change(at, action, "edit of ", "edited ", author);
+        return change(at, action, "edit of ", "edited ", author, "", false);
     }
 
-    /** As {@link #replace} for a table step whose row was named another way; says which way. */
-    String row(StepAddress at, Action rewritten, RecordedStep.Author author) {
-        com.fasterxml.jackson.databind.JsonNode tree = FlowJson.mapper().valueToTree(rewritten);
-        boolean byPosition = tree.path("target").path("row").has("index") || tree.path("cell").path("row").has("index");
-        return change(at, rewritten, "row of ", "changed the row of ", author, byPosition ? " by position" : " by value");
-    }
-
-    private String change(StepAddress at, Action action, String label, String past, RecordedStep.Author author) {
-        return change(at, action, label, past, author, "");
+    /**
+     * As {@link #replace} for a table step whose row is named another way ({@code byPosition}: its index, else its value).
+     * The row alternatives stay: both ways still name the same row.
+     */
+    String row(StepAddress at, Action rewritten, RecordedStep.Author author, boolean byPosition) {
+        return change(at, rewritten, "row of ", "changed the row of ", author, byPosition ? " by position" : " by value", true);
     }
 
     private String change(StepAddress at, Action action, String label, String past, RecordedStep.Author author,
-            String labelSuffix) {
+            String labelSuffix, boolean keepRow) {
         RecordedStep old = at(at);
         boolean check = StepNumbers.isCheck(old.action);
         if (check != StepNumbers.isCheck(action)) {
@@ -578,7 +580,8 @@ final class RecordingModel {
                     + (check ? "a check" : "an action") + " (delete it and insert the other kind)");
         }
         List<RecordedStep> before = copyOfRecords();
-        steps.set(flatOf(at.step, at.check, false), old.with(action, true));
+        // an edit that is not about the row may have moved it: what was known about the row is learned again by a replay
+        steps.set(flatOf(at.step, at.check, false), keepRow ? old.with(action, true) : old.with(action, true).withRow(null));
         String what = (check ? "check " : "step ") + at;
         return finish(label + what + labelSuffix, past + what, author, before, false);
     }
@@ -678,16 +681,21 @@ final class RecordingModel {
         return false;
     }
 
-    /** The alternatives of the table row the record with {@code id} names are known; no change of revision when they were. */
-    void rowKnown(int id, RowChoice choice) {
+    /**
+     * The alternatives of the table row the record with {@code id} names are known; no change of revision (and false)
+     * when they were, or when there are none.
+     */
+    boolean rowKnown(int id, RowChoice choice) {
+        if (choice == null) return false;
         for (int i = 0; i < steps.size(); i++) {
             RecordedStep s = steps.get(i);
             if (s.id != id) continue;
-            if (choice == null ? s.row == null : choice.equals(s.row)) return;
+            if (choice.equals(s.row)) return false;
             steps.set(i, s.withRow(choice));
             changed("the row alternatives of " + describe(i) + " are known");
-            return;
+            return true;
         }
+        return false;
     }
 
     /** The flat index of step {@code step}'s action ({@code check} 0) or check; {@code mustBeCheck} refuses a plain step. */

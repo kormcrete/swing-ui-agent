@@ -20,6 +20,7 @@ import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.driver.model.Recorder;
+import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.model.Resolver;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
@@ -651,6 +652,7 @@ public final class LiveVerbs implements Verbs {
                     VerbOutcome out = new VerbOutcome();
                     Map<String, Aimed> aimed = Collections.singletonMap("target", new Aimed(found[0], new Point(), found[0].component));
                     out.recorded.putAll(record(one("target", target), aimed));
+                    if (expectation.cell != null) out.row = cellRow(found[0], expectation.cell.row);
                     return out;
                 }
                 lastFailure = failure;
@@ -967,13 +969,26 @@ public final class LiveVerbs implements Verbs {
             Map<String, Recorder.Recorded> out = new LinkedHashMap<String, Recorder.Recorded>();
             for (Map.Entry<String, Locator> e : locators.entrySet()) {
                 Locator given = e.getValue();
+                Aimed aimed = targets.get(e.getKey());
+                // both ways to name the row a step means: its position, and its value when a column tells rows apart
+                RowChoice row = aimed == null ? null : Recorder.rowChoice(aimed.resolved);
                 if (given.ref != null) {
-                    out.put(e.getKey(), driver.recorder().record(targets.get(e.getKey()).resolved));
+                    Recorder.Recorded rec = driver.recorder().record(aimed.resolved);
+                    out.put(e.getKey(), new Recorder.Recorded(rec.locator, rec.fragile, row));
                 } else {
-                    out.put(e.getKey(), new Recorder.Recorded(given.copy(), given.nth != null));
+                    out.put(e.getKey(), new Recorder.Recorded(given.copy(), given.nth != null, row));
                 }
             }
             return out;
+        });
+    }
+
+    /** The row a cell check names, both ways; null when the target is no table. */
+    private static RowChoice cellRow(Resolved table, Map<String, Object> row) {
+        if (!(table.component instanceof JTable) || row == null) return null;
+        return Edt.call(() -> {
+            JTable t = (JTable) table.component;
+            return Recorder.rowChoice(t, TableWidget.row(t, RowSpec.of(row)));
         });
     }
 

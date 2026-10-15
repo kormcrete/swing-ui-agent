@@ -89,6 +89,12 @@ public final class Inspector {
     }
 
     /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
+    /**
+     * A key beside the person's step map (never part of the step): the view index of the table row the step names, so
+     * the session can keep both ways to name the row. It is removed before the step is parsed.
+     */
+    public static final String ROW_INDEX = "rowIndex";
+
     public interface Sink {
         /**
          * The person pressed ● Record: a fresh recording starts here, on the screen they are on. Refused while a
@@ -144,6 +150,13 @@ public final class Inspector {
 
         /** Ends the group that holds the step of the record with {@code id}; its steps stay. Refused like {@link #delete}. */
         Result ungroup(int id);
+
+        /**
+         * Names the table row of the step or check with {@code id} another way: {@code by} is "value" (the row's key
+         * column text) or "position" (its index). Counts as an edit of the step. Refused when the record is gone, has no
+         * row, the other way is not known yet (a loaded step knows it after one passing replay), or the agent is replaying.
+         */
+        Result rowBy(int id, String by);
 
         /**
          * Takes back the last edit, the agent's or the person's. The result's line is what was undone (as
@@ -211,13 +224,20 @@ public final class Inspector {
         public final int groupId;
         /** The group's sentence; null when there is no group. */
         public final String groupSay;
+        /** The table row this record names and how (by value or by position); null for a record with no row. */
+        public final RowLine row;
 
         public StepLine(int id, String author, String line, boolean edited) {
-            this(id, author, line, edited, null, null, line.startsWith("expect("), 0, null);
+            this(id, author, line, edited, null, null, line.startsWith("expect("), 0, null, null);
         }
 
         public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
                 int groupId, String groupSay) {
+            this(id, author, line, edited, label, say, check, groupId, groupSay, null);
+        }
+
+        public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
+                int groupId, String groupSay, RowLine row) {
             this.id = id;
             this.author = author;
             this.line = line;
@@ -227,11 +247,32 @@ public final class Inspector {
             this.check = check;
             this.groupId = groupId;
             this.groupSay = groupSay;
+            this.row = row;
         }
 
         /** A check: it belongs to the action before it. */
         boolean check() {
             return check;
+        }
+    }
+
+    /**
+     * The table row a step or check names: {@code by} is "value" or "position"; {@code value} (the key column's
+     * {@code {column: text}}) and {@code index} are what is known of the other way ({@code valueKnown}/{@code indexKnown}).
+     */
+    public static final class RowLine {
+        public final String by;
+        public final Map<String, Object> value;
+        public final Integer index;
+        public final boolean valueKnown;
+        public final boolean indexKnown;
+
+        public RowLine(String by, Map<String, Object> value, Integer index) {
+            this.by = by;
+            this.value = value;
+            this.index = index;
+            this.valueKnown = value != null;
+            this.indexKnown = index != null;
         }
     }
 
@@ -1035,7 +1076,7 @@ public final class Inspector {
     /** A table cell as the recorder addresses it: the row by key, the column by header. EDT. */
     Target cell(JTable table, int row, int column) {
         Locator l = Locator.ofRef(refs.add(table, null));
-        l.row = rowKey(table, row);
+        l.row = TableWidget.rowKey(table, row);
         l.column = TableWidget.headers(table).get(column);
         Recorder.Recorded rec = recorder.record(resolver.resolve(l));
         return new Target(rec.locator, rec.fragile, "cell " + rowText(l.row) + " · " + l.column + suffix(rec), "cell",
@@ -1108,34 +1149,6 @@ public final class Inspector {
             s.append("index".equals(e.getKey()) ? "row " + e.getValue() : e.getKey() + "=" + e.getValue());
         }
         return s.toString();
-    }
-
-    /**
-     * The row by its first column whose text is non-empty and unique in the table - an order number, not an index -
-     * so the step still finds the row after sorting or a new row; by index only when no column is unique.
-     */
-    static Map<String, Object> rowKey(JTable table, int row) {
-        List<String> headers = TableWidget.headers(table);
-        for (int c = 0; c < table.getColumnCount(); c++) {
-            String v = Cells.table(table, row, c).text;
-            if (v == null || v.trim().isEmpty()) continue;
-            boolean unique = true;
-            for (int r = 0; r < table.getRowCount() && unique; r++) {
-                if (r != row && v.equals(Cells.table(table, r, c).text)) unique = false;
-            }
-            if (!unique || headers.indexOf(headers.get(c)) != c) continue;
-            Map<String, Object> key = new LinkedHashMap<String, Object>();
-            key.put(headers.get(c), v);
-            // the spec must resolve back to this row
-            try {
-                if (TableWidget.row(table, RowSpec.of(key)) == row) return key;
-            } catch (DriverException ignored) {
-                // try the next column
-            }
-        }
-        Map<String, Object> key = new LinkedHashMap<String, Object>();
-        key.put("index", row);
-        return key;
     }
 
     Overlay overlayFor(Component c) {

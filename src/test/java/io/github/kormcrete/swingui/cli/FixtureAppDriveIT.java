@@ -346,6 +346,34 @@ class FixtureAppDriveIT {
         assertThat(ran.path("ran").asInt()).as(ran.path("why").asText()).isEqualTo(4);
     }
 
+    @Test
+    @Order(15)
+    void aTableRowStepIsNamedByItsValueOrItsPosition() throws Exception {
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            step("click", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Product'}}");
+            step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Product','expected':'Paper'}}");
+            JsonNode list = call("recording", "{'op':'list'}");
+            String why = list.path("why").asText();
+            JsonNode row = list.path("steps").path(0).path("row");
+            assertThat(row.path("by").asText()).as(why).isEqualTo("value");
+            assertThat(row.path("index").asInt()).as(why).isEqualTo(0);
+            assertThat(list.path("steps").path(0).path("checks").path(0).path("row").path("index").asInt()).as(why).isEqualTo(0);
+
+            JsonNode byPosition = call("recording", "{'op':'row','n':1,'by':'position'}");
+            assertThat(byPosition.path("steps").path(0).path("step").path("target").path("row").toString())
+                    .as(byPosition.path("why").asText()).isEqualTo("{\"index\":0}");
+            JsonNode replayed = call("recording", "{'op':'replay'}");
+            assertThat(replayed.path("passed").asBoolean()).as(replayed.path("why").asText()).isTrue();
+            call("recording", "{'op':'row','n':'1.1','by':'position'}");
+            replayed = call("recording", "{'op':'replay'}");
+            assertThat(replayed.path("passed").asBoolean()).as(replayed.path("why").asText()).isTrue();
+            call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
+        }
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {

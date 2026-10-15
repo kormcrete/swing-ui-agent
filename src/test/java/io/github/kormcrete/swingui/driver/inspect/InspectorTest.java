@@ -72,19 +72,6 @@ class InspectorTest {
     }
 
     @Test
-    void aRepeatedValueIsNoKeyTheNextUniqueColumnIs() {
-        JTable byCustomer = new JTable(new Object[][] {{"Acme", "ORD-1"}, {"Acme", "ORD-2"}}, new Object[] {"Customer", "Order"});
-        assertThat(Inspector.rowKey(byCustomer, 1)).isEqualTo(Collections.<String, Object>singletonMap("Order", "ORD-2"));
-    }
-
-    @Test
-    void withoutAUniqueColumnTheRowGoesByIndex() {
-        JTable twins = new JTable(new Object[][] {{"Acme", "Open"}, {"Acme", "Open"}}, new Object[] {"Customer", "Status"});
-        Map<String, Object> key = Inspector.rowKey(twins, 1);
-        assertThat(key).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
-    }
-
-    @Test
     void anActionAndTheChecksAfterItAreOneStep() {
         List<Inspector.StepLine> steps = new java.util.ArrayList<Inspector.StepLine>();
         for (String l : Arrays.asList("click(#save)", "expect(#status text 'saved')", "expect(#save !disabled)",
