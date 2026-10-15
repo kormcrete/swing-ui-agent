@@ -97,6 +97,7 @@ final class StepsPanel extends JPanel {
             new javax.swing.JComboBox<String>(new String[] {"Fast", "Normal", "Slow", "Step by step"});
     private final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
     private final JButton more;
+    private final JButton delete;
     private Edits edits = new Edits() {
         @Override public void describe(String title, int fromId, int toId, String initial) { }
         @Override public void ungroup(int id) { }
@@ -133,7 +134,10 @@ final class StepsPanel extends JPanel {
         top.add(right, BorderLayout.EAST);
         add(top, BorderLayout.NORTH);
         list.setSelectionMode(ListSelectionModel.SINGLE_INTERVAL_SELECTION);
-        list.addListSelectionListener(e -> { if (!e.getValueIsAdjusting()) widenHeaders(); });
+        list.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) widenHeaders();
+            deleteFits();
+        });
         list.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean selected, boolean focus) {
@@ -179,8 +183,9 @@ final class StepsPanel extends JPanel {
                 "from the selected step on; from the first one, after a reset"));
         buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(stepRecordAt(selected())); },
                 "cut the recording at the selected step, replay the steps before it from a reset, record on"));
-        buttons.add(small("✕ Delete", () -> { if (selected() >= 0) delete.accept(recordAt(selected())); },
-                "a step with its checks, or one check"));
+        this.delete = small("✕ Delete", () -> { if (selected() >= 0 && oneStep()) delete.accept(recordAt(selected())); },
+                DELETE_TIP);
+        buttons.add(this.delete);
         this.undo = small("↶ Undo", undo);
         this.undo.setEnabled(false);
         buttons.add(this.undo);
@@ -190,6 +195,31 @@ final class StepsPanel extends JPanel {
         }, "describe, ungroup, how a table row is named");
         buttons.add(more);
         add(buttons, BorderLayout.SOUTH);
+    }
+
+    private static final String DELETE_TIP = "a step with its checks, or one check";
+
+    /** ✕ Delete deletes one step or one check: greyed, saying so, while the selection spans several steps. */
+    private void deleteFits() {
+        boolean one = oneStep();
+        delete.setEnabled(one);
+        delete.setToolTipText(one ? DELETE_TIP : "select one step or check");
+    }
+
+    /** Whether the selected records are all of one step (or none is selected). */
+    private boolean oneStep() {
+        Set<String> steps = new LinkedHashSet<String>();
+        for (Row r : selectedRows()) steps.add(r.step());
+        return steps.size() <= 1;
+    }
+
+    /** Whether ✕ Delete can be pressed now, and what its tooltip says. */
+    boolean deleteEnabled() {
+        return delete.isEnabled();
+    }
+
+    String deleteTip() {
+        return delete.getToolTipText();
     }
 
     /** Where the row menu's edits go. */
@@ -319,10 +349,13 @@ final class StepsPanel extends JPanel {
         }
         m.item("Ungroup", first.line.groupId != 0, () -> edits.ungroup(first.id()));
         Inspector.RowLine row = first.line.row;
-        if (row != null) {
+        // how a table row is named is the step's or the check's own: offered for rows of one step
+        if (row != null && steps.size() == 1) {
             m.separator();
-            String value = row.valueKnown ? Inspector.rowText(row.value) : "replay it once";
-            String position = row.indexKnown ? "row " + row.index : "replay it once";
+            // a way not known: the position is learned by one passing replay; a value may also be missing because no
+            // column tells the rows apart, which the line cannot tell from not known yet
+            String value = row.valueKnown ? Inspector.rowText(row.value) : "not known";
+            String position = row.indexKnown ? "row " + (row.index + 1) : "replay it once";
             boolean byValue = "value".equals(row.by);
             m.choice("Row: this value (" + value + ")", byValue, row.valueKnown, () -> {
                 if (!byValue) edits.rowBy(first.id(), "value");
@@ -478,7 +511,7 @@ final class StepsPanel extends JPanel {
         if (pendingSelected && pending != null && from < 0) from = to = shown.size() - 1;
         undo.setEnabled(undoLabel != null);
         undo.setToolTipText(undoLabel);
-        title.setText("Steps (" + Recording.stepCount(steps) + ")");
+        title.setText("Steps (" + stepCount(steps) + ")");
         boolean same = texts.size() == model.size();
         for (int i = 0; same && i < texts.size(); i++) same = texts.get(i).equals(model.get(i));
         rows.clear();
@@ -527,6 +560,12 @@ final class StepsPanel extends JPanel {
             out.add(s.label != null ? s.label : counted);
         }
         return out;
+    }
+
+    /** How many steps {@code records} hold: checks are in their steps. */
+    static int stepCount(List<Inspector.StepLine> records) {
+        List<String> labels = labels(records);
+        return labels.isEmpty() ? 0 : Integer.parseInt(stepOf(labels.get(labels.size() - 1)));
     }
 
     /** The step of a label: "7" for "7" and "7.1". */

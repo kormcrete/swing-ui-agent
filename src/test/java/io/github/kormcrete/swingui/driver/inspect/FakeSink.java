@@ -117,8 +117,11 @@ final class FakeSink implements Inspector.Sink {
     volatile RuntimeException replayThrows;
     /** The step (0-based) whose replay fails, -1 none. */
     volatile int failStep = -1;
+    /** Runs at the start of {@link #replay}, on the inspector's thread: what the palette shows while a step runs. */
+    volatile Runnable onReplay;
     @Override public Inspector.Result replay(int index) {
         log.add("replay " + index);
+        if (onReplay != null) onReplay.run();
         if (replayThrows != null) throw replayThrows;
         if (index == failStep) return new Inspector.Result(false, "no button 'b'");
         return new Inspector.Result(true, "ok");

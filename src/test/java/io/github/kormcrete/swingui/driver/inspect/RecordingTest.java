@@ -1519,12 +1519,15 @@ class RecordingTest {
         sink.add("person", "2", "click(table 'Orders' · Order=ORD-1642 · Customer)", null, 0, null,
                 new Inspector.RowLine("value", Collections.<String, Object>singletonMap("Order", "ORD-1642"), null));
         sink.add("3", "click(#save)");
+        sink.add("person", "4", "click(table 'Orders' · row 0 · Customer)", null, 0, null,
+                new Inspector.RowLine("position", null, 0));
         withSteps();
         StepMenu menu = menuOn(0);
-        assertThat(menu.labels()).contains("Row: this value (Order=ORD-1641)", "Row: by position (row 1)");
+        // the person reads positions from 1: index 1 is the second row
+        assertThat(menu.labels()).contains("Row: this value (Order=ORD-1641)", "Row: by position (row 2)");
         assertThat(menu.selected("Row: this value (Order=ORD-1641)")).isTrue();
-        assertThat(menu.enabled("Row: by position (row 1)")).isTrue();
-        SwingUtilities.invokeAndWait(() -> menu.choose("Row: by position (row 1)"));
+        assertThat(menu.enabled("Row: by position (row 2)")).isTrue();
+        SwingUtilities.invokeAndWait(() -> menu.choose("Row: by position (row 2)"));
         eventually(() -> "row by position".equals(recording.bar.text()) ? Boolean.TRUE : null);
         assertThat(sink.log).containsExactly("row 1 position");
 
@@ -1533,8 +1536,76 @@ class RecordingTest {
         assertThat(unknown.labels()).contains("Row: by position (replay it once)");
         assertThat(unknown.enabled("Row: by position (replay it once)")).isFalse();
         assertThat(unknown.enabled("Row: this value (Order=ORD-1642)")).isTrue();
+        // a value that is not known: not known yet, or no column tells the rows apart
+        StepMenu noValue = menuOn(3);
+        assertThat(noValue.labels()).contains("Row: this value (not known)", "Row: by position (row 1)");
+        assertThat(noValue.enabled("Row: this value (not known)")).isFalse();
+        assertThat(noValue.selected("Row: by position (row 1)")).isTrue();
         // a step without a row offers no row
         assertThat(menuOn(2).labels()).noneMatch(l -> l.startsWith("Row:"));
+        // rows of several steps: a row's meaning is one step's, so none is offered
+        SwingUtilities.invokeAndWait(() -> recording.panel.selectRange(0, 1));
+        assertThat(menuOn(0).labels()).noneMatch(l -> l.startsWith("Row:"));
+    }
+
+    @Test
+    void deleteIsGreyedForASelectionOfSeveralSteps() throws Exception {
+        aGroupOfTwo();
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            StepsPanel p = recording.panel;
+            assertThat(p.deleteEnabled()).isTrue();
+            assertThat(p.deleteTip()).isEqualTo("a step with its checks, or one check");
+            // a header selects two steps: Delete would take only one of them
+            p.select(1);
+            assertThat(p.deleteEnabled()).isFalse();
+            assertThat(p.deleteTip()).isEqualTo("select one step or check");
+            p.press("✕ Delete");
+            // a step and its check are one step
+            p.selectRange(2, 3);
+            assertThat(p.deleteEnabled()).isTrue();
+        });
+        settle();
+        assertThat(sink.log).isEmpty();
+    }
+
+    @Test
+    void theReplayCounterCountsStepsOnly() throws Exception {
+        sink.add("1", "click(#new)");
+        sink.add("2", "click(#save)");
+        sink.add("2.1", "expect(#status text 'saved')");
+        sink.add("3", "click(#close)");
+        withSteps();
+        List<String> shown = replayBarTexts();
+        assertThat(shown).containsExactly("1/3  click(#new)", "2/3  click(#save) + 1 check", "2/3  check 2.1: #status text 'saved'",
+                "3/3  click(#close)");
+    }
+
+    @Test
+    void aCheckOnlyStepCountsAsStepOne() throws Exception {
+        sink.add("1.1", "expect(#total text '0.00')");
+        sink.add("2", "click(#new)");
+        withSteps();
+        assertThat(replayBarTexts()).containsExactly("1/2  check 1.1: #total text '0.00'", "2/2  click(#new)");
+    }
+
+    /** Replays all at Fast; returns what the replay bar said as each record ran. */
+    private List<String> replayBarTexts() throws Exception {
+        List<String> shown = Collections.synchronizedList(new java.util.ArrayList<String>());
+        Overlay o = scene.inspector.overlay(frame.getRootPane());
+        sink.onReplay = () -> {
+            try {
+                SwingUtilities.invokeAndWait(() -> shown.add(o.bar().text()));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        return shown;
     }
 
     @Test

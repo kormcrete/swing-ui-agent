@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
 
 /**
  * One recording the person made, from their ● Record to their Done, and after it: the palette (Record, Check, Steps,
@@ -229,7 +230,7 @@ final class Recording {
         CompletableFuture<List<String>> finished = done;
         sinkThread.submit(() -> {
             if (person) sink.end();
-            int n = stepCount(sink.steps());
+            int n = StepsPanel.stepCount(sink.steps());
             String count = n + (n == 1 ? " step" : " steps");
             SwingUtilities.invokeLater(() -> stoppedBar.text(why != null ? why : person
                     ? count + " - Export… writes them as a test, or the agent does"
@@ -510,7 +511,7 @@ final class Recording {
      * An edit from the row menu, on the sink thread: its result goes on the bar ({@code refused} before a refusal's
      * reason) and the panel re-reads the recording; completes with the result after the bar is updated.
      */
-    private CompletableFuture<Inspector.Result> edit(java.util.function.Supplier<Inspector.Result> call, String refused) {
+    private CompletableFuture<Inspector.Result> edit(Supplier<Inspector.Result> call, String refused) {
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
         sinkThread.submit(() -> {
             Inspector.Result r;
@@ -572,7 +573,7 @@ final class Recording {
             // the records before the cut, as the recording is now: the agent may have changed it since the person looked
             List<Inspector.StepLine> left = cut.ok ? sink.steps() : new ArrayList<Inspector.StepLine>();
             int i = left.size();
-            int stepsLeft = stepCount(left);
+            int stepsLeft = StepsPanel.stepCount(left);
             SwingUtilities.invokeLater(() -> {
                 if (!cut.ok) {
                     bar.text("✗ no redo: " + cut.line);
@@ -693,6 +694,8 @@ final class Recording {
         List<String> labels = StepsPanel.labels(all);
         int n = to < 0 ? all.size() : Math.min(to, all.size());
         String outcome = n <= from ? "nothing to replay" : "replayed " + steps(labels, from, n) + ": all passed";
+        // the counter counts steps only: a check shows its step's number
+        final String total = n <= from ? "" : StepsPanel.stepOf(labels.get(n - 1));
         int failed = -1;
         Inspector.onEdt(() -> {
             // marks from an earlier run must not mix with this one
@@ -700,13 +703,14 @@ final class Recording {
             home.controlsAway(true);
         });
         for (int i = from; i < n; i++) {
-            final int k = i;
             final int id = all.get(i).id;
             final String line = all.get(i).line;
             final Locator target = sink.target(i);
             final boolean check = all.get(i).check();
-            final String what = check ? "check: " + line.substring(7, line.length() - 1) : line;
-            final String label = (i + 1) + "/" + n + "  " + what;
+            final String counter = StepsPanel.stepOf(labels.get(i)) + "/" + total + "  ";
+            final String checked = check ? "check " + labels.get(i) : null;
+            final String what = check ? StepsPanel.checkText(line) : line;
+            final String label = counter + (check ? checked + ": " + what : what);
             // an action and the checks right after it are one step for the person: one Next runs them all
             final boolean starts = i == from || !check;
             final int group = starts ? Inspector.checksAfter(all, i, n) : 0;
@@ -742,7 +746,7 @@ final class Recording {
                 if (m != null) {
                     m.result = r.ok;
                     if (check || !r.ok) m.color = r.ok ? Overlay.YES : Overlay.NO;
-                    m.label = (k + 1) + "/" + n + "  " + (check ? (r.ok ? "passed: " : "FAILED: ") + what.substring(7)
+                    m.label = counter + (check ? checked + (r.ok ? " passed: " : " FAILED: ") + what
                             : (r.ok ? "" : "FAILED: ") + what);
                     for (Overlay o : inspector.overlays()) o.repaint();
                 }
@@ -798,12 +802,6 @@ final class Recording {
         String first = StepsPanel.stepOf(labels.get(from));
         String last = StepsPanel.stepOf(labels.get(to - 1));
         return first.equals(last) ? "step " + first : "steps " + first + "-" + last;
-    }
-
-    /** How many steps {@code records} hold: checks are in their steps. */
-    static int stepCount(List<Inspector.StepLine> records) {
-        List<String> labels = StepsPanel.labels(records);
-        return labels.isEmpty() ? 0 : Integer.parseInt(StepsPanel.stepOf(labels.get(labels.size() - 1)));
     }
 
     /** Waits out the step's moment, or for Next while paused; false when the person pressed Stop. */
