@@ -30,6 +30,8 @@ import java.util.List;
  * is no pattern to fold by) and the body goes on. A call with no step form (hooks, a login by name and password,
  * relogin, a recorded test run, a secret) and a step past {@link #MAX_STEPS} throw CAPABILITY_GAP too and end the
  * body. The first reason is kept ({@link #notDerivable()}).
+ *
+ * <p>Not plugin API; may change.
  */
 public final class TracingVerbs implements Verbs {
 

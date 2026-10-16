@@ -87,7 +87,11 @@ public final class SwingUiAgent {
         for (Path p : paths) {
             try {
                 PluginDescriptor d = PluginDescriptor.read(p);
-                PluginSlot slot = plugins.add(d.name, p);
+                PluginSlot slot = plugins.add(d);
+                if (slot.state() == PluginSlot.State.FAILED) {
+                    log.err("swing-ui-agent: " + slot.detail());
+                    continue;
+                }
                 watch.watch(d.appClass, new PluginHost(driver, slot, d));
             } catch (IOException e) {
                 plugins.add(String.valueOf(p.getFileName()), p).failed(p + ": " + e.getMessage());

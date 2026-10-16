@@ -169,6 +169,29 @@ class PatternTest {
                 .containsExactly(entry("po", "PO-7781"));
     }
 
+    /*
+     * How long a match takes is bounded by the work it counts (Pattern.lastWork), not by a clock: the counts are the same
+     * on every machine, so these bounds never fail on a slow one. 20 million work is about 0.5 s on a slow JDK 8.
+     */
+
+    /** The last match answered at once: a few thousand work at most (these take under 200). */
+    private static void assertAtOnce() {
+        assertThat(Pattern.lastWork()).isLessThan(10_000);
+    }
+
+    /** The last match was decided with less work than one search may do. */
+    private static void assertWithinOneLimit() {
+        assertThat(Pattern.lastWork()).isLessThan(Pattern.WORK_LIMIT);
+    }
+
+    /**
+     * The last match stayed under the class's ceiling: its own work and its look aheads' each end at the limit (the
+     * last small step may go a little past it).
+     */
+    private static void assertWithinTheCeiling() {
+        assertThat(Pattern.lastWork()).isLessThanOrEqualTo(2L * Pattern.WORK_LIMIT + Pattern.WORK_LIMIT / 1000);
+    }
+
     private static final String FORTY = "Gel pen, black; A4 paper, 500 sheets; xy";
 
     @Test
@@ -177,9 +200,8 @@ class PatternTest {
         for (Pattern p : Arrays.asList(only(manyTypes("Enter", "*{p1}*", "*{p2}*", "*{p3}*")),
                 only(manyTypes("Enter", "{p1}*", "{p2}*", "{p3}*", "{p4}*", "{p5}*")))) {
             List<JsonNode> run = notes(p.source().size() - 1, "{'action':'press','keys':'Tab'}");
-            long start = System.nanoTime();
             assertThat(p.match(run)).isNull();
-            assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+            assertAtOnce();
             assertThat(p.match(notes(p.source().size() - 1, "{'action':'press','keys':'Enter'}"))).isNotNull();
         }
     }
@@ -190,10 +212,10 @@ class PatternTest {
         Pattern p = only(manyTypes(null, "*{p1}*", "*{p2}*", "*{p3}*", "{p1}|{p2}|{p3}"));
         List<JsonNode> run = notes(3, "{'action':'type','target':{'name':'Note'},'text':'no|such|thing'}");
 
-        long start = System.nanoTime();
         assertThatThrownBy(() -> p.match(run)).isInstanceOf(Pattern.TooAmbiguous.class)
                 .hasMessage("the pattern of 'notes' is too ambiguous: its captures fit the steps in more ways than a match tries");
-        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+        // the choices ran out long before the work: about 2.6 million
+        assertThat(Pattern.lastWork()).isLessThan(Pattern.WORK_LIMIT / 4);
         assertThat(catchThrowableOfType(() -> p.match(run), Pattern.TooAmbiguous.class).stepId()).isEqualTo("notes");
     }
 
@@ -247,12 +269,13 @@ class PatternTest {
             String middle = text.substring(length / 2, length / 2 + 10);
             String end = text.substring(length - 10);
             for (String value : Arrays.asList(middle, end)) {
-                long start = System.nanoTime();
                 assertThat(contains.match(steps(note("Note", text), note("PO", value))).params())
                         .as("*{p}* then {p}, %d chars", length).containsExactly(entry("p", value));
+                assertWithinOneLimit();
                 assertThat(containsThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", value)))
                         .params()).as("*{p}*, 3 clicks, {p}, %d chars", length).containsExactly(entry("p", value));
-                assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+                // 400 characters take about 11 million
+                assertWithinOneLimit();
             }
             String head = text.substring(0, 10);
             assertThat(prefixThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", head))).params())
@@ -273,16 +296,16 @@ class PatternTest {
                 .match(json(note("V", "{v}")), json(note("N", "{a}{b}{c}{v}{d}"))).build());
         String v = repeat('a', 700) + "b";
 
-        long start = System.nanoTime();
         // v is nowhere in the text
         assertThat(p.match(steps(note("V", v), note("N", repeat('a', 1400))))).isNull();
+        assertWithinTheCeiling();
         // v is in the text, but nothing can follow it: undecided within the limits, or no match
         try {
             assertThat(after.match(steps(note("V", v), note("N", repeat('a', 1400) + "b")))).isNull();
         } catch (Pattern.TooAmbiguous e) {
             assertThat(e.stepId()).isEqualTo("notes");
         }
-        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+        assertWithinTheCeiling();
         // and the same patterns still match when they can
         assertThat(after.match(steps(note("V", v), note("N", repeat('a', 1400) + "b!"))).params())
                 .containsEntry("v", v).containsEntry("d", "!");
@@ -321,13 +344,13 @@ class PatternTest {
         for (int i = 0; i < 20; i++) run.addAll(steps(note("N", longNote(200) + "!zzzx")));
         run.addAll(steps(note("Z", "q")));
 
-        long start = System.nanoTime();
         try {
             assertThat(p.match(run)).isNull();
         } catch (Pattern.TooAmbiguous e) {
             assertThat(e.stepId()).isEqualTo("notes");
         }
-        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+        // 400 look aheads with a tenth of the limit each would be 40 times this
+        assertWithinTheCeiling();
     }
 
     @Test
@@ -335,10 +358,10 @@ class PatternTest {
         Pattern p = only(DomainStep.act("note", "Note {p}").param("p", ParamType.TEXT).code(NOTHING)
                 .match(json(note("Note", "*{p}* urgent"))).build());
 
-        long start = System.nanoTime();
         assertThat(p.match(steps(note("Note", longNote(200))))).isNull();
+        assertAtOnce();
         assertThat(p.match(steps(note("Note", longNote(40))))).isNull();
-        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+        assertAtOnce();
         // a capture before a * is the longest fit: all of the text before " urgent"
         assertThat(p.match(steps(note("Note", longNote(40) + " urgent"))).params())
                 .containsExactly(entry("p", longNote(40)));

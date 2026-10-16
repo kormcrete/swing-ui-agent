@@ -49,6 +49,24 @@ public final class Plugins implements StepHost, UiInventory {
         return slot;
     }
 
+    /**
+     * A slot for the plugin {@code d} describes. Recorded tests name a plugin by its name, so one already taken refuses
+     * the plugin: its slot is FAILED at once, saying why (the first one is not touched).
+     */
+    public synchronized PluginSlot add(PluginDescriptor d) {
+        for (PluginSlot s : slots) {
+            if (!s.name().equals(d.name)) continue;
+            PluginSlot refused = new PluginSlot(d.name, d.location, d.named);
+            slots.add(refused);
+            refused.failed(d.location + ": another plugin is already named " + d.name + " (" + s.location() + "): give each "
+                    + "plugin a name= of its own in plugin.properties");
+            return refused;
+        }
+        PluginSlot slot = new PluginSlot(d.name, d.location, d.named);
+        slots.add(slot);
+        return slot;
+    }
+
     public List<PluginSlot> slots() {
         return Collections.unmodifiableList(new ArrayList<PluginSlot>(slots));
     }

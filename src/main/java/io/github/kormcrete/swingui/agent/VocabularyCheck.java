@@ -46,13 +46,24 @@ final class VocabularyCheck {
         this.problems = Collections.unmodifiableList(problems);
     }
 
+    /**
+     * The vocabulary of plugin {@code plugin}, whose name came from its jar or folder: not loaded (a recorded test would
+     * store a name that changes with them), with one problem line saying so.
+     */
+    static VocabularyCheck unnamed(String plugin) {
+        return new VocabularyCheck(Collections.<DomainStep>emptyList(), Collections.<PatternCompiler.Compiled>emptyList(),
+                Collections.singletonList(plugin + ": the vocabulary is not loaded: set name= in plugin.properties: "
+                        + "recorded tests store <name>:<step>, and a name taken from the jar or folder changes with it"));
+    }
+
     /** Reads {@code vocabulary} (plugin code: a throw is a problem, not a failure) and checks every step. */
     static VocabularyCheck of(String plugin, Vocabulary vocabulary) {
         if (vocabulary == null) return NONE;
         List<DomainStep> offered;
         try {
             offered = vocabulary.steps();
-        } catch (RuntimeException | LinkageError e) {
+        } catch (RuntimeException | LinkageError | AssertionError | StackOverflowError e) {
+            // an Error from the plugin's own code fails only its vocabulary, as the Vocabulary javadoc promises
             return new VocabularyCheck(Collections.<DomainStep>emptyList(), Collections.<PatternCompiler.Compiled>emptyList(),
                     Collections.singletonList(plugin + ": the vocabulary failed: " + e));
         }

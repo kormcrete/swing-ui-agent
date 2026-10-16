@@ -43,6 +43,8 @@ import java.util.Map;
  * when only the same param in two places disagrees, fits are tried until the budget ends. Each fit that holds
  * nests the rest of the match in the call stack, so the depth grows with steps × fields × text parts: match a window
  * of recent steps, not a whole recording.
+ *
+ * <p>Not plugin API; may change.
  */
 public final class Pattern {
 
@@ -153,9 +155,14 @@ public final class Pattern {
      */
     public Match match(List<? extends JsonNode> steps) {
         Search search = new Search(this, steps);
-        if (!search.canFinish(0, 0)) return null;
-        Map<String, CharSequence> bound = seq(elements, 0, steps, 0, Collections.<String, CharSequence>emptyMap(),
-                (at, b) -> at == steps.size() ? b : null, search);
+        Map<String, CharSequence> bound;
+        try {
+            if (!search.canFinish(0, 0)) return null;
+            bound = seq(elements, 0, steps, 0, Collections.<String, CharSequence>emptyMap(),
+                    (at, b) -> at == steps.size() ? b : null, search);
+        } finally {
+            LAST_WORK.set(search.used());
+        }
         if (bound == null) return null;
         Map<String, String> out = new LinkedHashMap<String, String>();
         for (String p : params) if (bound.containsKey(p)) out.put(p, bound.get(p).toString());
@@ -236,6 +243,15 @@ public final class Pattern {
      */
     public static final int WORK_LIMIT = 20000000;
 
+    /** The work the last {@link #match} on this thread did, its probes' included: what the tests bound, not a clock. */
+    private static final ThreadLocal<Long> LAST_WORK = new ThreadLocal<Long>();
+
+    /** {@link #LAST_WORK}; 0 before any match on this thread. */
+    static long lastWork() {
+        Long w = LAST_WORK.get();
+        return w == null ? 0 : w;
+    }
+
     /**
      * A run whose match this pattern could not decide within {@link #FIT_BUDGET} or {@link #WORK_LIMIT}: neither a
      * match nor a mismatch. Folding should leave the run as it is and can say why ({@link #getMessage}).
@@ -303,6 +319,11 @@ public final class Pattern {
 
         void spend() {
             if (--left < 0) throw new TooAmbiguous(pattern.stepId);
+        }
+
+        /** The work done so far: this search's and its probes' together. */
+        long used() {
+            return (long) WORK_LIMIT - work + WORK_LIMIT - probeWork[0];
         }
 
         void work() {

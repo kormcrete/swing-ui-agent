@@ -49,6 +49,8 @@ import java.util.regex.Matcher;
  *
  * <p>Every pattern must capture each required param; one whose entries are all optional, or that is empty, is a
  * problem. A step with a problem is to be dropped.
+ *
+ * <p>Not plugin API; may change.
  */
 public final class PatternCompiler {
 

@@ -142,6 +142,71 @@ class PluginSlotTest {
         assertThatThrownBy(() -> plugins.navigate("Orders")).hasMessageContaining("CAPABILITY_GAP");
     }
 
+    /** Recorded tests store {@code <name>:<step>}: a name taken from the jar or folder would change with it. */
+    @Test
+    void aVocabularyOfAPluginWithoutANameIsNotLoadedAndSaysWhy() throws Exception {
+        Path folder = Files.createTempDirectory("plugin").resolve("order-desk-plugin/target/classes");
+        Files.createDirectories(folder.resolve(PluginDescriptor.RESOURCE).getParent());
+        Files.write(folder.resolve(PluginDescriptor.RESOURCE), "app-class=a.B\n".getBytes("ISO-8859-1"));
+        Plugins plugins = new Plugins(verbs);
+        PluginSlot slot = plugins.add(PluginDescriptor.read(folder));
+
+        slot.ready(new PluginParts(() -> Collections.singletonList(addToCart())), "OrderDeskPlugin");
+
+        assertThat(slot.state()).isEqualTo(PluginSlot.State.READY);
+        assertThat(slot.parts()).isNotNull();
+        assertThat(slot.vocabulary()).isEmpty();
+        assertThat(slot.vocabularyProblems()).containsExactly("order-desk-plugin: the vocabulary is not loaded: set name= "
+                + "in plugin.properties: recorded tests store <name>:<step>, and a name taken from the jar or folder "
+                + "changes with it");
+    }
+
+    @Test
+    void aPluginWithANameOfItsOwnLoadsItsVocabulary() throws Exception {
+        Path folder = Files.createTempDirectory("plugin").resolve("order-desk-plugin/target/classes");
+        Files.createDirectories(folder.resolve(PluginDescriptor.RESOURCE).getParent());
+        Files.write(folder.resolve(PluginDescriptor.RESOURCE), "app-class=a.B\nname=order-desk\n".getBytes("ISO-8859-1"));
+        PluginSlot slot = new Plugins(verbs).add(PluginDescriptor.read(folder));
+
+        slot.ready(new PluginParts(() -> Collections.singletonList(addToCart())), "OrderDeskPlugin");
+
+        assertThat(ids(slot.vocabulary())).containsExactly("addToCart");
+        assertThat(slot.vocabularyProblems()).isEmpty();
+    }
+
+    @Test
+    void aSecondPluginWithTheSameNameIsRefused() throws Exception {
+        Path root = Files.createTempDirectory("plugins");
+        Plugins plugins = new Plugins(verbs);
+        List<PluginSlot> slots = new ArrayList<PluginSlot>();
+        for (String module : new String[] {"order-desk-plugin", "order-desk-extras"}) {
+            Path folder = root.resolve(module + "/target/classes");
+            Files.createDirectories(folder.resolve(PluginDescriptor.RESOURCE).getParent());
+            Files.write(folder.resolve(PluginDescriptor.RESOURCE), "app-class=a.B\nname=order-desk\n".getBytes("ISO-8859-1"));
+            slots.add(plugins.add(PluginDescriptor.read(folder)));
+        }
+
+        assertThat(slots.get(0).state()).isEqualTo(PluginSlot.State.NONE);
+        assertThat(slots.get(1).state()).isEqualTo(PluginSlot.State.FAILED);
+        assertThat(slots.get(1).detail()).contains("another plugin is already named order-desk")
+                .contains("order-desk-plugin").contains("name=");
+    }
+
+    /** The Vocabulary javadoc promises a throw from steps() is listed: an Error too, and the plugin stays ready. */
+    @Test
+    void anErrorFromTheVocabularyFailsOnlyTheVocabulary() {
+        for (Error thrown : new Error[] {new AssertionError("no products yet"), new StackOverflowError()}) {
+            PluginSlot slot = new PluginSlot("order-desk", Paths.get("order-desk-plugin/target/classes"));
+            slot.ready(new PluginParts(() -> {
+                throw thrown;
+            }), "OrderDeskPlugin");
+            assertThat(slot.state()).isEqualTo(PluginSlot.State.READY);
+            assertThat(slot.vocabulary()).isEmpty();
+            assertThat(slot.vocabularyProblems()).hasSize(1);
+            assertThat(slot.vocabularyProblems().get(0)).startsWith("order-desk: the vocabulary failed: ");
+        }
+    }
+
     @Test
     void aJavaCallOrDeclarativeBodyNamingAnUndeclaredParamIsAProblem() {
         PluginSlot slot = vocabularySlot("order-desk",

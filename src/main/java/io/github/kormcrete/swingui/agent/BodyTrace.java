@@ -48,6 +48,8 @@ import java.util.regex.Pattern;
  *
  * <p>Not derivable either: a body that reads or checks the app, reads a secret, uses a call with no step form, makes
  * too many steps, or fails (see {@link TracingVerbs}). Neither method throws for a misbehaving body.
+ *
+ * <p>Not plugin API; may change.
  */
 public final class BodyTrace {
 

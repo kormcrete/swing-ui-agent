@@ -20,6 +20,8 @@ public final class PluginSlot {
 
     private final String name;
     private final Path location;
+    /** False for a plugin whose name came from its location, not its {@code name=}: its vocabulary is not loaded. */
+    private final boolean named;
     private volatile State state = State.NONE;
     private volatile String detail = "not started";
     private volatile PluginParts parts;
@@ -27,8 +29,14 @@ public final class PluginSlot {
     private volatile long locationTime;
 
     public PluginSlot(String name, Path location) {
+        this(name, location, true);
+    }
+
+    /** {@code named}: the name is the plugin's own {@code name=} ({@link PluginDescriptor#named}). */
+    public PluginSlot(String name, Path location, boolean named) {
         this.name = name;
         this.location = location;
+        this.named = named;
     }
 
     public String name() { return name; }
@@ -68,7 +76,8 @@ public final class PluginSlot {
      * a Java body without {@code match(...)} is traced for its pattern (each within {@link BodyTrace#TIME_LIMIT}).
      */
     public void ready(PluginParts parts, String detail) {
-        VocabularyCheck checked = VocabularyCheck.of(name, parts == null ? null : parts.vocabulary);
+        VocabularyCheck checked = !named && parts != null && parts.vocabulary != null ? VocabularyCheck.unnamed(name)
+                : VocabularyCheck.of(name, parts == null ? null : parts.vocabulary);
         readyChecked(parts, checked, detail);
     }
 

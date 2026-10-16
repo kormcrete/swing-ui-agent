@@ -43,8 +43,9 @@ public final class DomainStep {
      * test's Client runs off the EDT). A {@link Builder#choices} supplier is asked on a thread of its own, given up after 5 s.
      *
      * <p>A body also runs when nobody asked for the step: when the plugin becomes ready, a body without
-     * {@link Builder#match} runs twice to learn its pattern, and a recording's Java export may run it twice for the
-     * steps it makes. Those runs are on a thread of their own, given up after 5 s, on a Client that reaches no app
+     * {@link Builder#match} runs twice to learn its pattern, and a step without {@link Builder#java} runs twice to learn
+     * the steps it makes for its Java form whenever such a {@code do} step is recorded, listed or loaded (once per step
+     * and values), not only at a Java export. Those runs are on a thread of their own, given up after 5 s, on a Client that reaches no app
      * (it only notes the steps). At ready both runs use stand-in values: the first a TEXT param's name in braces
      * ({@code {product}}) and a large number for an INT param, the second other text ({@code " Ab1, c "}) and 1.
      * Anything else the body does (plugin code, files, a database) happens for real on each of those runs, so keep a
@@ -116,7 +117,12 @@ public final class DomainStep {
         return new Builder(id, Kind.ACT, sentence);
     }
 
-    /** A step that checks what the app shows, e.g. {@code check("cartTotalIs", "The cart total is {total}")}. */
+    /**
+     * A step that checks what the app shows, e.g. {@code check("cartTotalIs", "The cart total is {total}")}. A check's
+     * Java body reads the app, which a trace cannot answer: it yields no pattern and no steps, so give such a step a
+     * {@link Builder#match} (to fold and to be offered in the palette's Check menu) and a {@link Builder#java} (for its
+     * Java form); a declarative {@link Builder#steps} body needs neither.
+     */
     public static Builder check(String id, String sentence) {
         return new Builder(id, Kind.CHECK, sentence);
     }

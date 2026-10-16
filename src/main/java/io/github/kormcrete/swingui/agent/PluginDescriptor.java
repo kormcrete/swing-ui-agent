@@ -17,6 +17,11 @@ public class PluginDescriptor {
     public final String appClass;
     /** The plugin's slot name: the {@code name} property, else derived from the location. */
     public final String name;
+    /**
+     * Whether {@link #name} is the {@code name} property: recorded tests store {@code <name>:<step>}, so a plugin with a
+     * vocabulary needs one that does not change with its jar or folder ({@link PluginSlot#ready}).
+     */
+    public final boolean named;
 
     /** The manifest attribute both the plugin and the app's jar must agree on, or null for no check. */
     public final String buildMatch;
@@ -26,9 +31,14 @@ public class PluginDescriptor {
     }
 
     PluginDescriptor(Path location, String appClass, String name, String buildMatch) {
+        this(location, appClass, name, true, buildMatch);
+    }
+
+    private PluginDescriptor(Path location, String appClass, String name, boolean named, String buildMatch) {
         this.location = location;
         this.appClass = appClass;
         this.name = name;
+        this.named = named;
         this.buildMatch = buildMatch;
     }
 
@@ -69,7 +79,7 @@ public class PluginDescriptor {
         if (app.isEmpty()) throw new IOException(location + ": " + RESOURCE + " names no app-class");
         String name = p.getProperty("name", "").trim();
         String match = p.getProperty("build-match", "").trim();
-        return new PluginDescriptor(location, app, name.isEmpty() ? defaultName(location) : name,
+        return new PluginDescriptor(location, app, name.isEmpty() ? defaultName(location) : name, !name.isEmpty(),
                 match.isEmpty() ? null : match);
     }
 }
