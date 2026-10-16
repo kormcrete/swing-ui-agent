@@ -52,9 +52,10 @@ export default defineConfig({
 				starlightLlmsTxt({
 					projectName: 'swing-ui-agent',
 					description:
-						'A Java agent (-javaagent) that lets a coding agent drive a real Java Swing app from a shell or over MCP, and records what it did as JUnit 5 @UiTest classes. No changes to the app; no java.awt.Robot.',
+						'A Java agent (-javaagent) that lets a coding agent drive a real Java Swing app from a shell or over MCP, and records what it did as JUnit 5 @UiTest classes or as recorded tests (JSON files of steps and checks that run without compiling). No changes to the app; no java.awt.Robot.',
 					details: [
 						'- Coding agents: the skills in the repository (`skills/`) teach the drive, target and record workflow; install them rather than working from these docs alone.',
+						'- Two kinds of test: a recorded test is exact visible steps and checks that a person or the agent records and anyone runs; a Java test is for anything dynamic. Start at https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/.',
 						'- Every tool and its parameters: https://kormcrete.github.io/swing-ui-agent/reference/tools/ (generated from the agent\'s own schemas; `java -jar <agent jar> tools <name>` prints the same from a running app).',
 					].join('\n'),
 					optionalLinks: [

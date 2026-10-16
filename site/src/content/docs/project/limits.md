@@ -35,7 +35,8 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **The agent's question bar:** it stays in the window of what the agent asks about, even when another window is in front.
 - **Column checks:** checks on a whole table column are shown greyed, because no `expect` kind exists for them yet.
 - **Not recorded as steps of their own yet:** clicks on spinner arrows, drags, and clicks on list or tree items. Re-do those with the agent, or write them by hand.
-- **Password fields:** what a person types into one is never recorded.
+- **A tab's close button** is painted by the look and feel and has no element of its own, so it can be neither found nor recorded. Close the tab as a user would with the menu or shortcut: in Order Desk File ▸ Close tab, or Mod+W.
+- **Password fields:** never recorded, by design. What a person types into one is not stored, and the agent never reads one.
 - **Replay all** begins with a reset, as the test will. Without a plugin that only closes dialogs, so there is no defined start to return to: the first step has to get there.
 - **Windows and Linux:** the palette's automated tests run there, but it has not been tried by hand yet.
 

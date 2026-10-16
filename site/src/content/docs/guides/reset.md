@@ -77,6 +77,8 @@ With a plugin that resets the app to a defined state, there is no warning: the t
 
 `export_test` with `"clear":true` empties the recording after writing it; the next test needs a reset first.
 
+Recorded tests begin the same way: `run_recorded_test`, the palette's Run and the JUnit runner all reset the app first, then run the file's first step. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+
 ## Write tests that pass on a used app
 
 A reset does not undo what earlier tests did to the app's data. In Order Desk each placed order takes the next number and adds to what the customer owes. A test that passes twice:

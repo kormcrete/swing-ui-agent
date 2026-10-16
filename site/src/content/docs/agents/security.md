@@ -17,6 +17,7 @@ The agent gives whoever can reach its port the same power over your app as a per
 
 - **What a user can do, through the UI.** Click, type, press keys, pick from menus, answer dialogs, choose files in the app's file chooser, read what is on screen, take screenshots of the app's windows.
 - **Write files.** `export_test` writes a test class under the tests folder (`-Dswingui.testsDir`, else `src/test/java`), and `export_recorded_test` a recorded test file under the recorded tests folder; neither overwrites another existing file. Screenshot steps and a failing `run_recorded_test` write PNGs under the screenshot folder or a path the caller gives. Exported tests are code: review them like any other change.
+- **Read a recorded test file.** `run_recorded_test` and `recording load` take a `path` that is absolute or relative to the app's working directory. A recorded test is a plain JSON file of UI steps; it holds no code, and running it does only what its steps say.
 - **Read the clipboard, and set it.** `read_clipboard` and `set_clipboard` work with the system clipboard as the app sees it.
 - **Call a plugin's hooks.** `plugin_call` reaches only the methods of the one interface a plugin declares as its hooks. Without a plugin there is nothing to call.
 
@@ -35,7 +36,7 @@ A test run, a script or an agent can take a **lease**: then only calls that carr
 
 - **Development and test machines, and CI.** Start the app with the agent only where you mean to drive it.
 - **Test data.** The agent clicks what it is told to click. Point the app at a test database or a test account, never at production data.
-- **The person's choice.** The palette is on by default and is for a person at the screen. Start with `palette=off` on CI and shared machines (`mode=background` turns it off too): then no palette appears and nothing listens to input.
+- **The person's choice.** The palette is on by default and is for a person at the screen. Start with `palette=off` on CI and shared machines (`mode=background` turns it off too): then no palette appears and nothing listens to input. The `recording` tool and recorded tests still work without it.
 
 ## What's next
 

@@ -29,6 +29,8 @@ $UI menu '{"path":["File","New order"]}'
 - **Files instead of images.** `--out orders.png screenshot` writes the PNG to a file, so the agent opens it only when it needs to.
 - **The skills assume it.** The three [skills](/swing-ui-agent/agents/skills/) show every step as a CLI call.
 
+Recording and recorded tests are tools like the rest: `recording` (start, stop, list, edit, replay, export, load) and `run_recorded_test`. From a shell, `run_recorded_test` exits `4` when the recorded test fails (see [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)).
+
 Each call starts a small JVM. Driving a whole task is many calls, so use `batch` when the next steps are already known: several steps, one call.
 
 ## Use MCP when your agent speaks it
@@ -36,6 +38,7 @@ Each call starts a small JVM. Driving a whole task is many calls, so use `batch`
 Point any MCP client that supports streamable HTTP at `http://127.0.0.1:8765/mcp`. The client lists the tools itself and calls them as tool calls. Setup for a few clients is in [MCP clients](/swing-ui-agent/agents/mcp-clients/).
 
 - **No shell needed.** For agents and chat clients without one.
+- **Recording and running.** `recording` and `run_recorded_test` are listed like every other tool; a failed run is a normal answer with `passed: false`, not a transport error.
 - **Images inline.** `screenshot` returns the PNG as image content.
 - **Instructions on connect.** The client receives a short description of how to read and act on the app.
 
