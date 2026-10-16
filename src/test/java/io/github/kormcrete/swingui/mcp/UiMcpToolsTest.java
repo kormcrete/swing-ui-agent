@@ -352,7 +352,7 @@ class UiMcpToolsTest {
                 "describe_ui", "do_action", "do_actions", "batch",
                 "export_test", "export_recorded_test", "run_recorded_test", "snapshot", "read", "screenshot", "inspect", "recording", "vocabulary", "read_clipboard", "read_file_chooser",
                 "click", "type", "press", "check", "select", "pick", "menu", "context_menu",
-                "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard");
+                "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard", "hover", "resize_column", "resize_window", "close_window");
     }
 
     @Test

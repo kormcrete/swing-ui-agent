@@ -52,6 +52,28 @@ class UiMcpTimingTest {
     }
 
     @Test
+    void theTimingLineIsFine() {
+        java.util.logging.Logger log = java.util.logging.Logger.getLogger("UIMCP");
+        final java.util.List<java.util.logging.Level> levels = new ArrayList<java.util.logging.Level>();
+        java.util.logging.Handler h = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord r) { levels.add(r.getLevel()); }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        java.util.logging.Level old = log.getLevel();
+        log.setLevel(java.util.logging.Level.ALL);
+        h.setLevel(java.util.logging.Level.ALL);
+        log.addHandler(h);
+        try {
+            UiMcpTiming.log("UIMCP-TIMING tool=click status=ok");
+        } finally {
+            log.removeHandler(h);
+            log.setLevel(old);
+        }
+        assertThat(levels).containsExactly(java.util.logging.Level.FINE);
+    }
+
+    @Test
     void theLineHasAFixedPrefixNumbersAndTheTargetLast() {
         EdtClock.Reading edt = new EdtClock.Reading(40_000_000L, 2_000_000L, 7);
         String line = UiMcpTiming.line("click", "ok", 153, 150, edt, 1, 842, "button:Save in header");

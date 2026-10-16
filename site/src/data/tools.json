@@ -152,7 +152,7 @@
               "properties": {
                 "verb": {
                   "type": "string",
-                  "description": "A verb tool's name (click, type, press, check, select, pick, menu, context_menu, answer, choose_file, drag, drop, expect, scroll, set_clipboard), 'read', or a step type (navigate, close, loginAs, screenshot, ...)."
+                  "description": "A verb tool's name (click, type, press, check, select, pick, menu, context_menu, answer, choose_file, drag, drop, expect, scroll, set_clipboard, hover, resize_column, resize_window, close_window), 'read', or a step type (navigate, close, loginAs, screenshot, ...)."
                 }
               },
               "required": [
@@ -2672,6 +2672,317 @@
         },
         "required": [
           "text"
+        ]
+      }
+    },
+    {
+      "name": "hover",
+      "description": "Moves the pointer onto an element (inside true, the default) or off it again, so parts that show only on hover, such as a row's inline buttons, show or hide. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "The element to hover.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "inside": {
+            "type": "boolean",
+            "description": "false moves the pointer off the element."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "resize_column",
+      "description": "Drags a table column's right header edge by delta pixels (negative narrows it). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "description": "A table target with a column and no row.",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+              },
+              "window": {
+                "type": "string",
+                "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+              },
+              "scope": {
+                "type": "array",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "role": {
+                "type": "string",
+                "description": "The element's role.",
+                "enum": [
+                  "window",
+                  "dialog",
+                  "button",
+                  "toggle",
+                  "checkbox",
+                  "radio",
+                  "text",
+                  "password",
+                  "combo",
+                  "list",
+                  "table",
+                  "tree",
+                  "tabs",
+                  "tab",
+                  "menubar",
+                  "menu",
+                  "menuitem",
+                  "clickable",
+                  "label",
+                  "section"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+              },
+              "match": {
+                "type": "string",
+                "description": "How name compares.",
+                "enum": [
+                  "exact",
+                  "contains"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "description": "The component's getName()."
+              },
+              "row": {
+                "type": "object",
+                "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+              },
+              "column": {
+                "type": "string",
+                "description": "Table column header: with row, that cell; without row, the header itself."
+              },
+              "item": {
+                "type": "array",
+                "description": "List or combo item text (one element), or a tree path.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "point": {
+                "type": "object",
+                "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                }
+              },
+              "nth": {
+                "type": "integer",
+                "description": "Which match, in tree order, when the locator is not unique (makes the step fragile)."
+              }
+            }
+          },
+          "delta": {
+            "type": "integer",
+            "description": "Pixels to widen (positive) or narrow (negative)."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "target",
+          "delta"
+        ]
+      }
+    },
+    {
+      "name": "resize_window",
+      "description": "Resizes a window to width x height pixels. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "The window: main, dialog, popup, dialog:<title> or window:<title>."
+          },
+          "width": {
+            "type": "integer",
+            "description": "New width in pixels."
+          },
+          "height": {
+            "type": "integer",
+            "description": "New height in pixels."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "window",
+          "width",
+          "height"
+        ]
+      }
+    },
+    {
+      "name": "close_window",
+      "description": "Closes a window the way its title-bar close button would. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "The window: main, dialog, popup, dialog:<title> or window:<title>."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Milliseconds this step may wait for its target to become actionable and for the app to settle."
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Also return a snapshot taken after the step."
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
+          }
+        },
+        "required": [
+          "window"
         ]
       }
     },

@@ -59,10 +59,18 @@ public final class Resolver {
         }
         if (found.size() == 1) return found.get(0);
         if (found.isEmpty()) {
-            throw new DriverException(Reason.NOT_FOUND, "nothing matches " + locator, nearMisses(locator));
+            throw new DriverException(Reason.NOT_FOUND, "nothing matches " + locator + windowHint(locator),
+                    nearMisses(locator));
         }
         throw new DriverException(Reason.AMBIGUOUS, found.size() + " elements match " + locator
                 + "; add a scope, a window or nth", describe(found));
+    }
+
+    /** Windows are not nodes: a locator with role window or dialog finds none; say how they are addressed. */
+    private static String windowHint(Locator locator) {
+        if (!"window".equals(locator.role) && !"dialog".equals(locator.role)) return "";
+        return " (windows are not elements: address them by the 'window' argument - main, popup, dialog, "
+                + "dialog:<title> or window:<title>)";
     }
 
     /** Every visible match in tree order. */

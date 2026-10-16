@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.mcp;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.verb.ChooseFileVerb;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
+import io.github.kormcrete.swingui.flow.verb.ResizeWindowVerb;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
 import io.github.kormcrete.swingui.flow.verb.SetClipboardVerb;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,12 +28,23 @@ class VerbSchemasTest {
 
     @Test
     void toolNamesMapToRecordedTestActionNames() {
-        assertThat(VerbSchemas.TOOLS).hasSize(15);
+        assertThat(VerbSchemas.TOOLS).hasSize(19);
         assertThat(VerbSchemas.actionName(SetClipboardVerb.class)).isEqualTo("setClipboard");
         assertThat(VerbSchemas.actionName(ClickVerb.class)).isEqualTo("click");
         assertThat(VerbSchemas.actionName(ContextMenuAction.class)).isEqualTo("contextMenu");
         assertThat(VerbSchemas.actionName(ChooseFileVerb.class)).isEqualTo("chooseFile");
         assertThat(VerbSchemas.TOOLS.get("context_menu")).isEqualTo(ContextMenuAction.class);
+    }
+
+    @Test
+    void hoverAndTheWindowAndColumnVerbsHaveTools() {
+        assertThat(VerbSchemas.TOOLS.get("hover").getSimpleName()).isEqualTo("HoverVerb");
+        assertThat(VerbSchemas.TOOLS.get("resize_column").getSimpleName()).isEqualTo("ResizeColumnVerb");
+        assertThat(VerbSchemas.TOOLS.get("resize_window").getSimpleName()).isEqualTo("ResizeWindowVerb");
+        assertThat(VerbSchemas.TOOLS.get("close_window").getSimpleName()).isEqualTo("CloseWindowVerb");
+        assertThat(VerbSchemas.TOOLS).doesNotContainKey("focus_file_chooser_name");
+        assertThat(texts(VerbSchemas.inputSchema(mapper, ResizeWindowVerb.class).path("required")))
+                .containsExactlyInAnyOrder("window", "width", "height");
     }
 
     @Test

@@ -155,7 +155,7 @@ final class UiMcpTiming {
 
     /** Writes the line to the log and, when one is configured, appends it to the timing file. */
     static void log(String line) {
-        LOG.info(line);
+        LOG.fine(line);
         Path file = file();
         if (file == null) return;
         synchronized (UiMcpTiming.class) {

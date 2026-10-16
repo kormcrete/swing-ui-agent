@@ -475,4 +475,15 @@ class ResolverTest {
         assertThat(resolver.matches(Locator.of("label", "€7.32"))).hasSize(1);
         assertThat(resolver.resolve(Locator.of("label", "€7.32")).component).isSameAs(value);
     }
+
+    @Test
+    void aWindowRoleNotFoundSaysHowWindowsAreAddressed() {
+        DriverException e = catchThrowableOfType(() -> resolver.resolve(Locator.of("window", "Nowhere")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
+        assertThat(e.getMessage()).contains("'window'").contains("dialog:<title>").contains("window:<title>");
+        DriverException d = catchThrowableOfType(() -> resolver.resolve(Locator.of("dialog", "Nowhere")), DriverException.class);
+        assertThat(d.getMessage()).contains("dialog:<title>");
+        DriverException b = catchThrowableOfType(() -> resolver.resolve(Locator.of("button", "Cancel")), DriverException.class);
+        assertThat(b.getMessage()).doesNotContain("dialog:<title>");
+    }
 }

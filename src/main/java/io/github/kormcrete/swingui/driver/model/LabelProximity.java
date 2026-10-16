@@ -203,6 +203,12 @@ public final class LabelProximity {
             Component own = captionAbove(l, visibility);
             if (own != null && stackedInputs.add(own)) out.add(l);
         }
+        Set<Component> captioned = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
+        captioned.addAll(stackedInputs);
+        for (JLabel l : labels) {
+            Component linked = l.getLabelFor();
+            if (linked instanceof JTextComponent || linked instanceof JComboBox) captioned.add(linked);
+        }
         for (JLabel l : labels) {
             Component linked = l.getLabelFor();
             if (linked instanceof JTextComponent || linked instanceof JComboBox) {
@@ -211,8 +217,7 @@ public final class LabelProximity {
             }
             if (linked != null || out.contains(l)) continue;
             Component input = sameRowRight(l, inputs);
-            if (input == null || stackedInputs.contains(input)) continue;
-            if (input == null) continue;
+            if (input == null || captioned.contains(input)) continue;   // an error label under a captioned field is no caption
             double d = distance(l, input);
             Double b = best.get(input);
             if (b == null || d < b) {

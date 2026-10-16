@@ -320,4 +320,16 @@ class LabelProximityTest {
         assertThat(captions).containsOnlyKeys(open);
         assertThat(captions.get(open)).isSameAs(near);
     }
+
+    @Test
+    void anErrorLabelUnderACaptionedFieldStaysANode() {
+        JPanel p = new JPanel(null);
+        JLabel caption = label("Postal code:", 0, 0);
+        JTextField postal = field("postal", 90, 0);
+        caption.setLabelFor(postal);
+        JLabel error = label("Postal code is required", 90, 20);
+        p.add(caption); p.add(postal); p.add(error);
+
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).containsExactly(caption);
+    }
 }

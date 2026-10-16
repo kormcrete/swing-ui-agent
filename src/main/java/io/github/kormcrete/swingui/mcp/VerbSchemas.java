@@ -7,15 +7,19 @@ import io.github.kormcrete.swingui.flow.verb.AnswerVerb;
 import io.github.kormcrete.swingui.flow.verb.CheckVerb;
 import io.github.kormcrete.swingui.flow.verb.ChooseFileVerb;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
+import io.github.kormcrete.swingui.flow.verb.CloseWindowVerb;
 import io.github.kormcrete.swingui.flow.verb.Doc;
 import io.github.kormcrete.swingui.flow.verb.DragVerb;
 import io.github.kormcrete.swingui.flow.verb.DropVerb;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
+import io.github.kormcrete.swingui.flow.verb.HoverVerb;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.OneOf;
 import io.github.kormcrete.swingui.flow.verb.PickVerb;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
 import io.github.kormcrete.swingui.flow.verb.Required;
+import io.github.kormcrete.swingui.flow.verb.ResizeColumnVerb;
+import io.github.kormcrete.swingui.flow.verb.ResizeWindowVerb;
 import io.github.kormcrete.swingui.flow.verb.ScrollVerb;
 import io.github.kormcrete.swingui.flow.verb.SelectVerb;
 import io.github.kormcrete.swingui.flow.verb.SetClipboardVerb;
@@ -61,6 +65,10 @@ final class VerbSchemas {
         tools.put("expect", ExpectVerb.class);
         tools.put("scroll", ScrollVerb.class);
         tools.put("set_clipboard", SetClipboardVerb.class);
+        tools.put("hover", HoverVerb.class);
+        tools.put("resize_column", ResizeColumnVerb.class);
+        tools.put("resize_window", ResizeWindowVerb.class);
+        tools.put("close_window", CloseWindowVerb.class);
         TOOLS = Collections.unmodifiableMap(tools);
     }
 

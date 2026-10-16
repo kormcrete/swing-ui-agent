@@ -282,4 +282,23 @@ class SnapshotTest {
         }
         return count;
     }
+
+    @Test
+    void anErrorLabelUnderACaptionedFieldIsANode() {
+        JPanel address = new JPanel(null);
+        JLabel caption = new JLabel("Postal code:");
+        caption.setBounds(0, 0, 80, 20);
+        JTextField postal = new JTextField();
+        postal.setBounds(90, 0, 120, 20);
+        caption.setLabelFor(postal);
+        JLabel error = new JLabel("Postal code is required");
+        error.setBounds(90, 20, 160, 20);
+        address.add(caption); address.add(postal); address.add(error);
+        windows.roots.clear();
+        windows.roots.add(new WindowRoot(address, "dialog", "Address", true, null, true));
+
+        Node app = build();
+        assertThat(app.find("text", "Postal code")).isNotNull();
+        assertThat(app.find("label", "Postal code is required")).isNotNull();
+    }
 }
