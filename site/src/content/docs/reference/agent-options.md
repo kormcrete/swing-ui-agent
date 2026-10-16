@@ -32,7 +32,7 @@ Set them with `-D` on the JVM named in the second column.
 | `swingui.testsDir` | the app | Where `export_test` writes tests. Default: a plugin's module `src/test/java` when it exists, else `src/test/java` under the app's working directory. |
 | `swingui.screenshotDir` | the app | Where a relative path in a recorded `screenshot` step goes when the agent runs it. Default: `target/ui-screenshots` under the plugin's module, else under the working directory. |
 | `swingui.recordedDir` | the app and the tests | The recorded tests folder when `recorded=` is not given. For tests it is the folder `RecordedTests` reads. Default: `uitest` in the working directory (for tests, in the test module). |
-| `recorded` | the tests | Run just this recorded test (a name in the recorded tests folder) instead of all of them. |
+| `recorded` | the tests | Run just this recorded test (a name in the recorded tests folder) instead of all of them. Without it, the folder's `gate.txt` (one name per line, `#` comments) chooses which run and in what order, else all run sorted by name. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci). |
 | `swingui.timingLog` | the app | A file the agent appends one timing line to per tool call. Default: `.swing-ui-agent/timing.log`, only when the working directory has a `.swing-ui-agent/` folder. `off` turns it off. |
 | `swingui.users` | the app and the tests | The login aliases and secrets file. Default: `.swing-ui-agent/ui-users.properties` in the working directory or the nearest folder above it that has one. |
 | `swingui.port` | the tests | The agent port a test connects to. Default `8765`. |

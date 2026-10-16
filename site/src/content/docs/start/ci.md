@@ -90,6 +90,10 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
 
 The `ui-screenshots` artifact of a green run holds the ten 2x screenshots of `PlaceOrderUiIT`; they are shown in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
 
+## Recorded tests in CI
+
+The `RecordedUiIT` class from [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci) is named `*UiIT`, so the failsafe run above picks it up with the Java tests. Nothing else changes. Keep `palette=off` in the script, as shown: nobody is at the screen to use the palette. Keep `target/failsafe-reports/` (the job above already does): a failing recorded test leaves its report and a picture of the failing step in `recorded-test-failures/` there.
+
 ## On each runner
 
 - **Linux:** start a virtual display (Xvfb) when there is none, as above. Fonts differ from macOS and Windows, so labels can be wider; look at the screenshots of the first run.

@@ -117,6 +117,8 @@ Add `io.github.kormcrete:swing-ui-agent:0.1.0-SNAPSHOT` as a test dependency and
   that teach your coding agent the drive, target and record workflow.
 - [Record a test by showing it](https://kormcrete.github.io/swing-ui-agent/start/show/): the palette
   (on by default; `palette=off` turns it off) for a person at the app.
+- [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/): where they live,
+  the palette, the agent, Maven and CI.
 - [Plugins](https://kormcrete.github.io/swing-ui-agent/plugins/what-a-plugin-adds/) (optional): reset to a known
   state, log in, navigate and call your own hooks.
 - [Agent options](https://kormcrete.github.io/swing-ui-agent/reference/agent-options/) and the
