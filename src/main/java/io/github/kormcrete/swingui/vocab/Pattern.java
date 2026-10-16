@@ -37,7 +37,8 @@ import java.util.Map;
  * captures fails in one pass. A match makes at most {@link #FIT_BUDGET} choices and does at most {@link #WORK_LIMIT}
  * work, and then throws {@link TooAmbiguous} instead of answering. Before each pattern step it asks whether the rest of
  * the pattern can still match the rest of the run at all, each pattern step on its own with its captures free
- * (remembered per match, on a smaller budget of its own that answers yes when it runs out): a run that fails on a
+ * (remembered per match; each such look on a tenth of the budgets, all of them together on one more
+ * {@link #WORK_LIMIT}, and a look that runs out, or any look once that is spent, answers yes): a run that fails on a
  * later step's literal fails at once, without trying every fit of the steps before. Beyond that there is no memo:
  * when only the same param in two places disagrees, fits are tried until the budget ends. Each fit that holds
  * nests the rest of the match in the call stack, so the depth grows with steps × fields × text parts: match a window
@@ -156,8 +157,9 @@ public final class Pattern {
     /**
      * The most work one {@link #match} does, counted in small steps: a text part placed, a character compared while
      * looking for a literal or a bound capture, a digit read for an INT capture, a capture bound. It bounds the time a
-     * match takes when long texts and long bound values make each choice costly (a fraction of a second; each look at
-     * whether a pattern step can match a step alone has a tenth of it of its own).
+     * match takes when long texts and long bound values make each choice costly (a fraction of a second). The looks at
+     * whether a pattern step can match a step alone share one more such amount, at most a tenth of it each, so a match
+     * does at most twice this work however many pattern steps and steps it has.
      */
     public static final int WORK_LIMIT = 20000000;
 
@@ -193,16 +195,23 @@ public final class Pattern {
         private final Boolean[][] alone;
         /** [pattern step][step]: whether pattern steps from the first on can match steps from the second on. */
         private final Boolean[][] finish;
+        /** The work all {@link #alone} probes of one match have left together; the match and its probes share it. */
+        private final int[] probeWork;
+        /** This search is one {@link #alone} probe: its work also comes out of {@link #probeWork}. */
+        private final boolean probe;
 
         Search(Pattern pattern, List<? extends JsonNode> steps) {
-            this(pattern, steps, FIT_BUDGET, WORK_LIMIT);
+            this(pattern, steps, FIT_BUDGET, WORK_LIMIT, new int[] {WORK_LIMIT}, false);
         }
 
-        private Search(Pattern pattern, List<? extends JsonNode> steps, int fits, int work) {
+        private Search(Pattern pattern, List<? extends JsonNode> steps, int fits, int work, int[] probeWork,
+                       boolean probe) {
             this.pattern = pattern;
             this.steps = steps;
             this.left = fits;
             this.work = work;
+            this.probeWork = probeWork;
+            this.probe = probe;
             this.alone = new Boolean[pattern.flat.size()][steps.size()];
             this.finish = new Boolean[pattern.flat.size() + 1][steps.size() + 1];
         }
@@ -217,7 +226,8 @@ public final class Pattern {
 
         void work(int amount) {
             work -= amount;
-            if (work < 0) throw new TooAmbiguous(pattern.stepId);
+            if (probe) probeWork[0] -= amount;
+            if (work < 0 || probe && probeWork[0] < 0) throw new TooAmbiguous(pattern.stepId);
         }
 
         /** Whether {@code one} can match the step at {@code at} and the pattern steps after it the steps after that. */
@@ -240,23 +250,28 @@ public final class Pattern {
             return can;
         }
 
-        /** A search for one {@link #alone} question: a tenth of the budgets. */
+        /** A search for one {@link #alone} question: a tenth of the budgets, its work shared with the other probes. */
         private Search probe() {
-            return new Search(pattern, steps, FIT_BUDGET / 10, WORK_LIMIT / 10);
+            return new Search(pattern, steps, FIT_BUDGET / 10, WORK_LIMIT / 10, probeWork, true);
         }
 
         /**
          * Whether pattern step {@code i} alone, captures free, can match the step at {@code at}. On a budget of its
-         * own; when that runs out the answer is yes (looser, so still never a wrong no).
+         * own, and out of the work all probes of the match share; when either runs out the answer is yes (looser, so
+         * still never a wrong no), at once once the shared work is spent.
          */
         private boolean alone(int i, int at) {
             Boolean known = alone[i][at];
             if (known == null) {
                 Map<String, CharSequence> free = Collections.emptyMap();
-                try {
-                    known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, probe()) != null;
-                } catch (TooAmbiguous e) {
+                if (probeWork[0] <= 0) {
                     known = true;
+                } else {
+                    try {
+                        known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, probe()) != null;
+                    } catch (TooAmbiguous e) {
+                        known = true;
+                    }
                 }
                 alone[i][at] = known;
             }

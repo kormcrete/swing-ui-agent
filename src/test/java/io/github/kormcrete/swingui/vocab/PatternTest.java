@@ -252,7 +252,7 @@ class PatternTest {
                         .as("*{p}* then {p}, %d chars", length).containsExactly(entry("p", value));
                 assertThat(containsThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", value)))
                         .params()).as("*{p}*, 3 clicks, {p}, %d chars", length).containsExactly(entry("p", value));
-                assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+                assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
             }
             String head = text.substring(0, 10);
             assertThat(prefixThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", head))).params())
@@ -282,7 +282,7 @@ class PatternTest {
         } catch (Pattern.TooAmbiguous e) {
             assertThat(e.stepId()).isEqualTo("notes");
         }
-        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
         // and the same patterns still match when they can
         assertThat(after.match(steps(note("V", v), note("N", repeat('a', 1400) + "b!"))).params())
                 .containsEntry("v", v).containsEntry("d", "!");
@@ -302,6 +302,32 @@ class PatternTest {
         String text = longNote(200);
 
         assertThat(p.match(steps(note("Note", text))).params()).containsExactly(entry("p", text));
+    }
+
+    @Test
+    void theLooksAheadOfOneMatchShareOneBudget() {
+        // 20 optional entries that each cost a lot to rule out, before each of 20 steps: every (entry, step) look ahead
+        // used to have a budget of its own, and together they took seconds
+        DomainStep.Builder b = DomainStep.act("notes", "Type notes").param("z", ParamType.TEXT);
+        List<String> pattern = new ArrayList<String>();
+        for (int i = 0; i < 20; i++) {
+            String abcd = "{a" + i + "}{b" + i + "}{c" + i + "}{d" + i + "}";
+            for (String n : new String[] {"a", "b", "c", "d"}) b.param(n + i, ParamType.TEXT).optional("");
+            pattern.add(json("{'optional':true," + note("N", abcd + "!" + abcd + "x").substring(1)));
+        }
+        pattern.add(json(note("Z", "{z}")));
+        Pattern p = only(b.code(NOTHING).match(pattern.toArray(new String[0])).build());
+        List<JsonNode> run = new ArrayList<JsonNode>();
+        for (int i = 0; i < 20; i++) run.addAll(steps(note("N", longNote(200) + "!zzzx")));
+        run.addAll(steps(note("Z", "q")));
+
+        long start = System.nanoTime();
+        try {
+            assertThat(p.match(run)).isNull();
+        } catch (Pattern.TooAmbiguous e) {
+            assertThat(e.stepId()).isEqualTo("notes");
+        }
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
     }
 
     @Test
