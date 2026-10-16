@@ -47,6 +47,38 @@ class OverlayTest {
     }
 
     @Test
+    void thePalettesDefaultSpotIsTheBottomMiddle() throws Exception {
+        assertThat(Overlay.paletteSpot(200, 30, 800, 600, NONE)).isEqualTo(new Rectangle(296, 562, 200, 30));
+        // a button there: the rest in the order the agent's question uses, bottom right first
+        List<Rectangle> place = Collections.singletonList(new Rectangle(300, 560, 120, 30));
+        assertThat(Overlay.paletteSpot(200, 30, 800, 600, place)).isEqualTo(new Rectangle(592, 562, 200, 30));
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = rootWith(new JPanel(null));
+            Overlay o = new Overlay(root);
+            Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
+            o.bar(bar);
+            Rectangle at = bar.getBounds();
+            assertThat(at.y + at.height).isEqualTo(600 - 8);
+            assertThat(at.x).isEqualTo((800 - at.width - 8) / 2);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void theAgentsQuestionStillStartsBottomRight() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = rootWith(new JPanel(null));
+            Overlay o = new Overlay(root);
+            Bar ask = new Bar("Agent", "This one?").button("No", Overlay.NO, () -> { });
+            o.ask(ask);
+            Dimension size = ask.getPreferredSize();
+            assertThat(ask.getBounds()).isEqualTo(Overlay.placeBar(size.width, size.height, 800, 600, null, NONE));
+            assertThat(ask.getX() + ask.getWidth()).isEqualTo(800 - 8);
+            o.dispose();
+        });
+    }
+
+    @Test
     void aBoxInThatCornerSendsItToTheNextFreeOne() {
         List<Rectangle> box = Collections.singletonList(new Rectangle(500, 540, 280, 50));
         assertThat(Overlay.placeBar(200, 30, 800, 600, null, box)).isEqualTo(new Rectangle(8, 562, 200, 30));
@@ -251,7 +283,7 @@ class OverlayTest {
             Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
             o.bar(bar);
             Dimension size = bar.getPreferredSize();
-            assertThat(bar.getBounds()).isEqualTo(Overlay.placeBar(size.width, size.height, 800, 600, null, NONE));
+            assertThat(bar.getBounds()).isEqualTo(Overlay.paletteSpot(size.width, size.height, 800, 600, NONE));
             o.dispose();
         });
     }
@@ -408,11 +440,12 @@ class OverlayTest {
             // a tick of the follow timer: nothing it draws changed
             assertThat(repaintedDuring(o::relayout)).isEmpty();
 
-            // the window grows: the bar follows it to the new corner
+            // the window grows: the bar follows it, still at the bottom middle
             root.setSize(900, 700);
             root.doLayout();
             o.relayout();
-            assertThat(bar.getLocation()).isEqualTo(new Point(at.x + 100, at.y + 100));
+            assertThat(bar.getY()).isEqualTo(at.y + 100);
+            assertThat(bar.getX()).isBetween((900 - at.width - 8) / 2 - 1, (900 - at.width - 8) / 2 + 1);
 
             // a box is drawn by the overlay itself: adding it repaints, the next tick does not
             JButton save = new JButton("Save");

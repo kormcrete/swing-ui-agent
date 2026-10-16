@@ -75,6 +75,8 @@ final class Recording {
     ExportPanel exportPanel;
     State state = State.RECORDING;
     boolean replaying;
+    /** This replay counts as one of the agent's runs ({@link Inspector#agentRun}) until it ends. EDT. */
+    private boolean running;
     /** The agent's bar while the agent replays, else null. */
     private Bar agentReplay;
     /** Why a test run waits while this recording runs: whoever started it. */
@@ -733,6 +735,9 @@ final class Recording {
         // no sentence is typed while the steps run: one being typed is saved, on the sink thread ahead of the replay
         if (panel != null) panel.commitNaming();
         replaying = true;
+        // one run: a bar that steps aside for one of its steps stays aside until it ends
+        running = true;
+        Inspector.agentRun(true);
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
         final long delay = speed == 0 ? 0 : speed == 1 ? 700 : 1500;
@@ -907,6 +912,10 @@ final class Recording {
             for (Overlay o : inspector.overlays()) o.clearMarks();
             home.controlsAway(false);
             replaying = false;
+            if (running) {
+                running = false;
+                Inspector.agentRun(false);
+            }
             inspector.driving(null);
             if (!passed && after != null && active()) {
                 stop(true, text + " - recording stopped");

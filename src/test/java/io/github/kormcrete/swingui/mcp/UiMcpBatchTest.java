@@ -55,6 +55,23 @@ class UiMcpBatchTest {
     }
 
     @Test
+    void aBatchAndDoActionsAreOneRunForThePaletteASingleStepIsNot() throws Exception {
+        // a run: the palette that stepped aside for one of its steps stays aside until the run ends
+        java.util.List<Boolean> running = new java.util.ArrayList<Boolean>();
+        backend.verbs.during = () -> running.add(io.github.kormcrete.swingui.driver.inspect.Inspector.agentIsRunning());
+        batch(CLICK, PRESS);
+        session.doActions(mapper.readTree("[{\"action\":\"click\",\"target\":{\"ref\":\"e3\"}},"
+                + "{\"action\":\"press\",\"keys\":\"Escape\"}]"));
+        assertThat(running).containsExactly(true, true, true, true);
+        assertThat(io.github.kormcrete.swingui.driver.inspect.Inspector.agentIsRunning()).isFalse();
+
+        // one step (a verb tool, do_action): it returns at the step's end
+        running.clear();
+        session.verb("click", mapper.readTree("{\"target\":{\"ref\":\"e3\"}}"));
+        assertThat(running).containsExactly(false);
+    }
+
+    @Test
     void theStepsRunInOrderAndEachReportsItsResult() throws Exception {
         JsonNode r = batch(CLICK, TYPE, PRESS);
         assertThat(r.path("passed").asBoolean()).isTrue();

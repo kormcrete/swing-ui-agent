@@ -441,6 +441,33 @@ public final class Inspector {
         if (agentActing.decrementAndGet() == 0 && i != null) SwingUtilities.invokeLater(i::agentDone);
     }
 
+    /** How many runs of several agent steps are going on now (a batch, a replay, a recorded test's run). */
+    private static final java.util.concurrent.atomic.AtomicInteger agentRuns = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * A run of several agent steps starts ({@code true}) or ends: a batch, {@code do_actions}, a palette replay. A
+     * palette bar that steps aside for one of its steps stays aside until the run ends, then goes back to its spot.
+     */
+    public static void agentRun(boolean on) {
+        if (on) {
+            agentRuns.incrementAndGet();
+            return;
+        }
+        Inspector i = instance;
+        if (agentRuns.decrementAndGet() == 0 && i != null) SwingUtilities.invokeLater(i::runDone);
+    }
+
+    /** Whether a run of several agent steps is going on ({@link #agentRun}). */
+    public static boolean agentIsRunning() {
+        return agentRuns.get() > 0;
+    }
+
+    /** The last run ended: a bar that stepped aside during it goes back to its spot. EDT. */
+    void runDone() {
+        if (agentIsRunning()) return;
+        for (Overlay o : overlays.values()) o.endYield(false);
+    }
+
     /** Whether one of the agent's own steps is running. */
     static boolean agentIsActing() {
         return agentActing.get() > 0;
@@ -481,9 +508,13 @@ public final class Inspector {
         return o.makeRoom(area);
     }
 
-    /** The agent's last step ended: a palette that left a window for it comes back. EDT. */
+    /**
+     * The agent's last step ended: a palette that left a window for it comes back; a bar that stepped aside for it goes
+     * back to its spot, unless the step was one of a run ({@link #agentRun}). EDT.
+     */
     void agentDone() {
-        for (Overlay o : overlays.values()) o.endYield();
+        boolean inRun = agentIsRunning();
+        for (Overlay o : overlays.values()) o.endYield(inRun);
         attachPalette();
     }
 
@@ -689,7 +720,7 @@ public final class Inspector {
         if (from == null) return;
         from.bar(null);
         from.panel(null);
-        from.endYield();
+        from.endYield(false);
         if (from.empty()) {
             from.dispose();
             if (overlays.get(from.root) == from) overlays.remove(from.root);

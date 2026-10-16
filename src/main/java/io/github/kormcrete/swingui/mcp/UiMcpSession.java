@@ -1324,6 +1324,16 @@ public class UiMcpSession {
      * A harness error ends it as a tool error naming the step.
      */
     public synchronized String doActions(JsonNode actionsJson) throws Exception {
+        // one run: the palette that steps aside for one of its steps stays aside until the last one ends
+        Inspector.agentRun(true);
+        try {
+            return runActions(actionsJson);
+        } finally {
+            Inspector.agentRun(false);
+        }
+    }
+
+    private String runActions(JsonNode actionsJson) throws Exception {
         if (actionsJson == null || !actionsJson.isArray()) {
             throw new IllegalArgumentException("'actions' must be an array of step types");
         }
@@ -1394,6 +1404,16 @@ public class UiMcpSession {
      * or the snapshot tool's arguments) adds one after the last step that ran, pass or fail.
      */
     public synchronized String batch(JsonNode args) {
+        // one run, as do_actions
+        Inspector.agentRun(true);
+        try {
+            return runBatch(args);
+        } finally {
+            Inspector.agentRun(false);
+        }
+    }
+
+    private String runBatch(JsonNode args) {
         JsonNode steps = args == null ? null : args.get("steps");
         if (steps == null || !steps.isArray() || steps.size() == 0) {
             throw new DriverException(Reason.BAD_INPUT, "'steps' must be a non-empty array of {\"verb\": ..., ...} objects");

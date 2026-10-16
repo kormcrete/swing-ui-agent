@@ -259,13 +259,14 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * The agent's step ended: a bar that stepped aside for it goes back to its spot (where the person dragged it, else
-     * its default one), a palette that left the window for it comes back, and the agent's next step avoids only what
-     * that step acts on.
+     * The agent's step ended: a palette that left the window for it comes back. When the step was not one of a run
+     * ({@code runGoesOn} false), a bar that stepped aside for it also goes back to its spot (where the person dragged it,
+     * else its default one) and the agent's next step avoids only what that step acts on; in a run (a batch, a replay, a
+     * recorded test's run) it stays aside until the run ends, so it does not jump back and forth between the steps.
      */
-    void endYield() {
-        boolean back = !avoid.isEmpty() || yielding;
-        avoid.clear();
+    void endYield(boolean runGoesOn) {
+        boolean back = yielding || !runGoesOn && !avoid.isEmpty();
+        if (!runGoesOn) avoid.clear();
         if (!back) return;
         yielding = false;
         sync();
@@ -518,7 +519,7 @@ final class Overlay extends JComponent {
         if (spot != null) {
             home = at(spot, size.width, size.height, areaW, areaH);
         } else {
-            home = placeBar(size.width, size.height, areaW, areaH, null, NONE, null, small, null);
+            home = paletteSpot(size.width, size.height, areaW, areaH, small);
             // a window not laid out to a size yet has nothing to pick from: it picks once it has one
             if (areaW > 0 && areaH > 0) {
                 spot = share(home, areaW, areaH);
@@ -532,7 +533,16 @@ final class Overlay extends JComponent {
             bar.setBounds(mine);
             return;
         }
-        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, null, taken, avoid.isEmpty() ? null : panel, small, null));
+        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, null, taken, avoid.isEmpty() ? null : panel, small, null,
+                true));
+    }
+
+    /**
+     * The palette's default spot in a {@code areaW} x {@code areaH} window: the bottom middle, else the best of the other
+     * spots in {@link #placeBar}'s order, covering none of the window's {@code small} components where it can.
+     */
+    static Rectangle paletteSpot(int prefW, int h, int areaW, int areaH, List<Rectangle> small) {
+        return placeBar(prefW, h, areaW, areaH, null, NONE, null, small, null, true);
     }
 
     /** The bar's width in a {@code areaW} wide window. */
@@ -584,6 +594,12 @@ final class Overlay extends JComponent {
      */
     static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken, Dimension panel,
                               List<Rectangle> small, Point preferred) {
+        return placeBar(prefW, h, areaW, areaH, moved, taken, panel, small, preferred, false);
+    }
+
+    /** {@link #placeBar(int, int, int, int, Point, List, Dimension, List, Point)}; {@code palette}: bottom middle first ({@link #spots}). */
+    private static Rectangle placeBar(int prefW, int h, int areaW, int areaH, Point moved, List<Rectangle> taken,
+                                      Dimension panel, List<Rectangle> small, Point preferred, boolean palette) {
         int w = width(prefW, areaW);
         int maxX = Math.max(0, areaW - w - 8);
         int maxY = Math.max(0, areaH - h - 8);
@@ -594,7 +610,7 @@ final class Overlay extends JComponent {
         }
         Rectangle best = null;
         long[] bestScore = null;
-        for (Point p : spots(maxX, maxY)) {
+        for (Point p : spots(maxX, maxY, palette)) {
             Rectangle at = new Rectangle(p.x, p.y, w, h);
             Rectangle beside = panel == null ? null : panelBeside(at, panel, areaW, areaH);
             long[] score = {free(at, panel, areaW, areaH, taken) ? 0 : 1, covered(at, small), coveredArea(at, small),
@@ -610,10 +626,13 @@ final class Overlay extends JComponent {
 
     /**
      * The spots the bar may take in a window where it can go as far as {@code maxX}, {@code maxY}: the corners and the
-     * edge middles (bottom right first), then every {@link #STEP} along the bottom, top, right and left edges.
+     * edge middles (bottom right first), then every {@link #STEP} along the bottom, top, right and left edges. The
+     * person's palette ({@code palette}) tries the bottom middle before all of them; the agent's question does not.
      */
-    private static List<Point> spots(int maxX, int maxY) {
+    private static List<Point> spots(int maxX, int maxY, boolean palette) {
         List<Point> out = new ArrayList<Point>();
+        // in a window hardly wider than the bar, as far left as the other spots go
+        if (palette) out.add(new Point(Math.max(Math.min(8, maxX), maxX / 2), maxY));
         int[][] corners = {{maxX, maxY}, {8, maxY}, {maxX, 8}, {8, 8}, {maxX / 2, maxY}, {maxX / 2, 8}};
         for (int[] c : corners) out.add(new Point(c[0], c[1]));
         for (int y : new int[] {maxY, 8}) for (int x = maxX; x >= 8; x -= STEP) out.add(new Point(x, y));

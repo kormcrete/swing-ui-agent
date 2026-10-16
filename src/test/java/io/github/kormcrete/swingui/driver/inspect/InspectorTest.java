@@ -486,6 +486,43 @@ class InspectorTest {
     }
 
     @Test
+    void inARunTheBarStaysAsideUntilTheRunEnds() throws Exception {
+        Bar[] bar = new Bar[1];
+        Rectangle[] home = new Rectangle[1];
+        onEdt(() -> {
+            bar[0] = paletteInFrame();
+            home[0] = bar[0].getBounds();
+            Container content = frame.getContentPane();
+            content.setLayout(null);
+            archive.setBounds(SwingUtilities.convertRectangle(frame.getLayeredPane(), home[0], content));
+            content.add(archive);
+        });
+        // a batch, a palette replay, a recorded test's run: several of the agent's steps
+        Inspector.agentRun(true);
+        try {
+            onEdt(() -> {
+                assertThat(scene.inspector.stepOff(bar[0], archive, inside(archive))).isTrue();
+                Rectangle aside = bar[0].getBounds();
+                assertThat(aside.intersects(inLayers(archive))).isFalse();
+
+                // one step of the run ended: the bar stays aside, the next step finds it there
+                scene.inspector.agentDone();
+                assertThat(bar[0].getBounds()).isEqualTo(aside);
+                scene.inspector.overlay(frame.getRootPane()).relayout();
+                assertThat(bar[0].getBounds()).isEqualTo(aside);
+            });
+        } finally {
+            Inspector.agentRun(false);
+        }
+        // the run ended (this JVM's inspector hears of it on the EDT; this one is not it): back on its spot
+        assertThat(Inspector.agentIsRunning()).isFalse();
+        onEdt(() -> {
+            scene.inspector.runDone();
+            assertThat(bar[0].getBounds()).isEqualTo(home[0]);
+        });
+    }
+
+    @Test
     void afterHighlightBoxesUnderItAreClearedItIsBack() throws Exception {
         onEdt(() -> {
             // on screen: a box shows only on a showing component
@@ -516,9 +553,10 @@ class InspectorTest {
             JPanel from = new JPanel();
             JPanel to = new JPanel();
             JPanel next = new JPanel();
+            // the bar's spot (bottom middle), then the first two it steps aside to: bottom right, bottom left
             from.setBounds(home);
-            to.setBounds(8, home.y, home.width, home.height);
-            next.setBounds(home.x, 8, home.width, home.height);
+            to.setBounds(800 - 8 - home.width, home.y, home.width, home.height);
+            next.setBounds(8, home.y, home.width, home.height);
             root.getContentPane().add(from);
             root.getContentPane().add(to);
             root.getContentPane().add(next);
@@ -608,8 +646,8 @@ class InspectorTest {
             Container content = dialog.getContentPane();
             content.setLayout(null);
             Dimension size = bar.getPreferredSize();
-            // where the bar would go by default: the bottom right corner
-            Rectangle corner = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+            // where the bar would go by default: the bottom middle
+            Rectangle corner = Overlay.paletteSpot(size.width, size.height, layers.getWidth(), layers.getHeight(),
                     Collections.<Rectangle>emptyList());
             JButton next = new JButton("Next");
             next.setBounds(SwingUtilities.convertRectangle(layers, corner, content));
@@ -661,7 +699,7 @@ class InspectorTest {
 
             JLayeredPane layers = dialog.getLayeredPane();
             Dimension size = recording.getPreferredSize();
-            Rectangle byDefault = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+            Rectangle byDefault = Overlay.paletteSpot(size.width, size.height, layers.getWidth(), layers.getHeight(),
                     Collections.<Rectangle>emptyList());
             assertThat(recording.getParent()).isSameAs(layers);
             assertThat(recording.getLocation()).isEqualTo(byDefault.getLocation());
@@ -784,8 +822,8 @@ class InspectorTest {
 
             JLayeredPane layers = frame.getLayeredPane();
             Dimension size = bar.getPreferredSize();
-            assertThat(bar.getBounds()).isEqualTo(Overlay.placeBar(size.width, size.height, layers.getWidth(),
-                    layers.getHeight(), null, Collections.<Rectangle>emptyList()));
+            assertThat(bar.getBounds()).isEqualTo(Overlay.paletteSpot(size.width, size.height, layers.getWidth(),
+                    layers.getHeight(), Collections.<Rectangle>emptyList()));
         });
     }
 
@@ -820,8 +858,8 @@ class InspectorTest {
             Point inFrame = bar.getLocation();
             JLayeredPane dialogLayers = dialog.getLayeredPane();
             Dimension size = bar.getPreferredSize();
-            Point inDialog = Overlay.placeBar(size.width, size.height, dialogLayers.getWidth(), dialogLayers.getHeight(),
-                    null, Collections.<Rectangle>emptyList()).getLocation();
+            Point inDialog = Overlay.paletteSpot(size.width, size.height, dialogLayers.getWidth(), dialogLayers.getHeight(),
+                    Collections.<Rectangle>emptyList()).getLocation();
 
             showIn(dialog);
             assertThat(bar.getLocation()).isEqualTo(inDialog);

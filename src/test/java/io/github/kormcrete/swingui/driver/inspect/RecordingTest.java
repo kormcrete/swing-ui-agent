@@ -354,13 +354,13 @@ class RecordingTest {
         });
     }
 
-    /** A "Next" button where the bar goes by default in the dialog: its bottom right corner. EDT. */
+    /** A "Next" button where the bar goes by default in the dialog: its bottom middle. EDT. */
     private Rectangle nextInDialog(Bar bar) {
         JLayeredPane layers = dialog.getLayeredPane();
         Container content = dialog.getContentPane();
         content.setLayout(null);
         Dimension size = bar.getPreferredSize();
-        Rectangle corner = Overlay.placeBar(size.width, size.height, layers.getWidth(), layers.getHeight(), null,
+        Rectangle corner = Overlay.paletteSpot(size.width, size.height, layers.getWidth(), layers.getHeight(),
                 Collections.<Rectangle>emptyList());
         JButton next = new JButton("Next");
         next.setBounds(SwingUtilities.convertRectangle(layers, corner, content));
@@ -850,6 +850,28 @@ class RecordingTest {
         eventually(() -> !recording.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
         assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
         SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("replayed steps 1-2: all passed"));
+    }
+
+    @Test
+    void aReplayIsOneRunSoTheBarStaysAsideUntilItEnds() throws Exception {
+        sink.person("click(#a)", "click(#b)");
+        withSteps();
+        List<Boolean> running = new java.util.concurrent.CopyOnWriteArrayList<Boolean>();
+        sink.onReplay = () -> running.add(Inspector.agentIsRunning());
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying && sink.log.size() == 3 ? Boolean.TRUE : null);
+        assertThat(running).containsExactly(true, true);
+        assertThat(Inspector.agentIsRunning()).isFalse();
+
+        // a replay that breaks ends the run too
+        sink.replayThrows = new IllegalStateException("the session went away");
+        sink.log.clear();
+        SwingUtilities.invokeAndWait(() -> recording.panel.press("▶ Replay all"));
+        eventually(() -> !recording.replaying && sink.log.contains("replay 0") ? Boolean.TRUE : null);
+        assertThat(Inspector.agentIsRunning()).isFalse();
     }
 
     @Test
