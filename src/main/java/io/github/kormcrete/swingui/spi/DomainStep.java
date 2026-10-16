@@ -40,7 +40,7 @@ public final class DomainStep {
      * A failure throws (a failed action or check of {@code ui} already does). A value the step makes, such as a new
      * order number, belongs in a helper method that returns it (for Java tests, named by {@link Builder#java}); the
      * body itself returns nothing. A {@code do} step runs it on the agent's request thread, not on the EDT (as a UI
-     * test's Client runs off the EDT); so are {@link Builder#choices} suppliers asked.
+     * test's Client runs off the EDT). A {@link Builder#choices} supplier is asked on a thread of its own, given up after 5 s.
      *
      * <p>A body also runs when nobody asked for the step: when the plugin becomes ready, a body without
      * {@link Builder#match} runs twice to learn its pattern, and a recording's Java export may run it twice for the

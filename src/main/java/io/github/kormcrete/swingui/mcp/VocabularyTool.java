@@ -1,6 +1,5 @@
 package io.github.kormcrete.swingui.mcp;
 
-import io.github.kormcrete.swingui.agent.BodyTrace;
 import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
@@ -27,21 +26,28 @@ import java.util.concurrent.TimeoutException;
  * called, say, take and fold from. Read-only. {@code list} gives every step with a one-line {@code folds} summary of its
  * patterns; {@code describe} one step in full, its params with the values that fit right now ({@link DomainStep.Param#choices},
  * asked on a thread of its own and given up after {@link #CHOICES_LIMIT_MS}); {@code match} (a dry run of a recording range)
- * waits for the recording's folding matcher.
+ * waits for the recording's folding matcher. No op runs a step's body: a body's steps are shown from the trace made when
+ * the plugin became ready. A choices supplier that ignores the interrupt after the limit keeps its daemon thread.
  */
 final class VocabularyTool {
 
-    /** How long a params's live choices may take. */
+    /** How long all the live choices of one describe may take together. */
     static final long CHOICES_LIMIT_MS = 5000;
     /** The most choices one param shows; {@code choicesTotal} says how many there were when cut. */
     static final int MAX_CHOICES = 200;
 
     private final Plugins plugins;
     private final ObjectMapper mapper;
+    private final long choicesLimitMs;
 
     VocabularyTool(Plugins plugins, ObjectMapper mapper) {
+        this(plugins, mapper, CHOICES_LIMIT_MS);
+    }
+
+    VocabularyTool(Plugins plugins, ObjectMapper mapper, long choicesLimitMs) {
         this.plugins = plugins;
         this.mapper = mapper;
+        this.choicesLimitMs = choicesLimitMs;
     }
 
     /** The sentences, for {@code describe_ui}: one {@code {id, kind, sentence}} per step; empty without a vocabulary. */
@@ -77,7 +83,7 @@ final class VocabularyTool {
         for (Plugins.VocabularyStep v : all) {
             ObjectNode o = steps.addObject();
             head(o, v);
-            o.set("params", params(v.step, false));
+            o.set("params", params(v.step, false, 0));
             o.put("folds", folds(plugins.patternsOf(v)));
         }
         if (all.isEmpty()) r.put("hint", emptyHint());
@@ -92,7 +98,7 @@ final class VocabularyTool {
         List<String> names = new ArrayList<String>();
         for (Plugins.VocabularyStep v : all) {
             names.add(v.name);
-            if (v.name.equals(id) || (v.plugin + ":" + v.step.id()).equals(id)) found.add(v);
+            if (v.name.equals(id) || v.step.id().equals(id) || (v.plugin + ":" + v.step.id()).equals(id)) found.add(v);
         }
         if (found.size() != 1) {
             throw new DriverException(Reason.BAD_INPUT, found.isEmpty()
@@ -104,7 +110,7 @@ final class VocabularyTool {
         PatternCompiler.Compiled compiled = plugins.patternsOf(v);
         ObjectNode r = mapper.createObjectNode();
         head(r, v);
-        r.set("params", params(step, true));
+        r.set("params", params(step, true, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(choicesLimitMs)));
         ArrayNode patterns = r.putArray("patterns");
         if (compiled != null) {
             for (Pattern p : compiled.patterns()) {
@@ -135,7 +141,7 @@ final class VocabularyTool {
         return step.kind() == DomainStep.Kind.CHECK ? "check" : "act";
     }
 
-    private ArrayNode params(DomainStep step, boolean withChoices) {
+    private ArrayNode params(DomainStep step, boolean withChoices, long deadline) {
         ArrayNode out = mapper.createArrayNode();
         for (DomainStep.Param p : step.params()) {
             ObjectNode o = out.addObject();
@@ -143,24 +149,25 @@ final class VocabularyTool {
             o.put("type", p.type().name());
             o.put("optional", p.optional());
             if (p.optional()) o.put("default", p.defaultValue());
-            if (withChoices && p.choices() != null) choices(o, p);
+            if (withChoices && p.choices() != null) choices(o, p, deadline);
         }
         return out;
     }
 
     /** The values that fit now: asked on a thread of its own so a supplier that blocks or throws cannot hold the session. */
-    private void choices(ObjectNode into, DomainStep.Param p) {
+    private void choices(ObjectNode into, DomainStep.Param p, long deadline) {
         final java.util.function.Supplier<List<String>> supplier = p.choices();
         List<String> values;
         try {
             values = bounded(new Callable<List<String>>() {
                 @Override public List<String> call() { return supplier.get(); }
-            });
+            }, Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
         } catch (TimeoutException e) {
-            into.put("choicesProblem", "the choices were not ready within " + CHOICES_LIMIT_MS / 1000 + " s");
+            into.put("choicesProblem", "the choices were not ready within " + choicesLimitMs + " ms");
             return;
         } catch (ExecutionException e) {
-            into.put("choicesProblem", "the choices failed: " + e.getCause());
+            Throwable c = e.getCause();
+            into.put("choicesProblem", "the choices failed: " + (c.getMessage() != null ? c.getMessage() : c.getClass().getName()));
             return;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -177,14 +184,14 @@ final class VocabularyTool {
         if (values.size() > MAX_CHOICES) into.put("choicesTotal", values.size());
     }
 
-    private static <T> T bounded(Callable<T> call) throws TimeoutException, ExecutionException, InterruptedException {
+    private static <T> T bounded(Callable<T> call, long limitMs) throws TimeoutException, ExecutionException, InterruptedException {
         FutureTask<T> task = new FutureTask<T>(call);
         Thread t = new Thread(task, "swing-ui-agent vocabulary choices");
         t.setDaemon(true);
         t.setContextClassLoader(Thread.currentThread().getContextClassLoader());
         t.start();
         try {
-            return task.get(CHOICES_LIMIT_MS, TimeUnit.MILLISECONDS);
+            return task.get(limitMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException | InterruptedException e) {
             t.interrupt();
             throw e;
@@ -212,12 +219,9 @@ final class VocabularyTool {
             for (ObjectNode s : own.get(0).source()) steps.add(s);
             return o;
         }
-        BodyTrace.Result trace = BodyTrace.of(step, BodyTrace.TIME_LIMIT);
-        if (trace.derivable()) {
-            for (ObjectNode s : trace.steps()) steps.add(s);
-        } else {
-            o.put("why", trace.why());
-        }
+        // never run the body here: it may have side effects; show the trace made at ready, or why there is none
+        o.put("why", !step.match().isEmpty() ? "the body is not traced: its pattern is written with match(...)"
+                : compiled != null && compiled.why() != null ? compiled.why() : "the body was not traced");
         return o;
     }
 

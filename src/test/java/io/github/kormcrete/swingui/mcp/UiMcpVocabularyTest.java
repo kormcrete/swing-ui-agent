@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.Collections;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -101,7 +101,7 @@ class UiMcpVocabularyTest {
     }
 
     @Test
-    void aChoicesSupplierThatThrowsOrBlocksDoesNotHangOrFailTheAnswer() throws Exception {
+    void aChoicesSupplierThatThrowsDoesNotFailTheAnswer() throws Exception {
         DomainStep broken = DomainStep.act("pickCustomer", "Pick {customer}")
                 .param("customer", ParamType.TEXT).choices(() -> { throw new IllegalStateException("no customers yet"); })
                 .steps("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"{customer}\"}}").build();
@@ -175,6 +175,75 @@ class UiMcpVocabularyTest {
     void describeUiVocabularyIsEmptyWithoutPlugins() throws Exception {
         UiMcpSession plain = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
         assertThat(mapper.readTree(plain.describe()).path("vocabulary")).isEqualTo(mapper.readTree("[]"));
-        assertThat(Collections.emptyList()).isEmpty();
+    }
+
+    @Test
+    void aChoicesSupplierThatBlocksIsGivenUpAfterOneSharedLimit() throws Exception {
+        DomainStep slow = DomainStep.act("pickCustomer", "Pick {customer} for {contact}")
+                .param("customer", ParamType.TEXT).choices(UiMcpVocabularyTest::block)
+                .param("contact", ParamType.TEXT).choices(UiMcpVocabularyTest::block)
+                .steps("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"{customer}\"}}").build();
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Arrays.asList(slow)), "ok");
+
+        long t0 = System.nanoTime();
+        JsonNode r = mapper.readTree(new VocabularyTool(plugins, mapper, 150)
+                .run(mapper.readTree("{\"op\":\"describe\",\"step\":\"pickCustomer\"}")));
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+
+        assertThat(r.path("params").get(0).path("choicesProblem").asText()).contains("not ready");
+        assertThat(r.path("params").get(1).path("choicesProblem").asText()).contains("not ready");
+        assertThat(ms).isLessThan(2000);
+    }
+
+    private static java.util.List<String> block() {
+        try {
+            Thread.sleep(60_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return null;
+    }
+
+    @Test
+    void aThrowWithoutAMessageNamesTheClass() throws Exception {
+        DomainStep npe = DomainStep.act("pickCustomer", "Pick {customer}")
+                .param("customer", ParamType.TEXT).choices(() -> { throw new IllegalStateException(); })
+                .steps("{\"action\":\"noop\"}").build();
+        JsonNode customer = call(session(npe), "{\"op\":\"describe\",\"step\":\"pickCustomer\"}").path("params").get(0);
+        assertThat(customer.path("choicesProblem").asText()).contains("IllegalStateException");
+    }
+
+    @Test
+    void describeNeverRunsABody() throws Exception {
+        AtomicInteger runs = new AtomicInteger();
+        DomainStep written = DomainStep.act("addToCart", "Add {product} to the cart")
+                .param("product", ParamType.TEXT)
+                .match("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"row\":{\"Product\":\"{product}\"}}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}")
+                .code((ui, p) -> { runs.incrementAndGet(); ui.button("Add to cart").click(); })
+                .build();
+        UiMcpSession s = session(written);
+        int atReady = runs.get();
+
+        JsonNode r = call(s, "{\"op\":\"describe\",\"step\":\"addToCart\"}");
+
+        assertThat(runs.get()).isEqualTo(atReady);
+        assertThat(r.path("body").path("kind").asText()).isEqualTo("code");
+        assertThat(r.path("body").path("why").asText()).contains("match(...)");
+        assertThat(r.path("patterns").get(0).path("derived").asBoolean()).isFalse();
+    }
+
+    @Test
+    void aBareIdTwoPluginsShareAsksForThePluginName() {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("order-desk", Paths.get("a")).ready(new PluginParts(() -> Arrays.asList(addToCart())), "ok");
+        plugins.add("extras", Paths.get("b")).ready(new PluginParts(() -> Arrays.asList(addToCart())), "ok");
+        UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
+
+        DriverException e = catchThrowableOfType(() -> call(s, "{\"op\":\"describe\",\"step\":\"addToCart\"}"),
+                DriverException.class);
+
+        assertThat(e.getMessage()).contains("more than one plugin").contains("<plugin>:<id>");
     }
 }
