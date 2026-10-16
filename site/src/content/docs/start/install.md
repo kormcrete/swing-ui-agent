@@ -2,7 +2,7 @@
 title: Installation
 description: Build swing-ui-agent, start an app with the agent, and check that it is ready.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 swing-ui-agent runs inside your app's JVM as a Java agent. You add one flag to the command that starts your app, and the app's code does not change. This page starts Order Desk, the demo app, with the agent; the same steps work for your own app.

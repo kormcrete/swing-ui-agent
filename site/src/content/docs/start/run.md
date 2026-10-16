@@ -2,7 +2,7 @@
 title: Run the tests
 description: Run the Java tests from Maven or IntelliJ against the running app, and read what a failure left behind.
 sidebar:
-  order: 8
+  order: 10
 ---
 
 A Java test is a plain JUnit 5 class. It does not start the app: it connects to the agent of an app that is already running and drives it the same way the agent did. This page sets up Maven the way Order Desk does, and shows what a failure leaves behind.

@@ -2,7 +2,7 @@
 title: Let your agent drive the app
 description: Point a coding agent at the running app through the command line and the skills.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 A coding agent with a shell drives the app through the agent jar's command line: one tool call per command, a JSON answer on stdout. This page walks a short session on Order Desk with the real answers, so you know what your agent sees.

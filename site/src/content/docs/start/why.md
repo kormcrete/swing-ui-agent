@@ -18,11 +18,11 @@ swing-ui-agent lets a coding agent drive your real Swing app and write its UI te
 ## How it works
 
 - **Drive:** the agent jar runs inside your app and serves a set of tools: `snapshot`, `click`, `type`, `menu`, `expect`, `screenshot` and more. A coding agent calls them from a shell (`java -jar <agent jar> <tool> '<json>'`) or as an MCP client. See [Let your agent drive the app](/swing-ui-agent/start/drive/).
-- **Record:** every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class. See [Record a test with the agent](/swing-ui-agent/start/record/).
+- **Record:** every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class, `export_recorded_test` as a recorded test (a JSON file, nothing to compile). See [Record a test with the agent](/swing-ui-agent/start/record/).
 - **Show it yourself:** with the palette that is on by default, a person records the steps in the app and the agent exports them. See [Record a test by showing it](/swing-ui-agent/start/show/).
 - **Run:** the tests connect to the running app and drive it the same way, from Maven, your IDE or CI. See [Run the tests](/swing-ui-agent/start/run/).
 
-The tests are meant to be written by the agent, not by hand. You review them like any other code, and you run them.
+The tests are meant to be written by the agent, not by hand: a Java test it writes from a recording, or a recorded test it exports. You review them, and you run them. A person who shows the app keeps the recording as a recorded test; an engineer keeps it as a Java test. See [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 ## The pieces
 

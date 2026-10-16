@@ -27,6 +27,19 @@ or [llms-full.txt](https://kormcrete.github.io/swing-ui-agent/llms-full.txt) (al
 
 Nobody writes the tests by hand: you review them like any other code, and run them.
 
+### Recorded test or Java test
+
+A recording is kept as one of two kinds. They do not mix.
+
+- **Recorded test:** made by a person showing the app, often not technical. A JSON file in `uitest/` with nothing to
+  compile. It holds exact values and checks only what is visible, such as the cart total `€31.32`.
+- **Java test:** written by an engineer with the agent. A JUnit 5 `@UiTest` class that can check anything, including
+  a database, files or logs, from its own JVM.
+- **Data is yours:** a recorded test creates the data it checks or uses data you know exists. A value the app makes up
+  (a new order number, today's date) only when the start makes it predictable.
+
+See [Recorded tests or Java tests](https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/).
+
 ## Quick start
 
 It is not on Maven Central yet, so build and install it (JDK 8, Maven 3):
@@ -49,6 +62,13 @@ $UI session '{"op":"reset"}'
 $UI snapshot '{"window":"main","depth":3,"compact":true}'
 $UI menu '{"path":["File","New order"]}'
 $UI export_test '{"class":"PlaceOrderUiIT"}'
+```
+
+Or keep the same recording as a recorded test, a JSON file that needs no compiling, and run it:
+
+```sh
+$UI export_recorded_test '{"name":"place-order"}'
+$UI run_recorded_test '{"name":"place-order"}'
 ```
 
 To see all of it, use [Order Desk](https://github.com/kormcrete/swing-order-desk-demo), a demo app made to be driven:

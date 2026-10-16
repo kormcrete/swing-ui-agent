@@ -2,7 +2,7 @@
 title: Record a test by showing it
 description: Use the app while a palette in its window records your steps and checks, then let the agent export the test.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 Sometimes it is quicker to show the agent what a test should do than to describe it. Start the app with

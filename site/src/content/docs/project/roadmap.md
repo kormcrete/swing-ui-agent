@@ -16,6 +16,7 @@ No dates, just the order we expect to work in. Each item closes a gap from [Limi
 
 ## Later
 
+- **A recorded test as the base of a Java test:** an engineer generalises a recorded test into a Java test. Today the two kinds do not convert into each other; see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 - **For app users, not only developers:** someone with only the built app, started with the agent when needed, drives
   it in plain language with an agent, by typing or by voice, and keeps tests as scripts or plain-language steps with
   their checks, run by the agent with nothing to compile.

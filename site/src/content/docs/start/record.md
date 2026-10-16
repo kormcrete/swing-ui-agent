@@ -2,7 +2,7 @@
 title: Record a test with the agent
 description: Reset, reach the starting screen, act, check with expect, and export a JUnit class.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 You say what the test must prove; the agent drives the app and every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class, which you review like any other code. This page records a short test on Order Desk with the real answers, then reads the larger test that came out of the same process.

@@ -2,7 +2,7 @@
 title: Record and run a UI test with Claude Code
 description: Let Claude Code drive Order Desk, write a UI test from your words or from what you show it, and run the tests.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 With Claude Code, a coding agent drives the app and writes the test. You describe the test, or show it with the

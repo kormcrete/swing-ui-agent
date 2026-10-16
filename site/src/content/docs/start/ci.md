@@ -2,7 +2,7 @@
 title: Run in CI
 description: Start the app with the agent on a CI runner, wait until it answers, run the UI tests and keep the screenshots.
 sidebar:
-  order: 9
+  order: 12
 ---
 
 In CI the job does what you do by hand: start the app with the agent, wait until the agent answers, run the UI tests, and keep the screenshots and the failure evidence. This page follows Order Desk's own GitHub Actions job, which runs on Linux under a virtual display.
