@@ -1047,11 +1047,11 @@ final class Recording {
             if (running) {
                 running = false;
                 Inspector.agentRun(false);
+                inspector.driving(null);
             }
             for (Overlay o : inspector.overlays()) o.clearMarks();
             home.controlsAway(false);
             replaying = false;
-            inspector.driving(null);
             if (!passed && after != null && active()) {
                 stop(true, text + " - recording stopped");
                 bar.text(text + " - recording stopped");

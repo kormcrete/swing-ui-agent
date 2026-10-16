@@ -38,6 +38,8 @@ public final class Plugins implements StepHost, UiInventory {
 
     private final Verbs verbs;
     private final List<PluginSlot> slots = new CopyOnWriteArrayList<PluginSlot>();
+    /** Slots refused for a name already taken: listed (with their why), never standing in for the plugin that has the name. */
+    private final List<PluginSlot> refusedSlots = new CopyOnWriteArrayList<PluginSlot>();
 
     public Plugins(Verbs verbs) {
         this.verbs = verbs;
@@ -58,6 +60,7 @@ public final class Plugins implements StepHost, UiInventory {
             if (!s.name().equals(d.name)) continue;
             PluginSlot refused = new PluginSlot(d.name, d.location, d.named);
             slots.add(refused);
+            refusedSlots.add(refused);
             refused.failed(d.location + ": another plugin is already named " + d.name + " (" + s.location() + "): give each "
                     + "plugin a name= of its own in plugin.properties");
             return refused;
@@ -90,7 +93,7 @@ public final class Plugins implements StepHost, UiInventory {
             if (p != null && p.host != null) return s;
         }
         for (PluginSlot s : slots) {
-            if (s.state() != PluginSlot.State.READY) return s;
+            if (s.state() != PluginSlot.State.READY && !refusedSlots.contains(s)) return s;
         }
         return slots.isEmpty() ? null : slots.get(0);
     }
@@ -104,8 +107,23 @@ public final class Plugins implements StepHost, UiInventory {
             if (slots.isEmpty()) throw new DriverException(Reason.CAPABILITY_GAP, "no plugin configured (agent argument plugins=…)");
             throw new DriverException(Reason.BAD_INPUT, "name the plugin: " + String.join(", ", names));
         }
-        for (PluginSlot s : slots) if (s.name().equals(name)) return s;
+        PluginSlot named = slotNamed(name);
+        if (named != null) return named;
         throw new DriverException(Reason.BAD_INPUT, "no plugin named '" + name + "' (known: " + String.join(", ", names) + ")");
+    }
+
+    /**
+     * The slot that holds {@code name}: the READY one, else the first of that name (a slot refused for a name already
+     * taken comes after the one that has it). Null when none.
+     */
+    public PluginSlot slotNamed(String name) {
+        PluginSlot first = null;
+        for (PluginSlot s : slots) {
+            if (!s.name().equals(name)) continue;
+            if (s.state() == PluginSlot.State.READY) return s;
+            if (first == null) first = s;
+        }
+        return first;
     }
 
     /** A vocabulary step, with the name it is reachable by and the plugin that offers it. */
@@ -162,8 +180,7 @@ public final class Plugins implements StepHost, UiInventory {
      * own pattern), or null when its plugin is gone or no longer offers it.
      */
     public PatternCompiler.Compiled patternsOf(VocabularyStep step) {
-        PluginSlot slot = null;
-        for (PluginSlot s : slots) if (s.name().equals(step.plugin)) slot = s;
+        PluginSlot slot = slotNamed(step.plugin);
         if (slot == null) return null;
         List<DomainStep> steps = slot.vocabulary();
         List<PatternCompiler.Compiled> patterns = slot.patterns();

@@ -2,6 +2,8 @@ package io.github.kormcrete.swingui.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.kormcrete.swingui.agent.PluginDescriptor;
+import io.github.kormcrete.swingui.agent.PluginSlot;
 import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
@@ -2690,6 +2692,46 @@ class UiMcpRecordingTest {
         // an agent's insert of one is accepted too
         s.recording(mapper.readTree("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"do\",\"step\":\"addOneMore\"}}"));
         assertThat(s.recordedSteps()).hasSize(3);
+    }
+
+    @Test
+    void aRefusedSameNamePluginLeavesTheFirstWorking() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        UiMcpSession s = orderDesk(plugins);
+        Path folder = Files.createTempDirectory("plugin").resolve("order-desk-extras/target/classes");
+        Files.createDirectories(folder.resolve(PluginDescriptor.RESOURCE).getParent());
+        Files.write(folder.resolve(PluginDescriptor.RESOURCE), "app-class=a.B\nname=order-desk\n".getBytes("ISO-8859-1"));
+        PluginSlot refused = plugins.add(PluginDescriptor.read(folder));
+        assertThat(refused.state()).isEqualTo(PluginSlot.State.FAILED);
+
+        s.doAction(mapper.readTree(ADD));
+        mapper.readTree(s.exportRecordedTest("one-pen", quoted(dir), null, false));
+        // a file requiring the plugin loads: the name stands for the plugin that is ready
+        JsonNode loaded = mapper.readTree(s.loadRecordedTest(dir.resolve("one-pen.json")));
+
+        assertThat(loaded.path("steps").asInt()).isEqualTo(1);
+        assertThat(plugins.appSlot().state()).isEqualTo(PluginSlot.State.READY);
+        assertThat(plugins.slotNamed("order-desk").state()).isEqualTo(PluginSlot.State.READY);
+        assertThat(plugins.vocabulary()).hasSize(2);
+        assertThat(plugins.patternsOf(plugins.vocabulary().get(0))).isNotNull();
+        assertThat(plugins.slots()).hasSize(2);
+        assertThat(plugins.slots().get(1).detail()).contains("another plugin is already named order-desk");
+    }
+
+    @Test
+    void aRefusedCheckDoStepShowsNoJavaInTheList() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.check("pickedAndTotal", "Gel pen {product} is priced")
+                .param("product", ParamType.TEXT)
+                .steps("{\"action\":\"expect\",\"target\":{\"role\":\"table\",\"row\":{\"SKU\":\"PEN-GEL-BLK\","
+                        + "\"Product\":\"{product}\",\"Price\":\"€1.20\"},\"column\":\"Product\"},\"text\":\"x\"}")
+                .build());
+
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"pickedAndTotal\",\"params\":{\"product\":\"Gel pen, black\"}}"));
+
+        JsonNode steps = mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps");
+        JsonNode check = steps.get(0).path("checks").get(0);
+        assertThat(check.has("java")).isFalse();
+        assertThat(check.path("noJava").asText()).startsWith("this check: ").contains("row with more than two keys");
     }
 
     /** A domain step whose steps the Java writer refuses: a row with three keys. */

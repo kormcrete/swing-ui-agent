@@ -2023,8 +2023,7 @@ public class UiMcpSession {
         for (PluginSlot slot : plugins.slots()) configured.add(slot.name());
         List<String> missing = new ArrayList<String>();
         for (String name : requires) {
-            PluginSlot slot = null;
-            for (PluginSlot s : plugins.slots()) if (s.name().equals(name)) slot = s;
+            PluginSlot slot = plugins.slotNamed(name);
             if (slot == null) {
                 missing.add(name + ", which is not configured");
             } else if (slot.state() != PluginSlot.State.READY) {
@@ -3475,7 +3474,10 @@ public class UiMcpSession {
         try {
             JavaTestWriter.write(Collections.<Action>singletonList(d), CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
         } catch (ExportRefused e) {
-            for (String p : e.problems()) if (p.startsWith("step 1")) problems.add("this step" + p.substring("step 1".length()));
+            for (String p : e.problems()) {
+                if (p.startsWith("step 1")) problems.add("this step" + p.substring("step 1".length()));
+                else if (p.startsWith("check 1.")) problems.add("this check" + p.substring(p.indexOf(':')));
+            }
         }
         return problems.isEmpty() ? null : String.join("; ", problems);
     }
