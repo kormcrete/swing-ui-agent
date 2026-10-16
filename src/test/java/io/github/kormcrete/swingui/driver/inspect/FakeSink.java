@@ -130,6 +130,7 @@ final class FakeSink implements Inspector.Sink {
     @Override public void end() { log.add("end"); }
     @Override public Inspector.Result done(Map<String, Object> step) { person(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }
     @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
+    @Override public Inspector.Result refused(String line) { log.add("refused " + line); return new Inspector.Result(false, line); }
     @Override public List<Inspector.StepLine> steps() {
         synchronized (steps) {
             return new ArrayList<Inspector.StepLine>(steps);

@@ -2767,6 +2767,31 @@ class RecordingTest {
     }
 
     @Test
+    void aClickNoStepCanSayIsShownAsNotRecordedAndListedForTheAgent() throws Exception {
+        javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Ada Shop Ltd"});
+        SwingUtilities.invokeAndWait(() -> {
+            frame.getContentPane().add(customers);
+            customers.setSize(150, 40);
+        });
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            java.awt.Rectangle second = customers.getCellBounds(1, 1);
+            for (int id : new int[] {MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_RELEASED}) {
+                MouseEvent e = new MouseEvent(customers, id, 1L, id == MouseEvent.MOUSE_PRESSED ? InputEvent.BUTTON1_DOWN_MASK : 0,
+                        second.x + 4, second.y + 2, 1, false, MouseEvent.BUTTON1);
+                for (AWTEventListener l : Toolkit.getDefaultToolkit().getAWTEventListeners()) {
+                    if (((AWTEventListenerProxy) l).getListener() instanceof HumanSteps) l.eventDispatched(e);
+                }
+            }
+        });
+        String why = "a click on 'Ada Shop Ltd': more than one entry of the list reads so";
+        assertThat(eventually(() -> recording.bar.text().startsWith("✗") ? recording.bar.text() : null))
+                .isEqualTo("✗ not recorded: " + why);
+        assertThat(sink.log).contains("refused " + why);
+        assertThat(sink.lines()).isEmpty();
+    }
+
+    @Test
     void escWithTheCheckMenuOpenOnlyClosesTheMenu() throws Exception {
         JButton save = appButton();
         recordInFrame();

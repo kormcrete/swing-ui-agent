@@ -8,6 +8,7 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.RowChoice;
+import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
@@ -389,6 +390,29 @@ class UiMcpRecordingTest {
         assertThat(steps.get(0).path("step")).isEqualTo(mapper.readTree("{\"action\":\"do\",\"say\":\"Choose the customer "
                 + "Ada Shop Ltd\",\"step\":\"order-desk:chooseCustomer\",\"params\":{\"customer\":\"Ada Shop Ltd\"}}"));
         assertThat(steps.get(0).path("java").asText()).isEqualTo("OrderDeskSteps.chooseCustomer(ui, \"Ada Shop Ltd\");");
+    }
+
+    @Test
+    void whatThePersonDidThatCannotBeRecordedIsListedForTheAgent() throws Exception {
+        Inspector.Result r = sink.refused("the expand arrow of 'Office': double-click the row instead");
+
+        assertThat(r.ok).isFalse();
+        assertThat(r.line).isEqualTo("the expand arrow of 'Office': double-click the row instead");
+        JsonNode list = call("{\"op\":\"list\"}");
+        assertThat(list.path("steps")).isEmpty();
+        assertThat(list.path("notRecorded").get(0).asText()).isEqualTo("the expand arrow of 'Office': double-click the row instead");
+    }
+
+    @Test
+    void aPersonsStepThatNeededNthIsFragileAndSaysWhy() throws Exception {
+        Locator second = Locator.of("button", "Add to cart");
+        second.nth = 1;
+        assertThat(sink.done(step("click", second)).ok).isTrue();
+
+        Action recorded = session.recordedSteps().get(0).action;
+        assertThat(((ClickVerb) recorded).fragile).isTrue();
+        assertThat(JavaTestWriter.write(Arrays.asList(recorded), "demo", "AddUiIT", "add"))
+                .contains("// FRAGILE: the recorder needed nth to make this target unique\n");
     }
 
     @Test

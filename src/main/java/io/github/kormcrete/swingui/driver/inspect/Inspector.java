@@ -121,6 +121,12 @@ public final class Inspector {
         /** A step the person already did: record it. */
         Result done(Map<String, Object> step);
 
+        /**
+         * Something the person did that no step can say ({@code line}: what and why, e.g. "the expand arrow of 'Office':
+         * double-click the row instead"): listed as not recorded, for the agent too. The result is a refusal with that line.
+         */
+        Result refused(String line);
+
         /** A check the person chose: run it, record it when it passes. */
         Result check(Map<String, Object> step);
 
@@ -1242,37 +1248,70 @@ public final class Inspector {
                 Target.shown(r.role, resolver.seenName(r), rec.locator), "column", table, null, -1, column, rec.seen);
     }
 
-    /**
-     * The entry of {@code list} at {@code p} (list coordinates), addressed as an {@code item} by its text as {@link Cells}
-     * renders it; null when {@code p} is on no entry, or another entry reads the same (the item would find either). EDT.
-     */
-    Target listItem(JList<?> list, Point p) {
-        int index = list.locationToIndex(p);
-        Rectangle cell = index < 0 ? null : list.getCellBounds(index, index);
-        if (cell == null || !cell.contains(p)) return null;
-        String text = Cells.list(list, index).text;
-        try {
-            if (ListWidget.index(list, text) != index) return null;
-        } catch (DriverException notOne) {
-            return null;
+    /** Why a list entry or tree row the person clicked cannot be recorded: the message says what and why. */
+    static final class NotRecordable extends RuntimeException {
+        NotRecordable(String why) {
+            super(why, null, false, false);
         }
+    }
+
+    /**
+     * The entry of {@code list} a click at {@code p} (list coordinates) selects, as the list's own mouse handling picks it:
+     * the closest entry, also below the last one; in a file list only one under {@code p}. -1 for none. EDT.
+     */
+    static int listIndexAt(JList<?> list, Point p) {
+        int index = list.locationToIndex(p);
+        if (index < 0 || !Boolean.TRUE.equals(list.getClientProperty("List.isFileList"))) return index;
+        Rectangle cell = list.getCellBounds(index, index);
+        return cell != null && cell.contains(p) ? index : -1;
+    }
+
+    /** The row of {@code tree} whose height band {@code p} (tree coordinates) is in, left or right of its label too; -1 none. EDT. */
+    static int treeRowAt(JTree tree, Point p) {
+        int row = tree.getClosestRowForLocation(p.x, p.y);
+        Rectangle bounds = row < 0 ? null : tree.getRowBounds(row);
+        return bounds != null && p.y >= bounds.y && p.y < bounds.y + bounds.height ? row : -1;
+    }
+
+    /** Whether {@code p} is on {@code row}'s own label, not beside it (the expand arrow and the indent are left of it). EDT. */
+    static boolean onRowLabel(JTree tree, int row, Point p) {
+        Rectangle bounds = tree.getRowBounds(row);
+        return bounds != null && bounds.contains(p);
+    }
+
+    /**
+     * Entry {@code index} of {@code list}, addressed as an {@code item} by its text as {@link Cells} renders it; null when
+     * no locator addresses the list. EDT.
+     *
+     * @throws NotRecordable when another entry reads the same: the item would find either
+     */
+    Target listItem(JList<?> list, int index) {
+        String text = Cells.list(list, index).text;
+        boolean one;
+        try {
+            one = ListWidget.index(list, text) == index;
+        } catch (DriverException notOne) {
+            one = false;
+        }
+        if (!one) throw new NotRecordable("a click on '" + text + "': more than one entry of the list reads so");
         return item(list, Collections.singletonList(text), index);
     }
 
     /**
-     * The row of {@code tree} at {@code p} (tree coordinates), addressed as an {@code item} by its path; null when {@code p}
-     * is on no row (left of it lie the expand handle and the indent) or the path is not unique. EDT.
+     * Row {@code row} of {@code tree}, addressed as an {@code item} by its path; null when no locator addresses the tree.
+     * EDT.
+     *
+     * @throws NotRecordable when another visible row has the same path
      */
-    Target treeRow(JTree tree, Point p) {
-        int row = tree.getClosestRowForLocation(p.x, p.y);
-        Rectangle bounds = row < 0 ? null : tree.getRowBounds(row);
-        if (bounds == null || p.y < bounds.y || p.y >= bounds.y + bounds.height || p.x < bounds.x) return null;
+    Target treeRow(JTree tree, int row) {
         List<String> path = TreeWidget.path(tree, row);
+        boolean one;
         try {
-            if (TreeWidget.row(tree, path) != row) return null;
+            one = TreeWidget.row(tree, path) == row;
         } catch (DriverException notOne) {
-            return null;
+            one = false;
         }
+        if (!one) throw new NotRecordable("a click on '" + String.join(" > ", path) + "': more than one row of the tree reads so");
         return item(tree, path, row);
     }
 

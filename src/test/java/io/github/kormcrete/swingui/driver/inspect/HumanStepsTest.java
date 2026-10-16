@@ -22,7 +22,9 @@ class HumanStepsTest {
 
     private final Scene scene = new Scene();
     private final List<Map<String, Object>> steps = new ArrayList<Map<String, Object>>();
-    private final HumanSteps human = new HumanSteps(scene.inspector, steps::add);
+    /** What the person did that could not be recorded, and why. */
+    private final List<String> notRecorded = new ArrayList<String>();
+    private final HumanSteps human = new HumanSteps(scene.inspector, steps::add, notRecorded::add);
 
     @Test
     void aPressAndReleaseOnAButtonIsAClick() {
@@ -109,6 +111,23 @@ class HumanStepsTest {
     }
 
     @Test
+    void aSuggestionListThatHidesOnThePressStillRecordsThePick() {
+        javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+        popup.add(suggestions);
+        suggestions.setBounds(0, 0, 200, 40);
+        scene.popup(popup, scene.customer);
+        java.awt.Rectangle birch = suggestions.getCellBounds(1, 1);
+
+        // the field takes the pick from the selection, which the press changes, and hides its popup at once
+        click(suggestions, birch.x + 4, birch.y + 2, 1, () -> scene.roots.remove(scene.roots.size() - 1));
+        human.flush();
+
+        assertThat(steps).hasSize(1);
+        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Birch & Co");
+    }
+
+    @Test
     void aListEntryClickIsAClickOnItsItem() {
         javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
         customers.setBounds(320, 130, 150, 40);
@@ -120,21 +139,107 @@ class HumanStepsTest {
         click(customers, birch.x + 4, birch.y + 2, 1);
         click(customers, birch.x + 4, birch.y + 2, 2);
         human.flush();
-        // below the last entry: no entry, no step
+        // below the last entry: the list selects the last one, as the closest
         click(customers, 4, customers.getHeight() - 1, 1);
         human.flush();
 
-        assertThat(steps).hasSize(2);
+        assertThat(steps).hasSize(3);
         Locator target = (Locator) steps.get(0).get("target");
         assertThat(target.role).isEqualTo("list");
         assertThat(target.item).containsExactly("Birch & Co");
         assertThat(steps.get(0)).doesNotContainKey("count").doesNotContainKey(Inspector.ROW_INDEX);
         assertThat(steps.get(1)).containsEntry("count", 2);
         assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Birch & Co");
+        assertThat(((Locator) steps.get(2).get("target")).item).containsExactly("Birch & Co");
+        assertThat(steps.get(2)).doesNotContainKey("count");
+
+        // a file list selects only what is under the pointer
+        customers.putClientProperty("List.isFileList", Boolean.TRUE);
+        click(customers, 4, customers.getHeight() - 1, 1);
+        human.flush();
+        assertThat(steps).hasSize(3);
+        assertThat(notRecorded).isEmpty();
+    }
+
+    @Test
+    void anEntryThatReadsLikeAnotherIsNotRecordedAndSaysWhy() {
+        javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Ada Shop Ltd"});
+        customers.setBounds(320, 130, 150, 40);
+        scene.content.add(customers);
+        java.awt.Rectangle second = customers.getCellBounds(1, 1);
+
+        click(customers, second.x + 4, second.y + 2, 1);
+        human.flush();
+        // a double click says it once
+        click(customers, second.x + 4, second.y + 2, 2);
+        human.flush();
+
+        assertThat(steps).isEmpty();
+        assertThat(notRecorded).containsExactly("a click on 'Ada Shop Ltd': more than one entry of the list reads so");
     }
 
     @Test
     void aTreeRowClickIsAClickOnItsPath() {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle pens = categories.getRowBounds(2);
+
+        click(categories, pens.x + 2, pens.y + 2, 1);
+        human.flush();
+        java.awt.Rectangle officeRow = categories.getRowBounds(0);
+        click(categories, officeRow.x + 2, officeRow.y + 2, 1);
+        click(categories, officeRow.x + 2, officeRow.y + 2, 2);
+        human.flush();
+        // left of a row, where nothing happened: no step
+        click(categories, 0, officeRow.y + 2, 1);
+        human.flush();
+
+        assertThat(steps).hasSize(2);
+        assertThat(notRecorded).isEmpty();
+        Locator target = (Locator) steps.get(0).get("target");
+        assertThat(target.role).isEqualTo("tree");
+        assertThat(target.item).containsExactly("Office", "Pens");
+        assertThat(steps.get(0)).doesNotContainKey("count");
+        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office");
+        assertThat(steps.get(1)).containsEntry("count", 2);
+    }
+
+    @Test
+    void aClickOnATreesExpandArrowIsNotRecordedAndSaysWhy() {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle office = categories.getRowBounds(0);
+
+        // the tree's look and feel takes the press on the arrow and collapses the row
+        click(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
+        human.flush();
+
+        assertThat(steps).isEmpty();
+        assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
+    }
+
+    @Test
+    void aClickBesideATreeRowIsAClickOnTheRowWhenItSelectsIt() {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle pens = categories.getRowBounds(2);
+
+        // a wide selection (FlatLaf) selects the row on a click in its indent, or right of its label
+        click(categories, 1, pens.y + 2, 1, () -> categories.setSelectionRow(2));
+        human.flush();
+        categories.clearSelection();
+        click(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> categories.setSelectionRow(2));
+        human.flush();
+        // one that selects nothing (Metal, Basic) did nothing: no step
+        categories.clearSelection();
+        click(categories, pens.x + pens.width + 5, pens.y + 2, 1);
+        human.flush();
+
+        assertThat(steps).hasSize(2);
+        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office", "Pens");
+        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office", "Pens");
+        assertThat(notRecorded).isEmpty();
+    }
+
+    /** Order Desk's product categories: Office (Paper, Pens) expanded, Coffee; the root hidden. In the scene's window. */
+    private javax.swing.JTree categories() {
         javax.swing.tree.DefaultMutableTreeNode products = new javax.swing.tree.DefaultMutableTreeNode("Products");
         javax.swing.tree.DefaultMutableTreeNode office = new javax.swing.tree.DefaultMutableTreeNode("Office");
         office.add(new javax.swing.tree.DefaultMutableTreeNode("Paper"));
@@ -147,25 +252,7 @@ class HumanStepsTest {
         categories.expandRow(0);
         categories.setBounds(320, 130, 150, 100);
         scene.content.add(categories);
-        java.awt.Rectangle pens = categories.getRowBounds(2);
-
-        click(categories, pens.x + 2, pens.y + 2, 1);
-        human.flush();
-        java.awt.Rectangle officeRow = categories.getRowBounds(0);
-        click(categories, officeRow.x + 2, officeRow.y + 2, 1);
-        click(categories, officeRow.x + 2, officeRow.y + 2, 2);
-        human.flush();
-        // the expand handle left of a row is not the row
-        click(categories, 0, officeRow.y + 2, 1);
-        human.flush();
-
-        assertThat(steps).hasSize(2);
-        Locator target = (Locator) steps.get(0).get("target");
-        assertThat(target.role).isEqualTo("tree");
-        assertThat(target.item).containsExactly("Office", "Pens");
-        assertThat(steps.get(0)).doesNotContainKey("count");
-        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office");
-        assertThat(steps.get(1)).containsEntry("count", 2);
+        return categories;
     }
 
     @Test
@@ -453,8 +540,14 @@ class HumanStepsTest {
     }
 
     private void click(Component c, int x, int y, int count) {
+        click(c, x, y, count, () -> { });
+    }
+
+    /** A click whose press the app handles with {@code app} before the release comes, as the component's own listeners would. */
+    private void click(Component c, int x, int y, int count, Runnable app) {
         human.eventDispatched(new MouseEvent(c, MouseEvent.MOUSE_PRESSED, 1L, InputEvent.BUTTON1_DOWN_MASK, x, y, count,
                 false, MouseEvent.BUTTON1));
+        app.run();
         human.eventDispatched(new MouseEvent(c, MouseEvent.MOUSE_RELEASED, 2L, 0, x, y, count, false, MouseEvent.BUTTON1));
     }
 

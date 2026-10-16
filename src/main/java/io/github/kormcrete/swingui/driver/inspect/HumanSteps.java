@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.widgets.Cells;
+import io.github.kormcrete.swingui.driver.widgets.TreeWidget;
 
 import javax.swing.AbstractButton;
 import javax.swing.JCheckBox;
@@ -58,10 +59,20 @@ final class HumanSteps implements AWTEventListener {
 
     private final Inspector inspector;
     private final Consumer<Map<String, Object>> emit;
+    private final Consumer<String> notRecorded;
     private boolean installed;
 
     private Component pressed;
     private Target pressedTarget;
+    /** The list entry or tree row pressed (view index, -1 none) and why it cannot be recorded (null: it can). */
+    private int pressedEntry = -1;
+    private String pressedRefusal;
+    /** For a pressed tree row: whether the press was on its label, it was expanded then, its path as the person reads it. */
+    private boolean pressedOnLabel;
+    private boolean pressedExpanded;
+    private String pressedPath;
+    /** The last line {@link #refuse} said: a double click's second click does not say it again. */
+    private String lastRefused;
     private Target contextTarget;
 
     private JTextComponent editing;
@@ -84,9 +95,10 @@ final class HumanSteps implements AWTEventListener {
     private final List<JMenuItem> hooked = new ArrayList<JMenuItem>();
     private final ActionListener menuListener = this::menuAction;
 
-    HumanSteps(Inspector inspector, Consumer<Map<String, Object>> emit) {
+    HumanSteps(Inspector inspector, Consumer<Map<String, Object>> emit, Consumer<String> notRecorded) {
         this.inspector = inspector;
         this.emit = emit;
+        this.notRecorded = notRecorded;
     }
 
     void active(boolean on) {
@@ -166,6 +178,8 @@ final class HumanSteps implements AWTEventListener {
             if (deepest != editing) flushTyping(false);
             pressed = deepest;
             pressedTarget = null;
+            pressedEntry = -1;
+            pressedRefusal = null;
             // a disabled element does nothing: no step; an option pane's button is answered by its label on release
             if (!deepest.isEnabled() || answer != null) return;
             if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e)) {
@@ -173,7 +187,8 @@ final class HumanSteps implements AWTEventListener {
                 return;
             }
             if (ignoredForClicks(deepest)) return;
-            pressedTarget = clickTarget(deepest, at);
+            if (deepest instanceof JList || deepest instanceof JTree) pressEntry(deepest, at);
+            else pressedTarget = inspector.snapNow(deepest, at);
             return;
         }
         if (e.getID() != MouseEvent.MOUSE_RELEASED) return;
@@ -210,8 +225,14 @@ final class HumanSteps implements AWTEventListener {
             }
             return;
         }
-        if (!SwingUtilities.isLeftMouseButton(e) || pressedTarget == null || ignoredForClicks(deepest)) return;
-        Target t = clickTarget(deepest, at);
+        if (!SwingUtilities.isLeftMouseButton(e) || ignoredForClicks(deepest)) return;
+        Target t;
+        if (deepest instanceof JList || deepest instanceof JTree) {
+            t = releasedEntry(e, deepest, at);
+        } else {
+            if (pressedTarget == null) return;
+            t = inspector.snapNow(deepest, at);
+        }
         if (t == null || !t.same(pressedTarget)) return;
         if (t.component instanceof JCheckBox
                 || (t.component instanceof JToggleButton && !(t.component instanceof JRadioButton))) {
@@ -235,14 +256,59 @@ final class HumanSteps implements AWTEventListener {
     }
 
     /**
-     * What a click on {@code deepest} at {@code at} is aimed at: a list's entry or a tree's row by its {@code item} (null
-     * off every entry or row: no step), else the element under it. Not cached: the element may have changed since the
-     * pointer passed over it.
+     * The press on list or tree {@code c}: the entry or row the click selects, as its target by {@code item} (taken now:
+     * a suggestion popup may hide before the release), or why it cannot be one.
      */
-    private Target clickTarget(Component deepest, Point at) {
-        if (deepest instanceof JList) return inspector.listItem((JList<?>) deepest, at);
-        if (deepest instanceof JTree) return inspector.treeRow((JTree) deepest, at);
-        return inspector.snapNow(deepest, at);
+    private void pressEntry(Component c, Point at) {
+        if (c instanceof JList) {
+            pressedEntry = Inspector.listIndexAt((JList<?>) c, at);
+        } else {
+            JTree tree = (JTree) c;
+            pressedEntry = Inspector.treeRowAt(tree, at);
+            if (pressedEntry < 0) return;
+            pressedOnLabel = Inspector.onRowLabel(tree, pressedEntry, at);
+            pressedExpanded = tree.isExpanded(pressedEntry);
+            pressedPath = TreeWidget.pathText(tree, pressedEntry);
+        }
+        if (pressedEntry < 0) return;
+        try {
+            pressedTarget = c instanceof JList ? inspector.listItem((JList<?>) c, pressedEntry) : inspector.treeRow((JTree) c, pressedEntry);
+        } catch (Inspector.NotRecordable why) {
+            pressedRefusal = why.getMessage();
+        }
+    }
+
+    /**
+     * The release on list or tree {@code c}: the pressed entry's target when it lands on the same entry, else null. Beside
+     * a tree row's label (the expand arrow, the indent, right of it) the press counts only for what the tree did with it:
+     * a row it selected is a click on that row, a row it expanded or collapsed is the arrow, which no step can say.
+     */
+    private Target releasedEntry(MouseEvent e, Component c, Point at) {
+        int entry = c instanceof JList ? Inspector.listIndexAt((JList<?>) c, at) : Inspector.treeRowAt((JTree) c, at);
+        if (c != pressed || pressedEntry < 0 || entry != pressedEntry) return null;
+        if (c instanceof JTree && !pressedOnLabel) {
+            JTree tree = (JTree) c;
+            boolean selected = tree.isRowSelected(entry);
+            // a double click in a wide row's indent toggles it as on its label
+            if (tree.isExpanded(entry) != pressedExpanded && !(e.getClickCount() >= 2 && selected)) {
+                refuse(e, "the expand arrow of '" + pressedPath + "': double-click the row instead");
+                return null;
+            }
+            if (!selected) return null;
+        }
+        if (pressedRefusal != null) {
+            refuse(e, pressedRefusal);
+            return null;
+        }
+        return pressedTarget;
+    }
+
+    /** What the person did and no step can say: shown and listed as not recorded, after a click still held back. */
+    private void refuse(MouseEvent e, String line) {
+        flushClick();
+        if (e.getClickCount() >= 2 && line.equals(lastRefused)) return;
+        lastRefused = line;
+        notRecorded.accept(line);
     }
 
     /**

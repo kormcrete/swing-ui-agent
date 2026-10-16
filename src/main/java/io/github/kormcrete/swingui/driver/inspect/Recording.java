@@ -139,7 +139,7 @@ final class Recording {
         this.sinkThread = sinkThread;
         this.home = home;
         this.recordAgain = recordAgain;
-        this.steps = new HumanSteps(inspector, this::emit);
+        this.steps = new HumanSteps(inspector, this::emit, this::notRecorded);
         this.activeBar = new Bar("Recording", RECORD_HINT).dot(RED, true)
                 .button("Record", Overlay.NO, () -> mode(false))
                 .button("Check", Overlay.YES, () -> mode(true))
@@ -429,6 +429,14 @@ final class Recording {
     private void emit(Map<String, Object> step) {
         sinkThread.submit(() -> {
             Inspector.Result r = sink.done(step);
+            SwingUtilities.invokeLater(() -> show(r));
+        });
+    }
+
+    /** Something the person did that no step can say: shown on the bar as not recorded, and listed for the agent. */
+    private void notRecorded(String line) {
+        sinkThread.submit(() -> {
+            Inspector.Result r = sink.refused(line);
             SwingUtilities.invokeLater(() -> show(r));
         });
     }

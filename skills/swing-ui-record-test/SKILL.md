@@ -144,7 +144,8 @@ the app sees a palette in its window:
   row menu), and delete, redo or undo; `list` shows who made each step. Pass the `rev` from your last `list`: an
   edit is refused when they changed the recording meanwhile, so list again.
 - **They record, you save.** When they ask you to wait, `$UI recording '{"op":"list","wait":540000}'` returns once
-  they press Done. You did not run their steps: `replay` before you trust them.
+  they press Done. You did not run their steps: `replay` before you trust them. `list`'s `notRecorded` also names
+  what they did that no step can say (a tree's expand arrow, an entry that reads like another): add that step yourself.
 - **Or they export.** After Done the palette offers Export…, which writes the file without you (a recorded test
   unless they choose Java test). When they ask you to check it, verify it as below. Later they open it again with
   Load recorded test… and ▶ Run it (Step by step to watch), fix it in Steps and save it back over the file.

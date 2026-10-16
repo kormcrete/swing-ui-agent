@@ -64,7 +64,7 @@ assertThat(ui.tab("New order").tree(null).item("Office", "Pens")).isSelected();
 
 `tree(null)` is the tab's only tree; pass the tree's name when it has one. A list entry (a `JList` row, not a tree row) is chosen with `select` and its text: `select {"target":{"role":"list","name":"…"},"item":"…"}`, in Java `ui.list("…").select("…")`. A click on an entry of a suggestion popup is exported as `ui.popup().list(null).item("…").click()`.
 
-When a person records with the palette, a click on a tree row or a list entry, or a pick from a suggestion popup, is recorded the same way, as a `click` with `item`. Double-click a row to expand or collapse it while recording: a click on the expand arrow is not recorded.
+When a person records with the palette, a click on a tree row or a list entry, or a pick from a suggestion popup, is recorded the same way, as a `click` with `item`. Double-click a row to expand or collapse it while recording: a click on the expand arrow is not recorded, and the palette says so.
 
 ## What's next
 

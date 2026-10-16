@@ -495,6 +495,16 @@ public class UiMcpSession {
             }
 
             @Override
+            public Inspector.Result refused(String line) {
+                synchronized (UiMcpSession.this) {
+                    if (model.state() == RecordingModel.State.STOPPED) return new Inspector.Result(false, "the recording is stopped");
+                    model.refused(line);
+                    publish();
+                    return new Inspector.Result(false, line);
+                }
+            }
+
+            @Override
             public List<Inspector.StepLine> steps() {
                 // the published copy: the steps panel must list during the agent's replay, which holds the session
                 return published.lines;
@@ -1330,7 +1340,7 @@ public class UiMcpSession {
 
     private Action action(JsonNode json) {
         try {
-            return fragileAtPoint(mapper.treeToValue(json, Action.class));
+            return fragileByTarget(mapper.treeToValue(json, Action.class));
         } catch (InvalidTypeIdException e) {
             // An unknown step type, or none.
             throw FlowJson.unknownStepType(e);
@@ -1342,13 +1352,14 @@ public class UiMcpSession {
     }
 
     /**
-     * {@code a}, marked {@code fragile} when one of its targets is a point: a click there lands elsewhere once the layout
-     * moves. Every step recorded, inserted or edited is parsed here, the agent's and the person's alike.
+     * {@code a}, marked {@code fragile} when one of its targets needs {@code nth} or is a point: the one breaks when a
+     * match is added before it, the other when the layout moves. Every step recorded, inserted or edited is parsed here,
+     * the agent's and the person's alike.
      */
-    private static Action fragileAtPoint(Action a) {
+    private static Action fragileByTarget(Action a) {
         if (!(a instanceof VerbAction)) return a;
         for (Locator l : ((VerbAction) a).targets().values()) {
-            if (l != null && l.point != null) ((VerbAction) a).fragile = true;
+            if (l != null && (l.point != null || l.nth != null)) ((VerbAction) a).fragile = true;
         }
         return a;
     }
