@@ -33,9 +33,9 @@ import java.util.Map;
  * one holds for both (the tab above and a row {@code Order = ORD-1640} give {@code ORD-1640}).
  *
  * <p>Trying fits costs. Inside a text only ends that can work are tried (a last {@code *} or capture takes the rest; one
- * before a literal ends only where the literal occurs), and a text whose literals are not in it fails in one pass. A
- * match hands on at most {@link #FIT_BUDGET} whole text fits and then throws {@link TooAmbiguous} instead of
- * answering ({@link #WORK_LIMIT} bounds the tries inside texts). Before each pattern step it asks whether the rest of
+ * before a literal or a bound capture ends only where that text occurs), and a text that lacks its literals or bound
+ * captures fails in one pass. A match makes at most {@link #FIT_BUDGET} choices and does at most {@link #WORK_LIMIT}
+ * work, and then throws {@link TooAmbiguous} instead of answering. Before each pattern step it asks whether the rest of
  * the pattern can still match the rest of the run at all, each pattern step on its own with its captures free
  * (remembered per match, on a smaller budget of its own that answers yes when it runs out): a run that fails on a
  * later step's literal fails at once, without trying every fit of the steps before. Beyond that there is no memo:
@@ -125,33 +125,41 @@ public final class Pattern {
      * in order, and every step is matched. Null when not. When a run fits more than one way, the first fit in the order
      * the class describes wins.
      *
-     * @throws TooAmbiguous when the run is still undecided after {@link #FIT_BUDGET} fits were tried
+     * @throws TooAmbiguous when the run is still undecided after {@link #FIT_BUDGET} choices or {@link #WORK_LIMIT}
+     *                      work
      */
     public Match match(List<? extends JsonNode> steps) {
         Search search = new Search(this, steps);
         if (!search.canFinish(0, 0)) return null;
-        Map<String, String> bound = seq(elements, 0, steps, 0, Collections.<String, String>emptyMap(),
+        Map<String, CharSequence> bound = seq(elements, 0, steps, 0, Collections.<String, CharSequence>emptyMap(),
                 (at, b) -> at == steps.size() ? b : null, search);
         if (bound == null) return null;
         Map<String, String> out = new LinkedHashMap<String, String>();
-        for (String p : params) if (bound.containsKey(p)) out.put(p, bound.get(p));
+        for (String p : params) if (bound.containsKey(p)) out.put(p, bound.get(p).toString());
         return new Match(out);
     }
 
     @Override public String toString() { return stepId + (derived ? " (derived) " : " ") + source; }
 
     /**
-     * The most fits one {@link #match} hands on: a whole text fitted (its captures bound) with the rest of the match
-     * still to go, or an optional entry left out. A run still undecided then is {@link TooAmbiguous}, not "no match".
-     * Trying within one text does not count here (see {@link #WORK_LIMIT}): a capture or {@code *} is only tried at
-     * ends that can work. Real runs need far fewer; the budget is for runs where every step fits alone but the
-     * captures cannot agree (several {@code *{p}*} whose values must also make up a later text), where trying every
-     * combination could take minutes.
+     * The most choices one {@link #match} hands on with the rest of the match still to go: a text fitted one of the
+     * ways it can fit (one with a {@code *} or a capture not bound yet before its last part), a scope item placed, or
+     * an optional entry left out. A text that fits one way only (literals and bound captures, with at most a
+     * {@code *} or new capture at the end, like {@code action:"type"} or {@code {p}}) is no choice and costs nothing
+     * here. A run still undecided then is {@link TooAmbiguous}, not "no match". Real runs need far fewer: {@code *{p}*}
+     * in a 400-character note, narrowed by a later {@code {p}}, takes about 80000 at worst. The budget is for runs
+     * where every step fits alone but the captures cannot agree (several {@code *{p}*} whose values must also make up a
+     * later text), where trying every combination could take minutes.
      */
     public static final int FIT_BUDGET = 100000;
 
-    /** The most tries inside texts (a part placed at one position) one {@link #match} makes, as a last bound. */
-    public static final int WORK_LIMIT = 2000000;
+    /**
+     * The most work one {@link #match} does, counted in small steps: a text part placed, a character compared while
+     * looking for a literal or a bound capture, a digit read for an INT capture, a capture bound. It bounds the time a
+     * match takes when long texts and long bound values make each choice costly (a fraction of a second; each look at
+     * whether a pattern step can match a step alone has a tenth of it of its own).
+     */
+    public static final int WORK_LIMIT = 20000000;
 
     /**
      * A run whose match this pattern could not decide within {@link #FIT_BUDGET} or {@link #WORK_LIMIT}: neither a
@@ -204,7 +212,12 @@ public final class Pattern {
         }
 
         void work() {
-            if (--work < 0) throw new TooAmbiguous(pattern.stepId);
+            work(1);
+        }
+
+        void work(int amount) {
+            work -= amount;
+            if (work < 0) throw new TooAmbiguous(pattern.stepId);
         }
 
         /** Whether {@code one} can match the step at {@code at} and the pattern steps after it the steps after that. */
@@ -239,7 +252,7 @@ public final class Pattern {
         private boolean alone(int i, int at) {
             Boolean known = alone[i][at];
             if (known == null) {
-                Map<String, String> free = Collections.emptyMap();
+                Map<String, CharSequence> free = Collections.emptyMap();
                 try {
                     known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, probe()) != null;
                 } catch (TooAmbiguous e) {
@@ -253,15 +266,15 @@ public final class Pattern {
 
     /** What to match after an element took its steps. */
     interface Then {
-        Map<String, String> go(int at, Map<String, String> bound);
+        Map<String, CharSequence> go(int at, Map<String, CharSequence> bound);
     }
 
-    static Map<String, String> seq(List<Element> els, int k, List<? extends JsonNode> steps, int at,
-                                   Map<String, String> bound, Then then, Search search) {
+    static Map<String, CharSequence> seq(List<Element> els, int k, List<? extends JsonNode> steps, int at,
+                                         Map<String, CharSequence> bound, Then then, Search search) {
         if (k == els.size()) return then.go(at, bound);
         Element e = els.get(k);
         Then next = (j, b) -> seq(els, k + 1, steps, j, b, then, search);
-        Map<String, String> found = e.take(steps, at, bound, next, search);
+        Map<String, CharSequence> found = e.take(steps, at, bound, next, search);
         if (found == null && e.optional) {
             search.spend();
             found = next.go(at, bound);
@@ -277,8 +290,8 @@ public final class Pattern {
             this.optional = optional;
         }
 
-        abstract Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
-                                          Search search);
+        abstract Map<String, CharSequence> take(List<? extends JsonNode> steps, int at, Map<String, CharSequence> bound,
+                                                Then next, Search search);
 
         /** The captures this element always binds when it matches (none for an optional one). */
         abstract void alwaysCaptured(List<String> into);
@@ -293,8 +306,8 @@ public final class Pattern {
             this.node = node;
         }
 
-        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
-                                           Search search) {
+        @Override Map<String, CharSequence> take(List<? extends JsonNode> steps, int at, Map<String, CharSequence> bound,
+                                                 Then next, Search search) {
             if (!search.canTake(this, at)) return null;
             return node.match(steps.get(at), bound, b -> next.go(at + 1, b), search);
         }
@@ -313,8 +326,8 @@ public final class Pattern {
             this.elements = elements;
         }
 
-        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
-                                           Search search) {
+        @Override Map<String, CharSequence> take(List<? extends JsonNode> steps, int at, Map<String, CharSequence> bound,
+                                                 Then next, Search search) {
             return seq(elements, 0, steps, at, bound, next, search);
         }
 
@@ -326,7 +339,7 @@ public final class Pattern {
 
     /** What to match after a value matched with these bindings: the final bindings, or null to try the next fit. */
     interface Rest {
-        Map<String, String> go(Map<String, String> bound);
+        Map<String, CharSequence> go(Map<String, CharSequence> bound);
     }
 
     /** A pattern value: matches a value of a step (null when the step has no such field), binding captures. */
@@ -335,7 +348,8 @@ public final class Pattern {
          * Tries each fit of {@code actual} in turn, handing its bindings to {@code rest}; the first final bindings
          * {@code rest} gives back, or null when no fit holds.
          */
-        abstract Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search);
+        abstract Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                 Search search);
 
         abstract void captures(List<String> into);
     }
@@ -348,12 +362,14 @@ public final class Pattern {
             this.fields = new ArrayList<Map.Entry<String, Node>>(fields.entrySet());
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        @Override Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                  Search search) {
             if (actual == null || !actual.isObject()) return null;
             return from(0, actual, bound, rest, search);
         }
 
-        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        private Map<String, CharSequence> from(int i, JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                               Search search) {
             if (i == fields.size()) return rest.go(bound);
             Map.Entry<String, Node> f = fields.get(i);
             return f.getValue().match(actual.get(f.getKey()), bound, b -> from(i + 1, actual, b, rest, search), search);
@@ -372,12 +388,14 @@ public final class Pattern {
             this.items = items;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        @Override Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                  Search search) {
             if (actual == null || !actual.isArray() || actual.size() != items.size()) return null;
             return from(0, actual, bound, rest, search);
         }
 
-        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        private Map<String, CharSequence> from(int i, JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                               Search search) {
             if (i == items.size()) return rest.go(bound);
             return items.get(i).match(actual.get(i), bound, b -> from(i + 1, actual, b, rest, search), search);
         }
@@ -395,20 +413,23 @@ public final class Pattern {
             this.wanted = wanted;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        @Override Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                  Search search) {
             if (actual != null && !actual.isArray()) return null;
             return from(0, actual, 0, bound, rest, search);
         }
 
-        private Map<String, String> from(int k, JsonNode actual, int start, Map<String, String> bound, Rest rest,
-                                         Search search) {
+        private Map<String, CharSequence> from(int k, JsonNode actual, int start, Map<String, CharSequence> bound,
+                                               Rest rest, Search search) {
             if (k == wanted.size()) return rest.go(bound);
             if (actual == null) return null;
             for (int i = start; i < actual.size(); i++) {
                 search.work();
                 int at = i;
-                Map<String, String> found = wanted.get(k).match(actual.get(i), bound,
-                        b -> from(k + 1, actual, at + 1, b, rest, search), search);
+                Map<String, CharSequence> found = wanted.get(k).match(actual.get(i), bound, b -> {
+                    search.spend();
+                    return from(k + 1, actual, at + 1, b, rest, search);
+                }, search);
                 if (found != null) return found;
             }
             return null;
@@ -427,7 +448,8 @@ public final class Pattern {
             this.value = value;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        @Override Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                  Search search) {
             return same(actual) ? rest.go(bound) : null;
         }
 
@@ -472,7 +494,8 @@ public final class Pattern {
             this.parts = parts;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
+        @Override Map<String, CharSequence> match(JsonNode actual, Map<String, CharSequence> bound, Rest rest,
+                                                  Search search) {
             if (actual == null) return null;
             String s;
             if (actual.isTextual()) {
@@ -482,8 +505,8 @@ public final class Pattern {
             } else {
                 return null;
             }
-            if (!literalsFit(s)) return null;
-            return fit(0, s, 0, bound, rest, search);
+            if (!fixedFit(s, bound, search)) return null;
+            return fit(0, s, 0, choice(bound), bound, rest, search);
         }
 
         private boolean loneDigits() {
@@ -491,24 +514,61 @@ public final class Pattern {
         }
 
         /**
-         * Whether the literal parts can be in {@code s} at all: in order, the first at the start when the text starts
-         * with one, the last at the end when it ends with one. A text that fails this has no fit, found in one pass.
+         * Whether the fixed parts (literals, and captures {@code bound} already holds) can be in {@code s} at all: in
+         * order, the first at the start when the text starts with one, the last at the end when it ends with one. A
+         * text that fails this has no fit, found in one pass.
          */
-        private boolean literalsFit(String s) {
+        private boolean fixedFit(String s, Map<String, CharSequence> bound, Search search) {
             int at = 0;
-            for (int k = 0; k < parts.size(); k++) {
-                if (!(parts.get(k) instanceof Literal)) continue;
-                String lit = ((Literal) parts.get(k)).text;
-                int found = k == 0 ? (s.startsWith(lit) ? 0 : -1) : s.indexOf(lit, at);
-                if (found < 0) return false;
-                at = found + lit.length();
+            int lastPart = parts.size() - 1;
+            for (int k = 0; k <= lastPart; k++) {
+                CharSequence part = fixed(parts.get(k), bound);
+                if (part == null) continue;
+                if (k == 0) {
+                    if (!holds(s, 0, part, search)) return false;
+                } else if (k == lastPart) {
+                    int end = s.length() - part.length();
+                    if (end < at || !holds(s, end, part, search)) return false;
+                } else {
+                    int found = find(s, part, at, s.length(), search);
+                    if (found < 0) return false;
+                    at = found;
+                }
+                at += part.length();
             }
-            Object last = parts.isEmpty() ? null : parts.get(parts.size() - 1);
-            return !(last instanceof Literal) || parts.size() == 1 || s.endsWith(((Literal) last).text);
+            return true;
+        }
+
+        /**
+         * Whether this text can fit more than one way with these bindings: some part before the last is a {@code *}
+         * or a capture not bound yet. Only then is a fit handed on a choice ({@link Search#spend}).
+         */
+        private boolean choice(Map<String, CharSequence> bound) {
+            for (int k = 0; k < parts.size() - 1; k++) {
+                Object p = parts.get(k);
+                if (p == STAR || p instanceof Capture && !bound.containsKey(((Capture) p).name)) return true;
+            }
+            return false;
+        }
+
+        /** Whether {@code s} holds {@code part} at {@code at}; each character compared is {@link Search#work}. */
+        private static boolean holds(String s, int at, CharSequence part, Search search) {
+            if (at + part.length() > s.length()) return false;
+            int i = 0;
+            while (i < part.length() && s.charAt(at + i) == part.charAt(i)) i++;
+            search.work(i + 1);
+            return i == part.length();
+        }
+
+        /** The first place from {@code from} up to {@code to} where {@code part} is in {@code s}, or -1. */
+        private static int find(String s, CharSequence part, int from, int to, Search search) {
+            int last = Math.min(to, s.length() - part.length());
+            for (int i = from; i <= last; i++) if (holds(s, i, part, search)) return i;
+            return -1;
         }
 
         /** The text part {@code k} must be: a literal, or a capture already bound; null when it is free. */
-        private static String fixed(Object part, Map<String, String> bound) {
+        private static CharSequence fixed(Object part, Map<String, CharSequence> bound) {
             if (part instanceof Literal) return ((Literal) part).text;
             if (part instanceof Capture) return bound.get(((Capture) part).name);
             return null;
@@ -517,81 +577,116 @@ public final class Pattern {
         /**
          * Parts from {@code k} on fit {@code s} from {@code at} on, each fit tried in turn. Only ends that can work are
          * tried: a {@code *} or capture that is the last part takes the rest, and one followed by a literal (or a bound
-         * capture) ends only where that text occurs. Each attempt is {@link Search#work}; each whole fit handed on is
-         * {@link Search#spend}.
+         * capture) ends only where that text occurs. Each part placed, character compared and capture bound is
+         * {@link Search#work}; a whole fit handed on is {@link Search#spend} when the text could fit more than one way
+         * ({@code choice}).
          */
-        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest, Search search) {
+        private Map<String, CharSequence> fit(int k, String s, int at, boolean choice, Map<String, CharSequence> bound,
+                                              Rest rest, Search search) {
             if (k == parts.size()) {
                 if (at != s.length()) return null;
-                search.spend();
+                if (choice) search.spend();
                 return rest.go(bound);
             }
             search.work();
             Object p = parts.get(k);
-            String here = fixed(p, bound);
-            if (here != null) return s.startsWith(here, at) ? fit(k + 1, s, at + here.length(), bound, rest, search) : null;
+            CharSequence here = fixed(p, bound);
+            if (here != null) {
+                return holds(s, at, here, search) ? fit(k + 1, s, at + here.length(), choice, bound, rest, search) : null;
+            }
             boolean last = k + 1 == parts.size();
-            String next = last ? null : fixed(parts.get(k + 1), bound);
+            CharSequence next = last ? null : fixed(parts.get(k + 1), bound);
             if (p == STAR) {
-                if (last) return fit(k + 1, s, s.length(), bound, rest, search);
+                if (last) return fit(k + 1, s, s.length(), choice, bound, rest, search);
                 if (next != null) {
-                    for (int end = s.indexOf(next, at); end >= 0; end = s.indexOf(next, end + 1)) {
-                        Map<String, String> found = fit(k + 1, s, end, bound, rest, search);
+                    for (int end = find(s, next, at, s.length(), search); end >= 0;
+                         end = find(s, next, end + 1, s.length(), search)) {
+                        Map<String, CharSequence> found = fit(k + 1, s, end, choice, bound, rest, search);
                         if (found != null) return found;
                     }
                     return null;
                 }
                 for (int end = at; end <= s.length(); end++) {
-                    Map<String, String> found = fit(k + 1, s, end, bound, rest, search);
+                    Map<String, CharSequence> found = fit(k + 1, s, end, choice, bound, rest, search);
                     if (found != null) return found;
                 }
                 return null;
             }
             Capture c = (Capture) p;
-            int longest = at;
-            while (longest < s.length() && (!c.digits || isDigit(s.charAt(longest)))) longest++;
+            int longest = s.length();
+            if (c.digits) {
+                longest = at;
+                while (longest < s.length() && isDigit(s.charAt(longest))) longest++;
+                search.work(longest - at);
+            }
             if (longest == at) return null;
-            if (last) return longest == s.length() ? bind(c, s, at, longest, k, bound, rest, search) : null;
+            if (last) return longest == s.length() ? bind(c, s, at, longest, k, choice, bound, rest, search) : null;
             if (next != null) {
-                for (int end = s.indexOf(next, at + 1); end >= 0 && end <= longest; end = s.indexOf(next, end + 1)) {
-                    Map<String, String> found = bind(c, s, at, end, k, bound, rest, search);
+                for (int end = find(s, next, at + 1, longest, search); end >= 0;
+                     end = find(s, next, end + 1, longest, search)) {
+                    Map<String, CharSequence> found = bind(c, s, at, end, k, choice, bound, rest, search);
                     if (found != null) return found;
                 }
                 return null;
             }
             boolean greedy = parts.get(k + 1) == STAR;
             for (int n = 1; n <= longest - at; n++) {
-                Map<String, String> found = bind(c, s, at, greedy ? longest - n + 1 : at + n, k, bound, rest, search);
+                int end = greedy ? longest - n + 1 : at + n;
+                Map<String, CharSequence> found = bind(c, s, at, end, k, choice, bound, rest, search);
                 if (found != null) return found;
             }
             return null;
         }
 
         /** Capture {@code c} as {@code s[at, end)} and fit the parts after it from {@code end}. */
-        private Map<String, String> bind(Capture c, String s, int at, int end, int k, Map<String, String> bound, Rest rest,
-                                         Search search) {
-            String value = s.substring(at, end);
-            if (c.digits && !fitsAnInt(value)) return null;
-            Map<String, String> b = new LinkedHashMap<String, String>(bound);
+        private Map<String, CharSequence> bind(Capture c, String s, int at, int end, int k, boolean choice,
+                                               Map<String, CharSequence> bound, Rest rest, Search search) {
+            search.work(1 + bound.size());
+            if (c.digits && !fitsAnInt(s, at, end, search)) return null;
+            CharSequence value = new Slice(s, at, end);
+            Map<String, CharSequence> b = new LinkedHashMap<String, CharSequence>(bound);
             b.put(c.name, value);
-            return fit(k + 1, s, end, b, rest, search);
+            return fit(k + 1, s, end, choice, b, rest, search);
         }
 
         private static boolean isDigit(char ch) {
             return ch >= '0' && ch <= '9';
         }
 
-        private static boolean fitsAnInt(String digits) {
-            try {
-                Integer.parseInt(digits);
-                return true;
-            } catch (NumberFormatException e) {
-                return false;
+        /** Whether the digits {@code s[at, end)} make a number in int range (leading zeros allowed). */
+        private static boolean fitsAnInt(String s, int at, int end, Search search) {
+            search.work(end - at);
+            long value = 0;
+            for (int i = at; i < end; i++) {
+                value = value * 10 + (s.charAt(i) - '0');
+                if (value > Integer.MAX_VALUE) return false;
             }
+            return true;
         }
 
         @Override void captures(List<String> into) {
             for (Object p : parts) if (p instanceof Capture) into.add(((Capture) p).name);
         }
+    }
+
+    /** A capture's value: part of a step's text, not copied while the match goes on (a {@link Match} copies it). */
+    static final class Slice implements CharSequence {
+        private final String s;
+        private final int start;
+        private final int end;
+
+        Slice(String s, int start, int end) {
+            this.s = s;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override public int length() { return end - start; }
+
+        @Override public char charAt(int i) { return s.charAt(start + i); }
+
+        @Override public CharSequence subSequence(int from, int to) { return new Slice(s, start + from, start + to); }
+
+        @Override public String toString() { return s.substring(start, end); }
     }
 }

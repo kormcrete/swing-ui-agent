@@ -225,6 +225,75 @@ class PatternTest {
         }
     }
 
+    /** Order numbers, each word once, to {@code length} characters: a long note no short value repeats in. */
+    private static String uniqueNote(int length) {
+        StringBuilder t = new StringBuilder();
+        for (int n = 1600; t.length() < length; n++) t.append("ORD-").append(n).append(' ');
+        return t.substring(0, length);
+    }
+
+    private static final String NEXT = "{'action':'click','target':{'role':'button','name':'Next'}}";
+
+    @Test
+    void longTextsMatchWhenStepsComeBetweenTheCaptureAndTheStepThatNarrowsIt() {
+        Pattern contains = only(DomainStep.act("notePo", "Note PO {p}").param("p", ParamType.TEXT).code(NOTHING)
+                .match(json(note("Note", "*{p}*")), json(note("PO", "{p}"))).build());
+        Pattern containsThenClicks = only(DomainStep.act("notePo", "Note PO {p}").param("p", ParamType.TEXT).code(NOTHING)
+                .match(json(note("Note", "*{p}*")), json(NEXT), json(NEXT), json(NEXT), json(note("PO", "{p}"))).build());
+        Pattern prefixThenClicks = only(DomainStep.act("notePo", "Note PO {p}").param("p", ParamType.TEXT).code(NOTHING)
+                .match(json(note("Note", "{p}*")), json(NEXT), json(NEXT), json(NEXT), json(note("PO", "{p}"))).build());
+        for (int length : new int[] {150, 200, 300, 400}) {
+            String text = uniqueNote(length);
+            String middle = text.substring(length / 2, length / 2 + 10);
+            String end = text.substring(length - 10);
+            for (String value : Arrays.asList(middle, end)) {
+                long start = System.nanoTime();
+                assertThat(contains.match(steps(note("Note", text), note("PO", value))).params())
+                        .as("*{p}* then {p}, %d chars", length).containsExactly(entry("p", value));
+                assertThat(containsThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", value)))
+                        .params()).as("*{p}*, 3 clicks, {p}, %d chars", length).containsExactly(entry("p", value));
+                assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+            }
+            String head = text.substring(0, 10);
+            assertThat(prefixThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", head))).params())
+                    .containsExactly(entry("p", head));
+            assertThat(prefixThenClicks.match(steps(note("Note", text), NEXT, NEXT, NEXT, note("PO", "O"))).params())
+                    .containsExactly(entry("p", "O"));
+        }
+    }
+
+    @Test
+    void aLongBoundValueCostsWorkSoAMatchEndsQuickly() {
+        // v is bound by the first step; the second text makes every a, b, c try look for v again
+        Pattern p = only(DomainStep.act("notes", "Type notes").param("v", ParamType.TEXT).param("a", ParamType.TEXT)
+                .param("b", ParamType.TEXT).param("c", ParamType.TEXT).code(NOTHING)
+                .match(json(note("V", "{v}")), json(note("N", "{a}{b}{c}{v}"))).build());
+        Pattern after = only(DomainStep.act("notes", "Type notes").param("v", ParamType.TEXT).param("a", ParamType.TEXT)
+                .param("b", ParamType.TEXT).param("c", ParamType.TEXT).param("d", ParamType.TEXT).code(NOTHING)
+                .match(json(note("V", "{v}")), json(note("N", "{a}{b}{c}{v}{d}"))).build());
+        String v = repeat('a', 700) + "b";
+
+        long start = System.nanoTime();
+        // v is nowhere in the text
+        assertThat(p.match(steps(note("V", v), note("N", repeat('a', 1400))))).isNull();
+        // v is in the text, but nothing can follow it: undecided within the limits, or no match
+        try {
+            assertThat(after.match(steps(note("V", v), note("N", repeat('a', 1400) + "b")))).isNull();
+        } catch (Pattern.TooAmbiguous e) {
+            assertThat(e.stepId()).isEqualTo("notes");
+        }
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+        // and the same patterns still match when they can
+        assertThat(after.match(steps(note("V", v), note("N", repeat('a', 1400) + "b!"))).params())
+                .containsEntry("v", v).containsEntry("d", "!");
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        Arrays.fill(chars, c);
+        return new String(chars);
+    }
+
     @Test
     void aCostlyOptionalEntryThatCannotFitIsLeftOut() {
         Pattern p = only(DomainStep.act("note", "Note {p}").param("p", ParamType.TEXT).param("q", ParamType.TEXT)
