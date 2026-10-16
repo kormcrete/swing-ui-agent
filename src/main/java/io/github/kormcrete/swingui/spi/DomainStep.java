@@ -45,9 +45,10 @@ public final class DomainStep {
      * <p>A body also runs when nobody asked for the step: when the plugin becomes ready, a body without
      * {@link Builder#match} runs twice to learn its pattern, and a recording's Java export may run it twice for the
      * steps it makes. Those runs are on a thread of their own, given up after 5 s, on a Client that reaches no app
-     * (it only notes the steps), and with stand-in values: a TEXT param holds {@code {product}} (its name in braces),
-     * an INT param a large number. Anything else the body does (plugin code, files, a database) happens for real on
-     * each of those runs, so keep a body to its Client calls, or give the step a {@link Builder#match}.
+     * (it only notes the steps). At ready both runs use stand-in values: the first a TEXT param's name in braces
+     * ({@code {product}}) and a large number for an INT param, the second other text ({@code " Ab1, c "}) and 1.
+     * Anything else the body does (plugin code, files, a database) happens for real on each of those runs, so keep a
+     * body to its Client calls, or give the step a {@link Builder#match}.
      */
     public interface Body {
         void run(Client ui, Params params);

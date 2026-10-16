@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 class PatternTest {
 
@@ -165,6 +167,59 @@ class PatternTest {
         assertThat(p.match(steps("{'action':'type','target':{'name':'Note'},'text':'PO-7781 urgent'}",
                 "{'action':'type','target':{'name':'PO number'},'text':'PO-7781'}")).params())
                 .containsExactly(entry("po", "PO-7781"));
+    }
+
+    private static final String FORTY = "Gel pen, black; A4 paper, 500 sheets; xy";
+
+    @Test
+    void manyGlobbedCapturesAndALaterStepThatCannotMatchAnswerAtOnce() {
+        assertThat(FORTY).hasSize(40);
+        for (Pattern p : Arrays.asList(only(manyTypes("Enter", "*{p1}*", "*{p2}*", "*{p3}*")),
+                only(manyTypes("Enter", "{p1}*", "{p2}*", "{p3}*", "{p4}*", "{p5}*")))) {
+            List<JsonNode> run = notes(p.source().size() - 1, "{'action':'press','keys':'Tab'}");
+            long start = System.nanoTime();
+            assertThat(p.match(run)).isNull();
+            assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+            assertThat(p.match(notes(p.source().size() - 1, "{'action':'press','keys':'Enter'}"))).isNotNull();
+        }
+    }
+
+    @Test
+    void aRunTooAmbiguousToDecideSaysSoQuickly() {
+        // each step fits alone, but no fits of the three notes give the last text: every combination is tried
+        Pattern p = only(manyTypes(null, "*{p1}*", "*{p2}*", "*{p3}*", "{p1}|{p2}|{p3}"));
+        List<JsonNode> run = notes(3, "{'action':'type','target':{'name':'Note'},'text':'no|such|thing'}");
+
+        long start = System.nanoTime();
+        assertThatThrownBy(() -> p.match(run)).isInstanceOf(Pattern.TooAmbiguous.class)
+                .hasMessage("the pattern of 'notes' is too ambiguous: no answer within " + Pattern.FIT_BUDGET + " fits");
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+        assertThat(catchThrowableOfType(() -> p.match(run), Pattern.TooAmbiguous.class).stepId()).isEqualTo("notes");
+    }
+
+    /** {@code n} notes typing {@link #FORTY}, then {@code last}. */
+    private static List<JsonNode> notes(int n, String last) {
+        List<JsonNode> run = new ArrayList<JsonNode>();
+        for (int i = 0; i < n; i++) run.addAll(steps("{'action':'type','target':{'name':'Note'},'text':'" + FORTY + "'}"));
+        run.addAll(steps(last));
+        return run;
+    }
+
+    /**
+     * A step typing each text into Note, then pressing {@code key} (none when null); a TEXT param per {@code {pN}}
+     * the texts name.
+     */
+    private static DomainStep manyTypes(String key, String... texts) {
+        DomainStep.Builder b = DomainStep.act("notes", "Type notes");
+        List<String> entries = new ArrayList<String>();
+        java.util.Set<String> params = new java.util.LinkedHashSet<String>();
+        for (String t : texts) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\{(p[0-9]+)\\}").matcher(t);
+            while (m.find()) if (params.add(m.group(1))) b.param(m.group(1), ParamType.TEXT);
+            entries.add(json("{'action':'type','target':{'name':'Note'},'text':'" + t + "'}"));
+        }
+        if (key != null) entries.add(json("{'action':'press','keys':'" + key + "'}"));
+        return b.code(NOTHING).match(entries.toArray(new String[0])).build();
     }
 
     // ---- the same param twice

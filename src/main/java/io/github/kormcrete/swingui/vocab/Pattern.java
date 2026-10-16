@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,14 @@ import java.util.Map;
  * reaches the same tab again (the shortest fit, {@code O}, would also reach it but says nothing). A capture's fit is
  * never final while the rest is matched: when a later field or step uses the same param, the fits are tried until
  * one holds for both (the tab above and a row {@code Order = ORD-1640} give {@code ORD-1640}).
+ *
+ * <p>Trying fits costs: a match tries at most {@link #FIT_BUDGET} of them and then throws {@link TooAmbiguous}
+ * instead of answering. Before each pattern step it asks whether the rest of the pattern can still match the rest of
+ * the run at all, each pattern step on its own with its captures free (remembered per match): a run that fails on a
+ * later step's literal fails at once, without trying every fit of the steps before. Beyond that there is no memo:
+ * when only the same param in two places disagrees, fits are tried until the budget ends. Each fit that holds
+ * nests the rest of the match in the call stack, so the depth grows with steps × fields × text parts: match a window
+ * of recent steps, not a whole recording.
  */
 public final class Pattern {
 
@@ -54,6 +63,10 @@ public final class Pattern {
     private final boolean derived;
     private final List<ObjectNode> source;
     private final List<Element> elements;
+    /** Every pattern step in order, inside uses too; each optional when it or a use around it is. */
+    private final List<One> flat = new ArrayList<One>();
+    private final List<Boolean> flatOptional = new ArrayList<Boolean>();
+    private final Map<One, Integer> flatIndex = new IdentityHashMap<One, Integer>();
     private final List<String> params;
 
     Pattern(String stepId, boolean derived, List<ObjectNode> source, List<Element> elements, List<String> params) {
@@ -62,7 +75,8 @@ public final class Pattern {
         List<ObjectNode> copies = new ArrayList<ObjectNode>();
         for (ObjectNode s : source) copies.add(s.deepCopy());
         this.source = Collections.unmodifiableList(copies);
-        this.elements = Collections.unmodifiableList(new ArrayList<Element>(elements));
+        this.elements = Collections.unmodifiableList(copy(elements));
+        flatten(this.elements, false);
         this.params = Collections.unmodifiableList(new ArrayList<String>(params));
     }
 
@@ -81,14 +95,40 @@ public final class Pattern {
 
     List<Element> elements() { return elements; }
 
+    /** Fresh elements, so each pattern step of this pattern is its own object (a step used twice is two). */
+    private static List<Element> copy(List<Element> elements) {
+        List<Element> out = new ArrayList<Element>();
+        for (Element e : elements) {
+            out.add(e instanceof One ? new One(((One) e).node, e.optional)
+                    : new Group(copy(((Group) e).elements), e.optional));
+        }
+        return out;
+    }
+
+    private void flatten(List<Element> elements, boolean optional) {
+        for (Element e : elements) {
+            if (e instanceof One) {
+                flatIndex.put((One) e, flat.size());
+                flat.add((One) e);
+                flatOptional.add(optional || e.optional);
+            } else {
+                flatten(((Group) e).elements, optional || e.optional);
+            }
+        }
+    }
+
     /**
      * Whether {@code steps}, all of them, are this pattern: every pattern step that is not optional matches one step,
      * in order, and every step is matched. Null when not. When a run fits more than one way, the first fit in the order
      * the class describes wins.
+     *
+     * @throws TooAmbiguous when the run is still undecided after {@link #FIT_BUDGET} fits were tried
      */
     public Match match(List<? extends JsonNode> steps) {
+        Search search = new Search(this, steps);
+        if (!search.canFinish(0, 0)) return null;
         Map<String, String> bound = seq(elements, 0, steps, 0, Collections.<String, String>emptyMap(),
-                (at, b) -> at == steps.size() ? b : null);
+                (at, b) -> at == steps.size() ? b : null, search);
         if (bound == null) return null;
         Map<String, String> out = new LinkedHashMap<String, String>();
         for (String p : params) if (bound.containsKey(p)) out.put(p, bound.get(p));
@@ -97,18 +137,104 @@ public final class Pattern {
 
     @Override public String toString() { return stepId + (derived ? " (derived) " : " ") + source; }
 
+    /**
+     * The most fits one {@link #match} tries (an optional entry taken or left out, a scope item at one place, a
+     * {@code *} or a capture of one length): a run that is still undecided then is {@link TooAmbiguous}, not "no
+     * match". Patterns of plain text and a few captures need far fewer. It is for a run where every step fits alone
+     * but the captures cannot agree (several {@code *{p}*} whose values must also make up a later text): trying every
+     * combination could take minutes.
+     */
+    public static final int FIT_BUDGET = 10000;
+
+    /**
+     * A run whose match this pattern could not decide within {@link #FIT_BUDGET} fits: neither a match nor a mismatch.
+     * Folding should leave the run as it is and can say why ({@link #getMessage}).
+     */
+    public static final class TooAmbiguous extends RuntimeException {
+        private final String stepId;
+
+        TooAmbiguous(String stepId) {
+            super("the pattern of '" + stepId + "' is too ambiguous: no answer within " + FIT_BUDGET + " fits", null,
+                    false, false);
+            this.stepId = stepId;
+        }
+
+        /** The id of the step whose pattern this is. */
+        public String stepId() { return stepId; }
+    }
+
+    /**
+     * One match's state: the fits it may still try, and whether the rest of the pattern can still match the rest of
+     * the run at all, judged step by step with every capture free (a pattern step matching its step alone, optional
+     * steps taken or left out freely, a use's steps each on their own). That is looser than the match, so when it says
+     * no, no fit of the steps before can help, and the search gives up at once instead of trying them all.
+     */
+    static final class Search {
+        private final Pattern pattern;
+        private final List<? extends JsonNode> steps;
+        private int left = FIT_BUDGET;
+        /** [pattern step][step]: null not asked yet. */
+        private final Boolean[][] alone;
+        /** [pattern step][step]: whether pattern steps from the first on can match steps from the second on. */
+        private final Boolean[][] finish;
+
+        Search(Pattern pattern, List<? extends JsonNode> steps) {
+            this.pattern = pattern;
+            this.steps = steps;
+            this.alone = new Boolean[pattern.flat.size()][steps.size()];
+            this.finish = new Boolean[pattern.flat.size() + 1][steps.size() + 1];
+        }
+
+        void spend() {
+            if (--left < 0) throw new TooAmbiguous(pattern.stepId);
+        }
+
+        /** Whether {@code one} can match the step at {@code at} and the pattern steps after it the steps after that. */
+        boolean canTake(One one, int at) {
+            int i = pattern.flatIndex.get(one);
+            return at < steps.size() && alone(i, at) && canFinish(i + 1, at + 1);
+        }
+
+        boolean canFinish(int i, int at) {
+            Boolean known = finish[i][at];
+            if (known != null) return known;
+            boolean can;
+            if (i == pattern.flat.size()) {
+                can = at == steps.size();
+            } else {
+                can = pattern.flatOptional.get(i) && canFinish(i + 1, at)
+                        || at < steps.size() && alone(i, at) && canFinish(i + 1, at + 1);
+            }
+            finish[i][at] = can;
+            return can;
+        }
+
+        private boolean alone(int i, int at) {
+            Boolean known = alone[i][at];
+            if (known == null) {
+                Map<String, String> free = Collections.emptyMap();
+                known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, this) != null;
+                alone[i][at] = known;
+            }
+            return known;
+        }
+    }
+
     /** What to match after an element took its steps. */
     interface Then {
         Map<String, String> go(int at, Map<String, String> bound);
     }
 
     static Map<String, String> seq(List<Element> els, int k, List<? extends JsonNode> steps, int at,
-                                   Map<String, String> bound, Then then) {
+                                   Map<String, String> bound, Then then, Search search) {
         if (k == els.size()) return then.go(at, bound);
         Element e = els.get(k);
-        Then next = (j, b) -> seq(els, k + 1, steps, j, b, then);
-        Map<String, String> found = e.take(steps, at, bound, next);
-        if (found == null && e.optional) found = next.go(at, bound);
+        Then next = (j, b) -> seq(els, k + 1, steps, j, b, then, search);
+        Map<String, String> found = e.take(steps, at, bound, next, search);
+        if (found == null && e.optional) {
+            search.spend();
+            found = next.go(at, bound);
+        }
         return found;
     }
 
@@ -120,7 +246,8 @@ public final class Pattern {
             this.optional = optional;
         }
 
-        abstract Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next);
+        abstract Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
+                                          Search search);
 
         /** The captures this element always binds when it matches (none for an optional one). */
         abstract void alwaysCaptured(List<String> into);
@@ -135,9 +262,10 @@ public final class Pattern {
             this.node = node;
         }
 
-        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next) {
-            if (at >= steps.size()) return null;
-            return node.match(steps.get(at), bound, b -> next.go(at + 1, b));
+        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
+                                           Search search) {
+            if (!search.canTake(this, at)) return null;
+            return node.match(steps.get(at), bound, b -> next.go(at + 1, b), search);
         }
 
         @Override void alwaysCaptured(List<String> into) {
@@ -154,8 +282,9 @@ public final class Pattern {
             this.elements = elements;
         }
 
-        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next) {
-            return seq(elements, 0, steps, at, bound, next);
+        @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next,
+                                           Search search) {
+            return seq(elements, 0, steps, at, bound, next, search);
         }
 
         @Override void alwaysCaptured(List<String> into) {
@@ -175,7 +304,7 @@ public final class Pattern {
          * Tries each fit of {@code actual} in turn, handing its bindings to {@code rest}; the first final bindings
          * {@code rest} gives back, or null when no fit holds.
          */
-        abstract Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest);
+        abstract Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search);
 
         abstract void captures(List<String> into);
     }
@@ -188,15 +317,15 @@ public final class Pattern {
             this.fields = new ArrayList<Map.Entry<String, Node>>(fields.entrySet());
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (actual == null || !actual.isObject()) return null;
-            return from(0, actual, bound, rest);
+            return from(0, actual, bound, rest, search);
         }
 
-        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest) {
+        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (i == fields.size()) return rest.go(bound);
             Map.Entry<String, Node> f = fields.get(i);
-            return f.getValue().match(actual.get(f.getKey()), bound, b -> from(i + 1, actual, b, rest));
+            return f.getValue().match(actual.get(f.getKey()), bound, b -> from(i + 1, actual, b, rest, search), search);
         }
 
         @Override void captures(List<String> into) {
@@ -212,14 +341,14 @@ public final class Pattern {
             this.items = items;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (actual == null || !actual.isArray() || actual.size() != items.size()) return null;
-            return from(0, actual, bound, rest);
+            return from(0, actual, bound, rest, search);
         }
 
-        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest) {
+        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (i == items.size()) return rest.go(bound);
-            return items.get(i).match(actual.get(i), bound, b -> from(i + 1, actual, b, rest));
+            return items.get(i).match(actual.get(i), bound, b -> from(i + 1, actual, b, rest, search), search);
         }
 
         @Override void captures(List<String> into) {
@@ -235,17 +364,20 @@ public final class Pattern {
             this.wanted = wanted;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (actual != null && !actual.isArray()) return null;
-            return from(0, actual, 0, bound, rest);
+            return from(0, actual, 0, bound, rest, search);
         }
 
-        private Map<String, String> from(int k, JsonNode actual, int start, Map<String, String> bound, Rest rest) {
+        private Map<String, String> from(int k, JsonNode actual, int start, Map<String, String> bound, Rest rest,
+                                         Search search) {
             if (k == wanted.size()) return rest.go(bound);
             if (actual == null) return null;
             for (int i = start; i < actual.size(); i++) {
+                search.spend();
                 int at = i;
-                Map<String, String> found = wanted.get(k).match(actual.get(i), bound, b -> from(k + 1, actual, at + 1, b, rest));
+                Map<String, String> found = wanted.get(k).match(actual.get(i), bound,
+                        b -> from(k + 1, actual, at + 1, b, rest, search), search);
                 if (found != null) return found;
             }
             return null;
@@ -264,7 +396,7 @@ public final class Pattern {
             this.value = value;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             return same(actual) ? rest.go(bound) : null;
         }
 
@@ -309,7 +441,7 @@ public final class Pattern {
             this.parts = parts;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest, Search search) {
             if (actual == null) return null;
             String s;
             if (actual.isTextual()) {
@@ -319,7 +451,7 @@ public final class Pattern {
             } else {
                 return null;
             }
-            return fit(0, s, 0, bound, rest);
+            return fit(0, s, 0, bound, rest, search);
         }
 
         private boolean loneDigits() {
@@ -327,23 +459,26 @@ public final class Pattern {
         }
 
         /** Parts from {@code k} on fit {@code s} from {@code at} on, each fit tried in turn. */
-        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest) {
+        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest, Search search) {
             if (k == parts.size()) return at == s.length() ? rest.go(bound) : null;
             Object p = parts.get(k);
             if (p instanceof Literal) {
                 String lit = ((Literal) p).text;
-                return s.startsWith(lit, at) ? fit(k + 1, s, at + lit.length(), bound, rest) : null;
+                return s.startsWith(lit, at) ? fit(k + 1, s, at + lit.length(), bound, rest, search) : null;
             }
             if (p == STAR) {
                 for (int end = at; end <= s.length(); end++) {
-                    Map<String, String> found = fit(k + 1, s, end, bound, rest);
+                    search.spend();
+                    Map<String, String> found = fit(k + 1, s, end, bound, rest, search);
                     if (found != null) return found;
                 }
                 return null;
             }
             Capture c = (Capture) p;
             String known = bound.get(c.name);
-            if (known != null) return s.startsWith(known, at) ? fit(k + 1, s, at + known.length(), bound, rest) : null;
+            if (known != null) {
+                return s.startsWith(known, at) ? fit(k + 1, s, at + known.length(), bound, rest, search) : null;
+            }
             int longest = at;
             while (longest < s.length() && (!c.digits || isDigit(s.charAt(longest)))) longest++;
             boolean greedy = k + 1 < parts.size() && parts.get(k + 1) == STAR;
@@ -351,9 +486,10 @@ public final class Pattern {
                 int end = greedy ? longest - n + 1 : at + n;
                 String value = s.substring(at, end);
                 if (c.digits && !fitsAnInt(value)) continue;
+                search.spend();
                 Map<String, String> b = new LinkedHashMap<String, String>(bound);
                 b.put(c.name, value);
-                Map<String, String> found = fit(k + 1, s, end, b, rest);
+                Map<String, String> found = fit(k + 1, s, end, b, rest, search);
                 if (found != null) return found;
             }
             return null;
