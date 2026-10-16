@@ -127,6 +127,46 @@ class PatternTest {
         assertThat(p.match(steps("{'action':'type','target':{'name':'Note'},'text':' x'}"))).isNull();
     }
 
+    @Test
+    void aCaptureRightBeforeAStarTakesTheWholeTitle() {
+        DomainStep openOrder = DomainStep.act("openOrder", "Open order {order}").param("order", ParamType.TEXT)
+                .code((ui, p) -> ui.tab(p.text("order") + "*").button("Print").click()).build();
+
+        Pattern p = compile(openOrder).get(0).patterns().get(0);
+
+        assertThat(p.match(steps("{'action':'click','target':{'scope':['tab:ORD-1640 · Ada Shop Ltd'],'role':'button',"
+                + "'name':'Print'}}")).params()).containsExactly(entry("order", "ORD-1640 · Ada Shop Ltd"));
+    }
+
+    @Test
+    void aLaterUseOfTheSameParamNarrowsACaptureBeforeAStar() {
+        DomainStep openOrder = DomainStep.act("openOrder", "Open order {order}").param("order", ParamType.TEXT)
+                .code((ui, p) -> ui.tab(p.text("order") + "*").table().row("Order", p.text("order")).click()).build();
+
+        Pattern p = compile(openOrder).get(0).patterns().get(0);
+
+        assertThat(p.match(steps("{'action':'click','target':{'scope':['tab:ORD-1640 · Ada Shop Ltd'],'role':'table',"
+                + "'row':{'Order':'ORD-1640'}}}")).params()).containsExactly(entry("order", "ORD-1640"));
+        assertThat(p.match(steps("{'action':'click','target':{'scope':['tab:ORD-1640 · Ada Shop Ltd'],'role':'table',"
+                + "'row':{'Order':'ORD-1641'}}}"))).isNull();
+    }
+
+    @Test
+    void aWrittenCaptureBeforeAStarIsNarrowedByALaterStep() {
+        Pattern p = only(DomainStep.act("notePo", "Note PO {po}").param("po", ParamType.TEXT).code(NOTHING)
+                .match(json("{'action':'type','target':{'name':'Note'},'text':'{po}*'}"),
+                        json("{'action':'type','target':{'name':'PO number'},'text':'{po}'}"))
+                .build());
+        Pattern alone = only(DomainStep.act("notePo", "Note PO {po}").param("po", ParamType.TEXT).code(NOTHING)
+                .match(json("{'action':'type','target':{'name':'Note'},'text':'{po}*'}")).build());
+
+        assertThat(alone.match(steps("{'action':'type','target':{'name':'Note'},'text':'PO-7781 urgent'}")).params())
+                .containsExactly(entry("po", "PO-7781 urgent"));
+        assertThat(p.match(steps("{'action':'type','target':{'name':'Note'},'text':'PO-7781 urgent'}",
+                "{'action':'type','target':{'name':'PO number'},'text':'PO-7781'}")).params())
+                .containsExactly(entry("po", "PO-7781"));
+    }
+
     // ---- the same param twice
 
     @Test

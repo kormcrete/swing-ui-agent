@@ -21,6 +21,15 @@ import java.util.Map;
  * {@code scope}: its items are found in the step's scope in order, with others between them (a subsequence). Text
  * matches as {@link PatternCompiler} describes ({@code {param}} captures, {@code *}); a lone INT capture also matches
  * a whole number that is not negative (a row index). The same param captured twice must hold the same text.
+ *
+ * <p>A run can fit a pattern more than one way. The fits are tried in a fixed order and the first one that fits the
+ * whole run wins: an optional entry is taken before it is left out, a scope item is found as early as it can be, a
+ * {@code *} takes as little text as it can, and a capture takes as little as it can, except that a capture right
+ * before a {@code *} takes as much as it can. That last rule is for a glob that means "starts with the value": from
+ * {@code ui.tab(order + "*")}, the title {@code ORD-1640 · Ada Shop Ltd} gives {@code order} the whole title, which
+ * reaches the same tab again (the shortest fit, {@code O}, would also reach it but says nothing). A capture's fit is
+ * never final while the rest is matched: when a later field or step uses the same param, the fits are tried until
+ * one holds for both (the tab above and a row {@code Order = ORD-1640} give {@code ORD-1640}).
  */
 public final class Pattern {
 
@@ -74,8 +83,8 @@ public final class Pattern {
 
     /**
      * Whether {@code steps}, all of them, are this pattern: every pattern step that is not optional matches one step,
-     * in order, and every step is matched. Null when not. When a run fits more than one way, the first one wins:
-     * an optional step is taken before it is left out, and a capture takes as little text as it can.
+     * in order, and every step is matched. Null when not. When a run fits more than one way, the first fit in the order
+     * the class describes wins.
      */
     public Match match(List<? extends JsonNode> steps) {
         Map<String, String> bound = seq(elements, 0, steps, 0, Collections.<String, String>emptyMap(),
@@ -128,8 +137,7 @@ public final class Pattern {
 
         @Override Map<String, String> take(List<? extends JsonNode> steps, int at, Map<String, String> bound, Then next) {
             if (at >= steps.size()) return null;
-            Map<String, String> b = node.match(steps.get(at), bound);
-            return b == null ? null : next.go(at + 1, b);
+            return node.match(steps.get(at), bound, b -> next.go(at + 1, b));
         }
 
         @Override void alwaysCaptured(List<String> into) {
@@ -156,34 +164,43 @@ public final class Pattern {
         }
     }
 
+    /** What to match after a value matched with these bindings: the final bindings, or null to try the next fit. */
+    interface Rest {
+        Map<String, String> go(Map<String, String> bound);
+    }
+
     /** A pattern value: matches a value of a step (null when the step has no such field), binding captures. */
     abstract static class Node {
-        /** The bindings with this node's captures added, or null when {@code actual} does not match. */
-        abstract Map<String, String> match(JsonNode actual, Map<String, String> bound);
+        /**
+         * Tries each fit of {@code actual} in turn, handing its bindings to {@code rest}; the first final bindings
+         * {@code rest} gives back, or null when no fit holds.
+         */
+        abstract Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest);
 
         abstract void captures(List<String> into);
     }
 
     /** An object: every field it names matches, the others are free. */
     static final class Fields extends Node {
-        final Map<String, Node> fields;
+        final List<Map.Entry<String, Node>> fields;
 
         Fields(Map<String, Node> fields) {
-            this.fields = fields;
+            this.fields = new ArrayList<Map.Entry<String, Node>>(fields.entrySet());
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
             if (actual == null || !actual.isObject()) return null;
-            Map<String, String> b = bound;
-            for (Map.Entry<String, Node> f : fields.entrySet()) {
-                b = f.getValue().match(actual.get(f.getKey()), b);
-                if (b == null) return null;
-            }
-            return b;
+            return from(0, actual, bound, rest);
+        }
+
+        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest) {
+            if (i == fields.size()) return rest.go(bound);
+            Map.Entry<String, Node> f = fields.get(i);
+            return f.getValue().match(actual.get(f.getKey()), bound, b -> from(i + 1, actual, b, rest));
         }
 
         @Override void captures(List<String> into) {
-            for (Node n : fields.values()) n.captures(into);
+            for (Map.Entry<String, Node> f : fields) f.getValue().captures(into);
         }
     }
 
@@ -195,14 +212,14 @@ public final class Pattern {
             this.items = items;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
             if (actual == null || !actual.isArray() || actual.size() != items.size()) return null;
-            Map<String, String> b = bound;
-            for (int i = 0; i < items.size(); i++) {
-                b = items.get(i).match(actual.get(i), b);
-                if (b == null) return null;
-            }
-            return b;
+            return from(0, actual, bound, rest);
+        }
+
+        private Map<String, String> from(int i, JsonNode actual, Map<String, String> bound, Rest rest) {
+            if (i == items.size()) return rest.go(bound);
+            return items.get(i).match(actual.get(i), bound, b -> from(i + 1, actual, b, rest));
         }
 
         @Override void captures(List<String> into) {
@@ -218,19 +235,18 @@ public final class Pattern {
             this.wanted = wanted;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound) {
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
             if (actual != null && !actual.isArray()) return null;
-            return from(0, actual, 0, bound);
+            return from(0, actual, 0, bound, rest);
         }
 
-        private Map<String, String> from(int k, JsonNode actual, int start, Map<String, String> bound) {
-            if (k == wanted.size()) return bound;
+        private Map<String, String> from(int k, JsonNode actual, int start, Map<String, String> bound, Rest rest) {
+            if (k == wanted.size()) return rest.go(bound);
             if (actual == null) return null;
             for (int i = start; i < actual.size(); i++) {
-                Map<String, String> b = wanted.get(k).match(actual.get(i), bound);
-                if (b == null) continue;
-                Map<String, String> rest = from(k + 1, actual, i + 1, b);
-                if (rest != null) return rest;
+                int at = i;
+                Map<String, String> found = wanted.get(k).match(actual.get(i), bound, b -> from(k + 1, actual, at + 1, b, rest));
+                if (found != null) return found;
             }
             return null;
         }
@@ -248,19 +264,21 @@ public final class Pattern {
             this.value = value;
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound) {
-            if (value.isNull()) return actual == null || actual.isNull() ? bound : null;
-            if (actual == null) return null;
-            if (value.isNumber() && actual.isNumber()) {
-                return value.decimalValue().compareTo(actual.decimalValue()) == 0 ? bound : null;
-            }
-            return value.equals(actual) ? bound : null;
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
+            return same(actual) ? rest.go(bound) : null;
+        }
+
+        private boolean same(JsonNode actual) {
+            if (value.isNull()) return actual == null || actual.isNull();
+            if (actual == null) return false;
+            if (value.isNumber() && actual.isNumber()) return value.decimalValue().compareTo(actual.decimalValue()) == 0;
+            return value.equals(actual);
         }
 
         @Override void captures(List<String> into) { }
     }
 
-    /** Text of literal parts, {@code *} (any text) and captures. */
+    /** Text of literal parts, {@code *} (any text) and captures; its fits in the order the class describes. */
     static final class Text extends Node {
         /** A literal part. */
         static final class Literal {
@@ -271,7 +289,7 @@ public final class Pattern {
             }
         }
 
-        /** A {@code {param}}: some text (at least one character), or digits for an INT param. */
+        /** A {@code {param}}: some text (at least one character), or digits in int range for an INT param. */
         static final class Capture {
             final String name;
             final boolean digits;
@@ -286,26 +304,14 @@ public final class Pattern {
 
         /** Literal, Capture or STAR, in order. */
         final List<Object> parts;
-        private final java.util.regex.Pattern fixed;
-        private final String literal;
 
         Text(List<Object> parts) {
             this.parts = parts;
-            boolean captures = false;
-            boolean stars = false;
-            StringBuilder lit = new StringBuilder();
-            for (Object p : parts) {
-                if (p instanceof Capture) captures = true;
-                else if (p == STAR) stars = true;
-                else lit.append(((Literal) p).text);
-            }
-            this.literal = captures || stars ? null : lit.toString();
-            this.fixed = captures || !stars ? null : regex(Collections.<String, String>emptyMap(), new ArrayList<String>());
         }
 
-        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound) {
-            String s;
+        @Override Map<String, String> match(JsonNode actual, Map<String, String> bound, Rest rest) {
             if (actual == null) return null;
+            String s;
             if (actual.isTextual()) {
                 s = actual.asText();
             } else if (loneDigits() && actual.isIntegralNumber() && actual.canConvertToInt() && actual.intValue() >= 0) {
@@ -313,27 +319,48 @@ public final class Pattern {
             } else {
                 return null;
             }
-            if (literal != null) return literal.equals(s) ? bound : null;
-            if (fixed != null) return fixed.matcher(s).matches() ? bound : null;
-            List<String> groups = new ArrayList<String>();
-            java.util.regex.Matcher m = regex(bound, groups).matcher(s);
-            if (!m.matches()) return null;
-            Map<String, String> b = new LinkedHashMap<String, String>(bound);
-            for (int g = 0; g < groups.size(); g++) {
-                String value = m.group(g + 1);
-                if (digits(groups.get(g)) && !fitsAnInt(value)) return null;
-                b.put(groups.get(g), value);
-            }
-            return b;
+            return fit(0, s, 0, bound, rest);
         }
 
         private boolean loneDigits() {
             return parts.size() == 1 && parts.get(0) instanceof Capture && ((Capture) parts.get(0)).digits;
         }
 
-        private boolean digits(String name) {
-            for (Object p : parts) if (p instanceof Capture && ((Capture) p).name.equals(name)) return ((Capture) p).digits;
-            return false;
+        /** Parts from {@code k} on fit {@code s} from {@code at} on, each fit tried in turn. */
+        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest) {
+            if (k == parts.size()) return at == s.length() ? rest.go(bound) : null;
+            Object p = parts.get(k);
+            if (p instanceof Literal) {
+                String lit = ((Literal) p).text;
+                return s.startsWith(lit, at) ? fit(k + 1, s, at + lit.length(), bound, rest) : null;
+            }
+            if (p == STAR) {
+                for (int end = at; end <= s.length(); end++) {
+                    Map<String, String> found = fit(k + 1, s, end, bound, rest);
+                    if (found != null) return found;
+                }
+                return null;
+            }
+            Capture c = (Capture) p;
+            String known = bound.get(c.name);
+            if (known != null) return s.startsWith(known, at) ? fit(k + 1, s, at + known.length(), bound, rest) : null;
+            int longest = at;
+            while (longest < s.length() && (!c.digits || isDigit(s.charAt(longest)))) longest++;
+            boolean greedy = k + 1 < parts.size() && parts.get(k + 1) == STAR;
+            for (int n = 1; n <= longest - at; n++) {
+                int end = greedy ? longest - n + 1 : at + n;
+                String value = s.substring(at, end);
+                if (c.digits && !fitsAnInt(value)) continue;
+                Map<String, String> b = new LinkedHashMap<String, String>(bound);
+                b.put(c.name, value);
+                Map<String, String> found = fit(k + 1, s, end, b, rest);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private static boolean isDigit(char ch) {
+            return ch >= '0' && ch <= '9';
         }
 
         private static boolean fitsAnInt(String digits) {
@@ -343,30 +370,6 @@ public final class Pattern {
             } catch (NumberFormatException e) {
                 return false;
             }
-        }
-
-        /** The regex for this text; a capture already bound is its value, a name seen before in it a backreference. */
-        private java.util.regex.Pattern regex(Map<String, String> bound, List<String> groups) {
-            StringBuilder re = new StringBuilder();
-            for (Object p : parts) {
-                if (p == STAR) {
-                    re.append(".*?");
-                } else if (p instanceof Literal) {
-                    re.append(java.util.regex.Pattern.quote(((Literal) p).text));
-                } else {
-                    Capture c = (Capture) p;
-                    int seen = groups.indexOf(c.name);
-                    if (bound.containsKey(c.name)) {
-                        re.append(java.util.regex.Pattern.quote(bound.get(c.name)));
-                    } else if (seen >= 0) {
-                        re.append('\\').append(seen + 1);
-                    } else {
-                        groups.add(c.name);
-                        re.append(c.digits ? "([0-9]+)" : "(.+?)");
-                    }
-                }
-            }
-            return java.util.regex.Pattern.compile(re.toString(), java.util.regex.Pattern.DOTALL);
         }
 
         @Override void captures(List<String> into) {

@@ -252,11 +252,17 @@ class ResolverTest {
 
     /** A tab whose title leads with what it is and ends with data, e.g. the customer of a new order. */
     private JButton newOrderTab() {
+        return tabWithAButton("New order · Ada Shop Ltd");
+    }
+
+    /** A tab pane in the main window whose one tab, titled {@code title}, holds a panel named cart with Add to cart. */
+    private JButton tabWithAButton(String title) {
         JTabbedPane orders = new JTabbedPane();
         JPanel cart = new JPanel();
+        cart.setName("cart");
         JButton add = new JButton("Add to cart");
         cart.add(add);
-        orders.addTab("New order · Ada Shop Ltd", cart);
+        orders.addTab(title, cart);
         mainContent.add(orders);
         return add;
     }
@@ -290,6 +296,25 @@ class ResolverTest {
         Locator lead = Locator.of("button", "Add to cart");
         lead.scope = Arrays.asList("tab:*Ada Shop Ltd");
         assertThat(resolver.matches(lead)).isEmpty();
+        Locator inner = Locator.of("button", "Add to cart");
+        inner.scope = Arrays.asList("tab:New*order · Ada Shop Ltd");
+        assertThat(resolver.matches(inner)).isEmpty();
+        Locator id = Locator.of("button", "Add to cart");
+        id.scope = Arrays.asList("id:cart");
+        assertThat(resolver.resolve(id).component).isSameAs(add);
+        id.scope = Arrays.asList("id:car*");
+        assertThat(resolver.matches(id)).isEmpty();
+    }
+
+    @Test
+    void aTitleThatReallyEndsInAStarIsAPrefixToo() {
+        JButton changed = tabWithAButton("ORD-1640*");
+        JButton plain = tabWithAButton("ORD-1640");
+        JButton longer = tabWithAButton("ORD-16401");
+        tabWithAButton("ORD-164");
+        Locator l = Locator.of("button", "Add to cart");
+        l.scope = Arrays.asList("tab:ORD-1640*");
+        assertThat(resolver.matches(l)).extracting(r -> r.component).containsExactlyInAnyOrder(changed, plain, longer);
     }
 
     @Test

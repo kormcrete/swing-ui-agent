@@ -31,7 +31,8 @@ import java.util.regex.Matcher;
  * limit). Each {@link DomainStep#matchAlso} adds another pattern, for another way to do the same thing.
  *
  * <p>Text in a written pattern ({@code match}, {@code matchAlso}): {@code {name}} of a declared param captures text
- * (at least one character, as little as fits) or, for an INT param, digits in int range; {@code *} matches any text;
+ * (at least one character; which fit wins is in {@link Pattern}) or, for an INT param, digits in int range;
+ * {@code *} matches any text;
  * a backslash makes the star, opening brace or backslash after it plain text. A {@code {name}} of an undeclared param
  * is a problem, as are a backslash before anything else and a {@code {param}} in a field name (field names are plain
  * text). An entry {@code "optional":true} may be left out; an entry {@code {"use":"<id>"}} (and at most

@@ -26,7 +26,8 @@ import java.util.function.Supplier;
  * and hold letters, digits and {@code _}, each declared once; an INT param's default is digits in int range; every
  * {@code {name}} in the sentence, in {@link Builder#steps} and in the {@link Builder#java} call is a declared param;
  * the {@link Builder#java} class looks like a class name; exactly one body; each {@link Builder#steps},
- * {@link Builder#match} and {@link Builder#matchAlso} entry is a JSON object.
+ * {@link Builder#match} and {@link Builder#matchAlso} entry is a JSON object; and its match patterns parse (see
+ * {@link Builder#match}). A step that fails a check is dropped and listed under {@code session}; the plugin stays ready.
  * A step's values are concrete: nothing is captured or kept between steps.
  */
 public final class DomainStep {
@@ -40,6 +41,13 @@ public final class DomainStep {
      * order number, belongs in a helper method that returns it (for Java tests, named by {@link Builder#java}); the
      * body itself returns nothing. A {@code do} step runs it on the agent's request thread, not on the EDT (as a UI
      * test's Client runs off the EDT); so are {@link Builder#choices} suppliers asked.
+     *
+     * <p>A body also runs when nobody asked for the step: when the plugin becomes ready, a body without
+     * {@link Builder#match} runs twice to learn its pattern, and a recording's Java export may run it twice for the
+     * steps it makes. Those runs are on a thread of their own, given up after 5 s, on a Client that reaches no app
+     * (it only notes the steps), and with stand-in values: a TEXT param holds {@code {product}} (its name in braces),
+     * an INT param a large number. Anything else the body does (plugin code, files, a database) happens for real on
+     * each of those runs, so keep a body to its Client calls, or give the step a {@link Builder#match}.
      */
     public interface Body {
         void run(Client ui, Params params);
@@ -203,13 +211,24 @@ public final class DomainStep {
             return this;
         }
 
-        /** The pattern a recording must match to fold into this step, one step JSON each; replaces the derived one. */
+        /**
+         * The pattern a recording must match to fold into this step, one step JSON each; replaces the one derived from
+         * the body (which then is not run at ready). Fields left out match anything; in text, {@code {param}} (a
+         * declared param) captures the value, {@code *} matches any text, and a backslash makes a following
+         * {@code *}, opening brace or backslash plain text. An entry may say {@code "optional":true}, and
+         * {@code {"use":"<id>"}} stands for another step's own pattern (same plugin). The full rules are in
+         * {@code io.github.kormcrete.swingui.vocab.PatternCompiler} and {@code Pattern}; a pattern that does not parse
+         * drops the step when the plugin becomes ready.
+         */
         public Builder match(String... patternStepJson) {
             this.match = list(patternStepJson);
             return this;
         }
 
-        /** Another pattern for the same step (another way to do the same thing); may be given more than once. */
+        /**
+         * Another pattern for the same step (another way to do the same thing), written as for {@link #match}; may be
+         * given more than once.
+         */
         public Builder matchAlso(String... patternStepJson) {
             this.matchAlso.add(list(patternStepJson));
             return this;

@@ -292,7 +292,9 @@ public final class Resolver {
     /**
      * A wanted {@code tab:} or {@code section:} step whose title ends in {@code *} matches every title that starts with
      * the rest ({@code tab:New order*} reaches {@code tab:New order · Ada Shop Ltd}); any other step only itself. A
-     * star elsewhere in the title is text, and a title that really ends in {@code *} still matches itself.
+     * star elsewhere in the title, or on an {@code id:} step, is text. A title that really ends in {@code *} (a tab
+     * {@code ORD-1640*} marked as changed) still matches itself, but is now a prefix too: it also matches
+     * {@code ORD-1640} and {@code ORD-16401}.
      */
     static boolean scopeStepMatches(String wanted, String step) {
         if (wanted.equals(step)) return true;
