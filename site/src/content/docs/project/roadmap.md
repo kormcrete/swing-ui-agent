@@ -17,9 +17,8 @@ No dates, just the order we expect to work in. Each item closes a gap from [Limi
 
 ## Later
 
-- **A recorded test as the base of a Java test:** an engineer generalises a recorded test into a Java test. Today the two kinds do not convert into each other; see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+- **A recorded test as the base of a Java test:** an engineer generalises a recorded test into a Java test, and converters between the two kinds. Today the two kinds do not convert into each other; see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 - **For app users with only the built app:** recorded tests already run without compiling and carry a sentence per step. What is still to come is the way in for someone who has no development tools: the app started with the agent when needed, driven in plain language by typing or by voice, and the tests run by the agent from there.
-- **Converters between the two kinds of test,** next to the recorded-test-as-base line above.
 - **Linux and Windows on more real desktops:** GNOME and KDE, Wayland through XWayland, display scaling, and the palette tried by hand on both.
 - **A plugin tutorial on Order Desk:** reset to a defined start, a login and a typed hook, built step by step.
 - **Javadoc** of the library on this site.
