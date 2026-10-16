@@ -133,7 +133,7 @@ public final class UiMcpTools {
                         + "Each step runs, answers and records exactly as its own tool call would, so export_test "
                         + "writes the same test either way; 'read' steps record nothing, and a 'read' that finds "
                         + "nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, "
-                        + "ms, recorded?, notRecorded?, ...}], snapshot?}. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool "
+                        + "ms, recorded?, notRecorded?, ...}], snapshot?, snapshotError?}. A snapshot that cannot be taken keeps the steps and reports {errorType, message, details} as snapshotError. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool "
                         + "error naming the step; the steps before it ran and were recorded. Example: {\"steps\":["
                         + "{\"verb\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},"
                         + "{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Name\"},\"text\":\"X\"},"

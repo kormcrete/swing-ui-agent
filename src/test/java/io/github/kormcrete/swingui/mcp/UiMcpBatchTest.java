@@ -170,6 +170,20 @@ class UiMcpBatchTest {
     }
 
     @Test
+    void aSnapshotThatCannotResolveKeepsTheStepResults() throws Exception {
+        backend.verbs.scopedSnapshotFailure = new DriverException(Reason.NOT_FOUND, "no tab 'Gone'",
+                java.util.Arrays.asList("tab 'Customer'"));
+        JsonNode r = mapper.readTree(session.batch(mapper.readTree("{\"steps\":[" + PRESS + "],"
+                + "\"snapshot\":{\"target\":{\"role\":\"tab\",\"name\":\"Gone\"}}}")));
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("steps")).hasSize(1);
+        assertThat(r.has("snapshot")).isFalse();
+        assertThat(r.path("snapshotError").path("errorType").asText()).isEqualTo("NOT_FOUND");
+        assertThat(r.path("snapshotError").path("message").asText()).contains("no tab 'Gone'");
+        assertThat(r.path("snapshotError").path("details").get(0).asText()).isEqualTo("tab 'Customer'");
+    }
+
+    @Test
     void malformedBatchesAreBadInput() {
         assertThat(catchThrowableOfType(() -> session.batch(mapper.readTree("{\"steps\":[]}")), DriverException.class)
                 .reason()).isEqualTo(Reason.BAD_INPUT);

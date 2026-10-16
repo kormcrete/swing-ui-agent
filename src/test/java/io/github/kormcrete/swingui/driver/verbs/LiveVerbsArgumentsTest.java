@@ -136,6 +136,37 @@ class LiveVerbsArgumentsTest {
     }
 
     @Test
+    void aStableAmbiguousFailsWithinTwoSeconds() {
+        long start = System.currentTimeMillis();
+        DriverException e = catchThrowableOfType(() -> LiveVerbs.<Object>retryUntil(10_000, () -> {
+            throw new DriverException(Reason.AMBIGUOUS, "2 elements match", java.util.Arrays.asList("a", "b"));
+        }), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.AMBIGUOUS);
+        assertThat(System.currentTimeMillis() - start).isLessThan(2_000);
+    }
+
+    @Test
+    void anAmbiguousThatResolvesWithinTheWindowPasses() {
+        AtomicInteger calls = new AtomicInteger();
+        String found = LiveVerbs.retryUntil(10_000, () -> {
+            if (calls.incrementAndGet() < 4) throw new DriverException(Reason.AMBIGUOUS, "2 match", java.util.Arrays.asList("a", "b"));
+            return "one";
+        });
+        assertThat(found).isEqualTo("one");
+    }
+
+    @Test
+    void aChangingMatchSetKeepsRetrying() {
+        long start = System.currentTimeMillis();
+        AtomicInteger calls = new AtomicInteger();
+        DriverException e = catchThrowableOfType(() -> LiveVerbs.<Object>retryUntil(2_500, () -> {
+            throw new DriverException(Reason.AMBIGUOUS, "2 match", java.util.Arrays.asList("a", "b" + calls.incrementAndGet()));
+        }), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.AMBIGUOUS);
+        assertThat(System.currentTimeMillis() - start).isGreaterThanOrEqualTo(2_400);
+    }
+
+    @Test
     void runDropRoutesADriverExceptionToRefusalAndLeavesOtherThrowablesToPropagate() {
         AtomicReference<String> outcome = new AtomicReference<String>();
         AtomicReference<DriverException> refusal = new AtomicReference<DriverException>();

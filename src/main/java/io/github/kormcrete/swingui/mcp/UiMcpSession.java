@@ -1548,7 +1548,15 @@ public class UiMcpSession {
         r.set("steps", results);
         JsonNode snapshot = args.get("snapshot");
         if (snapshot != null && (snapshot.isObject() || snapshot.asBoolean(false))) {
-            r.set("snapshot", snapshotNode(snapshot.isObject() ? snapshot : null));
+            try {
+                r.set("snapshot", snapshotNode(snapshot.isObject() ? snapshot : null));
+            } catch (DriverException e) {
+                ObjectNode error = r.putObject("snapshotError");
+                error.put("errorType", ToolErrors.typeOf(e.reason()).name());
+                error.put("message", DriverException.stripReason(e.getMessage(), e.reason()));
+                ArrayNode details = error.putArray("details");
+                for (String d : e.details()) details.add(d);
+            }
         }
         return r.toString();
     }

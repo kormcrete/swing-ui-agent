@@ -95,6 +95,8 @@ import java.util.function.Function;
 public final class LiveVerbs implements Verbs {
 
     private static final long POLL_MS = 100;
+    /** An AMBIGUOUS with the same match set for this long is final: waiting longer cannot make it one match. */
+    static final long AMBIGUOUS_STABLE_MS = 1000;
     private static final String POSTED = "posted";
     private static final String API = "api";
 
@@ -929,18 +931,32 @@ public final class LiveVerbs implements Verbs {
     /**
      * Retries {@code probe} on the EDT until it succeeds or {@code millis} elapses, {@code POLL_MS}
      * apart: NOT_FOUND, AMBIGUOUS and NOT_ACTIONABLE (resolve, the modal refusal,
-     * the hit check) are retried; any other reason propagates at once, and once the deadline passes the
+     * the hit check) are retried, except an AMBIGUOUS whose match set stays the same for {@link #AMBIGUOUS_STABLE_MS}; any other reason propagates at once, and once the deadline passes the
      * last DriverException propagates.
      */
     static <T> T retryUntil(long millis, Callable<T> probe) {
         long deadline = System.currentTimeMillis() + millis;
+        String ambiguous = null;
+        long ambiguousSince = 0;
         while (true) {
             try {
                 return Edt.call(probe);
             } catch (DriverException e) {
                 boolean retry = e.reason() == Reason.NOT_FOUND || e.reason() == Reason.AMBIGUOUS
                         || e.reason() == Reason.NOT_ACTIONABLE;
-                if (!retry || System.currentTimeMillis() >= deadline) throw e;
+                long now = System.currentTimeMillis();
+                if (e.reason() == Reason.AMBIGUOUS) {
+                    String set = e.getMessage() + "\n" + e.details();
+                    if (!set.equals(ambiguous)) {
+                        ambiguous = set;
+                        ambiguousSince = now;
+                    } else if (now - ambiguousSince >= AMBIGUOUS_STABLE_MS) {
+                        throw e;
+                    }
+                } else {
+                    ambiguous = null;
+                }
+                if (!retry || now >= deadline) throw e;
                 pause(POLL_MS);
             }
         }
