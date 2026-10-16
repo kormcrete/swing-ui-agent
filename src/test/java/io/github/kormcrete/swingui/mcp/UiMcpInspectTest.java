@@ -73,7 +73,9 @@ class UiMcpInspectTest {
         at.point = new LinkedHashMap<String, Double>();
         at.point.put("x", 0.5);
         at.point.put("y", 0.5);
-        Inspector.Result r = sink.done(step("click", at));
+        Map<String, Object> twice = step("click", at);
+        twice.put("count", 2);
+        Inspector.Result r = sink.done(twice);
         assertThat(r.ok).isFalse();
         assertThat(lines()).isEmpty();
     }

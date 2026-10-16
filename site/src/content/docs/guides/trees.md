@@ -54,14 +54,7 @@ The tree as a whole takes the same checks as a table for its rows: `"rows":{"op"
 
 ## In a test
 
-A step aimed at a tree row runs, but `export_test` does not write it yet: the answer says `notRecorded` and why.
-
-```json
-{"passed":true,"action":"click(tree [tab:New order] item=[Office, Pens])","message":"","ms":11,
- "notRecorded":"it ran, but export_test has no Java form for it (step 4: locator tree [tab:New order] item=[Office, Pens] uses item, which a test cannot express); write it by hand into the exported test with the app plugin's test helpers or the Client API"}
-```
-
-Add the step to the exported test by hand. The `Client` API has the form for it:
+A step aimed at a tree row is exported like any other, as `item` in the Java test:
 
 ```java
 ui.tab("New order").tree(null).item("Office", "Pens").click();
@@ -69,7 +62,7 @@ ui.tab("New order").tree(null).item("Office", "Pens").click();
 assertThat(ui.tab("New order").tree(null).item("Office", "Pens")).isSelected();
 ```
 
-`tree(null)` is the tab's only tree; pass the tree's name when it has one. A list item (a `JList` entry, not a tree row) is chosen with `select` and its text instead: `select {"target":{"role":"list","name":"…"},"item":"…"}`, in Java `ui.list("…").select("…")`.
+`tree(null)` is the tab's only tree; pass the tree's name when it has one. A list entry (a `JList` row, not a tree row) is chosen with `select` and its text: `select {"target":{"role":"list","name":"…"},"item":"…"}`, in Java `ui.list("…").select("…")`. A click on an entry of a suggestion popup is exported as `ui.popup().list(null).item("…").click()`.
 
 ## What's next
 

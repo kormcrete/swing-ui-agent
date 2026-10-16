@@ -330,21 +330,53 @@ class JavaTestWriterTest {
     }
 
     @Test
-    void anItemLocatorIsNamedAsItemOnly() {
-        Locator l = Locator.of("list", "Favourites");
-        l.item = Arrays.asList("a");
-        ExportRefused e = catchThrowableOfType(() -> write(click(l)), ExportRefused.class);
-        assertThat(e.problems().get(0)).contains("step 1", "uses item, which a test cannot express").doesNotContain("ref/point/item");
+    void aPopupListItemClickIsWritten() {
+        Locator l = Locator.of("list", null);
+        l.window = "popup";
+        l.item = Arrays.asList("Ada Shop Ltd \u2026");
+        assertThat(write(click(l))).contains("        ui.popup().list(null).item(\"Ada Shop Ltd \u2026\").click();");
     }
 
     @Test
-    void aPointLocatorIsNamedAsPointOnly() {
+    void aTreeItemIsWritten() {
+        Locator l = Locator.of("tree", "Categories");
+        l.item = Arrays.asList("Paper", "A4 paper, 500 sheets");
+        assertThat(write(click(l))).contains("        ui.tree(\"Categories\").item(\"Paper\", \"A4 paper, 500 sheets\").click();");
+    }
+
+    @Test
+    void aClickAtAPointIsWrittenAsClickAt() {
+        Locator l = Locator.of("clickable", "Canvas");
+        l.point = new LinkedHashMap<>();
+        l.point.put("x", 0.5);
+        l.point.put("y", 0.25);
+        ClickVerb c = click(l);
+        c.fragile = true;
+        String java = write(c);
+        assertThat(java).containsPattern("// FRAGILE: [^\\n]*\\n        ui\\.clickable\\(\"Canvas\"\\)\\.clickAt\\(0\\.5, 0\\.25\\);");
+    }
+
+    @Test
+    void aTypeWithAPointIsStillRefused() {
         Locator l = Locator.of("clickable", "Canvas");
         l.point = new LinkedHashMap<>();
         l.point.put("x", 0.5);
         l.point.put("y", 0.5);
-        ExportRefused e = catchThrowableOfType(() -> write(click(l)), ExportRefused.class);
+        TypeVerb t = new TypeVerb(); t.target = l; t.text = "a";
+        ExportRefused e = catchThrowableOfType(() -> write(t), ExportRefused.class);
         assertThat(e.problems().get(0)).contains("step 1", "uses point, which a test cannot express").doesNotContain("ref/point/item");
+    }
+
+    @Test
+    void aDoubleClickAtAPointIsStillRefused() {
+        Locator l = Locator.of("clickable", "Canvas");
+        l.point = new LinkedHashMap<>();
+        l.point.put("x", 0.5);
+        l.point.put("y", 0.5);
+        ClickVerb c = click(l);
+        c.count = 2;
+        ExportRefused e = catchThrowableOfType(() -> write(c), ExportRefused.class);
+        assertThat(e.problems().get(0)).contains("uses point");
     }
 
     @Test
@@ -457,7 +489,8 @@ class JavaTestWriterTest {
         point.point = new LinkedHashMap<String, Double>();
         point.point.put("x", 0.5);
         point.point.put("y", 0.5);
-        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.lines(Arrays.<Action>asList(click(point))),
+        TypeVerb typed = new TypeVerb(); typed.target = point; typed.text = "a";
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.lines(Arrays.<Action>asList(typed)),
                 ExportRefused.class);
         assertThat(e.problems().get(0)).contains("step 1");
 

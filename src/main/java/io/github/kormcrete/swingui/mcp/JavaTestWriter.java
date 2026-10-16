@@ -439,20 +439,27 @@ public final class JavaTestWriter {
             statements.add(indent("// " + comment(say)));
         }
 
-        /** True (and a problem recorded per bad locator) when any of this verb's targets uses point, item or an unconverted ref. */
+        /** True (and a problem recorded per bad locator) when any of this verb's targets uses an unconverted ref, or a point other than on a plain click. */
         private boolean hasBadLocator(VerbAction v, String what) {
             boolean bad = false;
             for (Locator l : v.targets().values()) {
                 if (l == null) continue;
                 List<String> uses = new ArrayList<String>();
                 if (l.ref != null) uses.add("ref");
-                if (l.point != null) uses.add("point");
-                if (l.item != null) uses.add("item");
+                if (l.point != null && !isPlainPointClick(v, l)) uses.add("point");
                 if (uses.isEmpty()) continue;
                 problems.add(what + ": locator " + l + " uses " + String.join("/", uses) + ", which a test cannot express");
                 bad = true;
             }
             return bad;
+        }
+
+        /** A point has a Java form only as {@code clickAt(x, y)}: a plain left click, no count or modifiers, on this locator. */
+        private static boolean isPlainPointClick(VerbAction v, Locator l) {
+            if (!(v instanceof ClickVerb) || ((ClickVerb) v).target != l) return false;
+            ClickVerb c = (ClickVerb) v;
+            return (c.button == null || "left".equals(c.button)) && (c.count == null || c.count == 1)
+                    && (c.modifiers == null || c.modifiers.isEmpty());
         }
 
         private String buildStatement(VerbAction v, String what) {
@@ -500,6 +507,10 @@ public final class JavaTestWriter {
         private String buildClick(ClickVerb v, String what) {
             String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
+            if (v.target.point != null) {
+                // Only a plain click gets here with a point (hasBadLocator); a step marked fragile stays so.
+                return chain + ".clickAt(" + v.target.point.get("x") + ", " + v.target.point.get("y") + ");";
+            }
             boolean leftOrNull = v.button == null || "left".equals(v.button);
             boolean countDefault = v.count == null || v.count == 1;
             boolean noMods = v.modifiers == null || v.modifiers.isEmpty();
@@ -720,6 +731,7 @@ public final class JavaTestWriter {
                 for (String step : l.scope) appendScopeStep(sb, step);
             }
             appendLeaf(sb, l);
+            if (l.item != null) sb.append(".item(").append(joinQuoted(l.item)).append(")");
             if (l.row != null) {
                 String rowChain = rowChain(l.row, what);
                 if (rowChain == null) return null;

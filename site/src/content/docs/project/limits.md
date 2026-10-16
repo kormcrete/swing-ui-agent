@@ -26,7 +26,7 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 
 ## Recording and export
 
-- **Not exportable:** a target addressed by `point` or `item`, a `row` matched on more than two columns, and a `loginAs` that is not the first step. The step runs and its result says `notRecorded`; pick another locator, or write that line by hand.
+- **Not exportable:** a `row` matched on more than two columns, a `loginAs` that is not the first step, and a `point` on anything but a plain left click (that one is exported as `clickAt`). The step runs and its result says `notRecorded`; pick another locator, or write that line by hand.
 - **Starting screen:** without a plugin, a reset only closes modal dialogs, so the app may be on any screen. Each test reaches its own starting screen through the menu bar or a shortcut, and the exports warn when a recording starts any other way.
 
 ## The palette and recording by showing it

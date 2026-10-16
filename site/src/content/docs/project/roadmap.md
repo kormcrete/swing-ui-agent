@@ -12,7 +12,7 @@ No dates, just the order we expect to work in. Each item closes a gap from [Limi
 - **Publishing to Maven Central**, so the library and the agent jar no longer have to be built from source.
 - **The site checked against Order Desk in CI.** Today the Order Desk examples on this site are copied from the demo repository, and a script compares them with it. Next, a deploy job builds the demo, starts it with the agent, runs its UI tests and refreshes the tool reference before every deploy.
 - **Recording by showing it, filled in:** a check kind for whole table columns, spinner arrows, drags, and list and tree items.
-- **Export gaps:** `point` and `item` targets in exported tests, and a tool of their own for `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName`.
+- **Export gaps:** a tool of their own for `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName`.
 
 ## Later
 

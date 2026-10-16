@@ -157,8 +157,9 @@ the app sees a palette in its window:
 
 ## What is not recorded
 
-- A target using `point` or `item`, a `row` with more than two columns, a `loginAs` that is not the first step:
-  the step runs and the result says `notRecorded`. Pick another locator, or add the step to the class by hand.
+- A `row` with more than two columns, a `loginAs` that is not the first step, and a `point` on anything but a plain
+  left click: the step runs and the result says `notRecorded`. Pick another locator, or add the step to the class by
+  hand. An `item` (a tree row or a list entry) is exported as `.item(...)`; a plain click at a `point` as `.clickAt(x, y)`.
 - A `{"ref":"e12"}` target is recorded as a locator the recorder derives. `fragile:true` means it needed `nth`;
   find a better locator, reset and redo.
 - Inside a `batch`, `{"verb":"screenshot","path":"..."}` writes a PNG and IS recorded; add `"scale":2` for a HiDPI

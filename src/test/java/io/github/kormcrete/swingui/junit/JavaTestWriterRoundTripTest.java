@@ -146,6 +146,27 @@ class JavaTestWriterRoundTripTest {
     }
 
     @Test
+    void anItemAndAPointRoundTrip() throws Exception {
+        Locator entry = Locator.of("list", null); entry.window = "popup"; entry.item = Arrays.asList("Ada Shop Ltd");
+        ClickVerb pickEntry = new ClickVerb(); pickEntry.target = entry;
+        Locator node = Locator.of("tree", "Categories"); node.item = Arrays.asList("Paper", "A4 paper, 500 sheets");
+        ClickVerb pickNode = new ClickVerb(); pickNode.target = node;
+        Locator spot = Locator.of("clickable", "Canvas"); spot.point = new java.util.LinkedHashMap<String, Double>();
+        spot.point.put("x", 0.5); spot.point.put("y", 0.25);
+        ClickVerb clickSpot = new ClickVerb(); clickSpot.target = spot;
+        List<Action> steps = Arrays.<Action>asList(pickEntry, pickNode, clickSpot);
+
+        RecordingVerbs direct = new RecordingVerbs();
+        for (Action a : steps) ((VerbAction) a).run(direct);
+        String src = JavaTestWriter.write(steps, "rt", "RoundTripUiIT", "walk");
+        RecordingVerbs viaJava = new RecordingVerbs();
+        run(src, new Client(viaJava, new RecordingApp(viaJava.calls), "rt"));
+
+        assertThat(viaJava.calls).containsExactlyElementsOf(direct.calls);
+        assertThat(viaJava.calls.get(0)).contains("Ada Shop Ltd");
+    }
+
+    @Test
     void aScaledScreenshotStepRoundTrips() throws Exception {
         ScreenshotVerb shot = new ScreenshotVerb(); shot.path = "shots/a.png"; shot.scale = 2.0;
         List<Action> steps = Collections.<Action>singletonList(shot);

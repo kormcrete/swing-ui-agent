@@ -137,7 +137,8 @@ public final class Target {
     /**
      * A TREE row by its path of labels, as {@link #items()} shows it split on " > " (only expanded
      * rows are found). Read as an {@code item} node named by that path, with the states
-     * {@code selected}, {@code expanded} and {@code leaf}. A list entry is not read this way.
+     * {@code selected}, {@code expanded} and {@code leaf}. A list entry is not read this way, but for an action
+     * ({@code click}, {@code hover}) the same call names the entry of a list by its text.
      */
     public Target item(String... path) {
         Locator l = locator.copy();

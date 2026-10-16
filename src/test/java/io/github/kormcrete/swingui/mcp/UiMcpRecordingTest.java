@@ -344,12 +344,25 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aPopupListPickIsRecorded() throws Exception {
+        call("{\"op\":\"start\"}");
+        JsonNode ran = mapper.readTree(session.verb("click",
+                mapper.readTree("{\"target\":{\"window\":\"popup\",\"role\":\"list\",\"item\":[\"Ada Shop Ltd\"]}}")));
+        assertThat(ran.path("passed").asBoolean()).isTrue();
+        assertThat(ran.has("recorded")).isTrue();
+        assertThat(ran.has("notRecorded")).isFalse();
+        assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(1);
+    }
+
+    @Test
     void theListSaysWhatThePersonCouldNotRecord() throws Exception {
         Locator at = Locator.ofId("canvas");
         at.point = new LinkedHashMap<String, Double>();
         at.point.put("x", 0.5);
         at.point.put("y", 0.5);
-        assertThat(sink.done(step("click", at)).ok).isFalse();
+        Map<String, Object> twice = step("click", at);
+        twice.put("count", 2);
+        assertThat(sink.done(twice).ok).isFalse();
         JsonNode list = call("{\"op\":\"list\"}");
         assertThat(list.path("steps")).isEmpty();
         assertThat(list.path("notRecorded")).hasSize(1);
@@ -482,7 +495,7 @@ class UiMcpRecordingTest {
         four();
         int rev = call("{\"op\":\"list\"}").path("rev").asInt();
         for (String step : new String[] {
-                "{\"action\":\"click\",\"target\":{\"id\":\"c\",\"point\":{\"x\":0.5,\"y\":0.5}}}",
+                "{\"action\":\"click\",\"count\":2,\"target\":{\"id\":\"c\",\"point\":{\"x\":0.5,\"y\":0.5}}}",
                 "{\"action\":\"click\",\"target\":{\"ref\":\"e3\"}}"}) {
             DriverException e = refused("{\"op\":\"insert\",\"at\":1,\"step\":" + step + "}");
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
