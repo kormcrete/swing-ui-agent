@@ -248,7 +248,7 @@ public final class LabelProximity {
         Map<JLabel, Double> best = new IdentityHashMap<JLabel, Double>();
         for (JLabel l : labels) {
             if (l.getLabelFor() != null || !endsInColon(l) || inputCaptions.contains(l)) continue;
-            JLabel value = labelRight(l, labels);
+            JLabel value = labelRight(l, all);   // empty labels too: an empty value is no reason to pair the next one
             if (value == null || value.getLabelFor() != null || endsInColon(value) || Names.clean(value.getText()) == null) continue;
             if (out.containsKey(value) && !best.containsKey(value)) continue;
             double d = distance(l, value);
@@ -266,7 +266,7 @@ public final class LabelProximity {
         return t != null && t.endsWith(":");
     }
 
-    /** The closest label on {@code caption}'s row to its right in the same panel (the {@link #sameRowRight} row test). */
+    /** The closest label, empty or not, on {@code caption}'s row to its right in the same panel (the {@link #sameRowRight} row test). */
     private static JLabel labelRight(JLabel caption, List<JLabel> labels) {
         Container parent = caption.getParent();
         Rectangle c = caption.getBounds();

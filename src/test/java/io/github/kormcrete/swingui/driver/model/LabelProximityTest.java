@@ -253,6 +253,16 @@ class LabelProximityTest {
     }
 
     @Test
+    void anEmptyValueIsNotSkipped() {
+        JPanel p = new JPanel(null);
+        p.add(label("Total:", 0, 0));
+        p.add(label("", 90, 0));   // the value, not set yet: a column with a minimum width keeps it showing
+        p.add(label("EUR", 180, 0));
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).as("EUR is not the total").isEmpty();
+    }
+
+    @Test
     void aHiddenValueLeavesItsCaptionANode() {
         JPanel p = new JPanel(null);
         JLabel total = label("Total", 0, 0);
