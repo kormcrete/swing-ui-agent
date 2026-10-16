@@ -33,14 +33,6 @@ A recorded test holds exact values only: what a person could read off the screen
             "name" : "Placed"
           },
           "text" : "Placed"
-        },
-        {
-          "say" : "The receipt shows Ada Shop Ltd and €37.20",
-          "target" : {
-            "role" : "label",
-            "name" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
-          },
-          "text" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
         }
       ]
     },
@@ -59,18 +51,24 @@ A recorded test holds exact values only: what a person could read off the screen
             "name" : "Invoice (30 days) · PO PO-7781"
           },
           "text" : "Invoice (30 days) · PO PO-7781"
+        },
+        {
+          "say" : "The invoice total is €37.20",
+          "target" : {
+            "role" : "label",
+            "name" : "Total"
+          },
+          "text" : "€37.20"
         }
       ]
     }
 ```
 
-The receipt line holds a date, `12 Oct 2026`. Order Desk takes "today" from `-Dorderdesk.today=2026-10-12`, and the
-README, the IntelliJ configuration and the CI script all start it that way. If you replay `place-order` by hand, start
-the app the same way.
+The file holds no date, so `place-order` passes on any day. The invoice total, €37.20, is what the order adds up to.
 
 There is no order number in the file. The app gives each new order the next number, `ORD-1640` on a fresh start and a
-different one after that, so the recorded test cannot know it. It checks what is predictable: **Placed**, the receipt
-and the PO line. A recorded test never reads a value from the app to use later; it has no parameters or captures. That
+different one after that, so the recorded test cannot know it. It checks what is predictable: **Placed**, the PO line
+and the invoice total. A recorded test never reads a value from the app to use later; it has no parameters or captures. That
 is on purpose. It keeps the file readable by anyone who can use the app, and it is why the two kinds do not mix.
 
 ## What the Java test checks

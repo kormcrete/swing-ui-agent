@@ -13,14 +13,18 @@ The tests are [recorded tests](/swing-ui-agent/start/recorded-tests/#in-maven-an
 
 Order Desk keeps the steps in one script, so CI and a person run them the same way. On Linux without a display it starts Xvfb first and waits for its socket:
 
-<!-- snippet: .github/scripts/ui-tests.sh#L8-L37 -->
+<!-- snippet: .github/scripts/ui-tests.sh#L8-L41 -->
 ```sh
+set -euo pipefail
+cd "$(dirname "$0")/../.."
 PORT="${SWINGUI_PORT:-8770}"
 AGENT=target/swing-ui-agent-agent.jar
 PLUGIN=order-desk-plugin/target/classes   # Order Desk's domain steps, for the recorded tests' do steps
 APP=
+ATTACH=
+if [ "${1:-}" = --attach ]; then ATTACH=1; shift; fi
 
-if [ "${1:-}" != --attach ]; then
+if [ -z "$ATTACH" ]; then
   if [ "$(uname)" = Linux ] && [ -z "${DISPLAY:-}" ]; then
     Xvfb :99 -screen 0 1600x1000x24 > target/xvfb.log 2>&1 &
     XVFB=$!
@@ -44,14 +48,14 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
-mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsafe:verify
+mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" "$@" failsafe:integration-test failsafe:verify
 ```
 
 - **Wait for `session`.** It exits `0` once the agent answers, and `3` while nothing listens yet.
 - **Stop early when the app dies,** and print its log: a missing display or a bad flag shows up there.
 - **`palette=off`** leaves the recording palette out: nothing in the app listens to input, and a test run's lease would hide it anyway.
 - **`plugins=`** loads Order Desk's [vocabulary plugin](/swing-ui-agent/plugins/vocabulary/), built and installed by the job's step before it: the recorded test `cart-with-steps.json` holds `do` steps that only the plugin can run.
-- **`--attach`** starts nothing and tests an Order Desk that already runs with the agent, such as a download.
+- **`--attach`** starts nothing and tests an Order Desk that already runs with the agent, such as a download. Other arguments go to Maven, for example `-Dswingui.recordedDir=<folder>` to run only the recorded tests in that folder.
 - **The `trap`** stops the app (and Xvfb) when the script ends, whatever the result.
 - **The failsafe goals run alone,** because the build before it already compiled the tests.
 - **`-Dswingui.agents`** points the tests at the port the script used, over the one in `junit-platform.properties`.

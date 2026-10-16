@@ -42,14 +42,6 @@ The file `place-order.json`, recorded on Order Desk: a new order for Ada Shop Lt
             "name" : "Placed"
           },
           "text" : "Placed"
-        },
-        {
-          "say" : "The receipt shows Ada Shop Ltd and €37.20",
-          "target" : {
-            "role" : "label",
-            "name" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
-          },
-          "text" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
         }
       ]
     },

@@ -118,14 +118,6 @@ values only (17 steps; `// …` stands for what is left out). The palette's Step
             "name" : "Placed"
           },
           "text" : "Placed"
-        },
-        {
-          "say" : "The receipt shows Ada Shop Ltd and €37.20",
-          "target" : {
-            "role" : "label",
-            "name" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
-          },
-          "text" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
         }
       ]
     },

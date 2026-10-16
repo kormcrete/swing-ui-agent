@@ -38,7 +38,7 @@ They are in the project's `.run/` folder, so IntelliJ lists them as soon as the 
 
 | Run configuration | What it does |
 | --- | --- |
-| **Order Desk** | Starts the app with the agent on port 8770 and the palette for recording and replaying (`palette=off` leaves it out). It sets `-Dorderdesk.today=2026-10-12`, the date the recorded tests expect. |
+| **Order Desk** | Starts the app with the agent on port 8770 and the palette for recording and replaying (`palette=off` leaves it out). It sets `-Dorderdesk.today=2026-10-12`: new orders get that date, so every run looks the same. |
 | **UI tests** | Runs the recorded tests in `uitest/` (through `RecordedUiIT`) and the Java tests (JUnit tag `ui`) against the running app. |
 | **All tests** | Runs the unit tests (tag `!ui`). They need no app. |
 
@@ -67,8 +67,6 @@ which uses the plugin's steps ([Plugin vocabulary](/swing-ui-agent/plugins/vocab
   **Order Desk** and run them again.
 - **A failure:** the evidence is in `target/ui-failures/<Class>/<method>/` and, for a recorded test, a screenshot in
   `target/ui-screenshots/failures`: what was expected, what the app showed. See [Run the tests](/swing-ui-agent/start/run/).
-- **The date:** `place-order` checks a receipt dated 12 Oct 2026, so the app has to be started with the **Order Desk**
-  configuration (or `-Dorderdesk.today=2026-10-12`).
 
 ## 2. Record a new test
 
