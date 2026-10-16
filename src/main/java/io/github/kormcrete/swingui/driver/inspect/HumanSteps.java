@@ -22,6 +22,7 @@ import javax.swing.MenuElement;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.plaf.basic.ComboPopup;
+import javax.swing.tree.TreePath;
 import javax.swing.text.JTextComponent;
 import java.awt.AWTEvent;
 import java.awt.Component;
@@ -36,6 +37,7 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,9 +69,13 @@ final class HumanSteps implements AWTEventListener {
     /** The list entry or tree row pressed (view index, -1 none) and why it cannot be recorded (null: it can). */
     private int pressedEntry = -1;
     private String pressedRefusal;
-    /** For a pressed tree row: whether the press was on its label, it was expanded then, its path as the person reads it. */
+    /**
+     * For a pressed tree row: whether the press was on its label, whether it was expanded then, the tree's selection then,
+     * and its path as the person reads it.
+     */
     private boolean pressedOnLabel;
     private boolean pressedExpanded;
+    private TreePath[] pressedSelection;
     private String pressedPath;
     /** The last line {@link #refuse} said: a double click's second click does not say it again. */
     private String lastRefused;
@@ -226,14 +232,18 @@ final class HumanSteps implements AWTEventListener {
             return;
         }
         if (!SwingUtilities.isLeftMouseButton(e) || ignoredForClicks(deepest)) return;
-        Target t;
         if (deepest instanceof JList || deepest instanceof JTree) {
-            t = releasedEntry(e, deepest, at);
-        } else {
-            if (pressedTarget == null) return;
-            t = inspector.snapNow(deepest, at);
+            releasedEntry(e, deepest, at);
+            return;
         }
+        if (pressedTarget == null) return;
+        Target t = inspector.snapNow(deepest, at);
         if (t == null || !t.same(pressedTarget)) return;
+        clicked(e, t);
+    }
+
+    /** A press and release on {@code t}: a check of a check box, else a click, held back to see whether it becomes a double click. */
+    private void clicked(MouseEvent e, Target t) {
         if (t.component instanceof JCheckBox
                 || (t.component instanceof JToggleButton && !(t.component instanceof JRadioButton))) {
             Map<String, Object> step = step("check", t);
@@ -268,6 +278,7 @@ final class HumanSteps implements AWTEventListener {
             if (pressedEntry < 0) return;
             pressedOnLabel = Inspector.onRowLabel(tree, pressedEntry, at);
             pressedExpanded = tree.isExpanded(pressedEntry);
+            pressedSelection = tree.getSelectionPaths();
             pressedPath = TreeWidget.pathText(tree, pressedEntry);
         }
         if (pressedEntry < 0) return;
@@ -279,28 +290,49 @@ final class HumanSteps implements AWTEventListener {
     }
 
     /**
-     * The release on list or tree {@code c}: the pressed entry's target when it lands on the same entry, else null. Beside
-     * a tree row's label (the expand arrow, the indent, right of it) the press counts only for what the tree did with it:
-     * a row it selected is a click on that row, a row it expanded or collapsed is the arrow, which no step can say.
+     * The release on list or tree {@code c}: a click on the pressed entry when it lands on the same entry. Beside a tree
+     * row's label (the expand arrow, the indent, right of it) the click counts only for what the tree did with it: a row
+     * this click selected is a click on that row, a row it expanded or collapsed is the arrow, which no step can say, and
+     * a click that did neither is no step. Most looks and feels act on the press; Aqua's arrow acts on the release, after
+     * this listener: when the tree has not acted yet, it is asked again once the release is handled.
      */
-    private Target releasedEntry(MouseEvent e, Component c, Point at) {
+    private void releasedEntry(MouseEvent e, Component c, Point at) {
         int entry = c instanceof JList ? Inspector.listIndexAt((JList<?>) c, at) : Inspector.treeRowAt((JTree) c, at);
-        if (c != pressed || pressedEntry < 0 || entry != pressedEntry) return null;
-        if (c instanceof JTree && !pressedOnLabel) {
-            JTree tree = (JTree) c;
-            boolean selected = tree.isRowSelected(entry);
-            // a double click in a wide row's indent toggles it as on its label
-            if (tree.isExpanded(entry) != pressedExpanded && !(e.getClickCount() >= 2 && selected)) {
-                refuse(e, "the expand arrow of '" + pressedPath + "': double-click the row instead");
-                return null;
-            }
-            if (!selected) return null;
+        if (c != pressed || pressedEntry < 0 || entry != pressedEntry) return;
+        Target target = pressedTarget;
+        String refusal = pressedRefusal;
+        if (!(c instanceof JTree) || pressedOnLabel) {
+            entryClicked(e, target, refusal);
+            return;
         }
-        if (pressedRefusal != null) {
-            refuse(e, pressedRefusal);
-            return null;
-        }
-        return pressedTarget;
+        JTree tree = (JTree) c;
+        boolean expanded = pressedExpanded;
+        TreePath[] selection = pressedSelection;
+        String arrow = "the expand arrow of '" + pressedPath + "': double-click the row instead";
+        if (besideRow(e, tree, entry, expanded, selection, target, refusal, arrow)) return;
+        SwingUtilities.invokeLater(() -> besideRow(e, tree, entry, expanded, selection, target, refusal, arrow));
+    }
+
+    /**
+     * Decides a click beside tree row {@code row} by what the tree did since the press ({@code expanded} and
+     * {@code selection} were its state then): true when it did something, false when nothing (yet).
+     */
+    private boolean besideRow(MouseEvent e, JTree tree, int row, boolean expanded, TreePath[] selection, Target target,
+                              String refusal, String arrow) {
+        boolean toggled = tree.isExpanded(row) != expanded;
+        boolean selected = tree.isRowSelected(row) && !Arrays.equals(selection, tree.getSelectionPaths());
+        if (!toggled && !selected) return false;
+        // a double click in a wide row's indent: its first click selected the row, its second toggles it, as on the label
+        boolean doubleOnRow = e.getClickCount() >= 2 && pendingClick != null && target != null && target.same(pendingClickTarget);
+        if (toggled && !doubleOnRow) refuse(e, arrow);
+        else entryClicked(e, target, refusal);
+        return true;
+    }
+
+    /** A click on a list entry or tree row: {@code target}, or {@code refusal} when it cannot be recorded. */
+    private void entryClicked(MouseEvent e, Target target, String refusal) {
+        if (refusal != null) refuse(e, refusal);
+        else if (target != null) clicked(e, target);
     }
 
     /** What the person did and no step can say: shown and listed as not recorded, after a click still held back. */

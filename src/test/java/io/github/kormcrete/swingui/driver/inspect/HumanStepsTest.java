@@ -208,12 +208,55 @@ class HumanStepsTest {
         javax.swing.JTree categories = categories();
         java.awt.Rectangle office = categories.getRowBounds(0);
 
-        // the tree's look and feel takes the press on the arrow and collapses the row
+        // most looks and feels collapse the row on the press on its arrow
         click(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
         human.flush();
 
         assertThat(steps).isEmpty();
         assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
+    }
+
+    @Test
+    void anArrowThatActsOnTheReleaseIsNotRecordedEither() throws Exception {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle office = categories.getRowBounds(0);
+
+        // Aqua's arrow expands or collapses in the tree's own release handler, after the recorder heard the release
+        releaseHandledAfter(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
+        human.flush();
+
+        assertThat(steps).isEmpty();
+        assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
+    }
+
+    @Test
+    void aDoubleClickInARowsIndentIsADoubleClickOnTheRow() throws Exception {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle office = categories.getRowBounds(0);
+
+        // a wide selection: the first press selects the row, the second (count 2) collapses it
+        click(categories, 1, office.y + 2, 1, () -> categories.setSelectionRow(0));
+        click(categories, 1, office.y + 2, 2, () -> categories.collapseRow(0));
+        human.flush();
+
+        assertThat(steps).hasSize(1);
+        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office");
+        assertThat(steps.get(0)).containsEntry("count", 2);
+        assertThat(notRecorded).isEmpty();
+    }
+
+    @Test
+    void aClickBesideARowThatWasSelectedAlreadyIsNoStep() throws Exception {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle pens = categories.getRowBounds(2);
+        categories.setSelectionRow(2);
+
+        // the tree did nothing with it: the row stays selected as it was
+        releaseHandledAfter(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> { });
+        human.flush();
+
+        assertThat(steps).isEmpty();
+        assertThat(notRecorded).isEmpty();
     }
 
     @Test
@@ -541,6 +584,20 @@ class HumanStepsTest {
 
     private void click(Component c, int x, int y, int count) {
         click(c, x, y, count, () -> { });
+    }
+
+    /**
+     * A click on the EDT whose release the app handles with {@code app} after the recorder heard it, as the component's own
+     * release listeners would; then whatever the recorder left for later has run.
+     */
+    private void releaseHandledAfter(Component c, int x, int y, int count, Runnable app) throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            human.eventDispatched(new MouseEvent(c, MouseEvent.MOUSE_PRESSED, 1L, InputEvent.BUTTON1_DOWN_MASK, x, y, count,
+                    false, MouseEvent.BUTTON1));
+            human.eventDispatched(new MouseEvent(c, MouseEvent.MOUSE_RELEASED, 2L, 0, x, y, count, false, MouseEvent.BUTTON1));
+            app.run();
+        });
+        SwingUtilities.invokeAndWait(() -> { });
     }
 
     /** A click whose press the app handles with {@code app} before the release comes, as the component's own listeners would. */
