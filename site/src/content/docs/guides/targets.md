@@ -26,7 +26,7 @@ On the command line and over MCP a target is a JSON object, the locator. Give at
 - **`id`:** the component's `getName()`, when the app sets one.
 - **`window`:** `main`, `dialog`, `popup`, `dialog:<title>` or `window:<title>`. A title ending in `*` matches a prefix.
 - **`scope`:** the containers the element sits in, outermost first: `tab:<title>`, `section:<caption>`, or `id:<name>` (strictly inside the component with that `getName()`).
-- **Parts of an element:** `row`, `column`, `item` and `point`, covered in [Tables](/swing-ui-agent/guides/tables/) and [Trees](/swing-ui-agent/guides/trees/).
+- **Parts of an element:** `row`, `column`, `item` and `point`, covered in [Tables](/swing-ui-agent/guides/tables/) and [Trees](/swing-ui-agent/guides/trees/). In a recorded test, a row is kept by its value or by its position: see [Sentences and groups](/swing-ui-agent/guides/sentences/#how-a-table-row-is-kept).
 - **`nth`:** which match to take when several match. A last resort: see [Prefer a stable target](#prefer-a-stable-target).
 
 A test written by `export_test` uses the same locators through the `Client` API, one call per level:
