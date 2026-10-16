@@ -68,6 +68,30 @@ class SessionToolTest {
     }
 
     @Test
+    void sessionListsVocabularyAndItsProblems() throws Exception {
+        Plugins plugins = new Plugins(dialogs);
+        plugins.add("order-desk", Paths.get("order-desk-plugin/target/classes")).ready(new PluginParts(() -> java.util.Arrays
+                .asList(PluginSlotTest.addToCart(), io.github.kormcrete.swingui.spi.DomainStep.act("setQuantity", "Set {qty}")
+                        .code(PluginSlotTest.NOTHING).build())), "ok");
+        JsonNode info = mapper.readTree(tool(plugins, null, () -> 1).invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.path("vocabulary").toString()).isEqualTo("[\"addToCart\"]");
+        assertThat(info.path("vocabularyProblems").toString()).isEqualTo("[\"order-desk: step 'setQuantity' dropped: "
+                + "the sentence names {qty}, which is not a declared param\"]");
+    }
+
+    @Test
+    void withoutAPluginTheVocabularyIsEmpty() throws Exception {
+        JsonNode info = callOnEmpty("{}");
+        assertThat(info.path("vocabulary").isArray()).isTrue();
+        assertThat(info.path("vocabulary")).isEmpty();
+        assertThat(info.path("vocabularyProblems").isArray()).isTrue();
+        assertThat(info.path("vocabularyProblems")).isEmpty();
+        // a plugin without a vocabulary: the same
+        assertThat(call("{}").path("vocabulary").isArray()).isTrue();
+        assertThat(call("{}").path("vocabulary")).isEmpty();
+    }
+
+    @Test
     void infoSaysWhetherThePaletteIsOn() throws Exception {
         Plugins none = new Plugins(null);
         UiMcpSession session = new UiMcpSession(none, none, mapper);

@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.PluginParts;
 import io.github.kormcrete.swingui.spi.StepHost;
@@ -12,6 +13,7 @@ import io.github.kormcrete.swingui.spi.UiInventory;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -19,7 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Every {@code plugins=} entry, in order. The first READY one whose parts carry a step host is the app plugin: it
  * serves app steps (navigate, close, loginAs), describe_ui, session reset and login, and the export defaults.
- * Other plugins serve plugin_call only.
+ * Every ready plugin serves plugin_call and adds its vocabulary; the others serve only that.
  */
 public final class Plugins implements StepHost, UiInventory {
 
@@ -77,6 +79,52 @@ public final class Plugins implements StepHost, UiInventory {
         }
         for (PluginSlot s : slots) if (s.name().equals(name)) return s;
         throw new DriverException(Reason.BAD_INPUT, "no plugin named '" + name + "' (known: " + String.join(", ", names) + ")");
+    }
+
+    /** A vocabulary step, with the name it is reachable by and the plugin that offers it. */
+    public static final class VocabularyStep {
+        /** The step id; {@code <plugin>:<id>} when two plugins define the id. */
+        public final String name;
+        public final String plugin;
+        public final DomainStep step;
+
+        VocabularyStep(String name, String plugin, DomainStep step) {
+            this.name = name;
+            this.plugin = plugin;
+            this.step = step;
+        }
+    }
+
+    /**
+     * Every ready plugin's vocabulary, in plugin order, then step order. An id that two plugins define is reachable
+     * only as {@code <plugin>:<id>}, in both.
+     */
+    public List<VocabularyStep> vocabulary() {
+        List<PluginSlot> ready = new ArrayList<PluginSlot>();
+        Map<String, Integer> defined = new HashMap<String, Integer>();
+        for (PluginSlot s : slots) {
+            if (s.parts() == null) continue;
+            ready.add(s);
+            for (DomainStep d : s.vocabulary()) {
+                Integer n = defined.get(d.id());
+                defined.put(d.id(), n == null ? 1 : n + 1);
+            }
+        }
+        List<VocabularyStep> all = new ArrayList<VocabularyStep>();
+        for (PluginSlot s : ready) {
+            for (DomainStep d : s.vocabulary()) {
+                String name = defined.get(d.id()) > 1 ? s.name() + ":" + d.id() : d.id();
+                all.add(new VocabularyStep(name, s.name(), d));
+            }
+        }
+        return all;
+    }
+
+    /** Every ready plugin's vocabulary problems, in plugin order. */
+    public List<String> vocabularyProblems() {
+        List<String> all = new ArrayList<String>();
+        for (PluginSlot s : slots) all.addAll(s.vocabularyProblems());
+        return all;
     }
 
     public ExportDefaults exportDefaults() {

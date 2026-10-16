@@ -222,6 +222,10 @@ final class SessionTool implements McpToolDefinition {
             long t = s.locationTime();
             if (t > 0) o.put("locationTime", Instant.ofEpochMilli(t).toString()); else o.putNull("locationTime");
         }
+        ArrayNode vocabulary = r.putArray("vocabulary");
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) vocabulary.add(v.name);
+        ArrayNode problems = r.putArray("vocabularyProblems");
+        for (String problem : plugins.vocabularyProblems()) problems.add(problem);
         PluginSlot slot = plugins.appSlot();
         if (slot == null) {
             r.putObject("plugin").put("state", "none").put("detail", "no plugin configured (agent argument plugins=…)");

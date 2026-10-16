@@ -2,11 +2,13 @@ package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.PluginParts;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
@@ -20,6 +22,7 @@ public final class PluginSlot {
     private volatile State state = State.NONE;
     private volatile String detail = "not started";
     private volatile PluginParts parts;
+    private volatile VocabularyCheck vocabulary = VocabularyCheck.NONE;
     private volatile long locationTime;
 
     public PluginSlot(String name, Path location) {
@@ -35,6 +38,10 @@ public final class PluginSlot {
     public String detail() { return detail; }
     /** Null unless READY. */
     public PluginParts parts() { return parts; }
+    /** The vocabulary's steps that passed the checks ({@link VocabularyCheck}); empty unless READY. */
+    public List<DomainStep> vocabulary() { return vocabulary.steps; }
+    /** One line per dropped step (or a vocabulary that failed), naming the plugin; empty unless READY. */
+    public List<String> vocabularyProblems() { return vocabulary.problems; }
 
     public synchronized void waiting(String detail) { set(State.WAITING, detail); }
     public synchronized void starting(String detail) { set(State.STARTING, detail); }
@@ -43,11 +50,19 @@ public final class PluginSlot {
     public synchronized void failed(String detail) {
         boolean wasReady = state == State.READY;
         parts = null;
+        vocabulary = VocabularyCheck.NONE;
         set(State.FAILED, wasReady ? "failed after ready: " + detail : detail);
     }
 
-    public synchronized void ready(PluginParts parts, String detail) {
+    /** Reads and checks the vocabulary first (plugin code, so outside the lock); a step that fails a check is dropped. */
+    public void ready(PluginParts parts, String detail) {
+        VocabularyCheck checked = VocabularyCheck.of(name, parts == null ? null : parts.vocabulary);
+        readyChecked(parts, checked, detail);
+    }
+
+    private synchronized void readyChecked(PluginParts parts, VocabularyCheck checked, String detail) {
         this.parts = parts;
+        this.vocabulary = checked;
         this.locationTime = newestTime(location);
         set(State.READY, detail);
     }
