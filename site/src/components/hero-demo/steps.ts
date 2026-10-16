@@ -1,10 +1,10 @@
 /*
- * The home hero's story: the agent records a test against Order Desk, exports it, and the test replays it.
+ * The home hero's story: the agent records a test against Order Desk, saves it as a recorded test, and it replays.
  * Frames are real 2x screenshots of the main window (title band cropped, 2400 x 1448 px): f0 is the app at start,
  * rNN the app after the test's NNth action. Boxes and camera views are in those frame pixels.
  * While recording, the log shows what the agent gives each step to say: one short sentence in the person's words,
  * the way the palette's Steps list reads (steps n, a step's checks n.k). The replay shows the same sentences: the
- * exported test keeps them as comments above its Java lines.
+ * recorded test keeps each one as its step's say.
  */
 import type { Box, View } from './stage';
 
@@ -79,7 +79,9 @@ export const steps: Step[] = [
 
 export const story = {
 	all: ALL,
-	testClass: 'CartTotalsUiIT',
+	// The recorded test's name (uitest/<name>.json). The frames come from Order Desk's CartTotalsUiIT run, the same steps.
+	// TODO Task 25: if Order Desk ships this scenario as a recorded test, use its file name here.
+	test: 'cart-totals',
 	firstFrame: 'f0',
 	lastFrame: 'r09',
 	frames: ['f0', ...steps.flatMap((s) => (s.frame ? [s.frame] : []))],

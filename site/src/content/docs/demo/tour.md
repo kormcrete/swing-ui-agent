@@ -215,8 +215,10 @@ Ask your agent to do one of these, or [record it as a test](/swing-ui-agent/star
 
 ## What's next
 
-- [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/): a test the agent recorded on Order Desk.
+- [Record together with your agent](/swing-ui-agent/start/record-together/): say the test in chat; the agent records it
+  on Order Desk and saves a recorded test.
+- [Record a test by showing it](/swing-ui-agent/start/show/)
 - [Let your agent drive the app](/swing-ui-agent/start/drive/)
-- [Record a test with the agent](/swing-ui-agent/start/record/)
-- [Record together with your agent](/swing-ui-agent/start/record-together/)
 - [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/)
+- [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/): a Java test the agent recorded on Order Desk.
+- [Write a Java test with the agent](/swing-ui-agent/start/record/)

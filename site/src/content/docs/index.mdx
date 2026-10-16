@@ -1,12 +1,12 @@
 ---
 title: swing-ui-agent
-description: Let a coding agent drive your real Swing app and write its UI tests. Attach one jar, no changes to the app.
+description: "Record UI tests of your real Swing app: show the test in the app, or tell a coding agent, and the agent does the work. Attach one jar, no changes to the app."
 template: splash
 heroFacts: 'Java 8 to 25 · macOS, Linux and Windows · Apache-2.0 (<a href="/swing-ui-agent/project/limits/">Limits</a>)'
 heroDemo: true
 hero:
-  title: Let a coding agent drive your Swing app and write its UI tests
-  tagline: Attach one jar to your app's JVM. No changes to the app, and it never takes over your mouse.
+  title: Record Swing UI tests. A coding agent does the work
+  tagline: Show the test in the app, or tell the agent in words. You get a recorded test that replays from the app, the agent or CI. One jar, no changes to the app.
   actions:
     - text: Get started
       link: /swing-ui-agent/start/why/
@@ -51,63 +51,56 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
 :::tip[Let it remember]
 What the agent learns lasts only for the conversation. Ask it to save what it learned about the app (the screens,
 the field names, that invoice customers need a PO number) to its memory or project notes, such as your
-`CLAUDE.md`, so the next session starts fast. To keep the steps themselves, let it
-[export them as a test](/swing-ui-agent/start/record/).
+`CLAUDE.md`, so the next session starts fast. To keep the steps themselves, ask it to
+[save them as a recorded test](/swing-ui-agent/start/record-together/).
 :::
 
 Then [take the tour](/swing-ui-agent/demo/tour/), or see how the same steps
-[become a test](/swing-ui-agent/start/record/).
+[become a recorded test](/swing-ui-agent/start/record-together/).
 
-## Two ways to write a test
+## Two ways to record a test
+
+Either way the agent does the work, and the result is a **recorded test**: a JSON file in `uitest/` with a numbered
+sentence per step, nothing to compile.
 
 <CardGrid>
+	<Card title="Show it yourself" icon="pencil">
+		Start the app with the agent (the palette is on by default), press **● Record** in the palette and use the app.
+		**Check** adds checks of what you see, **Steps** replays, fixes and names them. After **Done**, **Export…** saves
+		the recorded test. **Load recorded test…** opens one again to run it step by step and save changes back.
+
+		Your agent can help: ask it to add steps while you record. When it is not sure what you mean, it boxes what it
+		found, and you confirm the one you mean.
+
+		[Record a test by showing it](/swing-ui-agent/start/show/)
+	</Card>
 	<Card title="Tell the agent" icon="seti:shell">
-		Describe the test in words. The agent drives the live app from a shell, checks each step, and exports a recorded
-		test file or a JUnit 5 `@UiTest` class. It can also record while you watch and name the steps in plain words.
+		Say the test in words. The agent drives the live app, checks each step, names the steps in plain words and saves
+		the recorded test. You can watch the steps appear in the palette and undo what you do not like.
 
 		```sh wrap
 		$UI session '{"op":"reset"}'
 		$UI menu '{"path":["File","New order"]}'
 		$UI type '{"target":{"name":"Customer"},"text":"Ada"}'
-		$UI export_test '{"class":"PlaceOrderUiIT"}'
+		$UI export_recorded_test '{"name":"place-order"}'
 		```
 
-		[Record a test with the agent](/swing-ui-agent/start/record/) · [Record together](/swing-ui-agent/start/record-together/)
-	</Card>
-	<Card title="Show it yourself" icon="pencil">
-		Start the app with the agent (the palette is on by default), press **● Record** in the palette and use the app. **Check** adds checks,
-		**Steps** replays, fixes and names them. After **Done**, **Export…** writes a recorded test or a JUnit class, or your agent does.
-		**Load recorded test…** opens one again to run it step by step and save changes back.
-		You can also ask your agent to add steps while you record.
-
-		The agent can ask you too: it boxes what it found, and you confirm the one you mean.
-
-		[Record a test by showing it](/swing-ui-agent/start/show/)
+		[Record together with your agent](/swing-ui-agent/start/record-together/)
 	</Card>
 </CardGrid>
 
-## Recorded test or Java test
+## A recorded test is a file you can read
 
-One recording can be kept two ways. Pick by who will own the test.
+- **Exact values, what is on screen.** It checks what a person sees, such as the cart's **Total** reading `€31.32`.
+  The data is yours to arrange: the test creates what it checks, or uses data you know exists.
+- **One numbering.** Steps and checks are numbered the same in the palette, the reports and the file: step `7`, its
+  check `7.2`.
+- **Runs anywhere.** Load it in the palette and press **▶ Run**, let the agent run it, or run the whole folder from
+  Maven and CI. [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)
 
-<CardGrid>
-	<Card title="Recorded test" icon="pencil">
-		For people who show the app: testers and users, mostly not technical. A JSON file with exact visible values and
-		checks of what is on screen. Nothing to compile; load it in the palette and press **Run**, or let the agent or CI
-		run it. The data is yours to arrange.
-		Steps and checks are numbered the same in the palette, the reports and the file: step `7`, its check `7.2`.
-
-		[Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)
-	</Card>
-	<Card title="Java test" icon="seti:java">
-		For engineers working with the agent: a JUnit 5 `@UiTest` class. Anything dynamic, and technical checks such as a
-		database, files or logs, belong here.
-
-		[Choose between them](/swing-ui-agent/start/choose-test-kind/)
-	</Card>
-</CardGrid>
-
-The two do not mix: a recorded test stays a recorded test.
+When a test needs more, or more technical checks (values that change from run to run, a database, files, logs, anything
+the test's JVM can reach), the agent can write a JUnit 5 `@UiTest` class instead. The two kinds do not mix.
+[Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/)
 
 ## Drive, record, run
 
@@ -117,12 +110,12 @@ The two do not mix: a recorded test stays a recorded test.
 		or over MCP. [Let your agent drive the app](/swing-ui-agent/start/drive/)
 	</Card>
 	<Card title="Record" icon="pencil">
-		What it did, or what you showed it, becomes a recorded test or a `@UiTest` class. You review it like any other test.
-		[Record a test](/swing-ui-agent/start/record/)
+		What you showed, or what the agent did, becomes a recorded test: numbered sentences you read and fix in the
+		palette. [Record together with your agent](/swing-ui-agent/start/record-together/)
 	</Card>
 	<Card title="Run" icon="rocket">
-		The tests run against the live app from Maven or your IDE, and in CI under a virtual display, with a screenshot
-		per step when you want one. [Run the tests](/swing-ui-agent/start/run/)
+		Replay it from the palette or the agent, or run the folder from Maven and in CI under a virtual display. A failing
+		step leaves what it found and a screenshot. [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)
 	</Card>
 </CardGrid>
 
@@ -151,9 +144,11 @@ The two do not mix: a recorded test stays a recorded test.
 ## See it run
 
 Order Desk is a small Swing order desk made to be driven: tabs, sortable tables, a tree, popup menus, a checkout
-wizard with rules, a background task and a file chooser. Its tests were recorded by an agent and run in CI:
-`CartTotalsUiIT` is the one playing above, and `PlaceOrderUiIT` takes an order through checkout with a screenshot per
-step.
+wizard with rules, a background task and a file chooser. Its tests were recorded by an agent and run in CI. The one
+playing above fills Ada's cart and checks its totals; `PlaceOrderUiIT`, a Java test, takes an order through checkout
+with a screenshot per step.
+{/* TODO Task 25 (home edits item 9): name Order Desk's recorded test file (uitest/place-order.json) here and add a
+LinkCard to its page, before the PlaceOrderUiIT one. */}
 
 <CardGrid>
 	<LinkCard title="Tour of Order Desk" description="Start it with the agent and see every screen." href="/swing-ui-agent/demo/tour/" />

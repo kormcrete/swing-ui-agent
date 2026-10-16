@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-swing-ui-agent lets a coding agent drive your real Swing app and write its UI tests. You attach one jar to the app's JVM as a Java agent. The coding agent then clicks, types and reads the live app, from a shell or over MCP, and what it did becomes a JUnit 5 test that you review and run. Your app's code does not change.
+swing-ui-agent lets you record UI tests of your real Swing app, and lets a coding agent do the work. A person shows the test with the palette in the app, or tells the agent in words while it drives the live app. The result is a recorded test: a JSON file with a sentence per step and nothing to compile, which replays from the palette, the agent, Maven or CI. You attach one jar to the app's JVM as a Java agent; your app's code does not change. When a test needs more or more technical checks, such as a database, files or logs, the agent writes a JUnit 5 test instead.
 
 ![Order Desk, the demo app, on its Orders tab](../../../assets/order-desk/01-orders-light.png)
 

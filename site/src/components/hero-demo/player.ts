@@ -1,7 +1,7 @@
 /*
  * Plays the hero story (steps.ts) in the [data-kc-demo] figure that Hero.astro renders: the stage (stage.ts) with a
  * ripple where a step acts and a box where it checks, and a three-line log under it: the agent's sentence for each
- * step while it records, and again, each with its ✓, while the exported test replays it. It pauses with its button,
+ * step while it records, and again, each with its ✓, while the saved recorded test replays it. It pauses with its button,
  * while the figure is off screen and while the tab is hidden; with reduced motion it shows the end state until the
  * button is pressed.
  */
@@ -20,6 +20,9 @@ const LABELS: string[] = (() => {
 		return String(++n);
 	});
 })();
+
+/** The run's last line, as a recorded test reports it (steps count; checks do not). */
+const PASSED = `Recorded test '${story.test}' passed: ${steps.filter((s) => s.kind === 'act').length} steps`;
 
 /** The step's sentence as the log shows it, recording or replaying: a check starts with ✓. */
 function sentence(step: (typeof steps)[number]) {
@@ -137,18 +140,18 @@ class Player {
 		}
 		stage.aim(story.all);
 		const save = this.line('', '', 'is-say is-meta');
-		await this.typeInto(save.text, `Save the test as ${story.testClass}`, 300, gen);
+		await this.typeInto(save.text, `Save it as the recorded test ${story.test}`, 300, gen);
 		await clock.wait(250, gen);
-		this.line('', `wrote src/test/java/…/${story.testClass}.java`, 'is-out');
+		this.line('', `wrote uitest/${story.test}.json`, 'is-out');
 		await clock.wait(1600, gen);
 	}
 
 	private async replay(gen: number) {
 		const { stage, clock } = this;
 		this.reset();
-		this.setBadge(`▶ ${story.testClass}`, 'replay');
+		this.setBadge(`▶ ${story.test}`, 'replay');
 		await stage.show(story.firstFrame);
-		this.line('', `mvn -Pui verify  ·  ${story.testClass}`, 'is-out');
+		this.line('', `▶ Run  ·  uitest/${story.test}.json`, 'is-out');
 		await clock.wait(800, gen);
 		for (const [i, step] of steps.entries()) {
 			if (step.view !== stage.view) {
@@ -172,9 +175,9 @@ class Player {
 			}
 		}
 		stage.aim(story.all);
-		this.line('', 'Tests run: 1, Failures: 0', 'is-pass').gutter.textContent = '✓';
+		this.line('', PASSED, 'is-pass').gutter.textContent = '✓';
 		this.line('', 'In CI the same test runs headless on every push.', 'is-out');
-		this.setBadge(`✓ ${story.testClass} passed`, 'passed');
+		this.setBadge(`✓ ${story.test} passed`, 'passed');
 		await clock.wait(4000, gen);
 	}
 
@@ -186,9 +189,9 @@ class Player {
 		this.stage.set(story.lastFrame);
 		const last = steps.length - 1;
 		this.line(LABELS[last], sentence(steps[last]), 'is-say is-check is-ran').gutter.textContent = '✓';
-		this.line('', 'Tests run: 1, Failures: 0', 'is-pass').gutter.textContent = '✓';
+		this.line('', PASSED, 'is-pass').gutter.textContent = '✓';
 		this.line('', 'In CI the same test runs headless on every push.', 'is-out');
-		this.setBadge(`✓ ${story.testClass} passed`, 'end');
+		this.setBadge(`✓ ${story.test} passed`, 'end');
 	}
 }
 

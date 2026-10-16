@@ -42,8 +42,8 @@ screen.
 - **It keeps its spot.** Each window it shows in gets its spot once, the first time; after that the palette stays
   there or where you drag it by its grip, even when the window's buttons change.
 - **It steps aside only for a moment:** while the agent acts on something under it, or while the agent's boxes lie
-  under it. Then it comes back to its spot: after the agent's step, or after the whole run when the agent runs several
-  steps at once (a batch, a replay, a recorded test).
+  under it. Then it comes back to its spot: after the agent's step, after the whole run when the agent runs several
+  steps at once (a batch, a replay, a recorded test), or when its boxes are cleared.
 - **Not remembered between starts:** start the app again and it picks its spot again.
 
 Turning it off:
