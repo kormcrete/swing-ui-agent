@@ -23,7 +23,7 @@ $UI session '{"op":"reset"}'
 {"reset":"dialogs"}
 ```
 
-A reset starts a fresh recording. Without a [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) it moves the pointer home and closes modal dialogs, nothing more: the app may still be on any screen. `recording {"op":"start","reset":true}` resets and starts a recording too, and the palette shows it.
+A reset starts a fresh recording. Without a [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) it moves the pointer home and closes modal dialogs, nothing more: the app may still be on any screen. `recording {"op":"start","reset":true}` resets and starts a recording too, and the palette shows it. `recording {"op":"stop"}` ends it. The person watching can delete, redo or undo steps meanwhile: [Record together with your agent](/swing-ui-agent/start/record-together/).
 
 ## 3. Reach the starting screen
 
@@ -46,7 +46,7 @@ Each answer carries `recorded`, the step as it will be exported:
 {"passed":true,"action":"type(text 'Customer' [tab:New order] 'Ada')","message":"","ms":18,"recorded":{"action":"type","target":{"scope":["tab:New order"],"role":"text","name":"Customer"},"text":"Ada"}}
 ```
 
-A step that fails is not recorded. A step that ran but was wrong is: record it again (`recording {"op":"redo","from":<step>}`, or reset and start over) rather than patching it with more steps.
+A step that fails is not recorded. A step that ran but was wrong is: edit the recording rather than patching it with more steps. `recording {"op":"delete","n":<step>}` removes it, `recording {"op":"redo","from":<step>}` cuts that step and the ones after it, replays the earlier ones from a reset and records on. Resetting and starting over is no longer needed.
 
 ## 5. Check with `expect`
 
@@ -96,6 +96,10 @@ class NewOrderForAdaUiIT {
 - An export clears the recording. Reset again before the next test.
 - `export_test` refuses a recording that did not begin at a reset, an empty one, bad names and an existing file. A refusal keeps the recording, so fix the problem and export again.
 - A test that does not begin by reaching its own screen is still written, with a `startWarning` (see [Reset and the starting screen](/swing-ui-agent/guides/reset/#recording-starts-at-a-reset)). Reset and record again with a `menu` or `press` first step.
+
+## Export the other kind
+
+The same recording can be saved as a recorded test (`export_recorded_test`, or `recording {"op":"export","as":"recorded"}`, which keeps the recording) or a Java class as above. Which one to choose: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 ## 7. Prove it from another screen
 
@@ -161,5 +165,6 @@ Add by hand only checks no tool expresses, as here with `UiAssertions.eventually
 ## What's next
 
 - [Run the tests](/swing-ui-agent/start/run/).
+- [Record together with your agent](/swing-ui-agent/start/record-together/): you say it in chat, the agent records, you watch.
 - [Record a test by showing it](/swing-ui-agent/start/show/): record the steps yourself, and let the agent export them.
 - [Waiting](/swing-ui-agent/guides/waiting/) and [Reset and the starting screen](/swing-ui-agent/guides/reset/).

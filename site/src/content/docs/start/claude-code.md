@@ -14,7 +14,7 @@ You will learn how to:
 
 - give Claude Code the skills and tell it where the app listens;
 - have it record a test from a description;
-- record a test yourself and let it export and check it;
+- record a test together with it, or yourself, and let it export and check it;
 - have it run the tests.
 
 ## Before you start
@@ -58,9 +58,17 @@ The agent:
 
 You review the class like any other change and commit it.
 
-## 3. Record it yourself and let it export
+## 3. Record it together
 
-Start **Order Desk** (the palette is on), then tell Claude Code:
+Start **Order Desk** (the palette is on by default), then tell Claude Code what to do and watch:
+
+> Record a test: open a new order for Ada, add 3 packs of A4 paper, check the cart total.
+
+The agent calls `recording {"op":"start","reset":true}`, does the steps and the checks, and calls `recording {"op":"stop"}`. Each step shows in the palette's Steps list at once, marked as the agent's. You can delete a step, redo from it or undo, and ask the agent to change or name steps: you both edit one list. When it is right, the agent saves it with `export_recorded_test` (or `export_test` for a Java class) and runs it with `run_recorded_test`. See [Record together with your agent](/swing-ui-agent/start/record-together/).
+
+## 4. Record it yourself and let it export
+
+Or you do the steps. Tell Claude Code:
 
 > I'll record a test for cancelling an order in the app. Wait for me, then export it as CancelOrderUiIT and check it.
 
@@ -78,11 +86,11 @@ While it works, the agent can ask you about the app in the app: it boxes what it
 several, and you click the ✓ on the one you mean. See
 [Record a test by showing it](/swing-ui-agent/start/show/#answer-the-agent-in-the-app).
 
-## 4. Let it run the tests
+## 5. Let it run the tests
 
 > Run the UI tests and tell me what failed.
 
-The agent runs `mvn -B -Pui verify` against the running app and reads the results. For a failure it reads the evidence
+For a recorded test the agent calls `run_recorded_test {"name":…}`. For a Java test it runs `mvn -B -Pui verify` against the running app and reads the results. For a failure it reads the evidence
 in `target/ui-failures/` (what the step expected, the element tree, a screenshot) and can drive the app to see for
 itself. To have each run write a one-line-per-test summary the agent can read, register the run report: see
 [A run report for scripts](/swing-ui-agent/start/run/#a-run-report-for-scripts).
@@ -95,5 +103,6 @@ Claude Code can also reach the agent as an MCP server: the same tools, without a
 ## What's next
 
 - [Let your agent drive the app](/swing-ui-agent/start/drive/): what the agent's calls and answers look like.
-- [Record a test with the agent](/swing-ui-agent/start/record/): the recording rules in detail.
+- [Record together with your agent](/swing-ui-agent/start/record-together/) and [Record a test with the agent](/swing-ui-agent/start/record/): the recording rules in detail.
+- [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 - [Run in CI](/swing-ui-agent/start/ci/).
