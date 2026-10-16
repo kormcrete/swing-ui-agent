@@ -199,7 +199,7 @@ Each part has a guide that shows how the agent and the tests handle it:
 
 ## Things to try
 
-Ask your agent to do one of these, or record it as a test:
+Ask your agent to do one of these, or [record it as a test](/swing-ui-agent/start/record-together/):
 
 - ▾ next to New order, then Ada Shop Ltd: a New order tab with Ada's account terms next to the Customer field.
 - Add 3 × A4 paper and 10 × Gel pen, black: the 5% volume discount appears and the cart total is €31.32.
@@ -215,6 +215,8 @@ Ask your agent to do one of these, or record it as a test:
 
 ## What's next
 
-- [The recorded test](/swing-ui-agent/demo/recorded-test/): a test the agent recorded on Order Desk, step by step.
+- [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/): a test the agent recorded on Order Desk.
 - [Let your agent drive the app](/swing-ui-agent/start/drive/)
-- [Record a test](/swing-ui-agent/start/record/)
+- [Record a test with the agent](/swing-ui-agent/start/record/)
+- [Record together with your agent](/swing-ui-agent/start/record-together/)
+- [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/)
