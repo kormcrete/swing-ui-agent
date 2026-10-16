@@ -125,6 +125,14 @@ class TableWidgetTest {
         both.put("Quantity@ORD-1640", "7.2");
         assertThat(TableWidget.row(main, RowSpec.of(both))).isEqualTo(0);
 
+        assertThat(TableWidget.hasKeyColumns(main, key("Line items", "Nuts"))).isTrue();
+        assertThat(TableWidget.hasKeyColumns(main, RowSpec.of(both))).isTrue();
+        assertThat(TableWidget.hasKeyColumns(main, key("Quantity@ORD-1641", "0.3"))).isTrue();
+        assertThat(TableWidget.hasKeyColumns(main, key("Quantity@ORD-9999", "0.3"))).isFalse();
+        assertThat(TableWidget.hasKeyColumns(main, key("Product", "x"))).isFalse();
+        assertThat(TableWidget.holdsRow(main, key("Line items", "Nuts"))).isTrue();
+        assertThat(TableWidget.holdsRow(main, key("Line items", "Bolts"))).isFalse();
+
         assertThat(catchThrowableOfType(() -> TableWidget.row(main, key("Product", "x")), DriverException.class)
                 .reason()).isEqualTo(Reason.NOT_FOUND);
         assertThat(catchThrowableOfType(() -> TableWidget.row(main, key("Line items", "Bolts")), DriverException.class)
@@ -150,5 +158,18 @@ class TableWidgetTest {
         JTable twins = new JTable(new Object[][] {{"Acme", "Open"}, {"Acme", "Open"}}, new Object[] {"Customer", "Status"});
         assertThat(TableWidget.rowKey(twins, 1)).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
         assertThat(TableWidget.uniqueRowKey(twins, 1)).isNull();
+    }
+
+    @Test
+    void holdsRowIsFalseForAnAmbiguousColumnAndForARendererThatThrows() {
+        JTable twin = new JTable(new Object[][] {{"a", "a"}}, new Object[] {"Qty", "Qty"});
+        assertThat(TableWidget.holdsRow(twin, key("Qty", "a"))).isFalse();
+        JTable broken = new JTable(new Object[][] {{"a"}}, new Object[] {"Product"});
+        broken.setDefaultRenderer(Object.class, (t, v, sel, foc, r, c) -> {
+            throw new IllegalStateException("the app's renderer failed");
+        });
+        assertThat(TableWidget.holdsRow(broken, key("Product", "a"))).isFalse();
+        JTable twinRows = new JTable(new Object[][] {{"a"}, {"a"}}, new Object[] {"Product"});
+        assertThat(TableWidget.holdsRow(twinRows, key("Product", "a"))).isTrue();
     }
 }

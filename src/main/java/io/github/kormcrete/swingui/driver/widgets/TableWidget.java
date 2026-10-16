@@ -233,13 +233,19 @@ public final class TableWidget {
         return true;
     }
 
-    /** True when {@link #row} finds at least one row for {@code spec}: found, or several rows match. */
+    /**
+     * True when {@link #row} finds at least one row for {@code spec}: found, or several rows match. False for a
+     * missing or ambiguous column and for a table whose cells cannot be read (an app renderer that throws): that
+     * table is simply not preferred.
+     */
     public static boolean holdsRow(JTable table, RowSpec spec) {
         try {
             row(table, spec);
             return true;
         } catch (DriverException e) {
-            return e.reason() == Reason.AMBIGUOUS;
+            return e.reason() == Reason.AMBIGUOUS && e.getMessage() != null && e.getMessage().contains(" rows match ");
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

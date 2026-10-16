@@ -147,6 +147,24 @@ class ResolverTest {
     }
 
     @Test
+    void aSiblingTableWhoseRendererThrowsDoesNotFailTheLocator() {
+        JPanel pane = new JPanel(null);
+        JTable broken = new JTable(new Object[][] {{"A4 paper, 500 sheets", "1"}}, new Object[] {"Product", "Qty"});
+        broken.setDefaultRenderer(Object.class, (t, v, sel, foc, r, c) -> {
+            throw new IllegalStateException("the app's renderer failed");
+        });
+        JTable products = new JTable(new Object[][] {{"Gel pen, black", "40"}}, new Object[] {"Product", "Stock"});
+        pane.add(broken);
+        pane.add(products);
+        mainContent.add(pane);
+        try {
+            assertThat(resolver.resolve(rowOf("Product", "Gel pen, black")).component).isSameAs(products);
+        } finally {
+            mainContent.remove(pane);
+        }
+    }
+
+    @Test
     void anIndexRowMatchesEveryTableAsBefore() {
         JPanel pane = new JPanel(null);
         pane.add(products());

@@ -299,11 +299,17 @@ public final class Resolver {
         if (l.row == null || found.size() < 2) return found;
         RowSpec spec = l.rowSpec();
         if (spec.index != null) return found;
-        List<Resolved> holders = new ArrayList<Resolved>();
+        List<Resolved> kept = new ArrayList<Resolved>();
+        boolean anyHolder = false;
         for (Resolved r : found) {
-            if (r.component instanceof JTable && TableWidget.holdsRow((JTable) r.component, spec)) holders.add(r);
+            if (!(r.component instanceof JTable)) {
+                kept.add(r);
+            } else if (TableWidget.holdsRow((JTable) r.component, spec)) {
+                kept.add(r);
+                anyHolder = true;
+            }
         }
-        return holders.isEmpty() ? found : holders;
+        return anyHolder ? kept : found;
     }
 
     private static boolean isSubsequence(List<String> wanted, List<String> trail) {
