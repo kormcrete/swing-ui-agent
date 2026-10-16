@@ -10,21 +10,20 @@ public final class RemoteApp implements ClientApp {
 
     private final AgentClient agent;
     private final RemoteVerbs steps;
+    private final StepJson json;
 
     public RemoteApp(AgentClient agent) {
         this.agent = agent;
         this.steps = new RemoteVerbs(agent);
+        this.json = new StepJson(agent.json());
     }
 
     @Override public void navigate(String target) {
-        ObjectNode s = agent.args();
-        s.put("action", "navigate");
-        s.put("target", target);
-        steps.run(s);
+        steps.run(json.navigate(target));
     }
 
     @Override public void closeActiveTab() {
-        steps.run(agent.args().put("action", "close"));
+        steps.run(json.close());
     }
 
     @Override public void loginAs(String alias) {

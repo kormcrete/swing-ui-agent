@@ -29,10 +29,12 @@ public final class RemoteVerbs implements Verbs {
 
     private final AgentClient agent;
     private final ObjectMapper json;
+    private final StepJson steps;
 
     public RemoteVerbs(AgentClient agent) {
         this.agent = agent;
         this.json = agent.json();
+        this.steps = new StepJson(json);
     }
 
     @Override public CapabilityReport capabilities() { throw Verbs.missing("capabilities"); }
@@ -124,154 +126,88 @@ public final class RemoteVerbs implements Verbs {
     // ---- verbs: one do_action step each
 
     @Override public VerbOutcome click(Locator target, String button, Integer count, List<String> modifiers, Long timeout) {
-        ObjectNode s = step("click", timeout);
-        put(s, "target", target);
-        put(s, "button", button);
-        put(s, "count", count);
-        put(s, "modifiers", modifiers);
-        return run(s);
+        return run(steps.click(target, button, count, modifiers, timeout));
     }
 
     @Override public VerbOutcome type(Locator target, String text, Boolean replace, Boolean commit, Long timeout) {
-        ObjectNode s = step("type", timeout);
-        put(s, "target", target);
-        put(s, "text", text);
-        put(s, "replace", replace);
-        put(s, "commit", commit);
-        return run(s);
+        return run(steps.type(target, text, replace, commit, timeout));
     }
 
     @Override public VerbOutcome press(String keys, Locator target, Long timeout) {
-        ObjectNode s = step("press", timeout);
-        put(s, "keys", keys);
-        put(s, "target", target);
-        return run(s);
+        return run(steps.press(keys, target, timeout));
     }
 
     @Override public VerbOutcome check(Locator target, Boolean checked, Long timeout) {
-        ObjectNode s = step("check", timeout);
-        put(s, "target", target);
-        put(s, "checked", checked);
-        return run(s);
+        return run(steps.check(target, checked, timeout));
     }
 
     @Override public VerbOutcome select(Locator target, List<String> items, Long timeout) {
-        ObjectNode s = step("select", timeout);
-        put(s, "target", target);
-        put(s, "items", items);
-        return run(s);
+        return run(steps.select(target, items, timeout));
     }
 
     @Override public VerbOutcome pick(List<String> path, Long timeout) {
-        ObjectNode s = step("pick", timeout);
-        put(s, "path", path);
-        return run(s);
+        return run(steps.pick(path, timeout));
     }
 
     @Override public VerbOutcome menu(List<String> path, Long timeout) {
-        ObjectNode s = step("menu", timeout);
-        put(s, "path", path);
-        return run(s);
+        return run(steps.menu(path, timeout));
     }
 
     @Override public VerbOutcome contextMenu(Locator target, List<String> path, Long timeout) {
-        ObjectNode s = step("contextMenu", timeout);
-        put(s, "target", target);
-        put(s, "path", path);
-        return run(s);
+        return run(steps.contextMenu(target, path, timeout));
     }
 
     @Override public VerbOutcome answer(String button, Long timeout) {
-        ObjectNode s = step("answer", timeout);
-        put(s, "button", button);
-        return run(s);
+        return run(steps.answer(button, timeout));
     }
 
     @Override public VerbOutcome chooseFile(String path, Boolean approve, Long timeout) {
-        ObjectNode s = step("chooseFile", timeout);
-        put(s, "path", path);
-        put(s, "approve", approve);
-        return run(s);
+        return run(steps.chooseFile(path, approve, timeout));
     }
 
     @Override public VerbOutcome focusFileChooserName(Long timeout) {
-        return run(step("focusFileChooserName", timeout));
+        return run(steps.focusFileChooserName(timeout));
     }
 
     @Override public VerbOutcome drag(Locator from, Locator to, Long timeout) {
-        ObjectNode s = step("drag", timeout);
-        put(s, "from", from);
-        put(s, "to", to);
-        return run(s);
+        return run(steps.drag(from, to, timeout));
     }
 
     @Override public VerbOutcome drop(Locator target, List<String> files, String text, Long timeout) {
-        ObjectNode s = step("drop", timeout);
-        put(s, "target", target);
-        put(s, "files", files);
-        put(s, "text", text);
-        return run(s);
+        return run(steps.drop(target, files, text, timeout));
     }
 
     @Override public VerbOutcome resizeColumn(Locator column, int delta, Long timeout) {
-        ObjectNode s = step("resizeColumn", timeout);
-        put(s, "target", column);
-        s.put("delta", delta);
-        return run(s);
+        return run(steps.resizeColumn(column, delta, timeout));
     }
 
     @Override public VerbOutcome resizeWindow(String window, int width, int height, Long timeout) {
-        ObjectNode s = step("resizeWindow", timeout);
-        put(s, "window", window);
-        s.put("width", width);
-        s.put("height", height);
-        return run(s);
+        return run(steps.resizeWindow(window, width, height, timeout));
     }
 
     @Override public VerbOutcome closeWindow(String window, Long timeout) {
-        ObjectNode s = step("closeWindow", timeout);
-        put(s, "window", window);
-        return run(s);
+        return run(steps.closeWindow(window, timeout));
     }
 
     @Override public VerbOutcome hover(Locator target, Boolean inside, Long timeout) {
-        ObjectNode s = step("hover", timeout);
-        put(s, "target", target);
-        put(s, "inside", inside);
-        return run(s);
+        return run(steps.hover(target, inside, timeout));
     }
 
     @Override public VerbOutcome expect(Locator target, Expectation expectation, Long timeout) {
-        ObjectNode s = step("expect", timeout);
-        put(s, "target", target);
-        s.setAll((ObjectNode) json.valueToTree(expectation));
-        return run(s);
+        return run(steps.expect(target, expectation, timeout));
     }
 
     @Override public VerbOutcome scroll(Locator target, String to, Integer pages, Long timeout) {
-        ObjectNode s = step("scroll", timeout);
-        put(s, "target", target);
-        put(s, "to", to);
-        put(s, "pages", pages);
-        return run(s);
+        return run(steps.scroll(target, to, pages, timeout));
     }
 
     @Override public VerbOutcome setClipboard(String text, Long timeout) {
-        ObjectNode s = step("setClipboard", timeout);
-        put(s, "text", text);
-        return run(s);
+        return run(steps.setClipboard(text, timeout));
     }
 
     // resetPointer stays the no-op default: the agent's session reset moves the pointer home.
 
     // ---- the wire
-
-    private ObjectNode step(String action, Long timeout) {
-        ObjectNode s = json.createObjectNode();
-        s.put("action", action);
-        put(s, "timeout", timeout);
-        return s;
-    }
 
     /** One step through do_action, kept out of export_test's recording. */
     VerbOutcome run(ObjectNode step) {
@@ -292,8 +228,7 @@ public final class RemoteVerbs implements Verbs {
     }
 
     private void put(ObjectNode o, String field, Object value) {
-        if (value == null) return;
-        o.set(field, json.valueToTree(value));
+        steps.put(o, field, value);
     }
 
     private static String text(JsonNode r, String field) {
