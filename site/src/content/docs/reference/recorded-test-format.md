@@ -11,26 +11,52 @@ The agent writes and reads the file; you rarely edit it by hand. It holds exact 
 
 ## An example
 
-The file `gel-pen-total.json` from [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#save-one), recorded on Order Desk:
+The file `place-order.json`, recorded on Order Desk: a new order for Ada Shop Ltd, through checkout to the placed order. Its first step and the step that confirms the order, with its checks (17 steps in all; `// …` stands for what is left out):
 
+<!-- snippet: uitest/place-order.json#L1-L325 -->
 ```json
 {
   "version" : 2,
-  "name" : "gel-pen-total",
-  "description" : "Starts an order for Ada and adds Gel pen, black; the cart total reads 1.44.",
+  "name" : "place-order",
+  "description" : "A new order for Ada Shop Ltd, from File ▸ New order through checkout to the placed order",
   "start" : "reset",
   "steps" : [
-    { "action" : "menu", "path" : [ "File", "New order" ] },
-    { "action" : "type", "target" : { "role" : "text", "name" : "Customer" }, "text" : "Ada" },
-    { "action" : "press", "keys" : "Enter" },
-    { "action" : "click", "target" : { "role" : "table", "row" : { "Product" : "Gel pen, black" }, "column" : "SKU" } },
-    { "action" : "click", "target" : { "role" : "button", "name" : "Add to cart" },
-      "checks" : [ { "target" : { "role" : "label", "name" : "Total" }, "text" : "€1.44" } ] }
-  ]
-}
+    {
+      "action" : "menu",
+      "say" : "Open a new order",
+      "path" : [
+        "File",
+        "New order"
+      ]
+    },
+    // …
+    {
+      "action" : "answer",
+      "say" : "Confirm the order",
+      "button" : "Place order",
+      "checks" : [
+        {
+          "say" : "The new order is Placed",
+          "target" : {
+            "role" : "label",
+            "name" : "Placed"
+          },
+          "text" : "Placed"
+        },
+        {
+          "say" : "The receipt shows Ada Shop Ltd and €37.20",
+          "target" : {
+            "role" : "label",
+            "name" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
+          },
+          "text" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
+        }
+      ]
+    },
+    // …
 ```
 
-The tool writes one field per line; short objects are joined here. With sentences and a group, the same test reads as in [Sentences and groups](/swing-ui-agent/guides/sentences/#in-the-file).
+The tool writes one field per line. Steps can be put in groups; see [Sentences and groups](/swing-ui-agent/guides/sentences/#in-the-file).
 
 ## Top-level fields
 

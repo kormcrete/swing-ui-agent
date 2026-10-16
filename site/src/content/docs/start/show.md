@@ -173,7 +173,7 @@ as when recording, so you can name, delete or redo them. **Export…** reads **S
 over it; under another name it reads **Export** and writes a new file. The full walk-through is in
 [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#open-one-in-the-palette).
 
-While you run, the agent's calls are refused with BUSY and a message such as "a person is running gel-pen-total in
+While you run, the agent's calls are refused with BUSY and a message such as "a person is running cart-totals in
 the app" (or "a person is replaying their recording in the app").
 
 <!-- TODO picture (Task 12): the Loaded bar with the Steps panel showing ▶ Run and the Replay speed on Step by step -->

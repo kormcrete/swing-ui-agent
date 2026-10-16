@@ -82,7 +82,7 @@ assertThat(ui.dialog().button("Next")).isDisabled();
 ui.dialog().field("PO number").type("PO-7781");
 ui.dialog().button("Next").click();
 
-assertThat(ui.dialog().label("€37.20")).isVisible();
+assertThat(ui.dialog().label("Total")).hasText("€37.20");
 ```
 
 - **Radio buttons:** `click` the one to choose; check it with `"state":["checked"]`, in Java `.isChecked()`.

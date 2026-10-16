@@ -1,13 +1,15 @@
 ---
 title: Run in CI
-description: Start the app with the agent on a CI runner, wait until it answers, run the UI tests and keep the screenshots.
+description: Start the app with the agent on a CI runner, wait until it answers, run the recorded tests (and any Java tests) and keep the screenshots and failure evidence.
 sidebar:
   order: 12
 ---
 
-In CI the job does what you do by hand: start the app with the agent, wait until the agent answers, run the UI tests, and keep the screenshots and the failure evidence. This page follows Order Desk's own GitHub Actions job, which runs on Linux under a virtual display.
+In CI the job does what you do by hand: start the app with the agent, wait until the agent answers, run the recorded tests (and any Java tests), and keep the screenshots and the failure evidence. This page follows Order Desk's own GitHub Actions job, which runs on Linux under a virtual display.
 
 ## 1. A script that starts the app and runs the tests
+
+The tests are [recorded tests](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci), replayed by the small `RecordedUiIT` class, plus Order Desk's Java tests. Both are named `*UiIT`, so one failsafe run covers them and nothing else changes. Keep `palette=off` in the script, as shown: nobody is at the screen to use the palette. Keep `target/failsafe-reports/` (the job below already does): a failing recorded test leaves its report and a picture of the failing step in `recorded-test-failures/` there.
 
 Order Desk keeps the steps in one script, so CI and a person run them the same way. On Linux without a display it starts Xvfb first and waits for its socket:
 
@@ -88,11 +90,7 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
 - `mvn -B verify` runs the unit tests without the app. The UI tests run next, against the app.
 - `if: always()` keeps the screenshots and the evidence when a test fails, which is when you need them.
 
-The `ui-screenshots` artifact of a green run holds the ten 2x screenshots of `PlaceOrderUiIT`; they are shown in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
-
-## Recorded tests in CI
-
-The `RecordedUiIT` class from [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci) is named `*UiIT`, so the failsafe run above picks it up with the Java tests. Nothing else changes. Keep `palette=off` in the script, as shown: nobody is at the screen to use the palette. Keep `target/failsafe-reports/` (the job above already does): a failing recorded test leaves its report and a picture of the failing step in `recorded-test-failures/` there.
+The `ui-screenshots` artifact of a green run holds the ten 2x screenshots of the Java test `PlaceOrderUiIT`; they are shown in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
 
 ## On each runner
 

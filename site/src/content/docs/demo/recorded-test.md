@@ -28,7 +28,7 @@ in the Order Desk repository.
      order, so the check matches only the part before it.
    - **Long lines are wrapped** at 120 characters.
 
-See [Record a test with the agent](/swing-ui-agent/start/record/) for the same workflow on your app.
+The same order as a recorded test, and what each kind can check, is on [One order, two files](/swing-ui-agent/demo/two-files/). See [Record a test with the agent](/swing-ui-agent/start/record/) for the same workflow on your app.
 
 ## The test, step by step
 
@@ -91,10 +91,10 @@ ui.tab("New order · Ada Shop Ltd").table().row("Product", "A4 paper, 500 sheets
 ui.tab("New order · Ada Shop Ltd").table().row("Product", "Gel pen, black").cell("Qty")
         .type("10", null, Boolean.TRUE);
 
-assertThat(ui.tab("New order · Ada Shop Ltd").label("€26.70")).isVisible();
-assertThat(ui.tab("New order · Ada Shop Ltd").label("−€0.60")).isVisible();
-assertThat(ui.tab("New order · Ada Shop Ltd").label("€5.22")).isVisible();
-assertThat(ui.tab("New order · Ada Shop Ltd").label("€31.32")).isVisible();
+assertThat(ui.tab("New order · Ada Shop Ltd").label("Subtotal")).hasText("€26.70");
+assertThat(ui.tab("New order · Ada Shop Ltd").label("Volume discount")).hasText("−€0.60");
+assertThat(ui.tab("New order · Ada Shop Ltd").label("VAT (20%)")).hasText("€5.22");
+assertThat(ui.tab("New order · Ada Shop Ltd").label("Total")).hasText("€31.32");
 ui.inWindow("main").saveScreenshot("PlaceOrderUiIT/03-cart.png", 2);
 ```
 
@@ -150,7 +150,7 @@ ui.inWindow("dialog").saveScreenshot("PlaceOrderUiIT/06-payment.png", 2);
 ui.dialog().field("PO number").type("PO-7781");
 ui.dialog().button("Next").click();
 
-assertThat(ui.dialog().label("€37.20")).isVisible();
+assertThat(ui.dialog().label("Total")).hasText("€37.20");
 ui.inWindow("dialog").saveScreenshot("PlaceOrderUiIT/07-review.png", 2);
 ```
 

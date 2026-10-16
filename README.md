@@ -87,33 +87,52 @@ To see all of it, use [Order Desk](https://github.com/kormcrete/swing-order-desk
 
 ## What a test looks like
 
-An example recorded test, after the agent named its steps: a sentence per step, the checks under their step, exact
-values only. The palette's Steps list shows the same sentences.
-
-<!-- TODO Task 25: swap in Order Desk's uitest/place-order.json once it lands. -->
+Order Desk's `uitest/place-order.json`, recorded by an agent: a sentence per step, the checks under their step, exact
+values only (17 steps; `// …` stands for what is left out). The palette's Steps list shows the same sentences.
 
 ```json
 {
   "version" : 2,
-  "name" : "gel-pen-sentences",
-  "description" : "Starts an order for Ada and adds Gel pen, black; the cart total reads 1.44.",
+  "name" : "place-order",
+  "description" : "A new order for Ada Shop Ltd, from File ▸ New order through checkout to the placed order",
   "start" : "reset",
   "steps" : [
-    { "say" : "Start an order for Ada",
-      "steps" : [
-        { "action" : "menu", "say" : "Open a new order", "path" : [ "File", "New order" ] },
-        { "action" : "type", "say" : "Enter the customer Ada", "target" : { "role" : "text", "name" : "Customer" }, "text" : "Ada" },
-        { "action" : "press", "keys" : "Enter" }
-      ] },
-    { "action" : "click", "say" : "Pick Gel pen, black in the product table",
-      "target" : { "role" : "table", "row" : { "Product" : "Gel pen, black" }, "column" : "SKU" } },
-    { "action" : "click", "say" : "Add it to the cart", "target" : { "role" : "button", "name" : "Add to cart" },
-      "checks" : [ { "say" : "The cart total is 1.44", "target" : { "role" : "label", "name" : "Total" }, "text" : "€1.44" } ] }
-  ]
-}
+    {
+      "action" : "menu",
+      "say" : "Open a new order",
+      "path" : [
+        "File",
+        "New order"
+      ]
+    },
+    // …
+    {
+      "action" : "answer",
+      "say" : "Confirm the order",
+      "button" : "Place order",
+      "checks" : [
+        {
+          "say" : "The new order is Placed",
+          "target" : {
+            "role" : "label",
+            "name" : "Placed"
+          },
+          "text" : "Placed"
+        },
+        {
+          "say" : "The receipt shows Ada Shop Ltd and €37.20",
+          "target" : {
+            "role" : "label",
+            "name" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
+          },
+          "text" : "Ada Shop Ltd · 12 Oct 2026 · €37.20"
+        }
+      ]
+    },
+    // …
 ```
 
-The tool writes one field per line; short objects are joined here. To run every file in `uitest/` from Maven and CI,
+To run every file in `uitest/` from Maven and CI,
 add `io.github.kormcrete:swing-ui-agent:0.1.0-SNAPSHOT` as a test dependency and one small JUnit class; see
 [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
 
@@ -139,6 +158,8 @@ void placesAnOrderForAda(Client ui) {
   writes a sentence per step, per check and per group, which you can change or undo.
 - [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/): where they live,
   the palette, the agent, Maven and CI.
+- [One order, two files](https://kormcrete.github.io/swing-ui-agent/demo/two-files/): Order Desk's `place-order.json`
+  and the Java test `PlaceOrderUiIT` side by side, and what each can check.
 - [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/): three agent skills in [`skills/`](skills)
   that teach your coding agent the drive, target and record workflow.
 - [Plugins](https://kormcrete.github.io/swing-ui-agent/plugins/what-a-plugin-adds/) (optional): reset to a known

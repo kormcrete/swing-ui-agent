@@ -1,11 +1,11 @@
 ---
 title: Record a test with the agent
-description: Reset, reach the starting screen, act, check with expect, and export a JUnit class.
+description: Reset, reach the starting screen, act, check with expect, and save a recorded test. A Java test is the last section.
 sidebar:
   order: 7
 ---
 
-You say what the test must prove; the agent drives the app and every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class, which you review like any other code. This page records a short test on Order Desk with the real answers, then reads the larger test that came out of the same process.
+You say what the test must prove; the agent drives the app and every step that works is recorded. `export_recorded_test` saves the recording as a recorded test, a JSON file in `uitest/` that replays from the palette, the agent, Maven and CI. This page records a short test on Order Desk with the real answers. A Java test, for more checks, is the last section.
 
 With the [skills](/swing-ui-agent/agents/skills/) installed, you ask in plain words, for example: "Record a test that opens a new order for Ada Shop Ltd and checks her account terms." The swing-ui-record-test skill takes the agent through the steps below.
 
@@ -59,7 +59,27 @@ $UI expect '{"target":{"role":"label","name":"Invoice 30 days","match":"contains
 
 `expect` takes exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell` or `selected`, and retries until it holds (10 seconds by default). The agent asserts what you asked for, not everything it can see.
 
-## 6. Export
+## 6. Save it as a recorded test
+
+Before saving, the agent gives each step and check a short sentence in plain words (`recording {"op":"edit",…}`, see [Sentences and groups](/swing-ui-agent/guides/sentences/)). Then:
+
+```sh
+$UI export_recorded_test '{"name":"new-order-for-ada","description":"Opens a new order for Ada Shop Ltd and checks her account terms"}'
+```
+
+- It writes `uitest/new-order-for-ada.json` and refuses a name that already exists. The steps are the ones recorded since the last reset.
+- `recording {"op":"export","as":"recorded"}` writes the same file and keeps the recording, for the next test.
+- Order Desk's [`place-order.json`](/swing-ui-agent/demo/two-files/) was saved this way. The file's format is in [Recorded test format](/swing-ui-agent/reference/recorded-test-format/).
+
+## 7. Prove it from another screen
+
+Put the app on some other screen, such as another tab, then run only the new test while the app is up: **Load recorded test…** and **▶ Run** in the palette, or `run_recorded_test '{"name":"new-order-for-ada"}'`. It must pass from there. More ways to run it are in [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+
+## Java tests, for more checks
+
+When a test must read a value that changes per run, or check something the screen does not show, the same recording can be exported as a Java class instead. Which one to choose: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). `export_test` writes it as a JUnit 5 `@UiTest` class, which you review like any other code.
+
+### Export a Java test
 
 ```sh
 $UI export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.orderdesk","method":"opensANewOrderForAda"}'
@@ -97,15 +117,11 @@ class NewOrderForAdaUiIT {
 - `export_test` refuses a recording that did not begin at a reset, an empty one, bad names and an existing file. A refusal keeps the recording, so fix the problem and export again.
 - A test that does not begin by reaching its own screen is still written, with a `startWarning` (see [Reset and the starting screen](/swing-ui-agent/guides/reset/#recording-starts-at-a-reset)). Reset and record again with a `menu` or `press` first step.
 
-## Export the other kind
+### Run it
 
-The same recording can be saved as a recorded test (`export_recorded_test`, or `recording {"op":"export","as":"recorded"}`, which keeps the recording) or a Java class as above. Which one to choose: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+Put the app on some other screen, then run only the new class while the app is up. It must pass from there. How to run it is in [Run the tests](/swing-ui-agent/start/run/).
 
-## 7. Prove it from another screen
-
-Put the app on some other screen, such as another tab, then run only the new class while the app is up. It must pass from there. How to run it is in [Run the tests](/swing-ui-agent/start/run/).
-
-## Reading a longer test
+### Reading a longer Java test
 
 `PlaceOrderUiIT` in the Order Desk repository was recorded the same way: File ▸ New order, Ada Shop Ltd, two products in the cart, the four checkout steps and the placed order on the Orders tab. Its opening steps:
 
@@ -138,8 +154,8 @@ class PlaceOrderUiIT {
         ui.tab("New order · Ada Shop Ltd").table().row("Product", "Gel pen, black").cell("Qty")
                 .type("10", null, Boolean.TRUE);
 
-        assertThat(ui.tab("New order · Ada Shop Ltd").label("€26.70")).isVisible();
-        assertThat(ui.tab("New order · Ada Shop Ltd").label("−€0.60")).isVisible();
+        assertThat(ui.tab("New order · Ada Shop Ltd").label("Subtotal")).hasText("€26.70");
+        assertThat(ui.tab("New order · Ada Shop Ltd").label("Volume discount")).hasText("−€0.60");
 ```
 
 What a reviewer looks for:
@@ -164,7 +180,7 @@ Add by hand only checks no tool expresses, as here with `UiAssertions.eventually
 
 ## What's next
 
-- [Run the tests](/swing-ui-agent/start/run/).
+- [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/), and [Run the tests](/swing-ui-agent/start/run/) for Java tests.
 - [Record together with your agent](/swing-ui-agent/start/record-together/): you say it in chat, the agent records, you watch.
-- [Record a test by showing it](/swing-ui-agent/start/show/): record the steps yourself, and let the agent export them.
+- [Record a test by showing it](/swing-ui-agent/start/show/): record the steps yourself, and let the agent save them.
 - [Waiting](/swing-ui-agent/guides/waiting/) and [Reset and the starting screen](/swing-ui-agent/guides/reset/).

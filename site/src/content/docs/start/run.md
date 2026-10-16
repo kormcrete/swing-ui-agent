@@ -1,11 +1,19 @@
 ---
 title: Run the tests
-description: Run the Java tests from Maven or IntelliJ against the running app, and read what a failure left behind.
+description: Replay a recorded test from the palette or the agent, run recorded and Java tests from Maven or IntelliJ against the running app, and read what a failure left behind.
 sidebar:
   order: 10
 ---
 
-A Java test is a plain JUnit 5 class. It does not start the app: it connects to the agent of an app that is already running and drives it the same way the agent did. This page sets up Maven the way Order Desk does, and shows what a failure leaves behind.
+A recorded test replays against an app that is already running: from the palette, from the agent, or from Maven and CI. This page sets up Maven the way Order Desk does, and shows what a failure leaves behind. A Java test is a plain JUnit 5 class that connects to the agent of a running app the same way; it runs in the same Maven setup.
+
+## Replay a recorded test now
+
+With the app running with the agent:
+
+- **In the palette:** **Load recorded test…**, choose the file, **▶ Run**. See [Record a test by showing it](/swing-ui-agent/start/show/#6-load-it-again-run-it-save-back).
+- **From the agent or a shell:** `run_recorded_test '{"name":"place-order"}'`. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#run-it-from-the-agent-or-a-shell).
+- **In Maven and CI:** the sections below. One small class, [`RecordedUiIT`](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci), runs every file in `uitest`; it is named `*UiIT`, so the setup below picks it up with any Java tests.
 
 ## 1. Add the library
 
@@ -22,7 +30,7 @@ Add the library as a test dependency, next to JUnit 5:
 
 ## 2. Keep UI tests out of the unit build
 
-A `@UiTest` class is tagged `ui` and named `*UiIT`. Order Desk runs them with failsafe in a Maven profile of its own, so `mvn verify` stays unit-only and needs no app:
+A `@UiTest` class (the recorded-test runner, or a Java test) is tagged `ui` and named `*UiIT`. Order Desk runs them with failsafe in a Maven profile of its own, so `mvn verify` stays unit-only and needs no app:
 
 <!-- snippet: pom.xml#L192-L216 -->
 ```xml
@@ -71,7 +79,7 @@ changes the default port.
 
 ## 4. Start the app, then run
 
-Start the app with the agent, then run the UI tests against it:
+Start the app with the agent, then run the UI tests against it (`-Dorderdesk.today=2026-10-12` fixes the date that `place-order` checks):
 
 ```sh
 java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
@@ -79,7 +87,7 @@ java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
 mvn -B -Pui verify
 ```
 
-To run one class: `mvn -B -Pui verify -Dit.test=PlaceOrderUiIT`.
+To run one class: `mvn -B -Pui verify -Dit.test=RecordedUiIT` (all recorded tests; `-Drecorded=place-order` picks one) or `-Dit.test=PlaceOrderUiIT` (a Java test).
 
 - When no agent answers, the first test fails at once with "no swing-ui-agent on 127.0.0.1:8770", and every later test with it.
 - Before each test the agent resets the app, and every test begins by getting to its own screen (see [Reset and the starting screen](/swing-ui-agent/guides/reset/)). Run a test twice against the same app and it must pass twice.
@@ -88,7 +96,7 @@ To run one class: `mvn -B -Pui verify -Dit.test=PlaceOrderUiIT`.
 
 ## When a test fails
 
-A failed test writes its evidence under `target/ui-failures/<Class>/<method>/`:
+A failed Java test writes its evidence under `target/ui-failures/<Class>/<method>/`:
 
 - `evidence.txt`: the failure, what the locator matched, the element tree at that moment and the stack; on a timeout, also the app's event-thread stack.
 - a PNG of the window at the failure.
@@ -117,7 +125,7 @@ Without a plugin, a reset does not close tabs. Restart the app, or have the test
 
 ## A run report for scripts
 
-A coding agent that runs the tests cannot watch the IDE's test window. Register the run report in your test module, in `src/test/resources/META-INF/services/org.junit.platform.launcher.TestExecutionListener`:
+A coding agent that runs the Java tests cannot watch the IDE's test window. Register the run report in your test module, in `src/test/resources/META-INF/services/org.junit.platform.launcher.TestExecutionListener`:
 
 ```text
 io.github.kormcrete.swingui.junit.UiRunReport
@@ -130,10 +138,6 @@ STARTED 2026-10-13T10:34:55.574Z tests=1
 PASS PlaceOrderUiIT#placesAnOrderForAda 4255ms
 DONE passed=1 failed=0 skipped=0 aborted=0
 ```
-
-## Run recorded tests
-
-A [recorded test](/swing-ui-agent/start/recorded-tests/) needs no Java of its own: one `@UiTest` class that returns `RecordedTests.of(ui)` runs the recorded tests in `uitest`. It is named `*UiIT`, so the failsafe setup above runs it with the Java tests. The class, which tests it picks and where failures go are in [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
 
 ## What's next
 

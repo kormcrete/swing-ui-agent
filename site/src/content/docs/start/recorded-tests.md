@@ -20,35 +20,62 @@ A recorded test is a JSON file, one step per action, with its checks under the s
 - **The agent:** `export_recorded_test {"name":…,"description":…}` writes the steps recorded since the last reset. It refuses a name that already exists, except the file the recording was loaded from.
 - **Keep recording after saving:** `recording {"op":"export","as":"recorded",…}` writes the same file and keeps the recording, for the next one.
 
-Here is a small one exported from a real recording on Order Desk: open a new order for Ada, add Gel pen, check the cart total. Gel pen, black costs 1.20, plus 20% VAT.
+Here is one from a real recording on Order Desk: open a new order for Ada, put two products in the cart, check the totals. The agent named the steps with `recording edit`, then saved it.
 
 ```sh
 $UI recording '{"op":"start","reset":true}'
-# … the agent acts (menu, type, press, click, click) and adds an expect check …
+# … the agent acts (menu, type, press, click, type) and adds expect checks …
 $UI recording '{"op":"stop"}'
-$UI export_recorded_test '{"name":"gel-pen-total","description":"Starts an order for Ada and adds Gel pen, black; the cart total reads 1.44."}'
+$UI export_recorded_test '{"name":"cart-totals","description":"A cart for Ada Shop Ltd: A4 paper x3 and Gel pen x10, with its line total, subtotal, volume discount, VAT and total"}'
 ```
 
-That wrote `uitest/gel-pen-total.json`:
+That wrote `uitest/cart-totals.json`, in Order Desk's repository. Its first three steps:
 
+<!-- snippet: uitest/cart-totals.json#L1-L40 -->
 ```json
 {
   "version" : 2,
-  "name" : "gel-pen-total",
-  "description" : "Starts an order for Ada and adds Gel pen, black; the cart total reads 1.44.",
+  "name" : "cart-totals",
+  "description" : "A cart for Ada Shop Ltd: A4 paper x3 and Gel pen x10, with its line total, subtotal, volume discount, VAT and total",
   "start" : "reset",
   "steps" : [
-    { "action" : "menu", "path" : [ "File", "New order" ] },
-    { "action" : "type", "target" : { "role" : "text", "name" : "Customer" }, "text" : "Ada" },
-    { "action" : "press", "keys" : "Enter" },
-    { "action" : "click", "target" : { "role" : "table", "row" : { "Product" : "Gel pen, black" }, "column" : "SKU" } },
-    { "action" : "click", "target" : { "role" : "button", "name" : "Add to cart" },
-      "checks" : [ { "target" : { "role" : "label", "name" : "Total" }, "text" : "€1.44" } ] }
-  ]
-}
+    {
+      "action" : "menu",
+      "say" : "Open a new order",
+      "path" : [
+        "File",
+        "New order"
+      ]
+    },
+    {
+      "action" : "type",
+      "say" : "Type “Ada” into Customer",
+      "target" : {
+        "role" : "text",
+        "name" : "Customer"
+      },
+      "text" : "Ada"
+    },
+    {
+      "action" : "press",
+      "say" : "Press Enter to pick Ada Shop Ltd",
+      "keys" : "Enter",
+      "checks" : [
+        {
+          "say" : "The New order tab for Ada Shop Ltd is selected",
+          "target" : {
+            "role" : "tab",
+            "name" : "New order · Ada Shop Ltd"
+          },
+          "state" : [
+            "selected"
+          ]
+        }
+      ]
+    },
 ```
 
-The tool writes the file with one field per line; here short objects are joined to one line, nothing else is changed. `"start": "reset"` means every run begins with the app reset.
+The file goes on the same way: 11 steps and 7 checks. The tool writes the file with one field per line. `"start": "reset"` means every run begins with the app reset.
 
 ## Open one in the palette
 
@@ -72,35 +99,41 @@ To keep the change, press **Export…**. If the name is the test you loaded, the
 
 ## Run it from the agent or a shell
 
-`run_recorded_test {"name":"gel-pen-total"}` (or `path`, or the JSON inline as `test`) resets the app, runs every step without recording, and stops at the first that fails:
+`run_recorded_test {"name":"cart-totals"}` (or `path`, or the JSON inline as `test`) resets the app, runs every step without recording, and stops at the first that fails:
 
 ```sh
-$UI run_recorded_test '{"name":"gel-pen-total"}'
-{"passed":true,"test":"gel-pen-total","file":"…/uitest/gel-pen-total.json","ran":5,"total":5,"ms":478,
- "steps":[{"n":1,"action":"menu([File, New order])","passed":true,"ms":200}, … ,
-          {"n":"5.1","action":"expect(label 'Total' text '€1.44')","passed":true,"ms":1}],
- "report":"Recorded test 'gel-pen-total' passed:\n  [1] PASS menu([File, New order]) …"}
+$UI run_recorded_test '{"name":"cart-totals"}'
+{"passed":true,"test":"cart-totals","file":"…/uitest/cart-totals.json","ran":11,"total":11,"ms":1552,
+ "steps":[{"n":1,"say":"Open a new order","action":"menu([File, New order])","passed":true,"ms":451}, … ,
+          {"n":"9.5","say":"The cart total is €31.32","action":"expect(label 'Total' [tab:New order · Ada Shop Ltd] text '€31.32')","passed":true,"ms":3},
+          {"n":11,"say":"Discard the order","action":"answer(Discard)","passed":true,"ms":121}],
+ "report":"Recorded test 'cart-totals' passed:\n  driver: …\n  [1] PASS Open a new order  ms=451 … menu([File, New order]) …"}
 ```
 
-- `ran` and `total` count steps. A check is not counted; it is listed with the label `5.1` (step 5, check 1). The same numbers are in the palette and the file.
+- `ran` and `total` count steps. A check is not counted; it is listed with the label `9.5` (step 9, check 5). The same numbers are in the palette and the file.
 - Left out of the quote: the per-step timings and the `driver:` line of the report.
 - The CLI exits `0` when it passed. `4` means the recorded test ran and failed; the report is on stderr. See [Exit codes](/swing-ui-agent/reference/cli/#exit-codes).
 
-A failing one, where the check expected `€1.45`:
+A failing one, where the last check expected `€31.33`:
 
 ```text
-Recorded test 'gel-pen-wrong' failed:
-  [5] PASS click(button 'Add to cart') …
-    [5.1] FAIL expect(label 'Total' text '€1.45') …
-      EXPECTATION: expected text '€1.45' but was '€1.44'
-      target label 'Total' matched 1:
+Recorded test 'cart-totals-wrong' failed:
+  [9] PASS Order 10 gel pens                            ms=98 …
+    [9.4] PASS The VAT is €5.22                             ms=0 …
+    [9.5] FAIL The cart total is €31.33                     ms=10051 …
+        expect(label 'Total' [tab:New order · Ada Shop Ltd] text '€31.33')
+      EXPECTATION: expected text '€31.33' but was '€31.32'
+      target label 'Total' [tab:New order · Ada Shop Ltd] matched 1:
         - label 'Total' in main [tab:New order · Ada Shop Ltd]
-      tree of the matched element (depth 2, compact, 2 nodes):
-        label 'Total' = "€1.44"
-      screenshot: …/target/ui-screenshots/failures/gel-pen-wrong-step5.1.png
+      tree of tab 'New order · Ada Shop Ltd' (depth 4, compact, 19 nodes):
+        …
+        label 'VAT (20%)' = "€5.22"
+        label 'Total' = "€31.32"
+        button 'Checkout…'
+      screenshot: …/target/ui-screenshots/failures/cart-totals-wrong-step9.5.png
 ```
 
-The failing step carries what its locators match now, and a PNG of the window (`evidence`, default `target/ui-screenshots/failures`). Left out: steps 1 to 4 and the `driver:` line.
+The failing step carries what its locators match now, and a PNG of the window (`evidence`, default `target/ui-screenshots/failures`). Left out: steps 1 to 8, most of the tree and the `driver:` line.
 
 ## In Maven and CI
 
@@ -120,7 +153,7 @@ class RecordedUiIT {
 It is named `*UiIT`, so the same failsafe run as the [Java tests](/swing-ui-agent/start/run/) and the same [CI job](/swing-ui-agent/start/ci/) pick it up. No other setup. Each recorded test is one JUnit test, named after its file:
 
 ```text
-[recorded-test] gel-pen-total passed: 5 steps, 379 ms
+[recorded-test] cart-totals passed: 11 steps, 1552 ms
 Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
 ```
 

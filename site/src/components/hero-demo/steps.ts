@@ -72,17 +72,38 @@ export const steps: Step[] = [
 		say: 'The A4 paper line comes to €14.70',
 	},
 	{
+		kind: 'check', box: [2296, 1122, 88, 34], view: TOTALS,
+		say: 'The cart subtotal is €26.70',
+	},
+	{
+		kind: 'check', box: [2296, 1158, 88, 34], view: TOTALS,
+		say: 'The volume discount is −€0.60',
+	},
+	{
+		kind: 'check', box: [2310, 1230, 74, 34], view: TOTALS,
+		say: 'The VAT is €5.22',
+	},
+	{
 		kind: 'check', box: [2274, 1272, 114, 58], view: TOTALS,
 		say: 'The cart total is €31.32',
+	},
+	// No frame for the close: the question "Discard this new order?" is open at that moment.
+	{
+		kind: 'act', box: [0, 0, 67, 42], view: TOP,
+		say: 'Close the order tab',
+	},
+	{
+		kind: 'act', box: [0, 0, 67, 42], view: TOP, frame: 'f0',
+		say: 'Discard the order',
 	},
 ];
 
 export const story = {
 	all: ALL,
-	// The recorded test's name (uitest/<name>.json). The frames come from Order Desk's CartTotalsUiIT run, the same steps.
-	// TODO Task 24/25: matches Order Desk's uitest/cart-totals.json
+	// The recorded test's name (uitest/<name>.json): Order Desk's uitest/cart-totals.json, the same 11 steps. The frames
+	// come from the CartTotalsUiIT run; the discard step ends on the app as it was at the start (f0).
 	test: 'cart-totals',
 	firstFrame: 'f0',
-	lastFrame: 'r09',
-	frames: ['f0', ...steps.flatMap((s) => (s.frame ? [s.frame] : []))],
+	lastFrame: 'f0',
+	frames: [...new Set(['f0', ...steps.flatMap((s) => (s.frame ? [s.frame] : []))])],
 };
