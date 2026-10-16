@@ -3417,22 +3417,20 @@ public class UiMcpSession {
     }
 
     /**
-     * True when the domain step {@code d} stands for begins with a menu, press or navigate step, as its pattern says
-     * (the ready-time trace or the declared steps; the body is not run). Every pattern the step has must begin so.
+     * True when the domain step {@code d} stands for begins with a menu, press or navigate step, as its own pattern
+     * says (the ready-time trace, the declared steps or its {@code match}; the body is not run). A {@code matchAlso}
+     * pattern is another way a person may do it and does not count; a step with no own pattern never opens a test.
      */
     private boolean opensWithAGetToStep(DoAction d) {
         if (plugins == null) return false;
         for (Plugins.VocabularyStep v : plugins.vocabulary()) {
             if (!(v.plugin + ":" + v.step.id()).equals(d.step) && !v.step.id().equals(d.step)) continue;
             PatternCompiler.Compiled c = plugins.patternsOf(v);
-            if (c == null || c.patterns().isEmpty()) return false;
-            for (Pattern p : c.patterns()) {
-                List<ObjectNode> first = p.source();
-                if (first.isEmpty() || first.get(0).path("optional").asBoolean()) return false;
-                String action = first.get(0).path("action").asText();
-                if (!"menu".equals(action) && !"press".equals(action) && !"navigate".equals(action)) return false;
-            }
-            return true;
+            if (c == null || c.why() != null || c.patterns().isEmpty()) return false;
+            List<ObjectNode> own = c.patterns().get(0).source();
+            if (own.isEmpty() || own.get(0).path("optional").asBoolean()) return false;
+            String action = own.get(0).path("action").asText();
+            return "menu".equals(action) || "press".equals(action) || "navigate".equals(action);
         }
         return false;
     }

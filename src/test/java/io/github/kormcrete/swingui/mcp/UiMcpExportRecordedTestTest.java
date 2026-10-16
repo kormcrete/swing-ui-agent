@@ -1,6 +1,5 @@
 package io.github.kormcrete.swingui.mcp;
 
-import io.github.kormcrete.swingui.spi.PluginParts;
 import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Recorder;
@@ -8,7 +7,9 @@ import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.RecordedTestFolderNotWritable;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
+import io.github.kormcrete.swingui.junit.Client;
 import io.github.kormcrete.swingui.spi.DomainStep;
+import io.github.kormcrete.swingui.spi.PluginParts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -173,30 +175,51 @@ class UiMcpExportRecordedTestTest {
         assertThat(export("save-order-2", true).has("startWarning")).isFalse();
     }
 
-    /** A session whose order-desk plugin offers one domain step made of {@code body}; recording began at no defined start. */
-    private UiMcpSession withDomainStep(java.util.function.Consumer<io.github.kormcrete.swingui.junit.Client> body) {
+    /** A session whose order-desk plugin offers {@code step}; the recording began at no defined start. */
+    private UiMcpSession withDomainStep(DomainStep step) {
         Plugins plugins = new Plugins(backend.verbs);
-        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Collections.singletonList(
-                DomainStep.act("openNewOrder", "Open a new order").code((ui, p) -> body.accept(ui)).build())), "ok");
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Collections.singletonList(step)), "ok");
         UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
         s.recordedDir(testsDir, true);
         s.startRecording(false);
         return s;
     }
 
+    private static DomainStep.Builder openNewOrder() {
+        return DomainStep.act("openNewOrder", "Open a new order");
+    }
+
+    private JsonNode exportAfterOpening(UiMcpSession s) throws Exception {
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openNewOrder\"}"));
+        return mapper.readTree(s.exportRecordedTest("open", "", "", true));
+    }
+
     @Test
     void aLeadingDoStepThatOpensAMenuIsADefinedStart() throws Exception {
-        UiMcpSession s = withDomainStep(ui -> ui.menu("Orders", "New order"));
-        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openNewOrder\"}"));
-        assertThat(mapper.readTree(s.exportRecordedTest("open", "", "", true)).has("startWarning")).isFalse();
+        Consumer<Client> body = ui -> ui.menu("Orders", "New order");
+        assertThat(exportAfterOpening(withDomainStep(openNewOrder().code((ui, p) -> body.accept(ui)).build()))
+                .has("startWarning")).isFalse();
     }
 
     @Test
     void aLeadingDoStepThatClicksStillWarns() throws Exception {
-        UiMcpSession s = withDomainStep(ui -> ui.button("Archive").click());
-        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openNewOrder\"}"));
-        assertThat(mapper.readTree(s.exportRecordedTest("open", "", "", true)).path("startWarning").asText())
-                .contains("begin with a menu");
+        JsonNode out = exportAfterOpening(withDomainStep(openNewOrder().code((ui, p) -> ui.button("Archive").click()).build()));
+        assertThat(out.path("startWarning").asText()).contains("begin with a menu");
+    }
+
+    @Test
+    void onlyAStepsOwnPatternDecidesNotItsMatchAlso() throws Exception {
+        DomainStep step = openNewOrder().code((ui, p) -> ui.menu("Orders", "New order"))
+                .matchAlso("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"New order\"}}").build();
+        assertThat(exportAfterOpening(withDomainStep(step)).has("startWarning")).isFalse();
+    }
+
+    @Test
+    void aStepWithNoPatternOfItsOwnStillWarns() throws Exception {
+        // the body reads the app, so it has no derived pattern; its matchAlso starts with a menu but is not its own
+        DomainStep step = openNewOrder().code((ui, p) -> { ui.menu("Orders", "New order"); ui.button("Archive").text(); })
+                .matchAlso("{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}").build();
+        assertThat(exportAfterOpening(withDomainStep(step)).path("startWarning").asText()).contains("begin with a menu");
     }
 
     @Test
