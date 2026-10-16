@@ -21,7 +21,9 @@ way passes even when the button is broken, which makes the test worthless.
 
 - `window`: `main`, `popup`, `dialog`, `dialog:<title>`, `window:<title>`; a title ending in `*` matches a prefix.
 - `scope`: ordered steps the element sits in: `tab:<title>`, `section:<caption>` (a titled border),
-  `id:<name>` (strictly inside the component whose `getName()` is `<name>`).
+  `id:<name>` (strictly inside the component whose `getName()` is `<name>`). A `tab:` or `section:` step ending
+  in `*` matches a title prefix (`tab:New order*` for "New order · Ada Shop Ltd"); this works as a scope step only,
+  not as the `name` of the target itself.
 - `role`: `window dialog button toggle checkbox radio text password combo list table tree tabs tab menubar menu
   menuitem clickable label section`.
 - `name`: component name, own text, caption label, titled border, tooltip or action name. `match:"contains"`
@@ -90,7 +92,8 @@ harness.
 Plugins are optional. Without one, everything in this skill works on any Swing app except: `navigate`, `close`
 (the active tab), `loginAs` and login by alias, a reset to a defined start state, the app facts of `describe_ui`
 (`activeTab`, `navTargets`, `toolbarActions`, `menuPaths`, `viewTabs`, `sections`, `dialog`), and
-`plugin_call`/typed hooks. Asked for one of these with no plugin, say it needs a plugin.
+`plugin_call`/typed hooks. Asked for one of these with no plugin, say it needs a plugin. A plugin may also offer a
+vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-test skill); it is never needed.
 
 ## Behaviours worth knowing
 

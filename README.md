@@ -164,6 +164,9 @@ void placesAnOrderForAda(Client ui) {
   that teach your coding agent the drive, target and record workflow.
 - [Plugins](https://kormcrete.github.io/swing-ui-agent/plugins/what-a-plugin-adds/) (optional): reset to a known
   state, log in, navigate and call your own hooks.
+- [Plugin vocabulary](https://kormcrete.github.io/swing-ui-agent/plugins/vocabulary/) (optional): name your app's own
+  steps ("Add Gel pen, black to the cart") once; the agent runs them, recordings fold into them and recorded tests
+  read in your app's words.
 - [Agent options](https://kormcrete.github.io/swing-ui-agent/reference/agent-options/) and the
   [tool reference](https://kormcrete.github.io/swing-ui-agent/reference/tools/).
 

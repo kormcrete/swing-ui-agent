@@ -32,7 +32,7 @@ Add the library as a test dependency, next to JUnit 5:
 
 A `@UiTest` class (the recorded-test runner, or a Java test) is tagged `ui` and named `*UiIT`. Order Desk runs them with failsafe in a Maven profile of its own, so `mvn verify` stays unit-only and needs no app:
 
-<!-- snippet: pom.xml#L192-L216 -->
+<!-- snippet: pom.xml#L201-L225 -->
 ```xml
 <profile>
     <id>ui</id>

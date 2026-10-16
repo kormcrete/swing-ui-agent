@@ -2,7 +2,7 @@
 title: Plugin SPI
 description: The interfaces a plugin implements, how it is packaged, and how the agent loads it.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 A plugin is a jar or a class folder with one class that implements `io.github.kormcrete.swingui.spi.UiPlugin`. It runs inside the app's JVM, next to the app's own classes. This page lists what it implements and how the agent finds and starts it. What each part buys you is on [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/).
@@ -66,8 +66,9 @@ public interface UiPlugin {
 | `app` | `AppHooks` | `session` reset, login and info. |
 | `hooksType`, `hooks` | an interface of yours, and its implementation | `plugin_call` and `ui.hooks(…)` in tests. |
 | `export` | `ExportDefaults` | The module folder and package `export_test` writes to by default. |
+| `vocabulary` | `Vocabulary` | Domain steps: "Add {product} to the cart" as one step. Any plugin may offer it; see below. |
 
-The first ready plugin with a `host` is the app plugin: only its `inventory`, `app` and `export` are used. Hooks work from any plugin, so a second plugin can add hooks only.
+The first ready plugin with a `host` is the app plugin: only its `inventory`, `app` and `export` are used. Hooks and a vocabulary work from any plugin, so a second plugin can add only those, and a plugin can offer only a vocabulary (`new PluginParts(vocabulary)`).
 
 ## StepHost
 
@@ -123,9 +124,21 @@ Method names must be unique: an overloaded name is refused. Arguments and result
 
 Keep hooks to what a test needs to know or prepare. A hook that clicks for the test makes the test prove nothing about that click.
 
+## Vocabulary
+
+```java
+public interface Vocabulary {
+    List<DomainStep> steps();   // read once, when the plugin becomes ready
+}
+```
+
+A `DomainStep` has an id, a sentence with `{param}` placeholders, its params and a body that does the step through the same `Client` a UI test uses. `steps()` is read once, on the plugin's start thread. A step that fails its checks is dropped and listed under `vocabularyProblems` in `session`; the others stay and the plugin stays ready. The steps are served by the `vocabulary` tool and `do_action`, folded from recordings, and called from Java tests. A vocabulary adds no `host`, so the agent's own reset stays. How to write steps, patterns and typed calls: [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/).
+
+`DomainStep.Body` takes a `Client`, which lives in `io.github.kormcrete.swingui.junit`: that is the one class outside `spi` and `driver` the SPI uses.
+
 ## A sketch
 
-Order Desk ships no plugin. This is the shape one would take:
+Order Desk's own plugin offers a vocabulary only ([Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)). This is the shape of a plugin with the app parts too:
 
 ```java
 public final class OrderDeskPlugin implements UiPlugin {
@@ -145,5 +158,6 @@ public final class OrderDeskPlugin implements UiPlugin {
 ## What's next
 
 - [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/)
+- [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/): domain steps.
 - [Agent options](/swing-ui-agent/reference/agent-options/): `plugins=`
 - [Security](/swing-ui-agent/agents/security/): what `plugin_call` can reach.

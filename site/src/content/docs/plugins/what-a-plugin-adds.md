@@ -17,7 +17,7 @@ Everything else on this site works on any Swing app as it is: no plugin, no chan
   CAPABILITY_GAP: login needs the app plugin; no plugin configured (agent argument plugins=…)
   ```
 
-Order Desk has no plugin, and its tests need none.
+Order Desk's tests need no plugin. Its plugin only adds a [vocabulary](/swing-ui-agent/plugins/vocabulary/), which makes some of them shorter.
 
 ## With a plugin
 
@@ -37,9 +37,10 @@ Order Desk has no plugin, and its tests need none.
 - **Navigation.** `ui.navigate("orders")` opens your app's own screens by name or entry-point id, and `ui.closeActiveTab()` closes the open one.
 - **App facts for the agent.** `describe_ui` answers with the active tab, the navigation targets, toolbar actions, menu paths, the open view's tabs and its sections. One call instead of several snapshots.
 - **Your own hooks.** An interface of your own that tests call as `ui.hooks(OrderDeskHooks.class).openTabTitles()`, and agents call with `plugin_call`. Use hooks for what a test needs to know or prepare, never to skip the UI it is testing.
+- **A vocabulary.** Your app's own steps, such as "Add Gel pen, black to the cart": the agent runs one in a single call, a recording folds the clicks that make it into one step with its sentence, and a Java test calls it as a method. It needs no login or navigation. See [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/).
 - **Where tests go.** A default module folder and package for `export_test`.
 
-Every part is optional. Reset, login, navigation and app facts come from the one app plugin; any plugin can add hooks. See the [Plugin SPI](/swing-ui-agent/plugins/spi/).
+Every part is optional. Reset, login, navigation and app facts come from the one app plugin; any plugin can add hooks or a vocabulary. See the [Plugin SPI](/swing-ui-agent/plugins/spi/).
 
 ## Load a plugin
 
@@ -53,6 +54,7 @@ Several plugins are separated by `:` (`;` on Windows). The agent starts each one
 
 ## What's next
 
+- [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/): domain steps.
 - [Plugin SPI](/swing-ui-agent/plugins/spi/): the interfaces a plugin implements, and how to package it.
 - [Reset and the starting screen](/swing-ui-agent/guides/reset/)
 - [Agent options](/swing-ui-agent/reference/agent-options/)

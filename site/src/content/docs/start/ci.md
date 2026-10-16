@@ -13,10 +13,11 @@ The tests are [recorded tests](/swing-ui-agent/start/recorded-tests/#in-maven-an
 
 Order Desk keeps the steps in one script, so CI and a person run them the same way. On Linux without a display it starts Xvfb first and waits for its socket:
 
-<!-- snippet: .github/scripts/ui-tests.sh#L7-L35 -->
+<!-- snippet: .github/scripts/ui-tests.sh#L8-L37 -->
 ```sh
 PORT="${SWINGUI_PORT:-8770}"
 AGENT=target/swing-ui-agent-agent.jar
+PLUGIN=order-desk-plugin/target/classes   # Order Desk's domain steps, for the recorded tests' do steps
 APP=
 
 if [ "${1:-}" != --attach ]; then
@@ -27,7 +28,7 @@ if [ "${1:-}" != --attach ]; then
     for i in $(seq 1 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.2; done   # the app needs the display up
     if [ ! -e /tmp/.X11-unix/X99 ]; then echo "Xvfb did not start:"; cat target/xvfb.log; exit 1; fi
   fi
-  java -javaagent:"$AGENT"=port="$PORT",palette=off -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar > target/app.log 2>&1 &
+  java -javaagent:"$AGENT"=port="$PORT",palette=off,plugins="$PLUGIN" -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar > target/app.log 2>&1 &
   APP=$!
   trap 'kill "$APP" 2>/dev/null || true; if [ -n "${XVFB:-}" ]; then kill "$XVFB" 2>/dev/null || true; fi' EXIT
 fi
@@ -49,6 +50,7 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
 - **Wait for `session`.** It exits `0` once the agent answers, and `3` while nothing listens yet.
 - **Stop early when the app dies,** and print its log: a missing display or a bad flag shows up there.
 - **`palette=off`** leaves the recording palette out: nothing in the app listens to input, and a test run's lease would hide it anyway.
+- **`plugins=`** loads Order Desk's [vocabulary plugin](/swing-ui-agent/plugins/vocabulary/), built and installed by the job's step before it: the recorded test `cart-with-steps.json` holds `do` steps that only the plugin can run.
 - **`--attach`** starts nothing and tests an Order Desk that already runs with the agent, such as a download.
 - **The `trap`** stops the app (and Xvfb) when the script ends, whatever the result.
 - **The failsafe goals run alone,** because the build before it already compiled the tests.
@@ -56,10 +58,12 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
 
 ## 2. The job
 
-<!-- snippet: .github/workflows/build.yml#L29-L54 -->
+<!-- snippet: .github/workflows/build.yml#L29-L57 -->
 ```yaml
 - name: Install swing-ui-agent
   run: mvn -B -f swing-ui-agent/pom.xml install -DskipTests
+- name: Build and install the Order Desk plugin (its domain steps; the app's UI tests use it)
+  run: mvn -B -f order-desk-plugin/pom.xml install
 - name: Build and test
   run: mvn -B verify
 - name: UI tests (Order Desk with the agent, on a virtual display)
@@ -72,6 +76,7 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" failsafe:integration-test failsaf
     path: |
       target/surefire-reports/
       target/failsafe-reports/
+      order-desk-plugin/target/surefire-reports/
     if-no-files-found: ignore
 - name: Keep UI screenshots
   if: always()

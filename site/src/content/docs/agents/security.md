@@ -20,6 +20,7 @@ The agent gives whoever can reach its port the same power over your app as a per
 - **Read a recorded test file.** `run_recorded_test` and `recording load` take a `path` that is absolute or relative to the app's working directory. A recorded test is a plain JSON file of UI steps; it holds no code, and running it does only what its steps say.
 - **Read the clipboard, and set it.** `read_clipboard` and `set_clipboard` work with the system clipboard as the app sees it.
 - **Call a plugin's hooks.** `plugin_call` reaches only the methods of the one interface a plugin declares as its hooks. Without a plugin there is nothing to call.
+- **Run a plugin's domain steps.** A `do` step, in `do_action`, a batch or a recorded test, runs code of the plugin inside the app, just as `plugin_call` does. A caller can pass only the step's name and its values, and only the steps a plugin offers. The `vocabulary` tool only reads. A recorded test with `do` steps names the plugins it needs and is refused when one is not ready.
 
 ## What a caller cannot do
 

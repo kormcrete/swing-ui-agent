@@ -43,8 +43,9 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 - A test is a list of steps. A step is one action and the checks after it: steps are numbered 1..n, and `7.2` is
   the second check of step 7; checks before any action form step 1. Every number you see (in `recording list`, a
   replay, a run report, a refusal) is a step number or a check label.
-- A recording starts at a reset (step 2 below). Every successful step with a Java form is recorded, mistakes
-  included: a wrong click followed by Escape is two steps. Reads never are: `snapshot`, `read`, `screenshot`,
+- A recording starts at a reset (step 2 below). Every successful step is recorded, mistakes included: a wrong
+  click followed by Escape is two steps. A `do` step (below) has no Java form unless its plugin gave it one: it is
+  recorded all the same, and only the Java export refuses it. Reads never are: `snapshot`, `read`, `screenshot`,
   `describe_ui`, `read_clipboard`, `read_file_chooser`.
 - A test replays from the state right after a reset. Without an app plugin a reset only closes modal dialogs, so the
   app may be on ANY screen: the recording must BEGIN by reaching its own starting screen with `menu` or `press`. The
@@ -53,6 +54,29 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 - `navigate`, `close` and `loginAs` need an app plugin (else CAPABILITY_GAP). With one, its reset brings the app to
   a defined start (tabs closed, logged in); `{"op":"reset","alias":"clerk"}` picks the user from
   `.swing-ui-agent/ui-users.properties`.
+
+## The app's own steps (when a plugin offers a vocabulary)
+
+A plugin may name the app's steps ("Add {product} to the cart"). At a recording start, call
+`$UI vocabulary '{"op":"list"}'`: an empty list (with a hint) means there are none, and you use the raw verbs.
+
+- **Map the request to a step and concrete values.** `$UI vocabulary '{"op":"describe","step":"addToCart"}'` shows
+  its params, with `choices` for the values that fit in the app right now. Run it as one step:
+  `$UI do_action '{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}'` (`batch` takes it too).
+  Values are always concrete: no placeholders, nothing carried from one step to the next.
+- **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
+  that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
+  say so.
+- **When no step fits, use the raw verbs.** Never stretch a step to do something else.
+- **Say which step you used** in your report, as the sentence with its values ("Add 10 × Gel pen, black to the
+  cart"). Steps are named `<plugin>:<id>` in the recorded test, even with one plugin.
+- Raw steps that match a step fold into it as they are recorded (`recording list` shows `folded` and `raw`); a check,
+  a `do` step, a group or sentence, or a change of author stops a fold. `fold {from,to}`, `unfold {n}` (the steps stay
+  raw afterwards) and `keepRaw {from,to}` change it. A check step (`kind: check`) never folds by itself: run it
+  with `do` where you would use `expect`.
+- A recording that begins with a `do` step is a defined start when its steps open with a menu, a key press or
+  `navigate`; otherwise start with one of those. A vocabulary-only plugin changes no reset, and `login`/`navigate`
+  still need an app plugin.
 
 ## Steps
 
