@@ -162,6 +162,57 @@ public final class Pattern {
         return new Match(out);
     }
 
+    /** A run of steps the pattern begins with: the values its params took so far, and how many steps the step takes. */
+    public static final class Prefix {
+        private final Map<String, String> params;
+        private final int steps;
+        private final int of;
+
+        Prefix(Map<String, String> params, int steps, int of) {
+            this.params = Collections.unmodifiableMap(params);
+            this.steps = steps;
+            this.of = of;
+        }
+
+        /** The declared params the run gave a value so far, in declared order (as {@link Match#params}). */
+        public Map<String, String> params() { return params; }
+
+        /** The steps of the run. */
+        public int steps() { return steps; }
+
+        /** The steps the whole step would take: the run's, and the fewest that must still come. */
+        public int of() { return of; }
+
+        @Override public String toString() { return "Prefix" + params + " " + steps + " of " + of; }
+    }
+
+    /**
+     * Whether {@code steps}, all of them, begin this pattern and at least one step that is not optional must still come:
+     * the steps so far could become the step. Null when not: a run that goes another way, and one that is the whole
+     * step already ({@link #match}). The fits are tried as {@link #match} tries them, the first that holds wins.
+     *
+     * @throws TooAmbiguous as {@link #match} does
+     */
+    public Prefix prefix(List<? extends JsonNode> steps) {
+        if (steps.isEmpty()) return null;
+        Search search = new Search(this, steps, true);
+        if (!search.canFinish(0, 0)) return null;
+        // a fit that ends with every pattern step matched is the whole step, not a beginning of it
+        Map<String, CharSequence> bound = seq(elements, 0, steps, 0, Collections.<String, CharSequence>emptyMap(),
+                (at, b) -> null, search);
+        if (bound == null) return null;
+        Map<String, String> out = new LinkedHashMap<String, String>();
+        for (String p : params) if (bound.containsKey(p)) out.put(p, bound.get(p).toString());
+        return new Prefix(out, steps.size(), steps.size() + search.toCome);
+    }
+
+    /** The pattern steps from {@code i} on that are not optional: what must still come after a run that ends before {@code i}. */
+    private int requiredFrom(int i) {
+        int n = 0;
+        for (int k = i; k < flat.size(); k++) if (!flatOptional.get(k)) n++;
+        return n;
+    }
+
     @Override public String toString() { return stepId + (derived ? " (derived) " : " ") + source; }
 
     /**
@@ -221,19 +272,31 @@ public final class Pattern {
         private final int[] probeWork;
         /** This search is one {@link #alone} probe: its work also comes out of {@link #probeWork}. */
         private final boolean probe;
+        /**
+         * A {@link Pattern#prefix} search: the run may end before the pattern does, while a pattern step that is not
+         * optional is still to come.
+         */
+        final boolean prefix;
+        /** For a prefix that fits: the pattern steps that are not optional still to come after the run. */
+        int toCome;
 
         Search(Pattern pattern, List<? extends JsonNode> steps) {
-            this(pattern, steps, FIT_BUDGET, WORK_LIMIT, new int[] {WORK_LIMIT}, false);
+            this(pattern, steps, false);
+        }
+
+        Search(Pattern pattern, List<? extends JsonNode> steps, boolean prefix) {
+            this(pattern, steps, FIT_BUDGET, WORK_LIMIT, new int[] {WORK_LIMIT}, false, prefix);
         }
 
         private Search(Pattern pattern, List<? extends JsonNode> steps, int fits, int work, int[] probeWork,
-                       boolean probe) {
+                       boolean probe, boolean prefix) {
             this.pattern = pattern;
             this.steps = steps;
             this.left = fits;
             this.work = work;
             this.probeWork = probeWork;
             this.probe = probe;
+            this.prefix = prefix;
             this.alone = new Boolean[pattern.flat.size()][steps.size()];
             this.finish = new Boolean[pattern.flat.size() + 1][steps.size() + 1];
         }
@@ -262,7 +325,9 @@ public final class Pattern {
             Boolean known = finish[i][at];
             if (known != null) return known;
             boolean can;
-            if (i == pattern.flat.size()) {
+            if (prefix && at == steps.size()) {
+                can = true;   // the rest may come later (looser: a run that is the whole step is ruled out after)
+            } else if (i == pattern.flat.size()) {
                 can = at == steps.size();
             } else {
                 can = pattern.flatOptional.get(i) && canFinish(i + 1, at)
@@ -274,7 +339,7 @@ public final class Pattern {
 
         /** A search for one {@link #alone} question: a tenth of the budgets, its work shared with the other probes. */
         private Search probe() {
-            return new Search(pattern, steps, FIT_BUDGET / 10, WORK_LIMIT / 10, probeWork, true);
+            return new Search(pattern, steps, FIT_BUDGET / 10, WORK_LIMIT / 10, probeWork, true, false);
         }
 
         /**
@@ -345,6 +410,13 @@ public final class Pattern {
 
         @Override Map<String, CharSequence> take(List<? extends JsonNode> steps, int at, Map<String, CharSequence> bound,
                                                  Then next, Search search) {
+            if (search.prefix && at == steps.size()) {
+                // the run ended here: a beginning of the step while one that must come is still to come
+                int toCome = search.pattern.requiredFrom(search.pattern.flatIndex.get(this));
+                if (toCome == 0) return null;
+                search.toCome = toCome;
+                return bound;
+            }
             if (!search.canTake(this, at)) return null;
             return node.match(steps.get(at), bound, b -> next.go(at + 1, b), search);
         }

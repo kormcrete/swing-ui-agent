@@ -37,7 +37,9 @@ import java.util.function.Supplier;
  * recorded test file the person or the agent loads is one too, already stopped ({@link #loaded}): its steps panel runs it - the
  * app reset, then every step. While a replay or run goes on, no other call drives the app
  * ({@link Inspector#drivingReason}). The agent's steps and edits join the same recording: the panel shows each change
- * at once, and the agent's edits as a note on the bar ({@link #changed}). EDT, except where a method says otherwise.
+ * at once, and the agent's edits as a note on the bar ({@link #changed}). When folding recognises recorded steps as one
+ * of the app plugin's domain steps, the bar says so for a while with an Undo ({@link #recognised}); in Check mode the
+ * plugin's domain checks come first in the Check menu. EDT, except where a method says otherwise.
  */
 final class Recording {
 
@@ -91,6 +93,18 @@ final class Recording {
 
     /** How long the agent's note stays on the bar before the text it covered comes back. */
     static final int NOTE_MS = 4000;
+    /** How long "recognised: … — Undo" stays on the bar. */
+    int recognisedMs = 5000;
+    /** The record the bar's Undo takes back while "recognised: …" shows; 0 when it does not. */
+    private int recognisedId;
+    /** The bar the Undo is on. */
+    private Bar recognisedOn;
+    /** Counts the Check menu's clicks: plugin checks that come back for an older click are dropped. */
+    private int checkAsked;
+    /** Shows the Check menu where the person clicked (a seam for tests); not on a window that closed meanwhile. */
+    java.util.function.BiConsumer<CheckMenu, java.awt.event.MouseEvent> showMenu = (m, e) -> {
+        if (e.getComponent().isShowing()) m.show(e.getComponent(), e.getX(), e.getY());
+    };
     /** How long a check's result stays on the bar in Check mode before the way out is shown again. */
     int hintBackMs = NOTE_MS;
     /** Puts back what the bar said before the agent's note; running while a note shows. */
@@ -191,13 +205,38 @@ final class Recording {
             if (check) {
                 o.catcher(e -> inspector.hoverIn(o, e), e -> {
                     Target t = inspector.snapIn(o, e);
-                    if (t != null) CheckMenu.show(t, e, (step, target) -> check(step, target, o));
+                    if (t != null) offerChecks(t, e, o);
                 });
             } else {
                 o.removeCatcher();
             }
         }
         activeBar.text(check ? CHECK_HINT : RECORD_HINT);
+    }
+
+    /**
+     * The Check menu for {@code t}, clicked with {@code e} in the window of {@code o}: the element's checks from what it
+     * shows now, and first the app plugin's domain checks they fit, which the sink thread matches (never the EDT). It
+     * shows once those are known, unless Check mode ended or the person clicked again meanwhile.
+     */
+    void offerChecks(Target t, java.awt.event.MouseEvent e, Overlay o) {
+        List<CheckMenu.Choice> choices = CheckMenu.choices(t);
+        List<Map<String, Object>> steps = CheckMenu.steps(choices);
+        int asked = ++checkAsked;
+        sinkThread.submit(() -> {
+            List<Inspector.DomainCheck> domain;
+            try {
+                domain = steps.isEmpty() ? Collections.<Inspector.DomainCheck>emptyList() : sink.domainChecks(steps, t.seen);
+            } catch (RuntimeException broken) {
+                // the plugin's checks are extra: the element's own are offered all the same
+                domain = Collections.emptyList();
+            }
+            List<Inspector.DomainCheck> found = domain;
+            SwingUtilities.invokeLater(() -> {
+                if (asked != checkAsked || state != State.CHECKING || replaying || agentReplay != null) return;
+                showMenu.accept(CheckMenu.of(t, choices, found, (step, target) -> check(step, target, o)), e);
+            });
+        });
     }
 
     /**
@@ -355,6 +394,7 @@ final class Recording {
         next.release();
         live.stop();
         if (noteTimer != null) noteTimer.stop();
+        endRecognised();
         steps.active(false);
         stopListeningForEscape();
         // the records a sentence was typed for are gone with this recording: the keyboard goes back, nothing is saved
@@ -404,6 +444,8 @@ final class Recording {
 
     private void show(Inspector.Result r) {
         lines.add((r.ok ? "" : "NOT RECORDED: ") + r.line);
+        // a newer line: the note it replaces goes with its Undo
+        endRecognised();
         activeBar.text((r.ok ? "recorded: " : "✗ not recorded: ") + r.line);
         refresh(-1);
     }
@@ -439,6 +481,9 @@ final class Recording {
             }
             @Override public void rowBy(int id, String by) {
                 edit(() -> sink.rowBy(id, by), "✗ row not changed: ");
+            }
+            @Override public void unfold(int id) {
+                edit(() -> sink.unfold(id), "✗ not unfolded: ");
             }
         });
         home.panel(panel);
@@ -546,19 +591,61 @@ final class Recording {
      * Shows {@code text} on the bar for {@link #NOTE_MS}, then what the bar said before; a note that comes while
      * another shows replaces it, and the text before both comes back.
      */
-    private void note(String text) {
+    void note(String text) {
+        note(text, NOTE_MS);
+    }
+
+    private void note(String text, int ms) {
         boolean showing = noteTimer != null && noteTimer.isRunning() && noted == bar;
         if (noteTimer != null) noteTimer.stop();
+        endRecognised();
         if (!showing) beforeNote = bar.text();
         Bar on = bar;
         noted = on;
         on.text(text);
-        noteTimer = new Timer(NOTE_MS, e -> {
+        noteTimer = new Timer(ms, e -> {
+            endRecognised();
             // a newer line (a step recorded, a replay's outcome) stays
             if (text.equals(on.text())) on.text(beforeNote);
         });
         noteTimer.setRepeats(false);
         noteTimer.start();
+    }
+
+    /**
+     * Folding recognised {@code steps} recorded steps as the domain step {@code sentence}, now the record {@code id}: the
+     * bar says "recognised: … (from N steps) —" with an Undo after it for {@link #recognisedMs}, then what it said
+     * before. Undo takes that fold back while it is the last edit ({@link Inspector.Sink#undoFold}); Unfold on its row
+     * always can. Not while a replay runs: the bar is the replay's then.
+     */
+    void recognised(int id, String sentence, int steps) {
+        if (replaying || agentReplay != null) return;
+        note("recognised: " + sentence + " (from " + steps + (steps == 1 ? " step" : " steps") + ") —", recognisedMs);
+        recognisedId = id;
+        recognisedOn = bar;
+        recognisedOn.buttonFirst("Undo", Overlay.HOVER, this::undoRecognised);
+    }
+
+    /** The bar's Undo after "recognised: …": the fold goes back into its steps, and the bar says so or why not. */
+    private void undoRecognised() {
+        int id = recognisedId;
+        if (id == 0) return;
+        endRecognised();
+        if (noteTimer != null) noteTimer.stop();
+        sinkThread.submit(() -> {
+            Inspector.Result r = sink.undoFold(id);
+            SwingUtilities.invokeLater(() -> {
+                bar.text(r.ok ? "undid: " + r.line : "✗ not undone: " + r.line);
+                refresh(-1);
+            });
+        });
+    }
+
+    /** "recognised: …" is over: its Undo leaves the bar. */
+    private void endRecognised() {
+        if (recognisedOn != null) recognisedOn.drop("Undo");
+        recognisedOn = null;
+        recognisedId = 0;
     }
 
     /**
@@ -620,9 +707,10 @@ final class Recording {
             }
             List<Inspector.StepLine> all = read;
             String undoLabel = label;
+            String hint = all == null ? null : foldHint();
             SwingUtilities.invokeLater(() -> {
                 bar.text(done.ok ? done.line : refused + done.line);
-                if (all != null) showSteps(all, undoLabel, -1); else refresh(-1);
+                if (all != null) showSteps(all, undoLabel, hint, -1); else refresh(-1);
                 result.complete(done);
             });
         });
@@ -645,17 +733,32 @@ final class Recording {
         sinkThread.submit(() -> {
             List<Inspector.StepLine> all = sink.steps();
             String undoLabel = sink.undoLabel();
-            SwingUtilities.invokeLater(() -> showSteps(all, undoLabel, select));
+            String hint = foldHint();
+            SwingUtilities.invokeLater(() -> showSteps(all, undoLabel, hint, select));
         });
     }
 
-    /** Shows the recording {@code all} as read on the sink thread; {@code select} as for {@link #refresh}. EDT. */
-    private void showSteps(List<Inspector.StepLine> all, String undoLabel, int select) {
+    /** The sink's hint of what the last steps could become; null when none, or when it cannot be read. Sink thread. */
+    private String foldHint() {
+        try {
+            return sink.foldHint();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Shows the recording {@code all} as read on the sink thread, and under it {@code hint}; {@code select} as for
+     * {@link #refresh}. EDT.
+     */
+    private void showSteps(List<Inspector.StepLine> all, String undoLabel, String hint, int select) {
         Set<Integer> ids = new HashSet<Integer>();
         for (Inspector.StepLine s : all) ids.add(s.id);
         marks.keySet().retainAll(ids);
         int row = Math.min(select, all.size() - 1);
-        if (panel != null) panel.show(all, marks, row, replaying || !active() ? null : steps.pending(), undoLabel);
+        if (panel == null) return;
+        panel.show(all, marks, row, replaying || !active() ? null : steps.pending(), undoLabel);
+        panel.hint(replaying || !active() ? null : hint);
     }
 
     /**

@@ -100,6 +100,8 @@ public class UiMcpSession {
     private int foldedUpTo;
     /** What folding noted where a run ends (by that step's record id): a tie, a suggestion, a run it could not decide. */
     private final Map<Integer, FoldNote> foldNotes = new HashMap<Integer, FoldNote>();
+    /** What the steps at the end could become, as folding last found it; null when nothing. Shown while its record is last. */
+    private FoldHint foldHint;
     /** The recording began at a reset of the app (or was shown to by a passing replay from it); {@code list} says so. */
     private boolean recordingFromReset;
     /**
@@ -161,18 +163,22 @@ public class UiMcpSession {
         final List<Inspector.StepLine> lines;
         /** What undo would take back, or null. */
         final String undoLabel;
+        /** What the steps at the end could become ({@link Inspector.Sink#foldHint}), or null. */
+        final String hint;
 
-        Published(String json, boolean recording, String reason, List<Inspector.StepLine> lines, String undoLabel) {
+        Published(String json, boolean recording, String reason, List<Inspector.StepLine> lines, String undoLabel,
+                String hint) {
             this.json = json;
             this.recording = recording;
             this.reason = reason;
             this.lines = lines;
             this.undoLabel = undoLabel;
+            this.hint = hint;
         }
     }
 
     private volatile Published published =
-            new Published("{}", false, null, Collections.<Inspector.StepLine>emptyList(), null);
+            new Published("{}", false, null, Collections.<Inspector.StepLine>emptyList(), null, null);
 
     /**
      * Who shows the recording besides the agent: the person's palette. Every call comes under the session's lock and
@@ -202,6 +208,12 @@ public class UiMcpSession {
 
         /** The agent's replay ran step {@code id}: passed or failed. */
         default void replayed(int id, boolean ok) { }
+
+        /**
+         * Folding recognised {@code steps} recorded steps as the domain step {@code sentence}, now the record {@code id}
+         * (the last fold of one look): the palette says so, with an Undo ({@link Inspector.Sink#undoFold}).
+         */
+        default void recognised(int id, String sentence, int steps) { }
     }
 
     /** The palette's view: each call reaches the person's palette through {@code invokeLater}. */
@@ -213,6 +225,7 @@ public class UiMcpSession {
         @Override public void replaced() { Inspector.recordingReplaced(); }
         @Override public void agentReplaying(String reason) { Inspector.agentReplaying(reason); }
         @Override public void replayed(int id, boolean ok) { Inspector.agentReplayed(id, ok); }
+        @Override public void recognised(int id, String sentence, int steps) { Inspector.foldRecognised(id, sentence, steps); }
     };
 
     private volatile RecordingView view = notice -> { };
@@ -748,6 +761,46 @@ public class UiMcpSession {
                 } catch (RuntimeException e) {
                     return new Inspector.Result(false, message(e));
                 }
+            }
+
+            @Override
+            public Inspector.Result unfold(int id) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
+                synchronized (UiMcpSession.this) {
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing unfolded");
+                    try {
+                        String did = model.unfold(at.step, RecordedStep.Author.PERSON);
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
+                }
+            }
+
+            @Override
+            public Inspector.Result undoFold(int id) {
+                if (agentReplaying != null) return AGENT_REPLAYING;
+                synchronized (UiMcpSession.this) {
+                    String did = model.undoFold(id, RecordedStep.Author.PERSON);
+                    if (did == null) {
+                        return new Inspector.Result(false, "the recording changed since: Unfold on its row takes the fold back");
+                    }
+                    publish();
+                    String undid = "undid the ";
+                    return new Inspector.Result(true, did.startsWith(undid) ? did.substring(undid.length()) : did);
+                }
+            }
+
+            @Override
+            public String foldHint() {
+                return published.hint;
+            }
+
+            @Override
+            public List<Inspector.DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen) {
+                return UiMcpSession.this.domainChecks(checks, seen);
             }
 
             /** The message the palette shows: without the reason prefix the agent's errors carry. */
@@ -1950,6 +2003,7 @@ public class UiMcpSession {
         model.load(flow, RecordedStep.Author.LOADED);
         model.loaded();
         foldNotes.clear();
+        foldHint = null;
         // a loaded test is as it was saved: its steps never fold among themselves (vocabulary match shows what would)
         for (RecordedStep r : model.records()) foldedUpTo = Math.max(foldedUpTo, r.id);
         recordingFromReset = true;
@@ -2009,6 +2063,7 @@ public class UiMcpSession {
     synchronized void startRecording(boolean fromReset, boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
         foldNotes.clear();
+        foldHint = null;
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
         recordingFromReset = fromReset;
         freshStart = true;
@@ -2669,6 +2724,17 @@ public class UiMcpSession {
         }
     }
 
+    /** {@link Matcher.Hint} as the palette shows it, for the record {@code id} it was found at. */
+    private static final class FoldHint {
+        final int id;
+        final String text;
+
+        FoldHint(int id, String text) {
+            this.id = id;
+            this.text = text;
+        }
+    }
+
     /** The domain steps a recording may fold into: every ready plugin's act steps that have patterns. Empty without. */
     private List<Matcher.Candidate> foldingVocabulary() {
         List<Matcher.Candidate> out = new ArrayList<Matcher.Candidate>();
@@ -2781,12 +2847,14 @@ public class UiMcpSession {
         if (result == null) return;
         Map<Matcher.Fold, Integer> made = new HashMap<Matcher.Fold, Integer>();
         boolean changed = false;
+        RecordedStep lastFold = null;
         try {
             for (Matcher.Fold f : result.folds) {
                 DoAction action = foldAction(f.choice);
                 if (action == null) break;   // its plugin went: a later fold may build on this one, so none is made
-                RecordedStep.Author by = author(f.item.author);
-                made.put(f, model.fold(ids(f.span, made), action, by, by).step.id);
+                // folding recognised the author's steps by itself: no one asked for it (null editor)
+                lastFold = model.fold(ids(f.span, made), action, author(f.item.author), null).step;
+                made.put(f, lastFold.id);
                 changed = true;
             }
             for (Matcher.Note n : result.notes) {
@@ -2795,10 +2863,105 @@ public class UiMcpSession {
                 foldNotes.put((Integer) last, new FoldNote(n.kind, ids(n.span, made), n.choices, n.why));
                 changed = true;
             }
+            FoldHint hint = hintOf(result.hint, made);
+            if (hint != null || foldHint != null) {
+                foldHint = hint;
+                changed = true;
+            }
         } finally {
             // the folds made stay made, also when a later one could not be: the list and the palette show them
             if (changed) publish();
+            // the last fold is the last edit: the palette's note may take it back
+            if (lastFold != null) {
+                DoAction d = (DoAction) lastFold.action;
+                view.recognised(lastFold.id, d.say != null ? d.say : d.describe(), lastFold.raw.size());
+            }
         }
+    }
+
+    /** The palette's hint for {@code h} (null: none), at the record its last item is now; null when it is gone. */
+    private FoldHint hintOf(Matcher.Hint h, Map<Matcher.Fold, Integer> made) {
+        if (h == null) return null;
+        Integer id = h.key instanceof Matcher.Fold ? made.get(h.key) : h.key instanceof Integer ? (Integer) h.key : null;
+        if (id == null) return null;
+        String sentence = sentenceSoFar(h.step, h.params);
+        if (sentence == null) return null;
+        return new FoldHint(id, "… could become: " + sentence + " (" + h.steps + " of " + h.of + ")");
+    }
+
+    /**
+     * The sentence of the domain step {@code name} with the values known so far, "…" for the others; null when no ready
+     * plugin offers it now.
+     */
+    private String sentenceSoFar(String name, Map<String, String> params) {
+        if (plugins == null) return null;
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) {
+            if (!name.equals(v.plugin + ":" + v.step.id())) continue;
+            java.util.regex.Matcher m = PLACEHOLDER.matcher(v.step.sentence());
+            StringBuffer out = new StringBuffer();
+            while (m.find()) {
+                String value = params.get(m.group(1));
+                m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(value != null ? value : "…"));
+            }
+            m.appendTail(out);
+            return out.toString();
+        }
+        return null;
+    }
+
+    private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{([A-Za-z]\\w*)\\}");
+
+    /**
+     * The domain checks of the ready plugins whose pattern is one step and fits one of {@code checks} (the Check menu's
+     * expect steps for one element, {@code seen} how it was seen), each with its values, the most specific first; a
+     * check fitted twice is offered once. Matches only: no lock, no step runs.
+     */
+    List<Inspector.DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen) {
+        List<Inspector.DomainCheck> out = new ArrayList<Inspector.DomainCheck>();
+        if (plugins == null || checks.isEmpty()) return out;
+        List<Matcher.Candidate> vocabulary = new ArrayList<Matcher.Candidate>();
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) {
+            if (v.step.kind() != DomainStep.Kind.CHECK) continue;
+            PatternCompiler.Compiled c = plugins.patternsOf(v);
+            if (c == null) continue;
+            List<Pattern> one = new ArrayList<Pattern>();
+            for (Pattern p : c.patterns()) if (Matcher.oneStep(p)) one.add(p);
+            if (!one.isEmpty()) vocabulary.add(new Matcher.Candidate(v.plugin + ":" + v.step.id(), one, false));
+        }
+        if (vocabulary.isEmpty()) return out;
+        JsonNode seenJson = seen(seen);
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Folding.BUDGET_MS);
+        List<String> offered = new ArrayList<String>();
+        for (Map<String, Object> check : checks) {
+            Map<String, Object> plain = new LinkedHashMap<String, Object>(check);
+            plain.remove(Inspector.ROW_INDEX);
+            plain.remove(Inspector.SEEN);
+            JsonNode form = Matcher.matchForm(stripNulls(mapper.valueToTree(plain)), seenJson, false);
+            List<Matcher.Choice> choices;
+            try {
+                choices = Matcher.matches(Collections.singletonList(Matcher.Item.raw(0, "person", form, false, false)),
+                        vocabulary, deadline);
+            } catch (Pattern.TooAmbiguous | Matcher.OutOfTime undecided) {
+                continue;
+            }
+            for (Matcher.Choice c : choices) {
+                String key = c.step + c.params;
+                if (offered.contains(key)) continue;
+                Plugins.DoStep d;
+                try {
+                    d = plugins.lookUp(c.step, c.params);
+                } catch (DriverException gone) {
+                    continue;
+                }
+                offered.add(key);
+                Map<String, Object> step = new LinkedHashMap<String, Object>();
+                step.put("action", "do");
+                step.put("step", d.qualified());
+                step.put("params", new LinkedHashMap<String, String>(c.params));
+                out.add(new Inspector.DomainCheck(d.sentence, step));
+            }
+        }
+        return out;
     }
 
     /** The record ids of {@code span}: a fold made in the same look by the id it got ({@code made}). */
@@ -3115,9 +3278,13 @@ public class UiMcpSession {
         List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
+            List<String> raw = new ArrayList<String>();
+            if (s.folded()) for (RecordedStep x : s.raw) raw.add(x.action.describe());
+            Map<String, String> params = s.action instanceof DoAction && ((DoAction) s.action).params != null
+                    ? ((DoAction) s.action).params : Collections.<String, String>emptyMap();
             listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited, labels.get(i), s.action.say,
                     StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say,
-                    rowLine(s)));
+                    rowLine(s), raw, params));
         }
         if (!snap.notRecorded.isEmpty()) {
             ArrayNode lines = r.putArray("notRecorded");
@@ -3132,8 +3299,11 @@ public class UiMcpSession {
                     + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.startedAt))
                     + "): Done in the palette or recording {\"op\":\"stop\"} ends it";
         }
+        // a hint is about the last steps: shown while the record it was found at is the last one and steps are recorded
+        RecordedStep last = snap.steps.isEmpty() ? null : snap.steps.get(snap.steps.size() - 1);
+        String hint = foldHint != null && recording && last != null && last.id == foldHint.id ? foldHint.text : null;
         published = new Published(r.toString(), recording, reason, Collections.unmodifiableList(listed),
-                model.undoLabel());
+                model.undoLabel(), hint);
         if (!recording) {
             synchronized (stopSignal) {
                 stopSignal.notifyAll();

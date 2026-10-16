@@ -2861,6 +2861,185 @@ class RecordingTest {
         return save;
     }
 
+    // ---- folds: a vocabulary's domain step in the place of the steps it stands for
+
+    private static final String PEN_ROW = "click(table 'products' · SKU=PEN-GEL-BLK · Product)";
+    private static final String ADD_BUTTON = "click(button 'Add to cart')";
+    private static final String ADD_PEN = "Add Gel pen, black to the cart";
+
+    /** The person's two steps that add Gel pen, black, folded into one do step. */
+    private int penFold() {
+        return sink.fold("person", ADD_PEN, Collections.singletonMap("product", "Gel pen, black"), PEN_ROW, ADD_BUTTON);
+    }
+
+    @Test
+    void aFoldShowsAsOneRowWithItsRawStepsHidden() throws Exception {
+        sink.person(PEN_ROW, ADD_BUTTON);
+        withSteps();
+        assertThat(rows()).containsExactly("1  ●  " + PEN_ROW, "2  ●  " + ADD_BUTTON);
+
+        // folding recognised the steps after they were recorded: the list follows the recording as it changes
+        sink.steps.clear();
+        penFold();
+        sink.person("click(button 'Checkout…')");
+        settleRefresh();
+        assertThat(rows()).containsExactly("1  ●  ▸ ◆ " + ADD_PEN, "2  ●  click(button 'Checkout…')");
+        assertThat(onEdt(() -> recording.panel.title())).isEqualTo("Steps (2)");
+        // its values in bold; on hover what it is and the steps it stands for
+        assertThat(onEdt(() -> recording.panel.rendered(0))).contains("Add <b>Gel pen, black</b> to the cart");
+        assertThat(onEdt(() -> recording.panel.tooltipAt(0)))
+                .isEqualTo("do(order-desk:addToCart) - from 2 steps: " + PEN_ROW + "; " + ADD_BUTTON);
+
+        // ▸ shows the raw steps under it, greyed; they are no steps of their own
+        SwingUtilities.invokeAndWait(() -> recording.panel.toggleRaw(0));
+        assertThat(rows()).containsExactly("1  ●  ▾ ◆ " + ADD_PEN, "         · " + PEN_ROW, "         · " + ADD_BUTTON,
+                "2  ●  click(button 'Checkout…')");
+        assertThat(onEdt(() -> recording.panel.greyed(1))).isTrue();
+        assertThat(onEdt(() -> recording.panel.greyed(0))).isFalse();
+        assertThat(onEdt(() -> recording.panel.idAt(1))).isEqualTo(-1);
+        SwingUtilities.invokeAndWait(() -> recording.panel.select(2));
+        assertThat(onEdt(() -> recording.panel.selected())).isEqualTo(-1);
+        assertThat(onEdt(() -> recording.panel.title())).isEqualTo("Steps (2)");
+        // they stay shown when the recording is read again; ▾ hides them
+        settleRefresh();
+        assertThat(rows()).hasSize(4);
+        SwingUtilities.invokeAndWait(() -> recording.panel.toggleRaw(0));
+        assertThat(rows()).containsExactly("1  ●  ▸ ◆ " + ADD_PEN, "2  ●  click(button 'Checkout…')");
+        // a do step the agent ran has no raw steps: no ▸, and a click on it toggles nothing
+        sink.agentDo("Place the order");
+        settleRefresh();
+        assertThat(rows()).containsExactly("1  ●  ▸ ◆ " + ADD_PEN, "2  ●  click(button 'Checkout…')", "3  ●  agent: ◆ Place the order");
+        SwingUtilities.invokeAndWait(() -> recording.panel.toggleRaw(2));
+        assertThat(rows()).hasSize(3);
+    }
+
+    @Test
+    void aFoldsRowMenuRenamesUnfoldsAndDeletes() throws Exception {
+        int pen = penFold();
+        int paper = sink.fold("person", "Add A4 paper, 500 sheets to the cart",
+                Collections.singletonMap("product", "A4 paper, 500 sheets"), "click(table 'products' · SKU=PAP-A4-500 · Product)",
+                ADD_BUTTON);
+        withSteps();
+
+        StepMenu menu = menuOn(0);
+        assertThat(menu.labels()).containsSubsequence("Rename…", "Unfold (show the 2 steps)", "Delete")
+                .doesNotContain("Describe this step…");
+        // Rename… is the step's sentence, typed in place
+        JTextField field = choose(0, "Rename…");
+        assertThat(field).isNotNull();
+        assertThat(field.getText()).isEqualTo(ADD_PEN);
+        SwingUtilities.invokeAndWait(() -> recording.panel.cancelNaming());
+
+        StepMenu second = menuOn(1);
+        SwingUtilities.invokeAndWait(() -> second.choose("Delete"));
+        eventually(() -> sink.log.contains("delete " + paper) ? Boolean.TRUE : null);
+
+        StepMenu first = menuOn(0);
+        SwingUtilities.invokeAndWait(() -> first.choose("Unfold (show the 2 steps)"));
+        eventually(() -> "unfolded step 1 into steps 1-2".equals(recording.bar.text()) ? Boolean.TRUE : null);
+        assertThat(sink.log).contains("unfold " + pen);
+        assertThat(rows()).containsExactly("1  ●  " + PEN_ROW, "2  ●  " + ADD_BUTTON);
+        // a raw step has no Unfold; the agent's do step has nothing to unfold either
+        assertThat(menuOn(0).labels()).doesNotContain("Unfold (show the 2 steps)", "Rename…").contains("Describe this step…");
+        sink.agentDo("Place the order");
+        settleRefresh();
+        assertThat(menuOn(2).labels()).contains("Rename…", "Delete").noneMatch(l -> l.startsWith("Unfold"));
+    }
+
+    @Test
+    void theUndoNoteTakesTheFoldBack() throws Exception {
+        int pen = penFold();
+        withSteps();
+        String before = onEdt(() -> recording.bar.text());
+
+        SwingUtilities.invokeAndWait(() -> recording.recognised(pen, ADD_PEN, 2));
+        assertThat(onEdt(() -> recording.bar.text())).isEqualTo("recognised: " + ADD_PEN + " (from 2 steps) —");
+        assertThat(onEdt(() -> recording.bar.labels())).startsWith("Undo");
+        SwingUtilities.invokeAndWait(() -> recording.bar.press("Undo"));
+        eventually(() -> recording.bar.text().startsWith("undid: ") ? Boolean.TRUE : null);
+        assertThat(sink.log).containsExactly("undoFold " + pen);
+        assertThat(onEdt(() -> recording.bar.text()))
+                .isEqualTo("undid: fold of steps 1-2 into \"" + ADD_PEN + "\" (recognised in the person's steps)");
+        assertThat(onEdt(() -> recording.bar.labels())).doesNotContain("Undo");
+        assertThat(rows()).containsExactly("1  ●  " + PEN_ROW, "2  ●  " + ADD_BUTTON);
+
+        // refused (the fold is no longer the last edit): the bar says why
+        int again = penFold();
+        sink.refuseUndoFold = "the recording changed since: Unfold on its row takes the fold back";
+        SwingUtilities.invokeAndWait(() -> recording.recognised(again, ADD_PEN, 2));
+        SwingUtilities.invokeAndWait(() -> recording.bar.press("Undo"));
+        eventually(() -> recording.bar.text().startsWith("✗ not undone: ") ? Boolean.TRUE : null);
+        assertThat(onEdt(() -> recording.bar.text())).endsWith("Unfold on its row takes the fold back");
+
+        // a note nobody answers goes after a while, its Undo with it, and the bar says what it said before
+        SwingUtilities.invokeAndWait(() -> {
+            recording.bar.text(before);
+            recording.recognisedMs = 150;
+            recording.recognised(again, ADD_PEN, 2);
+        });
+        eventually(() -> before.equals(recording.bar.text()) ? Boolean.TRUE : null);
+        assertThat(onEdt(() -> recording.bar.labels())).doesNotContain("Undo");
+        // a newer line (a step recorded) ends it at once
+        SwingUtilities.invokeAndWait(() -> {
+            recording.recognisedMs = 60000;
+            recording.recognised(again, ADD_PEN, 2);
+        });
+        SwingUtilities.invokeAndWait(() -> recording.note("the agent deleted step 3"));
+        assertThat(onEdt(() -> recording.bar.labels())).doesNotContain("Undo");
+    }
+
+    @Test
+    void inCheckModeThePluginsChecksComeFirstAndAnOlderClicksAreDropped() throws Exception {
+        java.util.Map<String, Object> placed = new java.util.LinkedHashMap<String, Object>();
+        placed.put("action", "do");
+        placed.put("step", "order-desk:orderIsPlaced");
+        sink.domainChecks = Collections.singletonList(new Inspector.DomainCheck("The order is placed", placed));
+        List<CheckMenu> shown = Collections.synchronizedList(new java.util.ArrayList<CheckMenu>());
+        recordInFrame();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.showMenu = (m, e) -> shown.add(m);
+            recording.mode(true);
+        });
+        Target save = onEdt(() -> scene.inspector.component(scene.save));
+        MouseEvent click = new MouseEvent(scene.save, MouseEvent.MOUSE_PRESSED, 0, 0, 5, 5, 1, false);
+        Overlay o = onEdt(() -> scene.inspector.overlay(frame.getRootPane()));
+
+        // two clicks before the plugin's checks are known: only the last one's menu shows
+        SwingUtilities.invokeAndWait(() -> {
+            recording.offerChecks(save, click, o);
+            recording.offerChecks(save, click, o);
+        });
+        CheckMenu menu = eventually(() -> shown.isEmpty() ? null : shown.get(0));
+        settle();
+        assertThat(shown).hasSize(1);
+        assertThat(menu.labels()).containsSubsequence("Save", "✓ The order is placed", "Reads “Save”");
+        // the plugin's checks were matched with the element's own checks, as offered
+        assertThat(sink.askedChecks.get(0)).anySatisfy(s -> assertThat(s).containsEntry("text", "Save"));
+        SwingUtilities.invokeAndWait(() -> menu.choose("✓ The order is placed"));
+        eventually(() -> sink.lines().contains("do") ? Boolean.TRUE : null);
+
+        // out of Check mode before the answer came: no menu
+        shown.clear();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.offerChecks(save, click, o);
+            recording.mode(false);
+        });
+        settle();
+        assertThat(shown).isEmpty();
+    }
+
+    @Test
+    void underTheStepsTheLastOnesSayWhatTheyCouldBecome() throws Exception {
+        sink.person(PEN_ROW);
+        sink.foldHint = "… could become: " + ADD_PEN + " (1 of 2)";
+        withSteps();
+        assertThat(onEdt(() -> recording.panel.hint())).isEqualTo("… could become: " + ADD_PEN + " (1 of 2)");
+
+        sink.foldHint = null;
+        settleRefresh();
+        assertThat(onEdt(() -> recording.panel.hint())).isNull();
+    }
+
     private static KeyEvent esc(Component on, int id) {
         return new KeyEvent(on, id, System.currentTimeMillis(), 0,
                 id == KeyEvent.KEY_TYPED ? KeyEvent.VK_UNDEFINED : KeyEvent.VK_ESCAPE, '\u001b');

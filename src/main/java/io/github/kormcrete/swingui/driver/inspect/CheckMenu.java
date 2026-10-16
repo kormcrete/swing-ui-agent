@@ -19,7 +19,6 @@ import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.Graphics;
-import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,7 +30,8 @@ import java.util.function.BiConsumer;
 /**
  * The checks a person can record for one element, offered from what it shows NOW: a cell's text, a field's
  * value, a check box's state, a table's row count. Each is one {@code expect} step. A check {@code expect} cannot
- * express yet is listed greyed, so the gap is visible. EDT.
+ * express yet is listed greyed, so the gap is visible. The app plugin's domain checks those checks fit come first, in
+ * the plugin's words ("✓ The cart total is €31.32"), each a {@code do} check ({@link Inspector.Sink#domainChecks}). EDT.
  */
 final class CheckMenu extends JPopupMenu {
 
@@ -45,22 +45,31 @@ final class CheckMenu extends JPopupMenu {
         }
     }
 
-    static void show(Target t, MouseEvent e, BiConsumer<Map<String, Object>, Target> run) {
-        of(t, run).show(e.getComponent(), e.getX(), e.getY());
+    /** {@link #of(Target, List, List, BiConsumer)} with the element's own checks only. */
+    static CheckMenu of(Target t, BiConsumer<Map<String, Object>, Target> run) {
+        return of(t, choices(t), Collections.<Inspector.DomainCheck>emptyList(), run);
     }
 
     /**
      * The menu for {@code t}: its title is what the person sees there, not the locator, which would make the menu
-     * wider than the window and means nothing to them.
+     * wider than the window and means nothing to them; then the plugin's {@code domain} checks, then the element's own
+     * {@code choices} ({@link #choices}).
      */
-    static CheckMenu of(Target t, BiConsumer<Map<String, Object>, Target> run) {
+    static CheckMenu of(Target t, List<Choice> choices, List<Inspector.DomainCheck> domain,
+                        BiConsumer<Map<String, Object>, Target> run) {
         CheckMenu menu = new CheckMenu();
         JMenuItem title = new JMenuItem(t.shown);
         title.setEnabled(false);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
         menu.add(title);
         menu.addSeparator();
-        for (Choice c : choices(t)) {
+        for (Inspector.DomainCheck d : domain) {
+            JMenuItem item = new JMenuItem("✓ " + d.sentence);
+            item.addActionListener(x -> run.accept(d.step, t));
+            menu.add(item);
+        }
+        if (!domain.isEmpty()) menu.addSeparator();
+        for (Choice c : choices) {
             JMenuItem item = new JMenuItem(c.step == null ? c.label + "   (expect cannot check this yet)" : c.label);
             item.setEnabled(c.step != null);
             if (c.step != null) item.addActionListener(x -> run.accept(c.step, t));
@@ -72,6 +81,32 @@ final class CheckMenu extends JPopupMenu {
     /** The bold title on top. */
     String title() {
         return ((JMenuItem) getComponent(0)).getText();
+    }
+
+    /** The items' labels, in order, the title first. */
+    List<String> labels() {
+        List<String> out = new ArrayList<String>();
+        for (Component c : getComponents()) if (c instanceof JMenuItem) out.add(((JMenuItem) c).getText());
+        return out;
+    }
+
+    /** Chooses {@code label}, as the person would: the menu closes, the item's action runs. */
+    void choose(String label) {
+        for (Component c : getComponents()) {
+            if (c instanceof JMenuItem && label.equals(((JMenuItem) c).getText())) {
+                setVisible(false);
+                ((JMenuItem) c).doClick(0);
+                return;
+            }
+        }
+        throw new IllegalArgumentException("no item '" + label + "' in the check menu, only " + labels());
+    }
+
+    /** The steps of {@code choices} that can be recorded (not the greyed ones): what the plugin's checks are matched with. */
+    static List<Map<String, Object>> steps(List<Choice> choices) {
+        List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
+        for (Choice c : choices) if (c.step != null) out.add(c.step);
+        return out;
     }
 
     /** The check also says which view row it is about (see {@link Inspector#ROW_INDEX}). */

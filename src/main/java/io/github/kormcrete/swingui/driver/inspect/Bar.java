@@ -120,6 +120,27 @@ final class Bar extends JComponent {
         return this;
     }
 
+    /** Puts a button first, right after the line of text it answers (a note's Undo); one with that label goes first. */
+    void buttonFirst(String label, Color color, Runnable action) {
+        drop(label);
+        buttons.add(0, new Button(label, color, action));
+        revalidate();
+        repaint();
+    }
+
+    /** Takes the button labelled {@code label} away, if there is one. */
+    void drop(String label) {
+        for (int i = 0; i < buttons.size(); i++) {
+            if (buttons.get(i).label.equals(label)) {
+                Button b = buttons.remove(i);
+                if (over == b) over = null;
+                revalidate();
+                repaint();
+                return;
+            }
+        }
+    }
+
     void active(String label) {
         for (Button b : buttons) b.active = b.label.equals(label);
         repaint();

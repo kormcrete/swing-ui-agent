@@ -451,6 +451,32 @@ class PatternTest {
         assertThat(p.match(steps("{'action':'click','target':{'role':'tab','name':'Orders'}}"))).isNull();
     }
 
+    // ---- prefix: the steps so far could become the step
+
+    @Test
+    void aRunThatBeginsThePatternIsAPrefixWithTheValuesSoFar() {
+        Pattern p = only(DomainStep.act("addToCart", "Add {product} to the cart").param("product", ParamType.TEXT)
+                .code(NOTHING)
+                .match(json("{'action':'click','target':{'role':'table','row':{'Product':'{product}'}}}"),
+                        json("{'optional':true,'action':'click','target':{'role':'tab','name':'Cart'}}"),
+                        json("{'action':'click','target':{'role':'button','name':'Add to cart'}}"))
+                .build());
+        String row = "{'action':'click','target':{'role':'table','row':{'Product':'Gel pen, black'}}}";
+        String tab = "{'action':'click','target':{'role':'tab','name':'Cart'}}";
+        String add = "{'action':'click','target':{'role':'button','name':'Add to cart'}}";
+
+        Pattern.Prefix one = p.prefix(steps(row));
+        assertThat(one.params()).containsExactly(entry("product", "Gel pen, black"));
+        assertThat(one.steps()).isEqualTo(1);
+        assertThat(one.of()).isEqualTo(2);   // the optional step need not come
+        // the optional step taken: one more to come
+        assertThat(p.prefix(steps(row, tab)).of()).isEqualTo(3);
+        // the whole step is no prefix of it, nor a run that begins another way
+        assertThat(p.prefix(steps(row, add))).isNull();
+        assertThat(p.prefix(steps(add))).isNull();
+        assertThat(p.prefix(steps(row, tab, add, add))).isNull();
+    }
+
     @Test
     void anOptionalParamLeftUncapturedIsLeftOut() {
         Pattern p = only(DomainStep.act("openOrder", "Open order {order} in {view}").param("order", ParamType.TEXT)

@@ -203,6 +203,30 @@ class MatcherTest {
     }
 
     @Test
+    void theStepsAtTheEndThatBeginAStepAreItsHintTheClosestFirst() {
+        List<Matcher.Item> steps = fixture("add-gel-pen");
+
+        // the row picked: Add Gel pen to the cart needs one more step, adding a quantity two more
+        Matcher.Hint first = fold(steps.subList(0, 1), ORDER_DESK).hint;
+        assertThat(first.step).isEqualTo("order-desk:addToCart");
+        assertThat(first.params).containsOnly(org.assertj.core.api.Assertions.entry("product", "Gel pen, black"));
+        assertThat(first.steps).isEqualTo(1);
+        assertThat(first.of).isEqualTo(2);
+        assertThat(first.key).isEqualTo(1);
+        // Add to cart folds them; that fold is the beginning of a longer step
+        Matcher.Result two = fold(steps.subList(0, 2), ORDER_DESK);
+        assertThat(two.hint.step).isEqualTo("order-desk:addQtyToCart");
+        assertThat(two.hint.steps).isEqualTo(2);
+        assertThat(two.hint.of).isEqualTo(3);
+        assertThat(two.hint.key).isSameAs(two.folds.get(0));
+        // the whole of the longest step: nothing more it could become
+        assertThat(fold(steps, ORDER_DESK).hint).isNull();
+        // after a check, or a step kept raw, there is no hint
+        assertThat(fold(Arrays.asList(steps.get(0), Matcher.Item.check(9, "person")), ORDER_DESK).hint).isNull();
+        assertThat(fold(Collections.singletonList(barrier(steps.get(0))), ORDER_DESK).hint).isNull();
+    }
+
+    @Test
     void anUndecidedMatchFoldsNothingAndSaysWhy() {
         // three notes, each fitting alone, whose captures cannot make up the last text: undecided within the budget
         String forty = "Gel pen, black; A4 paper, 500 sheets; xy";

@@ -169,9 +169,11 @@ final class RecordingModel {
         final int maxIdAfter;
         final boolean cut;
         final Set<Integer> keepRawOnUndo;
+        /** For a fold, the id of the record it made; 0 for any other edit. */
+        final int folded;
 
         Edit(String label, String past, RecordedStep.Author author, List<RecordedStep> before, int maxIdAfter,
-                boolean cut, Set<Integer> keepRawOnUndo) {
+                boolean cut, Set<Integer> keepRawOnUndo, int folded) {
             this.label = label;
             this.past = past;
             this.author = author;
@@ -179,6 +181,7 @@ final class RecordingModel {
             this.maxIdAfter = maxIdAfter;
             this.cut = cut;
             this.keepRawOnUndo = keepRawOnUndo;
+            this.folded = folded;
         }
     }
 
@@ -199,10 +202,14 @@ final class RecordingModel {
     /** Records the edit just made (steps before it in {@code before}) and returns its past-tense text. */
     private String edited(String label, String past, RecordedStep.Author author, List<RecordedStep> before,
             boolean cut, Set<Integer> keepRawOnUndo) {
-        history.addFirst(new Edit(label + " by " + by(author), past, author, before, nextId - 1, cut, keepRawOnUndo));
-        while (history.size() > HISTORY) history.removeLast();
+        keep(new Edit(label + " by " + by(author), past, author, before, nextId - 1, cut, keepRawOnUndo, 0));
         changed(by(author) + " " + past);
         return past;
+    }
+
+    private void keep(Edit e) {
+        history.addFirst(e);
+        while (history.size() > HISTORY) history.removeLast();
     }
 
     // ------------------------------------------------------------------ recording and reading
@@ -752,8 +759,10 @@ final class RecordingModel {
     /**
      * Puts {@code action}, a {@code do} step by {@code by}, in the place of the records {@code ids}: action records (raw
      * steps or earlier folds) next to each other, in order, in one group or none. It keeps their raw steps
-     * ({@link RecordedStep#raw}, an earlier fold's own); checks after the last stay under it. {@code editor} made the
-     * fold; undo brings the records back kept raw.
+     * ({@link RecordedStep#raw}, an earlier fold's own); checks after the last stay under it. {@code editor} asked for the
+     * fold; null when folding recognised {@code by}'s steps by itself, which the edit's label says ("… (recognised in the
+     * person's steps)") so that whoever undoes it is never named as the one who folded. Undo brings the records back kept
+     * raw.
      */
     Folded fold(List<Integer> ids, Action action, RecordedStep.Author by, RecordedStep.Author editor) {
         if (ids.isEmpty()) throw bad("a fold takes at least one step");
@@ -782,9 +791,28 @@ final class RecordingModel {
         steps.add(first, made);
         String what = stepsText(a, b);
         String into = action.say == null ? action.describe() : action.say;
-        String did = edited("fold of " + what + " into \"" + into + "\"", "folded " + what + " into \"" + into + "\"",
-                editor, before, false, new HashSet<Integer>(ids));
-        return new Folded(made, did);
+        String fold = "fold of " + what + " into \"" + into + "\"";
+        String past = "folded " + what + " into \"" + into + "\"";
+        Set<Integer> took = new HashSet<Integer>(ids);
+        if (editor == null) {
+            String whose = by.json.equals("loaded") ? "the loaded test's" : "the " + by.json + "'s";
+            keep(new Edit(fold + " (recognised in " + whose + " steps)", past, by, before, nextId - 1, false, took, made.id));
+            changed("folding recognised " + whose + " " + what + " as \"" + into + "\"");
+            return new Folded(made, past);
+        }
+        keep(new Edit(fold + " by " + by(editor), past, editor, before, nextId - 1, false, took, made.id));
+        changed(by(editor) + " " + past);
+        return new Folded(made, past);
+    }
+
+    /**
+     * Takes back the fold that made the record {@code id}, as {@link #undo} does, while that fold is the last edit; null
+     * (nothing changes) when it is not, or no fold made it.
+     */
+    String undoFold(int id, RecordedStep.Author by) {
+        Edit e = history.peekFirst();
+        if (e == null || e.folded != id || indexOf(id) < 0) return null;
+        return undo(by);
     }
 
     /** Puts the raw steps of fold {@code n} back in its place, each kept raw; its checks stay under the last one. */

@@ -54,7 +54,10 @@ import java.util.function.Predicate;
  * indented steps. Below, the buttons to replay all from a reset, as the exported test runs (for a loaded recorded test:
  * run it), replay from a step, redo from a step (cut the recording there, replay up to it from a reset, record on),
  * delete a step or a check, or undo the last edit - the agent's or the person's; the row menu (right click, or ⋯)
- * describes, ungroups and says how a table row is named. A double click on a row, or F2 or Enter, names it in place: a
+ * describes, ungroups and says how a table row is named. A step of the app plugin's vocabulary (a {@code do} step) is
+ * one row, "◆" and its sentence with its values in bold; a fold - one folding made of recorded steps - has a ▸ that
+ * shows those steps under it, greyed (▾ hides them), and its row menu renames it, unfolds it into those steps or deletes
+ * it. Under the list, what the last steps could become. A double click on a row, or F2 or Enter, names it in place: a
  * field over the row's text holds its sentence (Enter saves, Esc cancels, a click elsewhere saves a change); several
  * steps get a header row of their own for a group's sentence. Rows know their record's id: what the person deletes,
  * redoes or describes is what they saw, even when the agent changed the recording since. The callbacks get flat record
@@ -81,6 +84,9 @@ final class StepsPanel extends JPanel {
 
         /** {@code by}: "value" or "position". */
         void rowBy(int id, String by);
+
+        /** Puts the steps of the fold with record {@code id} back in its place. */
+        void unfold(int id);
     }
 
     /** One row: a record (step or check), a group's header, or what the person is still doing (pending). */
@@ -95,22 +101,34 @@ final class StepsPanel extends JPanel {
         final int group;
         /** The header row a group's sentence is typed in before the group exists; no header otherwise. */
         final boolean fresh;
+        /** One of the steps a fold stands for, shown under it (greyed): no record of its own. */
+        final boolean raw;
 
         Row(int record, Inspector.StepLine line, String label, String mark, int group) {
-            this(record, line, label, mark, group, false);
+            this(record, line, label, mark, group, false, false);
         }
 
         Row(int record, Inspector.StepLine line, String label, String mark, int group, boolean fresh) {
+            this(record, line, label, mark, group, fresh, false);
+        }
+
+        private Row(int record, Inspector.StepLine line, String label, String mark, int group, boolean fresh, boolean raw) {
             this.record = record;
             this.line = line;
             this.label = label;
             this.mark = mark;
             this.group = group;
             this.fresh = fresh;
+            this.raw = raw;
+        }
+
+        /** One of a fold's steps, under it; in the fold's group so that the group's rows stay one run. */
+        static Row raw(int group) {
+            return new Row(-1, null, null, null, group, false, true);
         }
 
         boolean header() {
-            return line == null && group != 0;
+            return line == null && group != 0 && !raw;
         }
 
         int id() {
@@ -219,6 +237,12 @@ final class StepsPanel extends JPanel {
         }
     };
     private final JLabel title = new JLabel("Steps");
+    /** Under the list: what the last steps could become; hidden when nothing. */
+    private final JLabel hint = new JLabel();
+    /** The folds whose steps are shown under them (▾), by record id. */
+    private final Set<Integer> opened = new LinkedHashSet<Integer>();
+    /** ✕ Delete's callback, also the row menu's Delete. */
+    private final IntConsumer deleteRecord;
     /** As last shown: the rows, and the records and their labels in the session's order. */
     private final List<Row> rows = new ArrayList<Row>();
     private List<Inspector.StepLine> records = new ArrayList<Inspector.StepLine>();
@@ -236,6 +260,7 @@ final class StepsPanel extends JPanel {
         }
         @Override public void ungroup(int id) { }
         @Override public void rowBy(int id, String by) { }
+        @Override public void unfold(int id) { }
     };
     /** The row menu opened last (shown when the list is). */
     private StepMenu menu;
@@ -268,6 +293,7 @@ final class StepsPanel extends JPanel {
     StepsPanel(String replayAllLabel, Runnable replayAll, IntConsumer replayFrom, IntConsumer redoFrom, IntConsumer delete,
                Runnable undo, Runnable close) {
         super(new BorderLayout(0, 6));
+        this.deleteRecord = delete;
         setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY, 2),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
         setBackground(Color.WHITE);
@@ -302,6 +328,10 @@ final class StepsPanel extends JPanel {
                     setFont(getFont().deriveFont(Font.ITALIC));
                     return this;
                 }
+                // a domain step's values in bold
+                if (row.line != null && row.line.domain() && !row.line.params.isEmpty()) {
+                    setText(html(lead(row), text(row.line), row.line.params.values()));
+                }
                 // a new group's header looks like any group's while its sentence is typed
                 if (row.header() || row.fresh) {
                     setFont(getFont().deriveFont(Font.BOLD));
@@ -321,9 +351,18 @@ final class StepsPanel extends JPanel {
             @Override public void mouseReleased(MouseEvent e) { popup(e); }
 
             @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e)) {
+                    int row = rowAt(e);
+                    if (row >= 0 && onTriangle(row, e.getX())) toggleRaw(row);
+                    return;
+                }
                 if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
                 int row = rowAt(e);
-                if (row < 0) return;
+                // a quick second click on ▸ shows or hides the steps again; it names nothing
+                if (row < 0 || onTriangle(row, e.getX())) {
+                    if (row >= 0) toggleRaw(row);
+                    return;
+                }
                 int[] before = pressedOn;
                 // rows that came or went between the presses (a new group's header closing with its field, a step
                 // recorded) make the first press's rows other rows: only the row under the mouse counts then
@@ -352,6 +391,15 @@ final class StepsPanel extends JPanel {
         list.getActionMap().put("describe", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { describeSelection(); }
         });
+        // → shows a fold's steps, ← hides them, as on a tree
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "showRaw");
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "hideRaw");
+        list.getActionMap().put("showRaw", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { showRaw(list.getMinSelectionIndex(), true); }
+        });
+        list.getActionMap().put("hideRaw", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { showRaw(list.getMinSelectionIndex(), false); }
+        });
         list.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) { remember(e.getOppositeComponent()); }
         });
@@ -362,6 +410,13 @@ final class StepsPanel extends JPanel {
         JScrollPane scroll = new JScrollPane(list);
         scroll.setPreferredSize(new Dimension(460, 200));
         add(scroll, BorderLayout.CENTER);
+        hint.setForeground(Color.GRAY);
+        hint.setFont(hint.getFont().deriveFont(Font.ITALIC));
+        hint.setVisible(false);
+        JPanel south = new JPanel(new BorderLayout(0, 4));
+        south.setOpaque(false);
+        south.add(hint, BorderLayout.NORTH);
+        south.add(buttons, BorderLayout.SOUTH);
         buttons.setOpaque(false);
         buttons.add(small(replayAllLabel, replayAll, "from a reset, as the exported test runs"));
         buttons.add(small("▶ From selected", () -> { if (selected() >= 0) replayFrom.accept(stepRecordAt(selected())); },
@@ -379,7 +434,7 @@ final class StepsPanel extends JPanel {
             if (row >= 0) openMenu(row, 0, 0);
         }, "describe, ungroup, how a table row is named");
         buttons.add(more);
-        add(buttons, BorderLayout.SOUTH);
+        add(south, BorderLayout.SOUTH);
     }
 
     private static final String DELETE_TIP = "a step with its checks, or one check";
@@ -467,7 +522,11 @@ final class StepsPanel extends JPanel {
     String tooltipAt(int row) {
         if (row < 0 || row >= rows.size()) return null;
         Row r = rows.get(row);
+        if (r.line != null && r.line.folded()) {
+            return r.line.line + " - from " + r.line.raw.size() + " steps: " + String.join("; ", r.line.raw);
+        }
         if (r.line != null) return r.line.line;
+        if (r.raw) return model.get(row).trim().substring(2);
         if (!r.header()) return null;
         int[] span = groupSpan(row);
         String first = rows.get(span[0]).step();
@@ -515,6 +574,13 @@ final class StepsPanel extends JPanel {
         // the same field as a double click opens: here for those who look in the menu first
         Spec describe = specFor(sel);
         if (describe != null) m.item(describe.item, true, () -> open(describe));
+        // a domain step: unfolded into the steps it stands for (a fold), or deleted, from its own row
+        if (steps.size() == 1 && first.line.domain()) {
+            Inspector.StepLine a = first.line;
+            if (a.folded()) m.item("Unfold (show the " + a.raw.size() + " steps)", true, () -> edits.unfold(a.id));
+            int record = first.record;
+            m.item("Delete", true, () -> deleteRecord.accept(record));
+        }
         m.item("Ungroup", first.line.groupId != 0, () -> edits.ungroup(first.id()));
         Inspector.RowLine row = first.line.row;
         // how a table row is named is the step's or the check's own: offered for rows of one step
@@ -559,7 +625,8 @@ final class StepsPanel extends JPanel {
         }
         Inspector.StepLine a = records.get(stepRecordAt(rows.indexOf(first)));
         if (a.check) return null;
-        return new Spec("Describe this step…", false, first.id(), last.id(), a.id, 0, a.say, a.line);
+        // a domain step's sentence is its name: renaming it changes no step it runs
+        return new Spec(a.domain() ? "Rename…" : "Describe this step…", false, first.id(), last.id(), a.id, 0, a.say, a.line);
     }
 
     /** The steps of group {@code group}, as last shown. */
@@ -753,7 +820,69 @@ final class StepsPanel extends JPanel {
     /** The text before a row's sentence: number, mark and who for a record, the fold mark for a header. */
     private String prefixAt(int row) {
         Row r = rows.get(row);
-        return r.line == null ? "▾ " : prefix(r.label, r.mark, r.line);
+        return r.line == null ? "▾ " : lead(r);
+    }
+
+    /** What {@code row}'s text begins with before its sentence: number, mark, who, and a domain step's ▸ and ◆. */
+    private String lead(Row row) {
+        return prefix(row.label, row.mark, row.line) + domainLead(row.line, opened.contains(row.line.id));
+    }
+
+    /**
+     * Whether {@code x} (in the list) is on the ▸ or ▾ of fold row {@code row}, where a click shows or hides its steps.
+     */
+    private boolean onTriangle(int row, int x) {
+        Row r = row < rows.size() ? rows.get(row) : null;
+        if (r == null || r.line == null || !r.line.folded()) return false;
+        Rectangle cell = list.getCellBounds(row, row);
+        Component shown = list.getCellRenderer().getListCellRendererComponent(list, model.get(row), row, false, false);
+        Insets in = shown instanceof JComponent ? ((JComponent) shown).getInsets() : new Insets(0, 0, 0, 0);
+        FontMetrics fm = shown.getFontMetrics(shown.getFont());
+        int from = cell.x + in.left + fm.stringWidth(prefix(r.label, r.mark, r.line));
+        return x >= from - 2 && x <= from + fm.stringWidth("▸ ") + 2;
+    }
+
+    /** ▸ on fold row {@code row}: its steps show under it, greyed; ▾ hides them. Nothing for another row. */
+    void toggleRaw(int row) {
+        if (row < 0 || row >= rows.size()) return;
+        Row r = rows.get(row);
+        if (r.line == null || !r.line.folded()) return;
+        showRaw(row, !opened.contains(r.line.id));
+    }
+
+    private void showRaw(int row, boolean show) {
+        if (row < 0 || row >= rows.size()) return;
+        Row r = rows.get(row);
+        if (r.line == null || !r.line.folded() || opened.contains(r.line.id) == show) return;
+        if (show) opened.add(r.line.id); else opened.remove(r.line.id);
+        rerender();
+    }
+
+    /** What the renderer shows for {@code row}: the list's text, or for a domain step with values, HTML with them bold. */
+    String rendered(int row) {
+        Component c = list.getCellRenderer().getListCellRendererComponent(list, model.get(row), row, false, false);
+        return ((JLabel) c).getText();
+    }
+
+    /** Whether {@code row} shows greyed: what the person is still doing, or a step a fold stands for. */
+    boolean greyed(int row) {
+        Component c = list.getCellRenderer().getListCellRendererComponent(list, model.get(row), row, false, false);
+        return Color.GRAY.equals(c.getForeground());
+    }
+
+    /** What the last steps could become, as shown under the list; null when nothing is. */
+    String hint() {
+        return hint.isVisible() ? hint.getText() : null;
+    }
+
+    /** Shows {@code text} under the list (null hides it): what the last steps could become. */
+    void hint(String text) {
+        hint.setText(text == null ? "" : text);
+        hint.setToolTipText(text);
+        if (hint.isVisible() != (text != null)) {
+            hint.setVisible(text != null);
+            revalidate();
+        }
     }
 
     /** The selected rows that are records, in order. */
@@ -794,7 +923,7 @@ final class StepsPanel extends JPanel {
         for (int r = header + 1; r < rows.size(); r++) {
             Row row = rows.get(r);
             // a new group's header typed in among its steps (the session will say no to a group in a group)
-            if (row.fresh) continue;
+            if (row.fresh || row.raw) continue;
             if (row.line == null || row.line.groupId != group) break;
             if (first < 0) first = r;
             last = r;
@@ -879,7 +1008,7 @@ final class StepsPanel extends JPanel {
         }
         int end = rows.size() - 1;
         boolean pendingSelected = select < 0 && keptIds.isEmpty() && end >= 0 && rows.get(end).line == null
-                && !rows.get(end).header() && list.isSelectedIndex(end);
+                && !rows.get(end).header() && !rows.get(end).raw && list.isSelectedIndex(end);
         List<String> numbers = labels(steps);
         List<Row> shown = new ArrayList<Row>();
         List<String> texts = new ArrayList<String>();
@@ -892,8 +1021,18 @@ final class StepsPanel extends JPanel {
             String mark = marks.get(s.id);
             if (mark == null) mark = s.edited ? "✎" : "●";
             shown.add(new Row(i, s, numbers.get(i), mark, s.groupId));
-            texts.add(row(numbers.get(i), mark, s));
+            boolean open = s.folded() && opened.contains(s.id);
+            texts.add(row(numbers.get(i), mark, s, open));
+            if (!open) continue;
+            for (String raw : s.raw) {
+                shown.add(Row.raw(s.groupId));
+                texts.add((s.groupId != 0 ? "  " : "") + RAW + raw);
+            }
         }
+        // a fold that is gone (unfolded, deleted, undone) shows nothing any more
+        Set<Integer> folds = new LinkedHashSet<Integer>();
+        for (Inspector.StepLine s : steps) if (s.folded()) folds.add(s.id);
+        opened.retainAll(folds);
         if (pending != null) {
             shown.add(new Row(-1, null, null, "…", 0));
             texts.add("   …  " + pending);
@@ -1008,13 +1147,49 @@ final class StepsPanel extends JPanel {
         return dot < 0 ? label : label.substring(0, dot);
     }
 
+    /** How a step a fold stands for begins, under it. */
+    static final String RAW = "         · ";
+
     /**
-     * A record's row as the person reads it: its label and mark, "agent: " for the agent's, and its sentence or else
-     * its line; a check is indented under its step, a group's member by two more.
+     * A record's row as the person reads it: its label and mark, "agent: " for the agent's, a domain step's ◆ (and a
+     * fold's ▸, or ▾ while {@code open} shows its steps), and its sentence or else its line; a check is indented under
+     * its step, a group's member by two more.
      */
-    static String row(String label, String mark, Inspector.StepLine s) {
-        if (!s.check()) return prefix(label, mark, s) + (s.say != null ? s.say : s.line);
-        return prefix(label, mark, s) + (s.say != null ? s.say : "check: " + checkText(s.line));
+    static String row(String label, String mark, Inspector.StepLine s, boolean open) {
+        return prefix(label, mark, s) + domainLead(s, open) + text(s);
+    }
+
+    /** A record's sentence, or else its line ("check: …" for a check). */
+    private static String text(Inspector.StepLine s) {
+        if (s.say != null) return s.say;
+        return s.check() ? "check: " + checkText(s.line) : s.line;
+    }
+
+    /** "▸ ◆ " for a fold ("▾ ◆ " while {@code open}), "◆ " for another domain step, "" for the rest. */
+    private static String domainLead(Inspector.StepLine s, boolean open) {
+        if (!s.domain()) return "";
+        return (s.folded() ? (open ? "▾ " : "▸ ") : "") + "◆ ";
+    }
+
+    /** {@code lead} and {@code text} as HTML for a list row: {@code values} bold where the text shows them, spaces kept. */
+    static String html(String lead, String text, java.util.Collection<String> values) {
+        boolean[] bold = new boolean[text.length()];
+        for (String v : values) {
+            if (v == null || v.isEmpty()) continue;
+            int at = text.indexOf(v);
+            if (at >= 0) for (int k = at; k < at + v.length(); k++) bold[k] = true;
+        }
+        StringBuilder out = new StringBuilder("<html>").append(escape(lead).replace("  ", "&nbsp; "));
+        for (int k = 0; k < text.length(); k++) {
+            if (bold[k] && (k == 0 || !bold[k - 1])) out.append("<b>");
+            out.append(escape(String.valueOf(text.charAt(k))));
+            if (bold[k] && (k == text.length() - 1 || !bold[k + 1])) out.append("</b>");
+        }
+        return out.append("</html>").toString();
+    }
+
+    private static String escape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /** A record's row up to its sentence or line. */

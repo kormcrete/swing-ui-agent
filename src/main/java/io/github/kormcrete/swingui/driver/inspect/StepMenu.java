@@ -12,7 +12,8 @@ import java.util.List;
 
 /**
  * The steps list's row menu (right click on a row, or ⋯): describe the step, the check or the steps selected, ungroup,
- * and how a table row is named - this value or by position, the current way marked, a way not known yet greyed. The
+ * and how a table row is named - this value or by position, the current way marked, a way not known yet greyed. For a
+ * domain step: Rename… (its sentence), Unfold (a fold: back into the steps it stands for) and Delete. The
  * palette's own: never seen by the snapshot, the recorder or a screenshot. EDT.
  */
 final class StepMenu extends JPopupMenu {

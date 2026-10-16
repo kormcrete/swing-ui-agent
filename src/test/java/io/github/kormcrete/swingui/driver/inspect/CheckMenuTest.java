@@ -4,7 +4,9 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JLabel;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -91,6 +93,41 @@ class CheckMenuTest {
         assertThat(checked.role).isEqualTo("label");
         assertThat(checked.name).isEqualTo("Total");
         assertThat(reads.step).containsEntry("text", "€7.32");
+    }
+
+    @Test
+    void aDomainCheckIsOfferedForTheTotal() {
+        JLabel caption = new JLabel("Total");
+        caption.setBounds(10, 130, 80, 20);
+        JLabel value = new JLabel("€31.32");
+        value.setBounds(100, 130, 80, 20);
+        caption.setLabelFor(value);
+        scene.content.add(caption);
+        scene.content.add(value);
+        Target target = scene.inspector.component(value);
+
+        // the plugin's checks are matched against the checks offered for the element, as it shows now
+        List<CheckMenu.Choice> choices = CheckMenu.choices(target);
+        List<Map<String, Object>> asked = CheckMenu.steps(choices);
+        assertThat(asked).hasSize((int) choices.stream().filter(c -> c.step != null).count());
+        assertThat(asked.get(0)).containsEntry("action", "expect").containsEntry("text", "€31.32");
+
+        Map<String, Object> cartTotal = new LinkedHashMap<String, Object>();
+        cartTotal.put("action", "do");
+        cartTotal.put("step", "order-desk:cartTotalIs");
+        cartTotal.put("params", Collections.singletonMap("total", "€31.32"));
+        List<Map<String, Object>> chosen = new ArrayList<Map<String, Object>>();
+        CheckMenu menu = CheckMenu.of(target, choices,
+                Collections.singletonList(new Inspector.DomainCheck("The cart total is €31.32", cartTotal)),
+                (step, t) -> chosen.add(step));
+
+        // first, in the plugin's words; the element's own checks below
+        assertThat(menu.labels()).containsSubsequence("Total", "✓ The cart total is €31.32", "Reads “€31.32”");
+        menu.choose("✓ The cart total is €31.32");
+        assertThat(chosen).containsExactly(cartTotal);
+        // without a plugin's check the menu is as before
+        assertThat(CheckMenu.of(target, choices, Collections.<Inspector.DomainCheck>emptyList(), (step, t) -> { }).labels())
+                .noneMatch(l -> l.startsWith("✓"));
     }
 
     private static CheckMenu.Choice first(List<CheckMenu.Choice> choices) {

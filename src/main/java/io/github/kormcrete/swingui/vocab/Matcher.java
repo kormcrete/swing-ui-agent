@@ -28,6 +28,9 @@ import java.util.Map;
  * not fold on its own ({@link Candidate#autoFold} false) is only suggested. A pattern that cannot decide a run
  * ({@link Pattern.TooAmbiguous}) as long as the winner's, or longer, stops the fold too: noted, with why. All matches
  * of one {@link #fold} share one deadline; past it the steps not looked at yet stay as they are, noted.
+ *
+ * <p>Steps at the end that begin a domain step without being all of it yet are the {@link Result#hint}: what they
+ * could become ("Add Gel pen, black to the cart (1 of 2)"), for the person recording them to see.
  */
 public final class Matcher {
 
@@ -192,6 +195,41 @@ public final class Matcher {
         @Override public String toString() { return kind + " " + choices + (why == null ? "" : " " + why) + " at " + span; }
     }
 
+    /**
+     * What the steps at the end of the recording could become: a domain step whose pattern they begin ({@link
+     * Pattern#prefix}), with the values so far. A hint only; nothing folds until the step is whole.
+     */
+    public static final class Hint {
+        /** The last item's key: the item the hint is about (for a fold made in the same look, its {@link Fold}). */
+        public final Object key;
+        /** The {@link Candidate#name}. */
+        public final String step;
+        /** The values the steps gave so far, in declared order. */
+        public final Map<String, String> params;
+        /** The raw steps so far, and how many the whole step takes at the fewest. */
+        public final int steps;
+        public final int of;
+        final int literals;
+
+        Hint(Object key, String step, Pattern.Prefix p, int literals) {
+            this.key = key;
+            this.step = step;
+            this.params = Collections.unmodifiableMap(new LinkedHashMap<String, String>(p.params()));
+            this.steps = p.steps();
+            this.of = p.of();
+            this.literals = literals;
+        }
+
+        /** The longer run first, then the step that needs the fewest steps more, then the more specific pattern. */
+        boolean before(Hint o) {
+            if (steps != o.steps) return steps > o.steps;
+            if (of != o.of) return of < o.of;
+            return literals > o.literals;
+        }
+
+        @Override public String toString() { return step + params + " " + steps + " of " + of; }
+    }
+
     /** What {@link #fold} did. */
     public static final class Result {
         /** The recording afterwards: the items given, with each fold in the place of its run. */
@@ -201,12 +239,15 @@ public final class Matcher {
         public final List<Note> notes;
         /** The deadline passed: the fresh steps after the last one looked at were not looked at. */
         public final boolean outOfTime;
+        /** What the steps at the end could become; null when they begin no step (or the deadline passed). */
+        public final Hint hint;
 
-        Result(List<Item> items, List<Fold> folds, List<Note> notes, boolean outOfTime) {
+        Result(List<Item> items, List<Fold> folds, List<Note> notes, boolean outOfTime, Hint hint) {
             this.items = Collections.unmodifiableList(items);
             this.folds = Collections.unmodifiableList(folds);
             this.notes = Collections.unmodifiableList(notes);
             this.outOfTime = outOfTime;
+            this.hint = hint;
         }
     }
 
@@ -230,13 +271,13 @@ public final class Matcher {
             if (System.nanoTime() - deadline > 0) {
                 notes.add(new Note(Note.Kind.UNDECIDED, Collections.singletonList(at), Collections.<Choice>emptyList(),
                         OUT_OF_TIME));
-                return new Result(list, folds, notes, true);
+                return new Result(list, folds, notes, true, null);
             }
             Outcome o = best(list, k, longest, vocabulary, deadline);
             if (o.outOfTime) {
                 notes.add(new Note(Note.Kind.UNDECIDED, Collections.singletonList(at), Collections.<Choice>emptyList(),
                         OUT_OF_TIME));
-                return new Result(list, folds, notes, true);
+                return new Result(list, folds, notes, true, null);
             }
             if (o.note != null) notes.add(o.note);
             if (o.fold == null) continue;
@@ -246,7 +287,44 @@ public final class Matcher {
             list.add(from, o.fold.item);
             k = from;
         }
-        return new Result(list, folds, notes, false);
+        return new Result(list, folds, notes, false, hint(list, longest, vocabulary, deadline));
+    }
+
+    /**
+     * What the run at the end of {@code list} could become ({@link Hint}): runs that end at the last item, back to the
+     * last barrier as for a fold, each tried as the beginning of every pattern longer than it. Null when none is, or the
+     * deadline passes first.
+     */
+    private static Hint hint(List<Item> list, int longest, List<Candidate> vocabulary, long deadline) {
+        if (list.isEmpty()) return null;
+        int k = list.size() - 1;
+        Item last = list.get(k);
+        if (!last.foldable()) return null;
+        Hint best = null;
+        int length = 0;
+        for (int s = k; s >= 0; s--) {
+            Item item = list.get(s);
+            if (!item.foldable() || !same(item.author, last.author)) break;
+            length += item.raws().size();
+            if (length >= longest) break;
+            List<JsonNode> steps = steps(list.subList(s, k + 1));
+            for (Candidate c : vocabulary) {
+                for (Pattern p : c.patterns) {
+                    if (length >= p.longest()) continue;
+                    if (System.nanoTime() - deadline > 0) return best;
+                    Pattern.Prefix pre;
+                    try {
+                        pre = p.prefix(steps);
+                    } catch (Pattern.TooAmbiguous | StackOverflowError undecided) {
+                        continue;
+                    }
+                    if (pre == null) continue;
+                    Hint h = new Hint(last.key, c.name, pre, p.literals());
+                    if (best == null || h.before(best)) best = h;
+                }
+            }
+        }
+        return best;
     }
 
     /** A fold by name that could not be told within its deadline. */
@@ -318,6 +396,11 @@ public final class Matcher {
             }
         }
         return form;
+    }
+
+    /** Whether a run of one step can be {@code p}: what a check of one element, as the Check menu offers it, can fit. */
+    public static boolean oneStep(Pattern p) {
+        return p.shortest() <= 1 && p.longest() >= 1;
     }
 
     /** Why a pattern of step {@code stepId} left a run undecided, in a person's words. */

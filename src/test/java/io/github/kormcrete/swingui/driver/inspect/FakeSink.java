@@ -5,6 +5,7 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,28 @@ final class FakeSink implements Inspector.Sink {
         }
         steps.add(s);
         return s.id;
+    }
+
+    /**
+     * Adds a fold by {@code author}: one do step with its sentence and values, standing for the steps {@code raw}. Returns
+     * its id.
+     */
+    int fold(String author, String say, Map<String, String> params, String... raw) {
+        Inspector.StepLine s;
+        synchronized (this) {
+            s = new Inspector.StepLine(nextId++, author, "do(order-desk:addToCart)", false, null, say, false, 0, null, null,
+                    Arrays.asList(raw), params);
+        }
+        steps.add(s);
+        return s.id;
+    }
+
+    /** Adds a do step the agent ran (no fold). */
+    void agentDo(String say) {
+        synchronized (this) {
+            steps.add(new Inspector.StepLine(nextId++, "agent", "do(order-desk:placeOrder)", false, null, say, false, 0, null,
+                    null, Collections.<String>emptyList(), Collections.<String, String>emptyMap()));
+        }
     }
 
     /** {@link #add} of the person's record without sentence, group or row. */
@@ -192,6 +215,45 @@ final class FakeSink implements Inspector.Sink {
         String name = file.getFileName().toString();
         return new Inspector.Result(true, name.substring(0, name.length() - ".json".length()));
     }
+    /** The fold's raw steps in its place, as the person's own (kept raw). */
+    @Override public Inspector.Result unfold(int id) {
+        log.add("unfold " + id);
+        return putBack(id, "unfolded step %d into steps %d-%d");
+    }
+
+    /** Why the bar note's Undo is refused (null: it is not). */
+    volatile String refuseUndoFold;
+    @Override public Inspector.Result undoFold(int id) {
+        log.add("undoFold " + id);
+        if (refuseUndoFold != null) return new Inspector.Result(false, refuseUndoFold);
+        return putBack(id, "fold of steps %2$d-%3$d into \"" + say(id) + "\" (recognised in the person's steps)");
+    }
+
+    private String say(int id) {
+        int i = indexOf(id);
+        return i < 0 ? null : steps.get(i).say;
+    }
+
+    private Inspector.Result putBack(int id, String did) {
+        int i = indexOf(id);
+        if (i < 0 || steps.get(i).raw.isEmpty()) return new Inspector.Result(false, "that step is no fold");
+        Inspector.StepLine fold = steps.remove(i);
+        for (int k = fold.raw.size() - 1; k >= 0; k--) steps.add(i, line(fold.author, fold.raw.get(k), false));
+        return new Inspector.Result(true, String.format(did, i + 1, i + 1, i + fold.raw.size()));
+    }
+
+    /** The live hint under the steps list (null: none). */
+    volatile String foldHint;
+    @Override public String foldHint() { return foldHint; }
+
+    /** The domain checks the Check menu is offered; and the checks it asked about, each time. */
+    volatile List<Inspector.DomainCheck> domainChecks = Collections.emptyList();
+    final List<List<Map<String, Object>>> askedChecks = Collections.synchronizedList(new ArrayList<List<Map<String, Object>>>());
+    @Override public List<Inspector.DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen) {
+        askedChecks.add(checks);
+        return domainChecks;
+    }
+
     @Override public Inspector.Result reset() {
         log.add("reset");
         if (onReset != null) onReset.run();

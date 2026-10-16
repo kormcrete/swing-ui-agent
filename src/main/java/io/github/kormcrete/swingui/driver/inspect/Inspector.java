@@ -38,6 +38,7 @@ import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -209,6 +210,42 @@ public final class Inspector {
 
         /** Resets the app as a recorded test starts ({@code session reset} without touching the recording). */
         Result reset();
+
+        /**
+         * Puts the raw steps of the fold with record {@code id} back in its place, kept raw so they do not fold again at
+         * once. Refused when it is gone, is no fold, or the agent is replaying; the result's line says what was done.
+         */
+        Result unfold(int id);
+
+        /**
+         * The bar's "recognised … — Undo": takes back the fold that made record {@code id}, as {@link #undo} would, while
+         * it is still the last edit; refused otherwise (Unfold on its row still takes it back).
+         */
+        Result undoFold(int id);
+
+        /**
+         * What the steps at the end of the recording could become, e.g. "… could become: Add A4 paper, 500 sheets to the
+         * cart (1 of 2)"; null when they begin no domain step. The published copy: never waits for folding.
+         */
+        String foldHint();
+
+        /**
+         * The app plugin's domain checks that {@code checks} (the expect steps the Check menu offers for one element, from
+         * what it shows now; {@code seen}: the element as it was seen, or null) fit, each filled with the values they
+         * show; empty without a vocabulary. Off the EDT and never under the session's lock: it only matches.
+         */
+        List<DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen);
+    }
+
+    /** A domain check the Check menu offers: its sentence with the values filled in, and the {@code do} step that is it. */
+    public static final class DomainCheck {
+        public final String sentence;
+        public final Map<String, Object> step;
+
+        public DomainCheck(String sentence, Map<String, Object> step) {
+            this.sentence = sentence;
+            this.step = step;
+        }
     }
 
     /**
@@ -233,6 +270,10 @@ public final class Inspector {
         public final String groupSay;
         /** The table row this record names and how (by value or by position); null for a record with no row. */
         public final RowLine row;
+        /** For a fold (a do step folding made of recorded steps): the lines of the steps it stands for; else empty. */
+        public final List<String> raw;
+        /** For a do step: its values by param name (shown bold in its sentence); else empty. */
+        public final Map<String, String> params;
 
         public StepLine(int id, String author, String line, boolean edited) {
             this(id, author, line, edited, null, null, line.startsWith("expect("), 0, null, null);
@@ -245,6 +286,14 @@ public final class Inspector {
 
         public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
                 int groupId, String groupSay, RowLine row) {
+            this(id, author, line, edited, label, say, check, groupId, groupSay, row, Collections.<String>emptyList(),
+                    Collections.<String, String>emptyMap());
+        }
+
+        public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
+                int groupId, String groupSay, RowLine row, List<String> raw, Map<String, String> params) {
+            this.raw = Collections.unmodifiableList(new ArrayList<String>(raw));
+            this.params = Collections.unmodifiableMap(new LinkedHashMap<String, String>(params));
             this.id = id;
             this.author = author;
             this.line = line;
@@ -260,6 +309,16 @@ public final class Inspector {
         /** A check: it belongs to the action before it. */
         boolean check() {
             return check;
+        }
+
+        /** A fold: a do step that stands for the recorded steps {@link #raw}. */
+        boolean folded() {
+            return !raw.isEmpty();
+        }
+
+        /** A step of the plugin's vocabulary (a do step), not a check: shown with ◆. */
+        boolean domain() {
+            return !check && line.startsWith("do(");
         }
     }
 
@@ -577,6 +636,16 @@ public final class Inspector {
      */
     public static void agentReplaying(String reason) {
         later(i -> i.agentReplayingNow(reason));
+    }
+
+    /**
+     * Folding recognised the steps that record {@code id} now stands for ({@code steps} of them) as the domain step
+     * {@code sentence}: the bar says so for a while, with an Undo.
+     */
+    public static void foldRecognised(int id, String sentence, int steps) {
+        later(i -> {
+            if (i.recording != null) i.recording.recognised(id, sentence, steps);
+        });
     }
 
     /** The agent's replay ran step {@code id}: the steps panel marks it ✓ or ✗. */

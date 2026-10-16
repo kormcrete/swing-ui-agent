@@ -2170,8 +2170,9 @@ class UiMcpRecordingTest {
 
         JsonNode undone = recording(s, "{\"op\":\"undo\"}");
 
+        // the person did not fold them: folding recognised their steps, and the agent undid it
         assertThat(undone.path("did").asText()).isEqualTo("undid the fold of steps 1-2 into \"Add Gel pen, black to the "
-                + "cart\" by the person");
+                + "cart\" (recognised in the person's steps)");
         JsonNode steps = undone.path("steps");
         assertThat(steps).hasSize(2);
         assertThat(steps.get(0).path("step").path("action").asText()).isEqualTo("click");
@@ -2179,6 +2180,130 @@ class UiMcpRecordingTest {
         assertThat(steps.get(1).path("keepRaw").asBoolean()).isTrue();
         assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
         assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(3).noneMatch(n -> n.has("folded"));
+    }
+
+    @Test
+    void thePaletteHearsOfAFoldAndItsNoteTakesItBackWhileItIsTheLastEdit() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        List<String> recognised = java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
+        s.recordingView(new UiMcpSession.RecordingView() {
+            @Override public void changed(String notice) { }
+            @Override public void recognised(int id, String sentence, int steps) { recognised.add(id + " " + sentence + " " + steps); }
+        });
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+
+        // the palette lists the fold as one line with its values and the lines of the steps it stands for
+        Inspector.StepLine fold = person.steps().get(0);
+        assertThat(fold.say).isEqualTo("Add Gel pen, black to the cart");
+        assertThat(fold.params).containsEntry("product", "Gel pen, black");
+        assertThat(fold.raw).hasSize(2);
+        assertThat(fold.raw.get(1)).isEqualTo("click(button 'Add to cart')");
+        assertThat(recognised).containsExactly(fold.id + " Add Gel pen, black to the cart 2");
+        assertThat(person.undoLabel()).isEqualTo("fold of steps 1-2 into \"Add Gel pen, black to the cart\" (recognised in "
+                + "the person's steps)");
+
+        // the note's Undo takes back that fold, and only while it is the last edit
+        int id = fold.id;
+        assertThat(person.describe(id, id, "Add a pen").ok).isTrue();
+        Inspector.Result late = person.undoFold(id);
+        assertThat(late.ok).isFalse();
+        assertThat(late.line).isEqualTo("the recording changed since: Unfold on its row takes the fold back");
+        assertThat(person.undo().ok).isTrue();
+        Inspector.Result undone = person.undoFold(id);
+        assertThat(undone.ok).as(undone.line).isTrue();
+        assertThat(undone.line).isEqualTo("fold of steps 1-2 into \"Add Gel pen, black to the cart\" (recognised in the "
+                + "person's steps)");
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("keepRaw").asBoolean()).isTrue();
+        assertThat(person.undoFold(id).ok).isFalse();
+    }
+
+    @Test
+    void thePaletteUnfoldsAFoldByItsId() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+        int id = person.steps().get(0).id;
+
+        Inspector.Result r = person.unfold(id);
+
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(r.line).isEqualTo("unfolded step 1 into steps 1-2");
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(1).path("keepRaw").asBoolean()).isTrue();
+        assertThat(person.steps().get(0).raw).isEmpty();
+        // a step that is no fold, or one gone
+        assertThat(person.unfold(person.steps().get(0).id).line).contains("no fold");
+        assertThat(person.unfold(id).ok).isFalse();
+    }
+
+    @Test
+    void theStepsSoFarSayWhatTheyCouldBecome() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Inspector.Sink person = s.humanSink();
+        Locator cell = Locator.ofId("products");
+        cell.row = row("SKU", "PEN-GEL-BLK");
+        cell.column = "Product";
+        Locator seen = new Locator();
+        seen.role = "table";
+        seen.row = row("SKU", "PEN-GEL-BLK", "Product", "Gel pen, black", "Price", "€1.20");
+        seen.column = "Product";
+        Map<String, Object> click = step("click", cell);
+        click.put(Inspector.SEEN, seen);
+        assertThat(person.done(click).ok).isTrue();
+        recording(s, "{\"op\":\"list\"}");   // waits for folding
+
+        assertThat(person.foldHint()).isEqualTo("… could become: Add Gel pen, black to the cart (1 of 2)");
+
+        assertThat(person.done(step("click", Locator.of("button", "Add to cart"))).ok).isTrue();
+        recording(s, "{\"op\":\"list\"}");
+        assertThat(person.foldHint()).isNull();
+        // a hint is about the last steps: a step that begins nothing ends it
+        assertThat(person.done(click).ok).isTrue();
+        recording(s, "{\"op\":\"list\"}");
+        assertThat(person.foldHint()).isNotNull();
+        assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
+        recording(s, "{\"op\":\"list\"}");
+        assertThat(person.foldHint()).isNull();
+    }
+
+    @Test
+    void theCheckMenusDomainCheckIsFilledFromTheScreenAndRecordedAsADoCheck() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        Map<String, Object> reads = new LinkedHashMap<String, Object>();
+        reads.put("action", "expect");
+        reads.put("target", Locator.of("label", "Total"));
+        reads.put("text", "€31.32");
+        reads.put(Inspector.ROW_INDEX, null);
+        Map<String, Object> enabled = new LinkedHashMap<String, Object>();
+        enabled.put("action", "expect");
+        enabled.put("target", Locator.of("label", "Total"));
+        enabled.put("state", java.util.Collections.singletonList("!disabled"));
+
+        List<Inspector.DomainCheck> offered = person.domainChecks(Arrays.asList(reads, enabled), null);
+
+        // the plugin's check whose pattern is that one check, with the value the screen shows; never an act step
+        assertThat(offered).extracting(c -> c.sentence).containsExactly("The cart total is €31.32");
+        assertThat((JsonNode) mapper.valueToTree(offered.get(0).step)).isEqualTo(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\",\"params\":{\"total\":\"€31.32\"}}"));
+        Inspector.Result checked = person.check(offered.get(0).step);
+        assertThat(checked.ok).as(checked.line).isTrue();
+        JsonNode list = recording(s, "{\"op\":\"list\"}");
+        JsonNode check = list.path("steps").get(0).path("checks").get(0);
+        assertThat(check.path("author").asText()).isEqualTo("person");
+        assertThat(check.path("step").path("step").asText()).isEqualTo("order-desk:cartTotalIs");
+        assertThat(check.path("step").path("check").asBoolean()).isTrue();
+        assertThat(check.path("say").asText()).isEqualTo("The cart total is €31.32");
+        // nothing that check fits: none offered; no plugin: none
+        assertThat(person.domainChecks(java.util.Collections.singletonList(enabled), null)).isEmpty();
+        assertThat(session.humanSink().domainChecks(Arrays.asList(reads, enabled), null)).isEmpty();
     }
 
     @Test
