@@ -479,6 +479,18 @@ class FixtureAppDriveIT {
         step("expect", "{'target':{'role':'button','name':'Yes'},'absent':true}");
     }
 
+    @Test
+    @Order(19)
+    void aRecordedTestChecksThatAClosedTabIsAbsent() throws Exception {
+        JsonNode ran = call("run_recorded_test", "{'test':{'version':2,'name':'close-the-receipt','start':'reset','steps':["
+                + "{'checks':[{'target':{'role':'tab','name':'ORD-1640'},'shown':true}]},"
+                + "{'action':'click','target':{'role':'button','name':'Close tab'},'checks':["
+                + "{'target':{'role':'tab','name':'ORD-1640'},'absent':true},"
+                + "{'target':{'name':'status'},'text':'tab closed'}]}]}}");
+        assertThat(ran.path("passed").asBoolean()).as(ran.path("why").asText()).isTrue();
+        assertThat(ran.path("ran").asInt()).isEqualTo(2);
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {

@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -176,18 +177,39 @@ class RecordedTestsTest {
         } finally {
             if (before == null) System.clearProperty("swingui.recordedDir"); else System.setProperty("swingui.recordedDir", before);
         }
-        // neither: the module's uitest folder (this module has none with files in it, so the selection is empty and refuses)
-        assertThat(io.github.kormcrete.swingui.flow.RecordedTestFiles.DEFAULT_DIR).isEqualTo("uitest");
+        // neither: <module>/uitest, the module being the project this test class is built in
+        Path module = ModuleTarget.of(RecordedTestsTest.class).toAbsolutePath().getParent();
+        Path uitest = module.resolve("uitest");
+        boolean existed = Files.isDirectory(uitest);
+        Path tier3 = Files.createDirectories(uitest).resolve("zz-tier-three.json");
+        Files.write(tier3, PASS.getBytes(StandardCharsets.UTF_8));
+        String saved = System.getProperty("swingui.recordedDir");
+        System.clearProperty("swingui.recordedDir");
+        try {
+            assertThat(names(RecordedTests.of(null))).contains("zz-tier-three");
+        } finally {
+            Files.deleteIfExists(tier3);
+            if (!existed) Files.deleteIfExists(uitest);
+            if (saved != null) System.setProperty("swingui.recordedDir", saved);
+        }
     }
 
     @Test
     void aNullCallerFallsBackToTheWorkingDir() throws Exception {
         java.lang.reflect.Method of = RecordedTests.class.getDeclaredMethod("of", Client.class, String.class, Path.class);
         of.setAccessible(true);
-        Files.write(dir.resolve("only.json"), PASS.getBytes(StandardCharsets.UTF_8));
-        @SuppressWarnings("unchecked")
-        Stream<DynamicTest> tests = (Stream<DynamicTest>) of.invoke(null, null, null, dir);
-        assertThat(names(tests)).containsExactly("only");
+        // a relative folder resolves under the working directory when no caller tells the module
+        Path relative = Paths.get("target", "null-caller-recorded");
+        Path absolute = Files.createDirectories(Paths.get("").toAbsolutePath().resolve(relative));
+        Files.write(absolute.resolve("only.json"), PASS.getBytes(StandardCharsets.UTF_8));
+        try {
+            @SuppressWarnings("unchecked")
+            Stream<DynamicTest> tests = (Stream<DynamicTest>) of.invoke(null, null, null, relative);
+            assertThat(names(tests)).containsExactly("only");
+        } finally {
+            Files.deleteIfExists(absolute.resolve("only.json"));
+            Files.deleteIfExists(absolute);
+        }
     }
 
     private static List<String> names(Stream<DynamicTest> tests) {

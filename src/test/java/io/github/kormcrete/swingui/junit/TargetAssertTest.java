@@ -79,14 +79,15 @@ class TargetAssertTest {
 
     @Test
     void isAbsentPassesOnceTheTargetIsGone() {
-        verbs.failNext = new DriverException(Reason.NOT_FOUND, "gone");
         assertThat(ui.clickable("summary.column.ORD-1550")).isAbsent();
         org.assertj.core.api.Assertions.assertThat(verbs.calls).hasSize(1);
-        org.assertj.core.api.Assertions.assertThat(verbs.calls.get(0)).startsWith("read ");
+        org.assertj.core.api.Assertions.assertThat(verbs.calls.get(0)).startsWith("expect ").contains("absent");
     }
 
     @Test
     void isAbsentFailsWhileTheTargetStaysWithinTheWait() {
+        verbs.expectFailuresBeforePass = -1;
+        verbs.expectFailureMessage = "expected X to be absent but it is still there";
         UiAssertionError e = catchThrowableOfType(
                 () -> assertThat(ui.clickable("x")).within(Duration.ofMillis(300)).isAbsent(), UiAssertionError.class);
         org.assertj.core.api.Assertions.assertThat(e).hasMessageContaining("be absent");

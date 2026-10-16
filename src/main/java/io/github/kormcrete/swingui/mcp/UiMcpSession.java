@@ -1690,6 +1690,9 @@ public class UiMcpSession {
         boolean dirGiven = dir != null && !dir.trim().isEmpty();
         Path root = dirGiven ? workingDir.resolve(dir.trim())
                 : configured != null ? Paths.get(configured) : testsDir(workingDir, defaults.moduleDir);
+        if (Files.isRegularFile(root)) {
+            throw new IllegalArgumentException("dir " + root.toAbsolutePath().normalize() + " is a file, not a folder");
+        }
         Path file = root.resolve(packageName.replace('.', '/')).resolve(className + ".java");
         if (Files.exists(file)) {
             throw new IllegalArgumentException(file.toAbsolutePath().normalize() + " already exists; edit it instead");
@@ -1885,11 +1888,13 @@ public class UiMcpSession {
         FlowResult result;
         // the reset is the agent's too, as in the palette's own runs: the person's recorder ignores it
         Inspector.agentActing(true);
+        if (palette) view.agentReplaying("running recorded test " + flow.name);
         agentReplaying = "running recorded test " + flow.name;
         try {
             appReset.run();
             result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).run(flow, host);
         } finally {
+            if (palette) view.agentReplaying(null);
             agentReplaying = null;
             Inspector.agentActing(false);
         }
@@ -2339,16 +2344,13 @@ public class UiMcpSession {
         }
     }
 
-    /** What the agent is replaying or running (a recording replay, a recorded test run, a reset to a starting screen), or null. Read without the lock. */
-    public String replayingReason() {
-        return agentReplaying;
-    }
-
-    /** The agent's edits wait for no replay: they are refused, without taking the session's lock the replay holds. */
-    private void refuseWhileReplaying() {
+    /** Refuses (BUSY) while the agent replays the recording or runs a recorded test; the state is read once, without the lock. */
+    public void refuseWhileReplaying() {
         String replaying = agentReplaying;
         if (replaying != null) {
-            throw new DriverException(Reason.BUSY, "the agent is replaying the recording (" + replaying + ")");
+            throw new DriverException(Reason.BUSY, replaying.startsWith("running ")
+                    ? "the agent is " + replaying
+                    : "the agent is replaying the recording (" + replaying + ")");
         }
     }
 

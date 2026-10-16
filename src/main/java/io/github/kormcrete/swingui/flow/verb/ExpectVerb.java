@@ -58,12 +58,18 @@ public class ExpectVerb extends VerbAction {
         e.rows = rows;
         e.cell = cell;
         e.selected = selected;
+        e.absent = absent;
+        int given = (state != null ? 1 : 0) + (text != null ? 1 : 0) + (value != null ? 1 : 0) + (tooltip != null ? 1 : 0)
+                + (rows != null ? 1 : 0) + (cell != null ? 1 : 0) + (selected != null ? 1 : 0) + (shown != null ? 1 : 0)
+                + (absent != null ? 1 : 0);
+        if (shown != null && given != 1) {
+            throw new DriverException(Reason.BAD_INPUT, "expect takes exactly one of state, text, value, tooltip, rows, cell, "
+                    + "selected, shown, absent (" + given + " given)");
+        }
         if (shown != null) {
             if (!shown) throw new DriverException(Reason.BAD_INPUT, "'shown' is true or left out; to say it is not there give 'absent': true");
-            if (state != null) throw new DriverException(Reason.BAD_INPUT, "expect takes exactly one of state, text, value, tooltip, rows, cell, selected, shown, absent");
             e.state = Collections.singletonList("!hidden");
         }
-        e.absent = absent;
         return verbs.expect(target, e, timeout);
     }
     @Override public Map<String, Locator> targets() { return targetMap(target); }

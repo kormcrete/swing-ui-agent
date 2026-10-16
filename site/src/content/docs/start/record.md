@@ -114,7 +114,7 @@ class NewOrderForAdaUiIT {
 
 - `class` is required and ends in `UiIT`. `method` defaults to `recorded`, `package` to `recorded` (or the plugin's export package).
 - An export clears the recording. Reset again before the next test.
-- `export_test` writes under the app's working directory unless you pass `dir` (the test sources root, e.g. `<project>/src/test/java`); a working directory without `pom.xml` or `build.gradle` adds a `warning` naming the path.
+- `export_test` writes under `dir` if you pass it (the test sources root, e.g. `<project>/src/test/java`; a relative one is under the app's working directory), else under `-Dswingui.testsDir`, else under the plugin's module, else under the app's working directory. In that last case, a working directory without `pom.xml` or `build.gradle` adds a `warning` naming the path.
 - `export_test` refuses a recording that did not begin at a reset, an empty one, bad names and an existing file. A refusal keeps the recording, so fix the problem and export again.
 - A test that does not begin by reaching its own screen is still written, with a `startWarning` (see [Reset and the starting screen](/swing-ui-agent/guides/reset/#recording-starts-at-a-reset)). Reset and record again with a `menu` or `press` first step.
 

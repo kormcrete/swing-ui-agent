@@ -193,7 +193,7 @@
           },
           "dir": {
             "type": "string",
-            "description": "The test sources root to write under, e.g. <project>/src/test/java; wins over -Dswingui.testsDir and the plugin's module. Name it when the app runs outside the project"
+            "description": "The test sources root to write under, e.g. <project>/src/test/java; wins over -Dswingui.testsDir and the plugin's module. A relative one is under the APP's working directory. Name it when the app runs outside the project"
           },
           "clear": {
             "type": "boolean",

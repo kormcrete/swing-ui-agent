@@ -12,6 +12,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
@@ -146,13 +147,26 @@ public final class FixtureApp {
                 }
             });
             JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            // a tab the order can close, for the checks that something is gone
+            JTabbedPane tabs = new JTabbedPane();
+            tabs.addTab("ORD-1640", new JLabel("receipt"));
+            tabs.setName("orderTabs");
+            tabs.setPreferredSize(new Dimension(110, 44));
+            JButton closeTab = new JButton("Close tab");
+            closeTab.setName("closeTab");
+            closeTab.addActionListener(e -> {
+                if (tabs.getTabCount() > 0) tabs.removeTabAt(0);
+                status.setText("tab closed");
+            });
+            south.add(tabs);
+            south.add(closeTab);
             south.add(paletteOver);
             south.add(archive);
             JPanel content = new JPanel(new BorderLayout());
             content.add(form, BorderLayout.CENTER);
             content.add(south, BorderLayout.SOUTH);
             frame.setContentPane(content);
-            frame.setSize(760, 230);
+            frame.setSize(760, 260);
             frame.setLocation(40, 40);
             frame.setVisible(true);
         });

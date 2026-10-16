@@ -43,7 +43,7 @@ public final class Expectation {
             throw bad("expect takes exactly one of state, text, value, tooltip, rows, cell, selected, absent (" + given + " given)");
         }
         if (selected != null && selected.contains(null)) throw bad("'selected' must not contain null");
-        if (absent != null && !absent) throw bad("'absent' is true or left out; to say it is there use shown or state in the verb");
+        if (absent != null && !absent) throw bad("'absent' is true or left out; to say the element is there give 'shown': true");
         if (state != null && state.isEmpty()) throw bad("'state' must not be empty");
         if (rows != null) {
             if (!OPS.contains(rows.op)) throw bad("rows.op must be one of " + OPS + ", was '" + rows.op + "'");

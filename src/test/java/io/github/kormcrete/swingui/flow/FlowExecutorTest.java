@@ -97,6 +97,14 @@ class FlowExecutorTest {
         assertThat(verbs.expectations.get(1).state).containsExactly("!hidden");
     }
 
+    @Test
+    void shownWithAnotherKindIsRefusedNamingTheKinds() {
+        FlowResult result = run("{\"action\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"Orders\"},"
+                + "\"shown\":true,\"text\":\"Orders\"}");
+        assertThat(result.passed()).isFalse();
+        assertThat(result.steps.get(0).message).contains("exactly one of").contains("shown, absent").contains("2 given");
+    }
+
     // ---- the executor's own rules ----------------------------------------------------------
 
     @Test

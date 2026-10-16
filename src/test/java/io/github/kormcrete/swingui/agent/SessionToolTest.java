@@ -326,7 +326,7 @@ class SessionToolTest {
         recording.appReset(tool.appReset());
         recording.startRecording(true);
         fake.outcome.recorded.put("target", new io.github.kormcrete.swingui.driver.model.Recorder.Recorded(
-                io.github.kormcrete.swingui.driver.model.Locator.of("button", "Save"), false));
+                io.github.kormcrete.swingui.driver.model.Locator.of("button", "Place order"), false));
         recording.verb("click", mapper.readTree("{\"target\":{\"ref\":\"e3\"}}"));
 
         final java.util.concurrent.CountDownLatch inside = new java.util.concurrent.CountDownLatch(1);

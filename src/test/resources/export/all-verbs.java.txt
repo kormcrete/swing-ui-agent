@@ -52,6 +52,8 @@ class RoundTripUiIT {
         assertThat(ui.table("Orders")).hasCell(row("Order no.", "26-2"), "Customer", "Test");
         assertThat(ui.field("Short")).hasValue("Widget");
         assertThat(ui.byId("orderList.export.pdf")).isDisabled();
+        assertThat(ui.tab("Orders")).isVisible();
+        assertThat(ui.tab("ORD-1640")).isAbsent();
 
         ui.closeActiveTab();
     }

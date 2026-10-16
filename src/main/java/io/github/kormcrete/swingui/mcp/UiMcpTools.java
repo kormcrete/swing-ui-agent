@@ -155,7 +155,8 @@ public final class UiMcpTools {
                         .put("description", "Java package (default: the app plugin's export package, else 'recorded')");
                 p.putObject("dir").put("type", "string")
                         .put("description", "The test sources root to write under, e.g. <project>/src/test/java; wins over "
-                                + "-Dswingui.testsDir and the plugin's module. Name it when the app runs outside the project");
+                                + "-Dswingui.testsDir and the plugin's module. A relative one is under the APP's working directory. "
+                                + "Name it when the app runs outside the project");
                 p.putObject("clear").put("type", "boolean")
                         .put("description", "Empty the recording after exporting (default: true); reset before "
                                 + "recording the next test. Refused while a recording started by recording start or "

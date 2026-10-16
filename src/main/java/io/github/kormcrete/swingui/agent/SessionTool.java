@@ -104,15 +104,12 @@ final class SessionTool implements McpToolDefinition {
             case "reset": {
                 String person = io.github.kormcrete.swingui.driver.inspect.Inspector.engagedReason();
                 if (person == null) person = session.recordingReason();
-                if (person == null && session.replayingReason() != null) {
-                    // a replay or a recorded test run is using the app and the recording: a reset under it would derail both
-                    throw new DriverException(Reason.BUSY, "the agent is replaying the recording (" + session.replayingReason()
-                            + "); reset when it ends");
-                }
                 if (person != null) {
                     // a reset starts a fresh recording: it must not wipe what is being recorded or what the person answers
                     throw new DriverException(Reason.BUSY, "" + person);
                 }
+                // a replay or a recorded test run is using the app and the recording: a reset under it would derail both
+                session.refuseWhileReplaying();
                 final AppHooks app = resetHooks(a);
                 final ResetSpec spec = app == null ? null : who(a);
                 gated(a, new Callable<Object>() {

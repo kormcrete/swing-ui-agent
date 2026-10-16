@@ -16,8 +16,6 @@ import java.util.Map;
  */
 public final class TargetAssert {
 
-    private static final long ABSENT_POLL_MS = 100;
-    private static final long DEFAULT_ABSENT_WAIT_MS = 10_000;
 
     private final Target actual;
     private Long withinMillis;
@@ -93,27 +91,11 @@ public final class TargetAssert {
         return expect("have selected rows " + e.selected, e);
     }
 
-    /** Passes once the target no longer resolves; fails if it is still there when the wait ends. */
+    /** Passes once the target no longer resolves; fails if it is still there when the wait ends. The same check as a recorded test's {@code absent}. */
     public TargetAssert isAbsent() {
-        long wait = withinMillis != null ? withinMillis
-                : actual.timeoutMillis() != null ? actual.timeoutMillis() : DEFAULT_ABSENT_WAIT_MS;
-        long start = System.currentTimeMillis();
-        long deadline = start + wait;
-        Locator target = actual.locator();
-        while (true) {
-            try {
-                actual.client().verbs().read(target, 0);
-            } catch (DriverException e) {
-                if (e.reason() == Reason.NOT_FOUND) return this;
-                throw asFailure("be absent", e, System.currentTimeMillis() - start);
-            }
-            if (System.currentTimeMillis() >= deadline) {
-                long elapsed = System.currentTimeMillis() - start;
-                throw new UiAssertionError("Expected " + target + " to be absent\nbut it was still there after "
-                        + elapsed + " ms", target, null);
-            }
-            sleep();
-        }
+        Expectation e = new Expectation();
+        e.absent = true;
+        return expect("be absent", e);
     }
 
     private TargetAssert expect(String what, Expectation e) {
@@ -143,14 +125,5 @@ public final class TargetAssert {
             return asFailureAction(what, ex);
         }
         throw asFailureAssertion(what, ex, elapsedMillis);
-    }
-
-    private static void sleep() {
-        try {
-            Thread.sleep(ABSENT_POLL_MS);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while waiting", ie);
-        }
     }
 }

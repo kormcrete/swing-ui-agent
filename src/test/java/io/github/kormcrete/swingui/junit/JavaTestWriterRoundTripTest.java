@@ -82,6 +82,8 @@ class JavaTestWriterRoundTripTest {
         cell.cell.column = "Customer"; cell.cell.expected = "Test"; s.add(cell);
         ExpectVerb value = new ExpectVerb(); value.target = Locator.of("text", "Short"); value.value = "Widget"; s.add(value);
         ExpectVerb byId = new ExpectVerb(); byId.target = Locator.ofId("orderList.export.pdf"); byId.state = Collections.singletonList("disabled"); s.add(byId);
+        ExpectVerb shown = new ExpectVerb(); shown.target = Locator.of("tab", "Orders"); shown.shown = true; s.add(shown);
+        ExpectVerb absent = new ExpectVerb(); absent.target = Locator.of("tab", "ORD-1640"); absent.absent = true; s.add(absent);
         s.add(new CloseAction());
         return s;
     }

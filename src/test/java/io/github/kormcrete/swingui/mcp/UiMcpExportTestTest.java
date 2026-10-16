@@ -112,6 +112,16 @@ class UiMcpExportTestTest {
     }
 
     @Test
+    void aDirThatIsAFileIsRefusedByName(@TempDir Path elsewhere) throws Exception {
+        clickSave();
+        Path file = Files.write(elsewhere.resolve("notes.txt"), "x".getBytes(StandardCharsets.UTF_8));
+        Throwable t = catchThrowable(() -> session.exportTest("FileUiIT", "m", "p", false, file.toString()));
+        assertThat(t).hasMessageContaining("is a file, not a folder").hasMessageContaining(file.getFileName().toString());
+        // the recording was kept: another dir works
+        assertThat(mapper.readTree(session.exportTest("FileUiIT", "m", "p", false, elsewhere.toString())).path("steps").asInt()).isEqualTo(1);
+    }
+
+    @Test
     void aWorkingDirWithoutABuildFileWarns(@TempDir Path cwd) throws Exception {
         clickSave();
         System.clearProperty(UiMcpSession.TESTS_DIR_PROP);

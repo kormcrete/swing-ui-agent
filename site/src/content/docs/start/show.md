@@ -99,7 +99,7 @@ Which checks you get depends on the element. For example:
 - **Table cells:** the column and the value, for example Product is “Gel pen, black” in this row; This row is selected
   when it is; Has exactly N rows; Has at least 1 row.
 - **Any control with a tooltip:** Its tooltip is “…”.
-- **Anything else you can click:** Is shown. There is no menu item for "is gone": the agent writes that check (`absent`), for example after a tab is closed.
+- **Every element you can click:** Is shown. There is no menu item for “is gone”: the agent writes that check (`absent`), for example after a tab is closed.
 
 Column checks such as "Every row's Status is …" and "Sorted by …" are greyed out, marked "(expect cannot check this
 yet)".
