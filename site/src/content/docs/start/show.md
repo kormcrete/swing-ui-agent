@@ -9,6 +9,11 @@ Sometimes it is quicker to show the agent what a test should do than to describe
 the agent and a small palette appears in its window. You press **● Record** and use the app. Every click,
 selection and bit of typing becomes a step, as if the agent had run it. **Check** adds checks, **Steps** lets you
 replay and fix them, and **Done** ends the recording. Then **Export…** writes the test, or your coding agent does.
+Later, **Load recorded test…** opens it again to run, watch step by step, fix and save back.
+
+This is the path for people showing the app. For when a recorded test is the right kind, and when a Java test is, see
+[Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). To record with your agent doing the clicking
+from your words, see [Record together with your agent](/swing-ui-agent/start/record-together/).
 
 ![The palette in Order Desk while recording: a red dot, the word Recording, a note that the agent started this recording and your steps join it, and the Record, Check, Steps and Done buttons](../../../assets/inspector/recording.png)
 
@@ -16,8 +21,9 @@ You will learn how to:
 
 - start the app with the palette;
 - record steps and checks;
-- replay, redo and delete steps;
+- replay, redo and delete steps, and name them;
 - export the test, yourself or through the agent;
+- load it again, run it and save your changes back;
 - answer the agent when it asks about the app.
 
 ## Before you start
@@ -62,19 +68,30 @@ comes back with a `startWarning`.
 ## 3. Add checks
 
 Press **Check**. The bar says "Click what to check · Esc or ◀ to go back." Clicks now go to the palette, not to the
-app. Click an element and pick a check built from what it shows right now.
+app. Click an element and pick a check built from what it shows right now. The menu's first line, greyed, names what
+you clicked in words from the screen; the lines below are the checks.
+
+A value check reads the value together with its caption. In the cart, click the **Total** label: the menu offers
+**Reads “€31.32”** for 3 A4 paper and 10 Gel pen. Choose it and the recording gets a check on **Total** that expects
+exactly `€31.32` (it shows in the list as, for example, `4.1`: step 4, check 1).
+
+<!-- TODO picture (Task 12): Check mode on the cart's Total label, boxed, with the menu title Total and the line Reads “€31.32” -->
 
 ![Check mode on the cart: the gel pen's Product cell is boxed and labelled Gel pen, black · Product, and a menu offers Product is "Gel pen, black" in this row, Has exactly 2 rows and Has at least 1 row](../../../assets/inspector/check-menu.png)
 
 Which checks you get depends on the element:
 
-- **Labels and text:** reads "…", is empty, is editable or read-only.
-- **Check boxes and radio buttons:** is checked, is not checked.
-- **Tabs:** is the open tab.
-- **Buttons and other controls:** is enabled or disabled, its tooltip.
-- **Table rows and cells:** the cell's text, this row is selected, how many rows the table has.
+- **Labels and buttons:** Reads “…” (a button only when it has text), then Is enabled or Is disabled.
+- **Text fields:** Value is “…”, or Is empty; Is editable or Is read-only.
+- **Drop-downs:** Shows “…”, and the row counts below.
+- **Check boxes and toggle buttons:** Is checked, Is not checked.
+- **Tabs:** Is the open tab, or Is not the open tab.
+- **Table cells:** the column and the value, for example Product is “Gel pen, black” in this row; This row is selected
+  when it is; Has exactly N rows; Has at least 1 row.
+- **Any control with a tooltip:** Its tooltip is “…”.
 
-Column checks such as "Every row's Status is …" and "Sorted by …" are greyed out: there is no check for them yet.
+Column checks such as "Every row's Status is …" and "Sorted by …" are greyed out, marked "(expect cannot check this
+yet)".
 
 Each check runs as soon as you choose it. A check that passes is added to the recording, and a green ✓ flashes on
 the element. One that fails is not added: a red ✗ flashes there and the bar says "✗ not recorded". You stay in Check
@@ -101,12 +118,23 @@ Press **Steps** to open the list of what has been recorded so far, your steps an
 Results stay on the steps as ✓ and ✗ until the next replay. **Replay all** and a redo begin with a reset, as the test
 will; without a plugin that only closes dialogs, so the first step has to get to the starting screen.
 
+### Name the steps
+
+A step shows the technical line until you give it a sentence. Select a row in the Steps list and double click it, or
+press F2 or Enter: a field opens over the row, Enter saves it and Esc cancels. The row's **⋯** button, or a right
+click, opens a menu with the same field as **Describe this step…**, **Describe this check…** or, for several selected
+steps, **Describe these steps…**, which makes them a group under one sentence. **Ungroup** in that menu undoes a group.
+For a table row the menu also offers **Row: this value (…)** and **Row: by position (…)**, how the test finds that
+row. More in [Sentences and groups](/swing-ui-agent/guides/sentences/).
+
+<!-- TODO picture (Task 12): the Steps list with the row menu open: Describe this step…, Ungroup, Row: this value, Row: by position -->
+
 ## 5. Press Done, then export
 
 Press **Done** when the steps are right. The bar shows **Recorded** and offers:
 
 - **● Record:** a new recording, which replaces this one.
-- **Load…:** a recorded test file instead of this recording, to replay or run.
+- **Load…:** a recorded test file instead of this recording, to run or fix; see [step 6](#6-load-it-again-run-it-save-back).
 - **Steps:** this recording, to replay or fix.
 - **Export…:** writes the recording as a recorded test file or a Java test, without an agent.
 
@@ -130,6 +158,27 @@ $UI export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.or
 
 Either way, run the new test once from another screen before you commit it. See
 [Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/) for that loop in the IDE.
+
+## 6. Load it again, run it, save back
+
+A recorded test is a file you can open any time, also in a new session. The idle palette and, after Done, the bar
+(as **Load…**) offer it.
+
+1. Press **Load recorded test…**. The panel lists the files in the folder, each with its description and step count.
+   **Choose…** picks another folder. A file that cannot be read is greyed with the reason.
+2. Choose one and press **Load** (or double click it). It replaces the current recording, and the panel says how many
+   steps that is. The bar is titled **Loaded** and the Steps list opens with **▶ Run** in place of Replay all.
+3. Pick the **Replay speed** and press **▶ Run**. The app is reset first, as when the test runs for real, then every
+   step runs. **Step by step** waits for **Next** at each step; an action and its checks are one step. ✓ and ✗ stay on
+   the steps until the next run.
+4. To fix it, use the Steps list as when recording: name, delete, redo from a step, undo.
+5. Press **Export…**. Under the test's own name the button reads **Save** and writes over the file; under another
+   name it reads **Export** and writes a new file, so the original stays.
+
+The agent is refused while you run: its calls come back busy until you finish. Where the files live and how the agent
+and CI run them is on [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+
+<!-- TODO picture (Task 12): the Loaded bar with the Steps panel showing ▶ Run and the Replay speed on Step by step -->
 
 ## Answer the agent in the app
 
@@ -161,5 +210,7 @@ What the palette does not record yet is in [Limits](/swing-ui-agent/project/limi
 ## What's next
 
 - [Record a test with the agent](/swing-ui-agent/start/record/): the same result from a description.
+- [Record together with your agent](/swing-ui-agent/start/record-together/): you and the agent share one recording.
+- [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
 - [Run the tests](/swing-ui-agent/start/run/).
 - [Leases and several clients](/swing-ui-agent/guides/leases/): how a person and a test run share the agent.

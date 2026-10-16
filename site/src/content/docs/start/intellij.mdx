@@ -72,16 +72,28 @@ Run **Order Desk** (or use the one that is already running). The palette appears
 4. Press **Check**, click an element, and choose a check from the menu. Press **Record** to go on recording.
 5. Press **Steps** to see the recording. Replay it, redo from a step, or delete one until the recording is right.
 6. Press **Done**.
+7. Optional: give steps and checks a sentence of your own (double click a row in **Steps**, or **⋯** ▸ **Describe this
+   step…**). See [Sentences and groups](/swing-ui-agent/guides/sentences/).
 
 A recording can also be checks only, such as "ORD-1639 is Placed": the test then only asserts. More on each step in
 [Record a test by showing it](/swing-ui-agent/start/show/).
 
-## 3. Export it as a JUnit class
+## 3. Export it
 
-After **Done** the palette offers **Export…**:
+After **Done** the palette offers **Export…**. It writes the recording in one of two kinds, and the panel opens on
+the first:
+
+- **Recorded test:** a JSON file with a name and a folder (`uitest` by default). It needs no compiling and anyone
+  can run it from the palette. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+- **Java test:** a JUnit class, which this page goes on with. For which one to pick, see
+  [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+
+{/* TODO picture (Task 12): the Export panel with Java test chosen, class CancelOrderUiIT and the package filled in */}
+
+For a JUnit class:
 
 1. Press **Export…**.
-2. Choose **Java test** (the panel opens on **Recorded test**) and enter the class name, ending in `UiIT`, for
+2. Choose **Java test** and enter the class name, ending in `UiIT`, for
    example `CancelOrderUiIT`. The package is already filled in with the app's own package,
    `io.github.kormcrete.orderdesk`.
 3. Press **Export**.
@@ -104,6 +116,16 @@ java -jar target/swing-ui-agent-agent.jar --port 8770 \
 3. Put the app on another screen, for example open an order's tab, and run the test from the gutter. It has to get
    to its own starting screen and pass from there.
 4. Commit it with the project. **UI tests** and `mvn -B -Pui verify` now run it with the others.
+
+## Run a recorded test
+
+If you exported a **Recorded test**, there is no class to run. With **Order Desk** running:
+
+- **In the palette:** press **Load recorded test…**, choose the file, **Load**, then **▶ Run**. Choose **Step by
+  step** in **Replay speed** to watch it one step at a time. See
+  [Record a test by showing it](/swing-ui-agent/start/show/#6-load-it-again-run-it-save-back).
+- **From Maven or CI:** a small `@UiTest` class with `RecordedTests.of(ui)` runs every file in `uitest` (or those
+  listed in `uitest/gate.txt`) like the other UI tests. Order Desk does not have that class yet. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
 
 ## Debug a test
 
