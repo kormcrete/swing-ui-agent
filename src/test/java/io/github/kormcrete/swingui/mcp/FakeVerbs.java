@@ -121,7 +121,11 @@ public class FakeVerbs implements Verbs {
     @Override public VerbOutcome drop(Locator target, List<String> files, String text, Long timeout) {
         return verb("drop " + target + " " + files + " " + text);
     }
+    /** The expectations {@code expect} was given, in order. */
+    public final java.util.List<Expectation> expectations = new java.util.ArrayList<Expectation>();
+
     @Override public VerbOutcome expect(Locator target, Expectation expectation, Long timeout) {
+        expectations.add(expectation);
         return verb("expect " + target);
     }
     @Override public VerbOutcome scroll(Locator target, String to, Integer pages, Long timeout) {

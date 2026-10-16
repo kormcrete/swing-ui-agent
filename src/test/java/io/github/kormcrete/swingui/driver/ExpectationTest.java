@@ -24,6 +24,18 @@ class ExpectationTest {
     }
 
     @Test
+    void absentIsAKindOfItsOwnAndOnlyTrue() {
+        Expectation absent = new Expectation();
+        absent.absent = true;
+        absent.validate();
+        absent.text = "a";
+        assertBad(absent, "exactly one");
+        Expectation no = new Expectation();
+        no.absent = false;
+        assertBad(no, "'absent' is true");
+    }
+
+    @Test
     void rowsNeedAKnownOperator() {
         Expectation e = new Expectation();
         e.rows = new Expectation.Count();

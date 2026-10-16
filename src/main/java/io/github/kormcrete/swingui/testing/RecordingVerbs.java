@@ -166,6 +166,7 @@ public final class RecordingVerbs implements Verbs {
         if (e.state != null) return "state=" + e.state;
         if (e.text != null) return "text=" + e.text;
         if (e.value != null) return "value=" + e.value;
+        if (e.absent != null) return "absent";
         if (e.rows != null) return "rows=" + e.rows.op + " " + e.rows.value;
         if (e.cell != null) return "cell=" + e.cell.row + "/" + e.cell.column + "=" + e.cell.expected;
         return "selected=" + e.selected;

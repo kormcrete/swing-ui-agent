@@ -78,7 +78,7 @@ A step is an object with an `action` and the fields of that action: the same ste
 - **`say`:** optional. A one-line sentence for the step. See [Sentences and groups](/swing-ui-agent/guides/sentences/).
 - **`checks`:** optional, not empty when present. The checks that run after the step.
 
-A check is an `expect` step without the `"action"`: its `target` and what it expects (`text`, ...), and an optional `say`. Checks go under the step they check, never as steps of their own. A step that is `"action": "expect"` is refused.
+A check is an `expect` step without the `"action"`: its `target` and what it expects (`text`, ...), and an optional `say`. What it expects is one of `state`, `text`, `value`, `tooltip`, `rows`, `cell`, `selected`, `shown` (`true`: the element is there and shown) or `absent` (`true`: the element is gone, with a locator, not a ref; for example a closed tab). Checks go under the step they check, never as steps of their own. A step that is `"action": "expect"` is refused.
 
 A `do` step (version 3) runs one of a plugin's domain steps with concrete values: `{"action": "do", "step": "order-desk:addToCart", "params": {"product": "Gel pen, black"}}`. The agent names the plugin before the step's id. A domain check sits in `checks` and keeps its `"action": "do"`. A recorded test can hold any domain step; only an export as a Java test needs the plugin to give the step a Java form.
 

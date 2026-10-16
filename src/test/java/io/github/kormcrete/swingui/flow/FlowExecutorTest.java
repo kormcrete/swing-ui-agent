@@ -83,6 +83,20 @@ class FlowExecutorTest {
         assertThat(host.verbs.calls).isEmpty();
     }
 
+    @Test
+    void aClosedTabIsCheckedAbsentAndAShownOneIsCheckedNotHidden() {
+        FakeVerbs verbs = new FakeVerbs();
+        FlowResult result = new FlowExecutor().run(FlowJson.parse("{\"name\":\"t\",\"steps\":["
+                + "{\"action\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"ORD-1640\"},\"absent\":true},"
+                + "{\"action\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"Orders\"},\"shown\":true}]}"),
+                new RecordingStepHost(verbs));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(verbs.expectations).hasSize(2);
+        assertThat(verbs.expectations.get(0).absent).isTrue();
+        assertThat(verbs.expectations.get(1).state).containsExactly("!hidden");
+    }
+
     // ---- the executor's own rules ----------------------------------------------------------
 
     @Test

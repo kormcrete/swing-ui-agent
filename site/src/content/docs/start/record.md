@@ -57,7 +57,7 @@ $UI expect '{"target":{"role":"tab","name":"New order · Ada Shop Ltd"},"state":
 $UI expect '{"target":{"role":"label","name":"Invoice 30 days","match":"contains","scope":["tab:New order · Ada Shop Ltd"]},"state":["!hidden"]}'
 ```
 
-`expect` takes exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell` or `selected`, and retries until it holds (10 seconds by default). The agent asserts what you asked for, not everything it can see.
+`expect` takes exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell`, `selected`, `shown` or `absent`, and retries until it holds (10 seconds by default). `"shown": true` checks that the element is there and shown; `"absent": true` waits until it is gone, for example after a tab is closed. The agent asserts what you asked for, not everything it can see.
 
 ## 6. Save it as a recorded test
 
@@ -114,6 +114,7 @@ class NewOrderForAdaUiIT {
 
 - `class` is required and ends in `UiIT`. `method` defaults to `recorded`, `package` to `recorded` (or the plugin's export package).
 - An export clears the recording. Reset again before the next test.
+- `export_test` writes under the app's working directory unless you pass `dir` (the test sources root, e.g. `<project>/src/test/java`); a working directory without `pom.xml` or `build.gradle` adds a `warning` naming the path.
 - `export_test` refuses a recording that did not begin at a reset, an empty one, bad names and an existing file. A refusal keeps the recording, so fix the problem and export again.
 - A test that does not begin by reaching its own screen is still written, with a `startWarning` (see [Reset and the starting screen](/swing-ui-agent/guides/reset/#recording-starts-at-a-reset)). Reset and record again with a `menu` or `press` first step.
 

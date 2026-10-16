@@ -345,6 +345,18 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aCancelledFileChooserIsRecorded() throws Exception {
+        call("{\"op\":\"start\"}");
+        backend.verbs.outcome.recorded.clear(); // chooseFile has no target to record
+        JsonNode ran = mapper.readTree(session.batch(mapper.readTree(
+                "{\"steps\":[{\"verb\":\"choose_file\",\"approve\":false}]}")));
+        assertThat(ran.path("passed").asBoolean()).as(ran.toString()).isTrue();
+        JsonNode steps = call("{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("java").asText()).isEqualTo("ui.chooseFile(null, false);");
+    }
+
+    @Test
     void aPopupListPickIsRecorded() throws Exception {
         call("{\"op\":\"start\"}");
         JsonNode ran = mapper.readTree(session.verb("click",

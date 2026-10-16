@@ -26,6 +26,14 @@ class CheckMenuTest {
     }
 
     @Test
+    void anyElementOffersIsShownAsTheLastChoice() {
+        List<CheckMenu.Choice> choices = CheckMenu.choices(scene.inspector.component(scene.rush));
+        CheckMenu.Choice shown = choices.get(choices.size() - 1);
+        assertThat(shown.label).isEqualTo("Is shown");
+        assertThat(shown.step).containsEntry("action", "expect").containsEntry("shown", true);
+    }
+
+    @Test
     void aCheckBoxOffersItsState() {
         scene.rush.setSelected(true);
         CheckMenu.Choice state = first(CheckMenu.choices(scene.inspector.component(scene.rush)));

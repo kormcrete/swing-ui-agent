@@ -91,6 +91,46 @@ class UiMcpExportTestTest {
     }
 
     @Test
+    void dirWinsOverTheDefault(@TempDir Path elsewhere) throws Exception {
+        clickSave(); // swingui.testsDir (setUp) names another place: dir still wins
+        JsonNode out = mapper.readTree(session.exportTest("DirUiIT", "m", "p", false, elsewhere.toString()));
+        Path file = elsewhere.resolve("p/DirUiIT.java");
+        assertThat(out.path("savedTo").asText()).isEqualTo(file.toAbsolutePath().normalize().toString());
+        assertThat(Files.exists(file)).isTrue();
+        assertThat(Files.exists(testsDir.resolve("p/DirUiIT.java"))).isFalse();
+        assertThat(out.has("warning")).isFalse();
+    }
+
+    @Test
+    void recordingExportAsJavaHonoursDir(@TempDir Path elsewhere) throws Exception {
+        clickSave();
+        JsonNode out = mapper.readTree(session.recordingExport(mapper.readTree(
+                "{\"as\":\"java\",\"class\":\"ViaToolUiIT\",\"package\":\"p\",\"dir\":"
+                        + mapper.writeValueAsString(elsewhere.toString()) + "}")));
+        assertThat(out.path("savedTo").asText())
+                .isEqualTo(elsewhere.resolve("p/ViaToolUiIT.java").toAbsolutePath().normalize().toString());
+    }
+
+    @Test
+    void aWorkingDirWithoutABuildFileWarns(@TempDir Path cwd) throws Exception {
+        clickSave();
+        System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        session.workingDir(cwd);
+        JsonNode warned = mapper.readTree(session.exportTest("NoBuildUiIT", "m", "p", false));
+        // still written, into the working directory
+        assertThat(Files.exists(cwd.resolve("src/test/java/p/NoBuildUiIT.java"))).isTrue();
+        assertThat(warned.path("warning").asText()).contains(cwd.toAbsolutePath().normalize().toString()).contains("dir");
+
+        // a build file there: no warning
+        Files.write(cwd.resolve("pom.xml"), "<project/>".getBytes(StandardCharsets.UTF_8));
+        assertThat(mapper.readTree(session.exportTest("BuildUiIT", "m", "p", false)).has("warning")).isFalse();
+        // dir named: no warning either, whatever the working directory holds
+        Files.delete(cwd.resolve("pom.xml"));
+        assertThat(mapper.readTree(session.exportTest("DirNamedUiIT", "m", "p", false, cwd.resolve("x").toString()))
+                .has("warning")).isFalse();
+    }
+
+    @Test
     void anExistingFileIsNeverOverwritten() throws Exception {
         clickSave();
         session.exportTest("SaveUiIT", "a", "p", false);

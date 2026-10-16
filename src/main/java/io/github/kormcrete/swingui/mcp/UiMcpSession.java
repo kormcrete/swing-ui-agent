@@ -1649,12 +1649,34 @@ public class UiMcpSession {
      * needs a reset first, and is refused while a recording someone started runs ({@link #refuseClearWhileRecording}).
      */
     public String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
-        // the last steps' folds are in: waited for without the lock, which the matcher thread needs to apply them
-        folding.settle(FOLD_WAIT_MS);
-        return exportTestLocked(className, method, pkg, clear);
+        return exportTest(className, method, pkg, clear, null);
     }
 
-    private synchronized String exportTestLocked(String className, String method, String pkg, boolean clear)
+    /**
+     * As {@link #exportTest(String, String, String, boolean)}, writing under {@code dir} (the test sources root) when it
+     * is not empty: it wins over {@code -Dswingui.testsDir} and the plugin's module. When none of the three decides and the
+     * working directory holds no {@code pom.xml}, {@code build.gradle} or {@code build.gradle.kts}, the file is still
+     * written and the result's {@code warning} names where, suggesting {@code dir}.
+     */
+    public String exportTest(String className, String method, String pkg, boolean clear, String dir) throws Exception {
+        // the last steps' folds are in: waited for without the lock, which the matcher thread needs to apply them
+        folding.settle(FOLD_WAIT_MS);
+        return exportTestLocked(className, method, pkg, clear, dir);
+    }
+
+    private Path workingDir = Paths.get("");
+
+    /** Tests: the directory the default export folder and the build-file check are seen from. */
+    synchronized void workingDir(Path dir) {
+        this.workingDir = dir;
+    }
+
+    private static boolean hasBuildFile(Path dir) {
+        return Files.isRegularFile(dir.resolve("pom.xml")) || Files.isRegularFile(dir.resolve("build.gradle"))
+                || Files.isRegularFile(dir.resolve("build.gradle.kts"));
+    }
+
+    private synchronized String exportTestLocked(String className, String method, String pkg, boolean clear, String dir)
             throws Exception {
         if (clear) refuseClearWhileRecording();
         requireResetStart();
@@ -1665,7 +1687,9 @@ public class UiMcpSession {
 
         String configured = System.getProperty(TESTS_DIR_PROP);
         boolean genericLocation = defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty()) && configured == null;
-        Path root = configured != null ? Paths.get(configured) : testsDir(Paths.get(""), defaults.moduleDir);
+        boolean dirGiven = dir != null && !dir.trim().isEmpty();
+        Path root = dirGiven ? workingDir.resolve(dir.trim())
+                : configured != null ? Paths.get(configured) : testsDir(workingDir, defaults.moduleDir);
         Path file = root.resolve(packageName.replace('.', '/')).resolve(className + ".java");
         if (Files.exists(file)) {
             throw new IllegalArgumentException(file.toAbsolutePath().normalize() + " already exists; edit it instead");
@@ -1695,6 +1719,14 @@ public class UiMcpSession {
             result.put("warning", "no app plugin is ready, so the file went to the generic location "
                     + "(src/test/java/" + packageName.replace('.', '/') + " under the working directory); name a package or set -D"
                     + TESTS_DIR_PROP + " to place it");
+        }
+        if (!dirGiven && configured == null && defaults.moduleDir == null && !hasBuildFile(workingDir.toAbsolutePath())) {
+            String where = file.toAbsolutePath().normalize().toString();
+            String note = "the working directory " + workingDir.toAbsolutePath().normalize() + " holds no pom.xml, build.gradle "
+                    + "or build.gradle.kts, so the test went to " + where + "; pass dir (the test sources root, e.g. "
+                    + "<project>/src/test/java) to place it";
+            String old = result.path("warning").asText("");
+            result.put("warning", old.isEmpty() ? note : old + "; " + note);
         }
         if (startWarning != null) result.put("startWarning", startWarning);
         result.put("source", source);
@@ -1853,10 +1885,12 @@ public class UiMcpSession {
         FlowResult result;
         // the reset is the agent's too, as in the palette's own runs: the person's recorder ignores it
         Inspector.agentActing(true);
+        agentReplaying = "running recorded test " + flow.name;
         try {
             appReset.run();
             result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).run(flow, host);
         } finally {
+            agentReplaying = null;
             Inspector.agentActing(false);
         }
 
@@ -2305,6 +2339,11 @@ public class UiMcpSession {
         }
     }
 
+    /** What the agent is replaying or running (a recording replay, a recorded test run, a reset to a starting screen), or null. Read without the lock. */
+    public String replayingReason() {
+        return agentReplaying;
+    }
+
     /** The agent's edits wait for no replay: they are refused, without taking the session's lock the replay holds. */
     private void refuseWhileReplaying() {
         String replaying = agentReplaying;
@@ -2519,13 +2558,13 @@ public class UiMcpSession {
         boolean clear = args.path("clear").asBoolean(false);
         if ("java".equals(as)) {
             return exportTest(args.path("class").asText(""), args.path("method").asText(""),
-                    args.path("package").asText(""), clear);
+                    args.path("package").asText(""), clear, args.path("dir").asText(""));
         }
         if ("recorded".equals(as)) {
             return exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
                     args.path("description").asText(""), clear);
         }
-        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': recorded (name, dir?, description?) or java (class, method?, package?)");
+        throw new DriverException(Reason.BAD_INPUT, "export needs 'as': recorded (name, dir?, description?) or java (class, method?, package?, dir?)");
     }
 
     /** Makes the recorded test file the recording (stopped); refused while a recording runs or a person is busy. */

@@ -634,8 +634,11 @@ public final class LiveVerbs implements Verbs {
     @Override
     public VerbOutcome expect(final Locator target, final Expectation expectation, Long timeout) {
         if (target == null) throw bad("expect needs a 'target'");
-        if (expectation == null) throw bad("expect needs one of state, text, value, rows, cell");
+        if (expectation == null) throw bad("expect needs one of state, text, value, tooltip, rows, cell, selected, absent");
         expectation.validate();
+        if (expectation.absent != null && target.ref != null) {
+            throw bad("absent needs a locator, not a ref: a ref names an element that is there");
+        }
         long deadline = System.currentTimeMillis() + waitMillis(timeout);
         String lastFailure = null;
         DriverException lastMiss = null;
@@ -643,6 +646,16 @@ public final class LiveVerbs implements Verbs {
             try {
                 final Resolved[] found = new Resolved[1];
                 String failure = Edt.call(() -> {
+                    if (expectation.absent != null) {
+                        try {
+                            found[0] = driver.resolver().resolve(target);
+                        } catch (DriverException gone) {
+                            if (gone.reason() == Reason.NOT_FOUND) return null;
+                            if (gone.reason() != Reason.AMBIGUOUS) throw gone;
+                            return "expected " + target + " to be absent but several of it are still there";
+                        }
+                        return Expectations.check(found[0], expectation, null);
+                    }
                     found[0] = driver.resolver().resolve(target);
                     // A section's state is asked fresh from its source, by component identity, not role:
                     // a claimed button keeps role "button". Only a state assertion uses it.
@@ -652,7 +665,9 @@ public final class LiveVerbs implements Verbs {
                 });
                 if (failure == null) {
                     VerbOutcome out = new VerbOutcome();
-                    Map<String, Aimed> aimed = Collections.singletonMap("target", new Aimed(found[0], new Point(), found[0].component));
+                    // an absent element has nothing to aim at: the step is recorded as the locator the caller gave
+                    Map<String, Aimed> aimed = found[0] == null ? Collections.<String, Aimed>emptyMap()
+                            : Collections.singletonMap("target", new Aimed(found[0], new Point(), found[0].component));
                     out.recorded.putAll(record(one("target", target), aimed));
                     if (expectation.cell != null) out.row = cellRow(found[0], expectation.cell.row);
                     return out;

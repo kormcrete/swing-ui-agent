@@ -153,6 +153,9 @@ public final class UiMcpTools {
                 p.putObject("method").put("type", "string").put("description", "Test method name (default: recorded)");
                 p.putObject("package").put("type", "string")
                         .put("description", "Java package (default: the app plugin's export package, else 'recorded')");
+                p.putObject("dir").put("type", "string")
+                        .put("description", "The test sources root to write under, e.g. <project>/src/test/java; wins over "
+                                + "-Dswingui.testsDir and the plugin's module. Name it when the app runs outside the project");
                 p.putObject("clear").put("type", "boolean")
                         .put("description", "Empty the recording after exporting (default: true); reset before "
                                 + "recording the next test. Refused while a recording started by recording start or "
@@ -161,7 +164,7 @@ public final class UiMcpTools {
                 return tool(m, "export_test",
                         "Write the steps recorded since the last session reset as a JUnit @UiTest class under "
                         + "<module>/src/test/java/<package>/<class>.java (the module is the app plugin's export "
-                        + "module, else the working directory; -Dswingui.testsDir overrides). The test starts where "
+                        + "module, else the working directory; dir or -Dswingui.testsDir overrides, and a working directory with no pom.xml or build.gradle makes the result carry a warning naming where the file went). The test starts where "
                         + "the recording did, right after a reset, so it must begin by getting to its own starting "
                         + "screen: without an app plugin a reset only closes dialogs, and startWarning flags a test "
                         + "that does not begin with menu, press or navigate. Only steps with a Java form are recorded "
@@ -175,7 +178,7 @@ public final class UiMcpTools {
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.exportTest(args.path("class").asText(""), args.path("method").asText(""),
-                        args.path("package").asText(""), args.path("clear").asBoolean(true));
+                        args.path("package").asText(""), args.path("clear").asBoolean(true), args.path("dir").asText(""));
             }
         });
 
@@ -400,7 +403,7 @@ public final class UiMcpTools {
                 p.putObject("package").put("type", "string").put("description", "export java: the package.");
                 p.putObject("name").put("type", "string").put("description",
                         "export recorded: the file name without .json; load: a recorded test in the recorded tests folder.");
-                p.putObject("dir").put("type", "string").put("description", "export recorded: the folder.");
+                p.putObject("dir").put("type", "string").put("description", "export recorded: the folder; export java: the test sources root (e.g. <project>/src/test/java).");
                 p.putObject("description").put("type", "string").put("description", "export recorded: what the recorded test does.");
                 p.putObject("clear").put("type", "boolean").put("description",
                         "export: empty the recording afterwards (default false); refused while a recording started "

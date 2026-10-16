@@ -317,6 +317,49 @@ class SessionToolTest {
     }
 
     @Test
+    void aResetWhileTheAgentReplaysIsRefusedAndTheRecordingIsKept() throws Exception {
+        io.github.kormcrete.swingui.mcp.FakeVerbs fake = new io.github.kormcrete.swingui.mcp.FakeVerbs();
+        Plugins none = new Plugins(fake);
+        UiMcpSession recording = new UiMcpSession(none, none, mapper);
+        SessionTool tool = new SessionTool(none, new Lease(System::currentTimeMillis), recording, fake,
+                new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
+        recording.appReset(tool.appReset());
+        recording.startRecording(true);
+        fake.outcome.recorded.put("target", new io.github.kormcrete.swingui.driver.model.Recorder.Recorded(
+                io.github.kormcrete.swingui.driver.model.Locator.of("button", "Save"), false));
+        recording.verb("click", mapper.readTree("{\"target\":{\"ref\":\"e3\"}}"));
+
+        final java.util.concurrent.CountDownLatch inside = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        fake.during = () -> {
+            inside.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread replay = new Thread(() -> {
+            try {
+                recording.recording(mapper.readTree("{\"op\":\"replay\"}"));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }, "replay");
+        replay.start();
+        try {
+            assertThat(inside.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> tool.invoke(mapper.readTree("{\"op\":\"reset\"}")))
+                    .hasMessageContaining("BUSY").hasMessageContaining("replaying the recording");
+        } finally {
+            release.countDown();
+            replay.join(10_000);
+        }
+        // the recording is still the one that was replayed
+        assertThat(mapper.readTree(recording.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps")).hasSize(1);
+    }
+
+    @Test
     void withoutAPluginAResetThatNamesAUserIsACapabilityGap() {
         assertThatThrownBy(() -> callOnEmpty("{\"op\":\"reset\",\"alias\":\"alice\"}"))
                 .hasMessage("CAPABILITY_GAP: logging in as alice needs an app plugin with AppHooks;"

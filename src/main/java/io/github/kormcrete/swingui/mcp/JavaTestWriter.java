@@ -583,7 +583,7 @@ public final class JavaTestWriter {
         }
 
         private String buildChooseFile(ChooseFileVerb v) {
-            String args = quote(v.path);
+            String args = literal(v.path);
             if (v.approve != null) args += ", " + (v.approve ? "true" : "false");
             return clientRoot(v.timeout) + ".chooseFile(" + args + ");";
         }
@@ -672,6 +672,10 @@ public final class JavaTestWriter {
                         .append(", ").append(quote(v.cell.expected)).append(")");
             } else if (v.selected != null) {
                 sb.append(".hasSelectedRows(").append(joinInts(v.selected)).append(")");
+            } else if (v.shown != null) {
+                sb.append(".isVisible()");
+            } else if (v.absent != null) {
+                sb.append(".isAbsent()");
             } else {
                 problems.add(what + ": " + v.describe() + " has nothing to check");
                 return null;

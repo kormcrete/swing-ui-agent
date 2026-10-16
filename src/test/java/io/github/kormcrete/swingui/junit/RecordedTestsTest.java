@@ -160,4 +160,39 @@ class RecordedTestsTest {
         assertThat(calls.subList(second, third).stream().anyMatch(c -> c.startsWith("expect"))).isTrue();
         assertThat(calls.subList(third, calls.size()).stream().anyMatch(c -> c.startsWith("expect"))).isTrue();
     }
+
+    @Test
+    void folderPrecedence() throws IOException {
+        // argument, then -Dswingui.recordedDir, then <module>/uitest
+        Path viaProp = java.nio.file.Files.createDirectories(dir.resolve("prop"));
+        Path viaArg = java.nio.file.Files.createDirectories(dir.resolve("arg"));
+        Files.write(viaProp.resolve("from-prop.json"), PASS.getBytes(StandardCharsets.UTF_8));
+        Files.write(viaArg.resolve("from-arg.json"), PASS.getBytes(StandardCharsets.UTF_8));
+        String before = System.getProperty("swingui.recordedDir");
+        System.setProperty("swingui.recordedDir", viaProp.toString());
+        try {
+            assertThat(names(RecordedTests.of(null, viaArg))).containsExactly("from-arg");
+            assertThat(names(RecordedTests.of(null))).containsExactly("from-prop");
+        } finally {
+            if (before == null) System.clearProperty("swingui.recordedDir"); else System.setProperty("swingui.recordedDir", before);
+        }
+        // neither: the module's uitest folder (this module has none with files in it, so the selection is empty and refuses)
+        assertThat(io.github.kormcrete.swingui.flow.RecordedTestFiles.DEFAULT_DIR).isEqualTo("uitest");
+    }
+
+    @Test
+    void aNullCallerFallsBackToTheWorkingDir() throws Exception {
+        java.lang.reflect.Method of = RecordedTests.class.getDeclaredMethod("of", Client.class, String.class, Path.class);
+        of.setAccessible(true);
+        Files.write(dir.resolve("only.json"), PASS.getBytes(StandardCharsets.UTF_8));
+        @SuppressWarnings("unchecked")
+        Stream<DynamicTest> tests = (Stream<DynamicTest>) of.invoke(null, null, null, dir);
+        assertThat(names(tests)).containsExactly("only");
+    }
+
+    private static List<String> names(Stream<DynamicTest> tests) {
+        List<String> out = new ArrayList<String>();
+        tests.forEach(t -> out.add(t.getDisplayName()));
+        return out;
+    }
 }

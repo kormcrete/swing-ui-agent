@@ -42,6 +42,7 @@ public final class Expectations {
             throw new DriverException(Reason.BAD_INPUT, "a password field's content is never read");
         }
         if (e.state != null) return state(r, e.state, liveSection);
+        if (e.absent != null) return "expected " + r.describe() + " to be absent but it is still there";
         if (e.text != null) return compare("text", e.text, text(r));
         if (e.value != null) return compare("value", e.value, value(r));
         if (e.tooltip != null) {

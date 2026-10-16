@@ -467,6 +467,18 @@ class FixtureAppDriveIT {
         }
     }
 
+    @Test
+    @Order(18)
+    void anElementIsShownWhileItsDialogIsOpenAndAbsentOnceItIsAnswered() throws Exception {
+        step("click", "{'target':{'name':'delete'}}");
+        step("expect", "{'target':{'role':'button','name':'Yes'},'shown':true}");
+        JsonNode stillThere = call("expect", "{'target':{'role':'button','name':'Yes'},'absent':true,'timeout':300}");
+        assertThat(stillThere.path("passed").asBoolean()).as(stillThere.path("why").asText()).isFalse();
+        assertThat(stillThere.path("message").asText()).contains("absent");
+        step("answer", "{'button':'Yes'}");
+        step("expect", "{'target':{'role':'button','name':'Yes'},'absent':true}");
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {

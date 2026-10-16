@@ -223,6 +223,8 @@ final class CheckMenu extends JPopupMenu {
             String tip = ((JComponent) c).getToolTipText();
             if (tip != null && !tip.isEmpty()) out.add(new Choice("Its tooltip is “" + tip + "”", expect(t.locator, "tooltip", tip)));
         }
+        // anything the person can click is there to be seen: "absent" has no gesture (nothing to click), the agent writes it
+        out.add(new Choice("Is shown", expect(t.locator, "shown", true)));
         return out;
     }
 

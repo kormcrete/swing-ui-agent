@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
+import io.github.kormcrete.swingui.flow.verb.ChooseFileVerb;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
 import io.github.kormcrete.swingui.flow.verb.HoverVerb;
@@ -65,6 +66,30 @@ class JavaTestWriterTest {
 
     private static String[] bodyOf(Flow f) {
         return body(JavaTestWriter.write(f, "com.example.uitest.recorded", "SmokeUiIT", "walk"));
+    }
+
+    @Test
+    void shownAndAbsentChecksAreWrittenAsIsVisibleAndIsAbsent() {
+        ExpectVerb shown = new ExpectVerb();
+        shown.target = Locator.of("tab", "Orders");
+        shown.shown = true;
+        ExpectVerb absent = new ExpectVerb();
+        absent.target = Locator.of("tab", "ORD-1640");
+        absent.absent = true;
+        String[] lines = body(write(click(Locator.of("button", "Close tab")), shown, absent));
+        String all = String.join("\n", lines);
+        assertThat(all).contains("assertThat(ui.tab(\"Orders\")).isVisible();")
+                .contains("assertThat(ui.tab(\"ORD-1640\")).isAbsent();");
+    }
+
+    @Test
+    void aCancelledFileChooserIsWritten() {
+        ChooseFileVerb cancel = new ChooseFileVerb();
+        cancel.approve = false;
+        assertThat(body(write(cancel))[0]).contains("ui.chooseFile(null, false);");
+        ChooseFileVerb pick = new ChooseFileVerb();
+        pick.path = "/tmp/x.pdf";
+        assertThat(body(write(pick))[0]).contains("ui.chooseFile(\"/tmp/x.pdf\");");
     }
 
     @Test

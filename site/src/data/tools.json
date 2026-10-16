@@ -175,7 +175,7 @@
     },
     {
       "name": "export_test",
-      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; -Dswingui.testsDir overrides). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs; do steps), except a do step whose domain step has no Java form: a recording with one is refused, naming it - export it with export_recorded_test instead. Refuses a recording that did not begin at a reset or a recording start, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording. A step and its checks are one block; sentences become comments.",
+      "description": "Write the steps recorded since the last session reset as a JUnit @UiTest class under <module>/src/test/java/<package>/<class>.java (the module is the app plugin's export module, else the working directory; dir or -Dswingui.testsDir overrides, and a working directory with no pom.xml or build.gradle makes the result carry a warning naming where the file went). The test starts where the recording did, right after a reset, so it must begin by getting to its own starting screen: without an app plugin a reset only closes dialogs, and startWarning flags a test that does not begin with menu, press or navigate. Only steps with a Java form are recorded (verbs, including expect for checks; navigate, close, a leading loginAs; do steps), except a do step whose domain step has no Java form: a recording with one is refused, naming it - export it with export_recorded_test instead. Refuses a recording that did not begin at a reset or a recording start, a bad class/method/package name, an existing file, or an empty recording, naming each problem; a refusal keeps the recording. A step and its checks are one block; sentences become comments.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -190,6 +190,10 @@
           "package": {
             "type": "string",
             "description": "Java package (default: the app plugin's export package, else 'recorded')"
+          },
+          "dir": {
+            "type": "string",
+            "description": "The test sources root to write under, e.g. <project>/src/test/java; wins over -Dswingui.testsDir and the plugin's module. Name it when the app runs outside the project"
           },
           "clear": {
             "type": "boolean",
@@ -884,7 +888,7 @@
           },
           "dir": {
             "type": "string",
-            "description": "export recorded: the folder."
+            "description": "export recorded: the folder; export java: the test sources root (e.g. <project>/src/test/java)."
           },
           "description": {
             "type": "string",
@@ -2334,7 +2338,7 @@
     },
     {
       "name": "expect",
-      "description": "Checks an element without acting, retrying until it holds or the timeout (default 10000 ms) passes. Give exactly one of state, text, value, tooltip, rows, cell, selected. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Checks an element without acting, retrying until it holds or the timeout (default 10000 ms) passes. Give exactly one of state, text, value, tooltip, rows, cell, selected, shown, absent. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2484,6 +2488,14 @@
               "type": "integer"
             },
             "description": "The rows of a table, list or tree that must be selected, and only those, e.g. [0, 1]; order does not matter. Use [] for nothing selected."
+          },
+          "shown": {
+            "type": "boolean",
+            "description": "true: the element is there and shown (not hidden); the same as state [\"!hidden\"] and the Java isVisible()."
+          },
+          "absent": {
+            "type": "boolean",
+            "description": "true: the element is not there, e.g. a closed tab or dialog; waits until it is gone. Needs a locator, not a ref."
           },
           "timeout": {
             "type": "integer",

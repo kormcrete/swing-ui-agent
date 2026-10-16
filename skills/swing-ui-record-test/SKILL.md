@@ -94,7 +94,8 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
      {"verb":"press","keys":"Enter"}]}'
    ```
 5. **Check what is visible with `expect`**, so the check is recorded. It retries until its timeout (default 10 s).
-   Give exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell`, `selected`:
+   Give exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell`, `selected`, `shown`, `absent`
+   (`"shown":true` = it is there and shown; `"absent":true` = it is gone, e.g. a closed tab or dialog, with a locator, not a ref):
    ```sh
    $UI expect '{"target":{"role":"table"},"cell":{"row":{"Product":"A4 paper, 500 sheets"},"column":"Qty","expected":"3"}}'
    $UI expect '{"target":{"role":"label","name":"Total"},"text":"€31.32"}'
@@ -181,7 +182,7 @@ $UI export_test '{"class":"PlaceOrderUiIT"}'
 `class` is required and ends in `UiIT`; `method` defaults to `recorded`; `package` to the plugin's export
 package, else `recorded`; `clear` to true (refused while a `recording start` recording runs: stop it first). The
 file goes under `-Dswingui.testsDir` of the app JVM, else `src/test/java` of the plugin's module or of the app's
-working directory; `savedTo` names it. A refusal names each problem and keeps the recording: fix and retry. Read
+working directory; `dir` (the test sources root, e.g. `<project>/src/test/java`) wins over both, and `warning` names the path when the app's working directory is no project; `savedTo` names the file. A refusal names each problem and keeps the recording: fix and retry. Read
 `warning` (where the file went) and `startWarning` (reset and re-record with a `menu`/`press` first step).
 
 Review the source. Rename the method if useful. Add by hand only checks no verb expresses, with the Client API

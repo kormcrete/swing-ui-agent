@@ -63,6 +63,17 @@ class RecordedTestFilesTest {
     }
 
     @Test
+    void shownAndAbsentChecksReadBackAndAreWrittenAsTheyWere() throws Exception {
+        Flow flow = stepsOf(
+                "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Close tab\"}}",
+                "{\"action\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"ORD-1640\"},\"absent\":true}",
+                "{\"action\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"Orders\"},\"shown\":true}");
+        String text = RecordedTestFiles.write(flow);
+        assertThat(text).contains("\"absent\" : true").contains("\"shown\" : true");
+        assertThat(RecordedTestFiles.write(RecordedTestFiles.parse(text, "x"))).isEqualTo(text);
+    }
+
+    @Test
     void theFileUsesLineFeedsOnEveryOsAndEndsWithOne() throws Exception {
         String text = RecordedTestFiles.write(stepsOf("{\"action\":\"menu\",\"path\":[\"Orders\"]}"));
 
