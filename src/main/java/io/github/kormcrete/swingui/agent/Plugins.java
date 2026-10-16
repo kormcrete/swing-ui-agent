@@ -13,6 +13,7 @@ import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.PluginParts;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.spi.UiInventory;
+import io.github.kormcrete.swingui.vocab.PatternCompiler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -136,6 +137,20 @@ public final class Plugins implements StepHost, UiInventory {
             }
         }
         return all;
+    }
+
+    /**
+     * The compiled patterns of {@code step} (its own first, then its {@code matchAlso}; {@code why} says why it has no
+     * own pattern), or null when its plugin is gone or no longer offers it.
+     */
+    public PatternCompiler.Compiled patternsOf(VocabularyStep step) {
+        PluginSlot slot = null;
+        for (PluginSlot s : slots) if (s.name().equals(step.plugin)) slot = s;
+        if (slot == null) return null;
+        List<DomainStep> steps = slot.vocabulary();
+        List<PatternCompiler.Compiled> patterns = slot.patterns();
+        for (int i = 0; i < steps.size() && i < patterns.size(); i++) if (steps.get(i) == step.step) return patterns.get(i);
+        return null;
     }
 
     /** Every ready plugin's vocabulary problems, in plugin order. */

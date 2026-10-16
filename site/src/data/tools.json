@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "describe_ui",
-      "description": "The app facts the app plugin reports for the live client: activeTab, the navigate targets (navTargets: the friendly names, and navTargetEntryPointIds: the entry-point ids), the toolbar's toolbarActions (id/label/enabled/submenu), the menu bar's leaf menuPaths, navEntryPoints (roots, children), the open view's viewTabs and sections (every section it registered, including one never built - 'created':false; target it by its 'id') with sectionProblems, and any waiting dialog ('dialog': title, message, buttons - answer it with the 'answer' verb). Tables, buttons and fields are read from the element tree with 'snapshot' or 'read'. Pass 'fields' to get only the parts you need.",
+      "description": "The app facts the app plugin reports for the live client: activeTab, the navigate targets (navTargets: the friendly names, and navTargetEntryPointIds: the entry-point ids), the toolbar's toolbarActions (id/label/enabled/submenu), the menu bar's leaf menuPaths, navEntryPoints (roots, children), the open view's viewTabs and sections (every section it registered, including one never built - 'created':false; target it by its 'id') with sectionProblems, the plugins' domain steps as 'vocabulary' sentences (id, kind, sentence; the vocabulary tool has their params), and any waiting dialog ('dialog': title, message, buttons - answer it with the 'answer' verb). Tables, buttons and fields are read from the element tree with 'snapshot' or 'read'. Pass 'fields' to get only the parts you need.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -295,7 +295,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -417,7 +417,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -545,7 +545,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -700,7 +700,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -929,7 +929,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1036,6 +1036,41 @@
       }
     },
     {
+      "name": "vocabulary",
+      "description": "The domain steps the ready plugins offer: one step that stands for the clicks and checks it takes, e.g. \"Add {product} to the cart\". list: every step with id, kind (act or check), sentence, about, params {name, type, optional, default}, plugin and folds (a one-line summary of the patterns a recording must match to fold into it, or why it has none), plus problems for steps a plugin offered that were dropped. describe {step}: one step in full: its params with choices (the values that fit in the app right now, e.g. product names; they help you pick, a call may pass others), its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: a dry run of which steps of a recording range would fold; arrives with the matcher (CAPABILITY_GAP until then). Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without a plugin that offers a vocabulary, list is empty with a hint.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "list",
+              "describe",
+              "match"
+            ]
+          },
+          "step": {
+            "type": "string",
+            "description": "describe: a step id from list (<plugin>:<id> when two plugins use the same id)."
+          },
+          "from": {
+            "type": "integer",
+            "description": "match: the first step of the recording range."
+          },
+          "to": {
+            "type": "integer",
+            "description": "match: the last step of the recording range."
+          }
+        },
+        "required": [
+          "op"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
       "name": "read_clipboard",
       "description": "The system clipboard's text as {text}, e.g. to check what a copy in the app left there (a tab between cells, a line break between rows). text is null when the clipboard holds no text. A read: nothing is recorded; a test reads it with ui.clipboardText().",
       "inputSchema": {
@@ -1082,7 +1117,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1219,7 +1254,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1354,7 +1389,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1472,7 +1507,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1595,7 +1630,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1793,7 +1828,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -1969,7 +2004,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -2063,7 +2098,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -2182,7 +2217,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -2311,7 +2346,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }
@@ -2482,7 +2517,7 @@
               },
               "scope": {
                 "type": "array",
-                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
+                "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id).",
                 "items": {
                   "type": "string"
                 }

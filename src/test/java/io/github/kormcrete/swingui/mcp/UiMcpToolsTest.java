@@ -152,7 +152,7 @@ class UiMcpToolsTest {
         List<String> fields = new ArrayList<String>();
         out.fieldNames().forEachRemaining(fields::add);
         assertThat(fields).containsExactly("activeTab", "navTargets", "navTargetEntryPointIds", "toolbarActions",
-                "menuPaths", "navEntryPoints", "viewTabs", "sections", "sectionProblems", "dialog");
+                "menuPaths", "navEntryPoints", "viewTabs", "sections", "sectionProblems", "dialog", "vocabulary");
         assertThat(out.path("activeTab").asText()).isEqualTo("Orders");
         assertThat(out.path("navTargets").get(0).asText()).isEqualTo("Home");
         assertThat(out.path("navTargetEntryPointIds").get(0).asText()).isEqualTo("orders-finder");
@@ -350,9 +350,26 @@ class UiMcpToolsTest {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : tools) names.add(t.name());
         assertThat(names).containsExactlyInAnyOrder(
                 "describe_ui", "do_action", "do_actions", "batch",
-                "export_test", "export_recorded_test", "run_recorded_test", "snapshot", "read", "screenshot", "inspect", "recording", "read_clipboard", "read_file_chooser",
+                "export_test", "export_recorded_test", "run_recorded_test", "snapshot", "read", "screenshot", "inspect", "recording", "vocabulary", "read_clipboard", "read_file_chooser",
                 "click", "type", "press", "check", "select", "pick", "menu", "context_menu",
                 "answer", "choose_file", "drag", "drop", "expect", "scroll", "set_clipboard");
+    }
+
+    @Test
+    void theVocabularyToolIsReadOnlyWithThreeOps() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (!t.name().equals("vocabulary")) continue;
+            com.fasterxml.jackson.databind.JsonNode d = t.descriptor(mapper);
+            assertThat(d.path("annotations").path("readOnlyHint").asBoolean()).isTrue();
+            List<String> ops = new ArrayList<String>();
+            for (com.fasterxml.jackson.databind.JsonNode o : d.path("inputSchema").path("properties").path("op").path("enum")) {
+                ops.add(o.asText());
+            }
+            assertThat(ops).containsExactly("list", "describe", "match");
+            assertThat(d.path("inputSchema").path("required")).hasSize(1);
+            return;
+        }
+        throw new AssertionError("no vocabulary tool");
     }
 
     @Test

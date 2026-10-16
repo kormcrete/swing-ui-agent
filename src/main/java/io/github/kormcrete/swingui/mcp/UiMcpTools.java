@@ -30,7 +30,8 @@ public final class UiMcpTools {
                         + "toolbar's toolbarActions (id/label/enabled/submenu), the menu bar's leaf menuPaths, "
                         + "navEntryPoints (roots, children), the open view's viewTabs and sections (every section it "
                         + "registered, including one never built - 'created':false; target it by its 'id') with "
-                        + "sectionProblems, and any waiting dialog ('dialog': title, message, buttons - answer it "
+                        + "sectionProblems, the plugins' domain steps as 'vocabulary' sentences (id, kind, sentence; the vocabulary tool has "
+                        + "their params), and any waiting dialog ('dialog': title, message, buttons - answer it "
                         + "with the 'answer' verb). "
                         + "Tables, buttons and fields are read from the element tree with 'snapshot' or 'read'. "
                         + "Pass 'fields' to get only the parts you need.",
@@ -462,6 +463,32 @@ public final class UiMcpTools {
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception { return session.recording(args); }
+        });
+
+        tools.add(new McpToolDefinition() {
+            @Override public String name() { return "vocabulary"; }
+            @Override public ObjectNode descriptor(ObjectMapper m) {
+                ObjectNode schema = emptyObjectSchema(m);
+                ObjectNode p = schema.with("properties");
+                p.putObject("op").put("type", "string").putArray("enum").add("list").add("describe").add("match");
+                p.putObject("step").put("type", "string").put("description",
+                        "describe: a step id from list (<plugin>:<id> when two plugins use the same id).");
+                p.putObject("from").put("type", "integer").put("description", "match: the first step of the recording range.");
+                p.putObject("to").put("type", "integer").put("description", "match: the last step of the recording range.");
+                schema.putArray("required").add("op");
+                return readOnly(tool(m, "vocabulary",
+                        "The domain steps the ready plugins offer: one step that stands for the clicks and checks it takes, "
+                        + "e.g. \"Add {product} to the cart\". list: every step with id, kind (act or check), sentence, about, "
+                        + "params {name, type, optional, default}, plugin and folds (a one-line summary of the patterns a "
+                        + "recording must match to fold into it, or why it has none), plus problems for steps a plugin "
+                        + "offered that were dropped. describe {step}: one step in full: its params with choices (the values "
+                        + "that fit in the app right now, e.g. product names; they help you pick, a call may pass others), "
+                        + "its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: "
+                        + "a dry run of which steps of a recording range would fold; arrives with the matcher (CAPABILITY_GAP "
+                        + "until then). Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without "
+                        + "a plugin that offers a vocabulary, list is empty with a hint.", schema));
+            }
+            @Override public String invoke(JsonNode args) { return session.vocabulary(args); }
         });
 
         tools.add(new McpToolDefinition() {

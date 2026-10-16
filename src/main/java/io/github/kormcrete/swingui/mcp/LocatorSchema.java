@@ -19,7 +19,7 @@ final class LocatorSchema {
         string(p, "ref", "Ref from the last snapshot, e.g. e12; valid until the next snapshot.");
         string(p, "window", "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix.");
         array(p, "scope", "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, "
-                + "even one on a clickable box); an id:<name> step means "
+                + "even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means "
                 + "strictly inside the component whose getName() is <name> (not a contributed section id).");
         ArrayNode roles = string(p, "role", "The element's role.").putArray("enum");
         for (String r : Roles.ALL) roles.add(r);

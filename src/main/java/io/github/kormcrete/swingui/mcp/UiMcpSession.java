@@ -1029,7 +1029,14 @@ public class UiMcpSession {
         // A message or confirmation waiting for an answer: what it says and which buttons answer it.
         PendingDialog question = host.openDialog();
         if (question != null) r.set("dialog", mapper.valueToTree(question)); else r.putNull("dialog");
+        // The plugins' domain steps as sentences (id, kind, sentence); the vocabulary tool has the rest.
+        r.set("vocabulary", new VocabularyTool(plugins, mapper).sentences());
         return r;
+    }
+
+    /** The {@code vocabulary} tool: {@code list}, {@code describe {step}} and {@code match {from,to}}. Read-only. */
+    public String vocabulary(JsonNode args) {
+        return new VocabularyTool(plugins, mapper).run(args);
     }
 
     /**

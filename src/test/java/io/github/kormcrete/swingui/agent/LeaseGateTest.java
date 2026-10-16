@@ -71,6 +71,18 @@ class LeaseGateTest {
         throw new AssertionError("no describe_ui tool");
     }
 
+    @Test
+    void vocabularyIsReadOnly() {
+        for (McpToolDefinition t : io.github.kormcrete.swingui.mcp.UiMcpTools.build(null, m)) {
+            if ("vocabulary".equals(t.name())) {
+                assertThat(t.descriptor(m).path("annotations").path("readOnlyHint").asBoolean()).isTrue();
+                assertThat(LeaseGate.gate(Arrays.asList(t), lease, m).get(0).descriptor(m)).isEqualTo(t.descriptor(m));
+                return;
+            }
+        }
+        throw new AssertionError("no vocabulary tool");
+    }
+
     /** A test that only reads (or polls the DB between reads) is still running: its reads renew the lease. */
     @Test
     void aHolderThatOnlyReadsIsNotTakenOver() throws Exception {
