@@ -17,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The plugin contract names java.*, spi and driver only - never flow, mcp, agent or Jackson. One exception:
  * {@code junit.Client}, which a {@link DomainStep.Body} runs with, so that one step class written against the Client
- * a UI test uses runs in the app (the agent) and in a Java test unchanged. Client imports no JUnit.
+ * a UI test uses runs in the app (the agent) and in a Java test unchanged. Client imports no JUnit, but it does import
+ * {@code flow.UiUsers}: the rule is widened for exactly this class, and that is no reason to widen it further.
  */
 class SpiImportRuleTest {
 

@@ -100,21 +100,31 @@ public final class Plugins implements StepHost, UiInventory {
      * only as {@code <plugin>:<id>}, in both.
      */
     public List<VocabularyStep> vocabulary() {
-        List<PluginSlot> ready = new ArrayList<PluginSlot>();
-        Map<String, Integer> defined = new HashMap<String, Integer>();
+        List<String> plugins = new ArrayList<String>();
+        List<List<DomainStep>> vocabularies = new ArrayList<List<DomainStep>>();
         for (PluginSlot s : slots) {
             if (s.parts() == null) continue;
-            ready.add(s);
-            for (DomainStep d : s.vocabulary()) {
+            plugins.add(s.name());
+            vocabularies.add(s.vocabulary()); // one read per slot: a slot may turn ready meanwhile
+        }
+        return merge(plugins, vocabularies);
+    }
+
+    /** Names the steps of {@code vocabularies} (one immutable list per plugin, in plugin order). */
+    static List<VocabularyStep> merge(List<String> plugins, List<List<DomainStep>> vocabularies) {
+        Map<String, Integer> defined = new HashMap<String, Integer>();
+        for (List<DomainStep> v : vocabularies) {
+            for (DomainStep d : v) {
                 Integer n = defined.get(d.id());
                 defined.put(d.id(), n == null ? 1 : n + 1);
             }
         }
         List<VocabularyStep> all = new ArrayList<VocabularyStep>();
-        for (PluginSlot s : ready) {
-            for (DomainStep d : s.vocabulary()) {
-                String name = defined.get(d.id()) > 1 ? s.name() + ":" + d.id() : d.id();
-                all.add(new VocabularyStep(name, s.name(), d));
+        for (int i = 0; i < plugins.size(); i++) {
+            String plugin = plugins.get(i);
+            for (DomainStep d : vocabularies.get(i)) {
+                String name = defined.get(d.id()) > 1 ? plugin + ":" + d.id() : d.id();
+                all.add(new VocabularyStep(name, plugin, d));
             }
         }
         return all;

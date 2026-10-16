@@ -23,9 +23,10 @@ import java.util.function.Supplier;
  * }</pre>
  * The builder takes what it is given; the content is checked when the plugin becomes ready (see {@link Vocabulary}):
  * the id starts with a letter and holds letters, digits, {@code _} and {@code -}; param names start with a letter
- * and hold letters, digits and {@code _}, each declared once; every {@code {name}} in the sentence, in
- * {@link Builder#steps} and in the {@link Builder#java} call is a declared param; exactly one body; each
- * {@link Builder#steps}, {@link Builder#match} and {@link Builder#matchAlso} entry is a JSON object.
+ * and hold letters, digits and {@code _}, each declared once; an INT param's default is digits in int range; every
+ * {@code {name}} in the sentence, in {@link Builder#steps} and in the {@link Builder#java} call is a declared param;
+ * the {@link Builder#java} class looks like a class name; exactly one body; each {@link Builder#steps},
+ * {@link Builder#match} and {@link Builder#matchAlso} entry is a JSON object.
  * A step's values are concrete: nothing is captured or kept between steps.
  */
 public final class DomainStep {

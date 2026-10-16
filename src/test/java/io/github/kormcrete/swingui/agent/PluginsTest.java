@@ -138,4 +138,16 @@ class PluginsTest {
         assertThat(plugins.vocabulary()).isEmpty();
         assertThat(plugins.vocabularyProblems()).isEmpty();
     }
+
+    @Test
+    void theMergeNamesStepsFromOneSnapshotPerPlugin() {
+        // vocabulary() reads each ready slot once and merges those snapshots: a slot turning ready in between cannot
+        // make the counted ids and the named steps differ (it used to read every slot twice)
+        List<Plugins.VocabularyStep> merged = Plugins.merge(Arrays.asList("order-desk", "extras", "late"),
+                Arrays.asList(Arrays.asList(PluginSlotTest.addToCart(), step("placeOrder", "Place the order")),
+                        Arrays.asList(step("addToCart", "Add the first product to the cart")),
+                        java.util.Collections.<DomainStep>emptyList()));
+        assertThat(merged.stream().map(v -> v.name + " from " + v.plugin).collect(Collectors.toList())).containsExactly(
+                "order-desk:addToCart from order-desk", "placeOrder from order-desk", "extras:addToCart from extras");
+    }
 }

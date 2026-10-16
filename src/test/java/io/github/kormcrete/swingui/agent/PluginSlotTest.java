@@ -164,12 +164,34 @@ class PluginSlotTest {
         PluginSlot slot = vocabularySlot("order-desk",
                 DomainStep.act("placeOrder", "Place the order").code(NOTHING)
                         .match("{\"action\":\"click\",\"target\":{\"name\":\"Place order\"}}", "[1]")
-                        .matchAlso("{\"action\":\"answer\"").build());
+                        .matchAlso("{\"action\":\"answer\"").matchAlso("{\"a\":1} x").build());
         assertThat(slot.vocabulary()).isEmpty();
         assertThat(slot.vocabularyProblems()).hasSize(1);
         assertThat(slot.vocabularyProblems().get(0))
                 .startsWith("order-desk: step 'placeOrder' dropped: match entry 2 is not a JSON object; "
-                        + "matchAlso 1 entry 1 is not valid JSON (");
+                        + "matchAlso 1 entry 1 is not valid JSON (")
+                .contains("; matchAlso 2 entry 1 is not valid JSON (");
+    }
+
+    @Test
+    void optionalAndChoicesBeforeAnyParamAreRefusedAtOnce() {
+        assertThatThrownBy(() -> DomainStep.act("placeOrder", "Place the order").optional("1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("optional(...) applies to a param: declare one first");
+        assertThatThrownBy(() -> DomainStep.act("placeOrder", "Place the order").choices(Collections::emptyList))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("choices(...) applies to a param: declare one first");
+    }
+
+    @Test
+    void anIntDefaultMustFitAnIntAndBracesAroundANumberAreNoParam() {
+        PluginSlot slot = vocabularySlot("order-desk",
+                DomainStep.act("setQuantity", "Set {qty}").param("qty", ParamType.INT).optional("99999999999")
+                        .code(NOTHING).build(),
+                DomainStep.act("pickFirst", "Pick option {1}").code(NOTHING).build());
+        assertThat(ids(slot.vocabulary())).containsExactly("pickFirst");
+        assertThat(slot.vocabularyProblems()).containsExactly("order-desk: step 'setQuantity' dropped: the default of "
+                + "INT param 'qty' is not a whole number in int range: '99999999999'");
     }
 
     @Test
@@ -193,7 +215,7 @@ class PluginSlotTest {
         assertThat(slot.vocabularyProblems()).containsExactly(
                 "order-desk: step 'add to cart' dropped: the id must start with a letter and hold only letters, digits, "
                         + "_ and -; param 'my product': a name must start with a letter and hold only letters, digits and _",
-                "order-desk: step 'setQuantity' dropped: the default of INT param 'qty' is not a whole number: 'one'; "
+                "order-desk: step 'setQuantity' dropped: the default of INT param 'qty' is not a whole number in int range: 'one'; "
                         + "param 'qty' is declared twice; the java class 'Order Desk Steps' is not a class name");
     }
 

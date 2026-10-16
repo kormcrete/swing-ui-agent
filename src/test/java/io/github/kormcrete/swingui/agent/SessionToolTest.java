@@ -8,10 +8,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import io.github.kormcrete.swingui.mcp.UiMcpSession;
+import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.PluginParts;
 import io.github.kormcrete.swingui.spi.StepHost;
 
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.function.IntSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,9 +72,9 @@ class SessionToolTest {
     @Test
     void sessionListsVocabularyAndItsProblems() throws Exception {
         Plugins plugins = new Plugins(dialogs);
-        plugins.add("order-desk", Paths.get("order-desk-plugin/target/classes")).ready(new PluginParts(() -> java.util.Arrays
-                .asList(PluginSlotTest.addToCart(), io.github.kormcrete.swingui.spi.DomainStep.act("setQuantity", "Set {qty}")
-                        .code(PluginSlotTest.NOTHING).build())), "ok");
+        plugins.add("order-desk", Paths.get("order-desk-plugin/target/classes")).ready(new PluginParts(() -> Arrays.asList(
+                PluginSlotTest.addToCart(), DomainStep.act("setQuantity", "Set {qty}").code(PluginSlotTest.NOTHING).build())),
+                "ok");
         JsonNode info = mapper.readTree(tool(plugins, null, () -> 1).invoke(mapper.readTree("{\"op\":\"info\"}")));
         assertThat(info.path("vocabulary").toString()).isEqualTo("[\"addToCart\"]");
         assertThat(info.path("vocabularyProblems").toString()).isEqualTo("[\"order-desk: step 'setQuantity' dropped: "
@@ -87,8 +89,9 @@ class SessionToolTest {
         assertThat(info.path("vocabularyProblems").isArray()).isTrue();
         assertThat(info.path("vocabularyProblems")).isEmpty();
         // a plugin without a vocabulary: the same
-        assertThat(call("{}").path("vocabulary").isArray()).isTrue();
-        assertThat(call("{}").path("vocabulary")).isEmpty();
+        JsonNode withPlugin = call("{}");
+        assertThat(withPlugin.path("vocabulary").isArray()).isTrue();
+        assertThat(withPlugin.path("vocabulary")).isEmpty();
     }
 
     @Test

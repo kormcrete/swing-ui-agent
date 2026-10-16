@@ -36,11 +36,14 @@ public final class PluginSlot {
     public long locationTime() { return locationTime; }
     public State state() { return state; }
     public String detail() { return detail; }
-    /** Null unless READY. */
+    /** Set by {@link #ready} (just before the state turns READY), null again on {@link #failed}; null before. */
     public PluginParts parts() { return parts; }
-    /** The vocabulary's steps that passed the checks ({@link VocabularyCheck}); empty unless READY. */
+    /**
+     * The vocabulary's steps that passed the checks ({@link VocabularyCheck}): set by {@link #ready} before
+     * {@link #parts}, emptied on {@link #failed}; empty before.
+     */
     public List<DomainStep> vocabulary() { return vocabulary.steps; }
-    /** One line per dropped step (or a vocabulary that failed), naming the plugin; empty unless READY. */
+    /** One line per dropped step (or a vocabulary that failed), naming the plugin; set and emptied with {@link #vocabulary}. */
     public List<String> vocabularyProblems() { return vocabulary.problems; }
 
     public synchronized void waiting(String detail) { set(State.WAITING, detail); }
@@ -61,8 +64,8 @@ public final class PluginSlot {
     }
 
     private synchronized void readyChecked(PluginParts parts, VocabularyCheck checked, String detail) {
+        this.vocabulary = checked; // before parts: a reader that sees the parts sees their vocabulary
         this.parts = parts;
-        this.vocabulary = checked;
         this.locationTime = newestTime(location);
         set(State.READY, detail);
     }
