@@ -39,7 +39,8 @@ import java.util.function.Consumer;
 /**
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
  * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
- * an attachments drop target with a context menu, a lines table, a status label that tells what happened and an
+ * an attachments drop target with a context menu, a lines table, a status label that tells what happened, a Total
+ * caption beside the value label it names (Save sets the value, New clears it) and an
  * Archive button bottom right, with a button beside it that drags the person's palette over Archive (as a person
  * would: the palette's default spot covers no button). That button is enabled once the palette is in the window.
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
@@ -59,15 +60,22 @@ public final class FixtureApp {
             notes.setName("notes");
             JLabel status = new JLabel("idle");
             status.setName("status");
+            JLabel totalCaption = new JLabel("Total");
+            JLabel total = new JLabel("€0.00");
+            totalCaption.setLabelFor(total);
 
             JButton save = new JButton("Save");
             save.setName("save");
-            save.addActionListener(e -> status.setText("saved " + customer.getText()));
+            save.addActionListener(e -> {
+                status.setText("saved " + customer.getText());
+                total.setText("€7.32");
+            });
             JButton fresh = new JButton("New");
             fresh.setName("new");
             fresh.addActionListener(e -> {
                 customer.setText("");
                 notes.setText("");
+                total.setText("€0.00");
                 customer.requestFocusInWindow();
             });
             JButton delete = new JButton("Delete");
@@ -122,7 +130,8 @@ public final class FixtureApp {
             linesPane.setPreferredSize(new Dimension(260, 60));
 
             JPanel form = new JPanel(new FlowLayout());
-            for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status, linesPane}) form.add(c);
+            for (Component c : new Component[] {customer, notes, save, fresh, delete, attachments, status, totalCaption, total,
+                    linesPane}) form.add(c);
             JButton archive = new JButton("Archive");
             archive.setName("archive");
             archive.addActionListener(e -> status.setText("archived"));

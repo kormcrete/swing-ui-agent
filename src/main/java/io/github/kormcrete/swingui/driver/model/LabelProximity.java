@@ -178,12 +178,20 @@ public final class LabelProximity {
 
     /**
      * The labels that read as a field's caption: linked by {@code setLabelFor} to a text input or combo box,
-     * stacked above their panel's only input, or on their input's row to its left (closest wins when two compete).
+     * stacked above their panel's only input, or on their input's row to its left (closest wins when two compete);
+     * and the captions of value labels ({@link #valueCaptions}), which name the value as a field's caption names it.
      *
      * <p>Narrower than {@link #labelIndex}, whose closest-input fallback makes every label name something
      * once the screen holds one input. A count strip three rows below the last field is not its caption.
      */
     public static Set<JLabel> captionLabels(Container root, Visibility visibility) {
+        Set<JLabel> out = inputCaptions(root, visibility);
+        out.addAll(valueCaptions(root, visibility).values());
+        return out;
+    }
+
+    /** The captions of text inputs and combo boxes: {@link #captionLabels} without the value captions. */
+    private static Set<JLabel> inputCaptions(Container root, Visibility visibility) {
         Set<JLabel> out = Collections.newSetFromMap(new IdentityHashMap<JLabel, Boolean>());
         List<Component> inputs = inputs(root, visibility);
         Map<Component, JLabel> winner = new IdentityHashMap<Component, JLabel>();
@@ -214,6 +222,66 @@ public final class LabelProximity {
         }
         out.addAll(winner.values());
         return out;
+    }
+
+    /**
+     * Value labels and the label that captions each (value → caption): a cart's "Total" beside its "€7.32". A label
+     * whose {@code setLabelFor} is a visible label captions it; without a link on either side, a caption ending in a
+     * colon captions the label next to it on its row to the right in the same panel, unless that label is empty, ends
+     * in a colon itself or the caption already names an input (the closest caption wins when two pick one value). A
+     * hidden value has no caption: its caption stays text of its own.
+     */
+    public static Map<JLabel, JLabel> valueCaptions(Container root, Visibility visibility) {
+        Map<JLabel, JLabel> out = new IdentityHashMap<JLabel, JLabel>();
+        List<JLabel> all = new ArrayList<JLabel>();
+        collect(root, JLabel.class, all, visibility);
+        Set<JLabel> shown = Collections.newSetFromMap(new IdentityHashMap<JLabel, Boolean>());
+        shown.addAll(all);
+        List<JLabel> labels = labels(root, visibility);
+        for (JLabel l : labels) {
+            Component linked = l.getLabelFor();
+            if (linked instanceof JLabel && shown.contains(linked) && !out.containsKey(linked)) {
+                out.put((JLabel) linked, l);
+            }
+        }
+        Set<JLabel> inputCaptions = inputCaptions(root, visibility);
+        Map<JLabel, Double> best = new IdentityHashMap<JLabel, Double>();
+        for (JLabel l : labels) {
+            if (l.getLabelFor() != null || !endsInColon(l) || inputCaptions.contains(l)) continue;
+            JLabel value = labelRight(l, labels);
+            if (value == null || value.getLabelFor() != null || endsInColon(value) || Names.clean(value.getText()) == null) continue;
+            if (out.containsKey(value) && !best.containsKey(value)) continue;
+            double d = distance(l, value);
+            Double b = best.get(value);
+            if (b == null || d < b) {
+                out.put(value, l);
+                best.put(value, d);
+            }
+        }
+        return out;
+    }
+
+    private static boolean endsInColon(JLabel l) {
+        String t = Names.clean(l.getText());
+        return t != null && t.endsWith(":");
+    }
+
+    /** The closest label on {@code caption}'s row to its right in the same panel (the {@link #sameRowRight} row test). */
+    private static JLabel labelRight(JLabel caption, List<JLabel> labels) {
+        Container parent = caption.getParent();
+        Rectangle c = caption.getBounds();
+        int captionMidY = c.y + c.height / 2;
+        JLabel best = null;
+        int bestDx = Integer.MAX_VALUE;
+        for (JLabel l : labels) {
+            if (l == caption || l.getParent() != parent) continue;
+            Rectangle v = l.getBounds();
+            boolean sameRow = Math.abs((v.y + v.height / 2) - captionMidY) <= Math.max(8, v.height);
+            if (!sameRow || v.x < c.x) continue;
+            int dx = v.x - c.x;
+            if (dx < bestDx) { bestDx = dx; best = l; }
+        }
+        return best;
     }
 
     /**

@@ -35,7 +35,7 @@ If the target never becomes actionable, the step fails with the reason (`NOT_FOU
 `expect` does not act; it reads the element until the check holds, 10 seconds by default. A check against a value that is still on its way passes as soon as it arrives:
 
 ```sh
-$UI expect '{"target":{"scope":["tab:New order · Ada Shop Ltd"],"role":"label","name":"€31.32"},"state":["!hidden"]}'
+$UI expect '{"target":{"scope":["tab:New order · Ada Shop Ltd"],"role":"label","name":"Total"},"text":"€31.32"}'
 ```
 
 In Java, every `assertThat(...)` from `UiAssertions` retries the same way. `within` sets the time for one check:

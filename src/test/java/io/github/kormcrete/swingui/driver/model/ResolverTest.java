@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
@@ -287,5 +288,23 @@ class ResolverTest {
     void aMalformedLocatorIsBadInput() {
         assertThat(catchThrowableOfType(() -> resolver.resolve(Locator.of("knob", "OK")), DriverException.class)
                 .reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    // ---- a value label is addressed by its caption, and by the text it shows -----------------
+
+    @Test
+    void aValueLabelResolvesByItsCaptionAndByItsOwnText() {
+        JPanel totals = new JPanel(null);
+        JLabel caption = new JLabel("Total");
+        JLabel value = new JLabel("€7.32");
+        caption.setLabelFor(value);
+        totals.add(caption);
+        totals.add(value);
+        mainContent.add(totals);
+
+        assertThat(resolver.matches(Locator.of("label", "Total"))).hasSize(1);
+        assertThat(resolver.resolve(Locator.of("label", "Total")).component).isSameAs(value);
+        assertThat(resolver.matches(Locator.of("label", "€7.32"))).hasSize(1);
+        assertThat(resolver.resolve(Locator.of("label", "€7.32")).component).isSameAs(value);
     }
 }

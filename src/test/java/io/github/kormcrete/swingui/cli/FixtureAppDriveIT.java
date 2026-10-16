@@ -440,6 +440,33 @@ class FixtureAppDriveIT {
         assertThat(steps.path(4).path("n").asText()).as(why).isEqualTo("4.1");
     }
 
+    @Test
+    @Order(17)
+    void aValueLabelIsCheckedAndRecordedByItsCaption() throws Exception {
+        step("click", "{'target':{'name':'new'}}");
+        step("expect", "{'target':{'role':'label','name':'Total'},'text':'€0.00'}");
+        step("click", "{'target':{'name':'save'}}");
+        step("expect", "{'target':{'role':'label','name':'Total'},'text':'€7.32'}");
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            JsonNode read = call("read", "{'target':{'role':'label','name':'Total'}}");
+            String ref = read.path("node").path("ref").asText();
+            assertThat(ref).as(read.path("why").asText()).isNotEmpty();
+            JsonNode checked = call("expect", "{'target':{'ref':'" + ref + "'},'text':'€7.32'}");
+            String why = checked.path("why").asText();
+            assertThat(checked.path("passed").asBoolean()).as(why).isTrue();
+            JsonNode target = checked.path("recorded").path("target");
+            assertThat(target.path("role").asText()).as(why).isEqualTo("label");
+            assertThat(target.path("name").asText()).as(why).isEqualTo("Total");
+            JsonNode list = call("recording", "{'op':'list'}");
+            assertThat(list.path("steps").path(0).path("checks").path(0).path("java").asText()).as(list.path("why").asText())
+                    .contains("label(\"Total\")");
+            call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
+        }
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {

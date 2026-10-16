@@ -63,7 +63,7 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
    Give exactly one of `state`, `text`, `value`, `tooltip`, `rows`, `cell`, `selected`:
    ```sh
    $UI expect '{"target":{"role":"table"},"cell":{"row":{"Product":"A4 paper, 500 sheets"},"column":"Qty","expected":"3"}}'
-   $UI expect '{"target":{"role":"label","name":"€31.32"},"state":["!hidden"]}'
+   $UI expect '{"target":{"role":"label","name":"Total"},"text":"€31.32"}'
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
    ```
    A recorded test holds exact values: check data the test creates or data known to exist. Check a value the app

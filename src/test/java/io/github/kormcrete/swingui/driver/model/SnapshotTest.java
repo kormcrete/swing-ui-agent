@@ -244,4 +244,42 @@ class SnapshotTest {
         assertThat(app.find("label", "OptionPane.label").value).isEqualTo("The record is locked");
         assertThat(app.find("label", "50 of 407").value).isNull();
     }
+
+    /**
+     * A value label whose caption sits beside it (Total, €7.32) is one node, named by the caption and reading its
+     * text as the value: the caption would only repeat that name. Two rows of one totals panel stay two nodes.
+     */
+    @Test
+    void aValueLabelIsOneNodeNamedByItsCaption() {
+        JPanel totals = new JPanel(null);
+        totals.setBounds(0, 600, 200, 50);
+        JLabel subtotalCaption = new JLabel("Subtotal");
+        subtotalCaption.setBounds(0, 0, 80, 20);
+        JLabel subtotal = new JLabel("€6.10");
+        subtotal.setBounds(100, 0, 80, 20);
+        subtotalCaption.setLabelFor(subtotal);
+        JLabel totalCaption = new JLabel("Total");
+        totalCaption.setBounds(0, 25, 80, 20);
+        JLabel total = new JLabel("€7.32");
+        total.setBounds(100, 25, 80, 20);
+        totalCaption.setLabelFor(total);
+        for (JLabel l : new JLabel[] {subtotalCaption, subtotal, totalCaption, total}) totals.add(l);
+        form.add(totals);
+
+        Node app = snapshot.build(null, null, 400, 20);
+
+        assertThat(app.find("label", "Total").value).isEqualTo("€7.32");
+        assertThat(app.find("label", "Subtotal").value).isEqualTo("€6.10");
+        assertThat(named(app, "Total")).as("the caption is no node of its own").isEqualTo(1);
+        assertThat(named(app, "Subtotal")).isEqualTo(1);
+        assertThat(app.find("label", "€7.32")).isNull();
+    }
+
+    private static int named(Node n, String name) {
+        int count = name.equals(n.name) ? 1 : 0;
+        if (n.children != null) {
+            for (Node c : n.children) count += named(c, name);
+        }
+        return count;
+    }
 }

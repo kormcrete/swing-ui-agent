@@ -23,6 +23,7 @@ public final class Names {
     private final Visibility visibility;
     private final Map<Container, Map<Component, JLabel>> labelIndexes = new IdentityHashMap<Container, Map<Component, JLabel>>();
     private final Map<Container, Set<JLabel>> captions = new IdentityHashMap<Container, Set<JLabel>>();
+    private final Map<Container, Map<JLabel, JLabel>> valueCaptions = new IdentityHashMap<Container, Map<JLabel, JLabel>>();
 
     public Names(Visibility visibility) {
         this.visibility = visibility;
@@ -32,6 +33,7 @@ public final class Names {
     public void reset() {
         labelIndexes.clear();
         captions.clear();
+        valueCaptions.clear();
     }
 
     /** {@code root} bounds the label search: the window, or the top of an unshown tree. */
@@ -42,9 +44,15 @@ public final class Names {
 
     /**
      * The name a person reads on screen: {@link #nameOf} without the component's code name ({@code setName}), which
-     * names it for a locator but shows nowhere. Null when nothing on screen names it.
+     * names it for a locator but shows nowhere. A value label is named by its caption ("Total" for "€7.32"), not by
+     * the text it shows, which changes. Null when nothing on screen names it.
      */
     public String seenName(Component c, Container root) {
+        if (c instanceof JLabel && root != null) {
+            JLabel caption = valueCaptions(root).get(c);
+            String n = caption == null ? null : cleanLabel(caption.getText());
+            if (n != null) return n;
+        }
         String n = clean(ownText(c));
         if (n == null && root != null) {
             JLabel label = labelIndex(root).get(c);
@@ -89,7 +97,7 @@ public final class Names {
     }
 
     /**
-     * Whether this label is already serving as an input's name. Such a label would
+     * Whether this label is already serving as an input's name, or a value label's. Such a label would
      * only repeat what the input node already carries, so the walk drops it and the tree grows by a
      * node only for text that names nothing - a count strip, a status line, a heading.
      *
@@ -107,6 +115,15 @@ public final class Names {
             captions.put(root, set);
         }
         return set;
+    }
+
+    private Map<JLabel, JLabel> valueCaptions(Container root) {
+        Map<JLabel, JLabel> map = valueCaptions.get(root);
+        if (map == null) {
+            map = LabelProximity.valueCaptions(root, visibility);
+            valueCaptions.put(root, map);
+        }
+        return map;
     }
 
     private Map<Component, JLabel> labelIndex(Container root) {

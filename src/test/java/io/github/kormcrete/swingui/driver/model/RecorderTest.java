@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.window.WindowRoot;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import java.util.Arrays;
 import java.util.Collections;
@@ -129,5 +130,22 @@ class RecorderTest {
 
         // a locator without a row has none
         assertThat(Recorder.rowChoice(scene.resolver.resolve(Locator.ofRef(ref)))).isNull();
+    }
+
+    @Test
+    void aValueLabelIsRecordedByItsCaption() {
+        JPanel totals = new JPanel(null);
+        JLabel caption = new JLabel("Total");
+        JLabel value = new JLabel("€7.32");
+        caption.setLabelFor(value);
+        totals.add(caption);
+        totals.add(value);
+        scene.mainContent.add(totals);
+
+        Recorder.Recorded r = recorder.record(viaRef("label", "Total"));
+        assertThat(r.locator.role).isEqualTo("label");
+        assertThat(r.locator.name).isEqualTo("Total");
+        assertThat(r.fragile).isFalse();
+        assertThat(scene.resolver.resolve(r.locator).component).isSameAs(value);
     }
 }

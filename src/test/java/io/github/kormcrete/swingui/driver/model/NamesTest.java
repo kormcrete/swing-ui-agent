@@ -104,4 +104,32 @@ class NamesTest {
         assertThat(Names.tabTitle(tabs, 2)).as("a real title wins over the tooltip").isEqualTo("Title");
         assertThat(Names.tabTitle(tabs, 3)).isNull();
     }
+
+    @Test
+    void aValueLabelIsNamedByTheLabelThatCaptionsIt() {
+        JLabel caption = label("Total", 0, 0);
+        JLabel value = label("€7.32", 90, 0);
+        caption.setLabelFor(value);
+        assertThat(names.nameOf(value, root)).isEqualTo("Total");
+        assertThat(names.seenName(value, root)).isEqualTo("Total");
+    }
+
+    @Test
+    void theCaptionOfAValueLabelNamesAnInput() {
+        JLabel caption = label("Total", 0, 0);
+        JLabel value = label("€7.32", 90, 0);
+        caption.setLabelFor(value);
+        assertThat(names.namesAnInput(caption, root)).as("the caption only repeats the value's name").isTrue();
+        assertThat(names.namesAnInput(value, root)).isFalse();
+    }
+
+    @Test
+    void aNamedValueLabelKeepsItsCodeName() {
+        JLabel caption = label("Total", 0, 0);
+        JLabel value = label("€7.32", 90, 0);
+        value.setName("cart.total");
+        caption.setLabelFor(value);
+        assertThat(names.nameOf(value, root)).isEqualTo("cart.total");
+        assertThat(names.seenName(value, root)).as("what the person reads there").isEqualTo("Total");
+    }
 }

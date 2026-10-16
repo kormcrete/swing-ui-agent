@@ -9,6 +9,7 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -200,5 +201,113 @@ class LabelProximityTest {
         cell.add(caption);
         cell.add(value);
         return cell;
+    }
+
+    // ---- a value label is named by the label that captions it --------------------------------
+
+    @Test
+    void aColonCaptionNamesTheLabelToItsRight() {
+        JPanel p = new JPanel(null);
+        JLabel status = label("Status:", 0, 0);
+        JLabel open = label("Open", 90, 0);
+        JLabel below = label("Shipped", 90, 40);
+        p.add(status); p.add(open); p.add(below);
+
+        Map<JLabel, JLabel> captions = LabelProximity.valueCaptions(p, Visibility.TREE);
+        assertThat(captions).containsOnlyKeys(open).containsEntry(open, status);
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).containsExactly(status);
+    }
+
+    @Test
+    void twoLabelsOnARowWithoutAColonAreNotPaired() {
+        JPanel p = new JPanel(null);
+        p.add(label("Orders", 0, 0));
+        p.add(label("12 shown", 90, 0));
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void aColonLabelInAnotherParentIsNotACaption() {
+        JPanel p = new JPanel(null);
+        JPanel left = new JPanel(null);
+        left.setBounds(0, 0, 90, 20);
+        left.add(label("Status:", 0, 0));
+        JPanel right = new JPanel(null);
+        right.setBounds(90, 0, 90, 20);
+        right.add(label("Open", 0, 0));
+        p.add(left); p.add(right);
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void aValueEndingInAColonIsNotAValue() {
+        JPanel p = new JPanel(null);
+        p.add(label("Name:", 0, 0));
+        p.add(label("Address:", 90, 0));
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void aHiddenValueLeavesItsCaptionANode() {
+        JPanel p = new JPanel(null);
+        JLabel total = label("Total", 0, 0);
+        JLabel amount = label("€7.32", 90, 0);
+        total.setLabelFor(amount);
+        amount.setVisible(false);
+        JLabel status = label("Status:", 0, 40);
+        JLabel open = label("Open", 90, 40);
+        open.setVisible(false);
+        p.add(total); p.add(amount); p.add(status); p.add(open);
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void aLabelForLinkWinsOverTheColonRule() {
+        JPanel p = new JPanel(null);
+        JLabel status = label("Status:", 0, 0);
+        JLabel open = label("Open", 90, 0);
+        JLabel state = label("State", 0, 100);
+        state.setLabelFor(open);
+        JLabel total = label("Total:", 0, 40);
+        JLabel draft = label("Draft", 90, 40);
+        JLabel amount = label("€7.32", 300, 300);   // far away: only getLabelFor links them
+        total.setLabelFor(amount);
+        p.add(status); p.add(open); p.add(state); p.add(total); p.add(draft); p.add(amount);
+
+        Map<JLabel, JLabel> captions = LabelProximity.valueCaptions(p, Visibility.TREE);
+        assertThat(captions).containsOnlyKeys(open, amount);
+        assertThat(captions.get(open)).isSameAs(state);
+        assertThat(captions.get(amount)).isSameAs(total);
+    }
+
+    @Test
+    void aColonCaptionOfAnInputCaptionsNoLabel() {
+        JPanel p = new JPanel(null);
+        p.add(label("Customer:", 0, 0));
+        p.add(field("customer", 90, 0));
+        p.add(label("(optional)", 220, 0));
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void theClosestOfTwoColonCaptionsWins() {
+        JPanel p = new JPanel(null);
+        JLabel far = label("Order:", 0, 0);
+        JLabel near = label("Status:", 50, 40);
+        JLabel open = label("<html>Open<br>since today</html>", 90, 0);
+        open.setSize(80, 60);   // two lines tall: both captions sit on its row, neither on the other's
+        p.add(far); p.add(near); p.add(open);
+
+        Map<JLabel, JLabel> captions = LabelProximity.valueCaptions(p, Visibility.TREE);
+        assertThat(captions).containsOnlyKeys(open);
+        assertThat(captions.get(open)).isSameAs(near);
     }
 }

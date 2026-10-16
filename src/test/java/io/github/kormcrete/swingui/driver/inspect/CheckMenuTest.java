@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.driver.inspect;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JLabel;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +71,26 @@ class CheckMenuTest {
         assertThat(CheckMenu.of(cell, (step, t) -> { }).title()).isEqualTo("ORD-1640 · Status");
         Target column = scene.inspector.column(scene.orders, 2);
         assertThat(CheckMenu.of(column, (step, t) -> { }).title()).isEqualTo("Status column");
+    }
+
+    @Test
+    void aValueLabelsChecksAreAboutItsCaption() {
+        JLabel caption = new JLabel("Total");
+        caption.setBounds(10, 130, 80, 20);
+        JLabel value = new JLabel("€7.32");
+        value.setBounds(100, 130, 80, 20);
+        caption.setLabelFor(value);
+        scene.content.add(caption);
+        scene.content.add(value);
+
+        Target target = scene.inspector.component(value);
+        assertThat(CheckMenu.of(target, (step, t) -> { }).title()).isEqualTo("Total");
+        CheckMenu.Choice reads = first(CheckMenu.choices(target));
+        assertThat(reads.label).isEqualTo("Reads “€7.32”");
+        Locator checked = (Locator) reads.step.get("target");
+        assertThat(checked.role).isEqualTo("label");
+        assertThat(checked.name).isEqualTo("Total");
+        assertThat(reads.step).containsEntry("text", "€7.32");
     }
 
     private static CheckMenu.Choice first(List<CheckMenu.Choice> choices) {
