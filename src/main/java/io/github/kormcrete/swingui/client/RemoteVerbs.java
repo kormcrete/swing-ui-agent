@@ -209,6 +209,9 @@ public final class RemoteVerbs implements Verbs {
 
     // ---- the wire
 
+    /** The step encoding, for {@link RemoteApp}'s app steps. */
+    StepJson stepJson() { return steps; }
+
     /** One step through do_action, kept out of export_test's recording. */
     VerbOutcome run(ObjectNode step) {
         ObjectNode a = agent.args();

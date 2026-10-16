@@ -27,9 +27,9 @@ import java.util.List;
  * <p>Some calls make the trace not derivable: what the steps are then depends on the app, not only on the code. A read
  * ({@code read}, {@code snapshot}, a screenshot, the clipboard, the file chooser, a menu's items, a geometry) has no
  * answer without the app: it throws CAPABILITY_GAP, which ends the body. An {@code expect} is kept as a step (a check
- * is no pattern to fold by) and the body goes on. So are calls with no step form (hooks, a login by name and
- * password, relogin, a recorded test run), and a body that makes more than {@link #MAX_STEPS} steps. The first
- * reason is kept ({@link #notDerivable()}).
+ * is no pattern to fold by) and the body goes on. A call with no step form (hooks, a login by name and password,
+ * relogin, a recorded test run, a secret) and a step past {@link #MAX_STEPS} throw CAPABILITY_GAP too and end the
+ * body. The first reason is kept ({@link #notDerivable()}).
  */
 public final class TracingVerbs implements Verbs {
 
@@ -55,10 +55,19 @@ public final class TracingVerbs implements Verbs {
             @Override public void navigate(String target) { add(json.navigate(target)); }
             @Override public void closeActiveTab() { add(json.close()); }
             @Override public void loginAs(String alias) { add(json.loginAs(alias)); }
-            @Override public void loginAs(String user, String password) { throw noStepForm("the body logs in by user name and password, which has no step form"); }
+            @Override public void loginAs(String user, String password) {
+                throw noStepForm("the body logs in by user name and password, which has no step form");
+            }
             @Override public void relogin() { throw noStepForm("the body logs in again, which has no step form"); }
-            @Override public <T> T hooks(Class<T> type) { throw noStepForm("the body calls the app plugin's hooks, which have no step form"); }
-            @Override public String runRecordedTest(String testJson, String evidenceDir) { throw noStepForm("the body runs a recorded test, which has no step form"); }
+            @Override public <T> T hooks(Class<T> type) {
+                throw noStepForm("the body calls the app plugin's hooks, which have no step form");
+            }
+            @Override public String runRecordedTest(String testJson, String evidenceDir) {
+                throw noStepForm("the body runs a recorded test, which has no step form");
+            }
+            @Override public String secret(String alias, String name) {
+                throw noStepForm("the body reads a secret, which a trace must not keep");
+            }
         };
     }
 

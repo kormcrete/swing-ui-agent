@@ -99,7 +99,9 @@ public final class Client {
      * The secret {@code name} of {@code alias}: the {@code <alias>.<name>} line of .swing-ui-agent/ui-users.properties,
      * e.g. {@code secret("default", "pin")}. Type it into the app; never print or assert on it. Fails when absent.
      */
-    public String secret(String alias, String name) { return UiUsers.secret(alias, name); }
+    public String secret(String alias, String name) {
+        return app == null ? UiUsers.secret(alias, name) : app.secret(alias, name);
+    }
 
     public List<String> warnings() { return Collections.unmodifiableList(warnings); }
 
