@@ -23,8 +23,9 @@ import java.util.WeakHashMap;
 /**
  * The Java form of a {@code do} step, from the vocabulary of the plugin that offers it: the typed call when the step
  * names one ({@code java(...)}), else the steps it makes for its values (a declarative body filled in, a Java body
- * traced, see {@link Plugins#steps}); a step with neither, or one no ready plugin offers, is refused. A trace runs the
- * body's code, so each form is kept per domain step and values: a recording asks for it on every change.
+ * traced, see {@link Plugins#steps}); a step with neither, or one no ready plugin offers, is refused ({@link #keeping}: a
+ * step with neither is left out). A trace runs the body's code, so each form is kept per domain step and values: a
+ * recording asks for it on every change.
  */
 public final class DoStepForms implements JavaTestWriter.DoForms {
 
@@ -38,6 +39,18 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
     }
 
     @Override public JavaTestWriter.DoForm of(DoAction d) {
+        return of(d, false);
+    }
+
+    /**
+     * These forms for a recording, which keeps a do step that has no Java form: such a step is left out
+     * ({@link JavaTestWriter.DoForm#withoutJava}) rather than refused. A step no ready plugin offers is still refused.
+     */
+    public JavaTestWriter.DoForms keeping() {
+        return d -> of(d, true);
+    }
+
+    private JavaTestWriter.DoForm of(DoAction d, boolean keep) {
         Plugins.DoStep found;
         try {
             found = plugins.lookUp(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
@@ -57,7 +70,7 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
                 form = form(found);
                 byValues.put(found.values, form);
             }
-            return form;
+            return keep && form.why() != null ? JavaTestWriter.DoForm.withoutJava(form.why()) : form;
         }
     }
 
@@ -72,7 +85,8 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
         BodyTrace.Result traced = Plugins.steps(found);
         if (!traced.derivable()) {
             return JavaTestWriter.DoForm.refused(named + " has no Java form: the step names no java(...) call, and its "
-                    + "body cannot be written out as steps (" + traced.why() + "); give the step a java(...) call");
+                    + "body cannot be written out as steps (" + traced.why() + "); give the step a java(...) call in the plugin, or "
+                    + "export the recording as a recorded test");
         }
         List<Action> steps = new ArrayList<Action>();
         for (int k = 0; k < traced.steps().size(); k++) {

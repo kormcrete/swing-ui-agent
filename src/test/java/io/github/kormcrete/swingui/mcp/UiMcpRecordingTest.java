@@ -2075,7 +2075,7 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aDoStepWithoutAJavaFormIsNotRecordedAndSaysWhy() throws Exception {
+    void aDoStepWithoutAJavaFormIsRecordedAndOnlyTheJavaExportRefusesIt() throws Exception {
         Plugins plugins = new Plugins(backend.verbs);
         plugins.add("extras", Paths.get("extras")).ready(new PluginParts(() -> Arrays.asList(
                 DomainStep.act("addOneMore", "Add one more of the last product")
@@ -2084,12 +2084,42 @@ class UiMcpRecordingTest {
         UiMcpSession s = orderDesk(plugins);
 
         JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addOneMore\"}")));
+        s.doAction(mapper.readTree(ADD));
 
+        // recorded as one step like any do step; the list shows why it has no Java line
         assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
-        assertThat(r.has("recorded")).isFalse();
-        assertThat(r.path("notRecorded").asText()).contains("Add one more of the last product (extras:addOneMore) has no "
-                + "Java form").contains("give the step a java(...) call");
-        assertThat(s.recordedSteps()).isEmpty();
+        assertThat(r.has("notRecorded")).isFalse();
+        assertThat(r.path("recorded").path("step").asText()).isEqualTo("extras:addOneMore");
+        assertThat(s.recordedSteps()).hasSize(2);
+        String why = "Add one more of the last product (extras:addOneMore) has no Java form: the step names no java(...) "
+                + "call, and its body cannot be written out as steps (the body reads the app (read), which a trace cannot "
+                + "answer); give the step a java(...) call in the plugin, or export the recording as a recorded test";
+        JsonNode steps = mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps");
+        assertThat(steps.get(0).has("java")).isFalse();
+        assertThat(steps.get(0).path("noJava").asText()).isEqualTo(why);
+        assertThat(steps.get(1).path("java").asText()).isEqualTo("OrderDeskSteps.addToCart(ui, \"Gel pen, black\");");
+
+        // the Java export refuses it, naming the step; the recording stays
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, dir.resolve("tests").toString());
+        try {
+            ExportRefused refused = catchThrowableOfType(() -> s.exportTest("AddOneMoreUiIT", null, "demo", false),
+                    ExportRefused.class);
+            assertThat(refused.problems()).containsExactly("step 1: " + why);
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        }
+        assertThat(s.recordedSteps()).hasSize(2);
+
+        // the recorded test export writes it, and the file loads back into the recording
+        JsonNode file = mapper.readTree(s.exportRecordedTest("one-more", quoted(dir), null, false)).path("test");
+        assertThat(file.path("requires").toString()).isEqualTo("[\"extras\",\"order-desk\"]");
+        assertThat(file.path("steps").get(0).path("step").asText()).isEqualTo("extras:addOneMore");
+        JsonNode loaded = mapper.readTree(s.loadRecordedTest(dir.resolve("one-more.json")));
+        assertThat(loaded.path("steps").asInt()).isEqualTo(2);
+
+        // an agent's insert of one is accepted too
+        s.recording(mapper.readTree("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"do\",\"step\":\"addOneMore\"}}"));
+        assertThat(s.recordedSteps()).hasSize(3);
     }
 
     @Test

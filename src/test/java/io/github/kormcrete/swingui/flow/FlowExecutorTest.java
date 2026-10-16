@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -172,7 +173,7 @@ class FlowExecutorTest {
         failed.message = "NOT_FOUND: nothing matches button 'Add to cart'";
         failed.details = Collections.singletonList("button 'Add to basket' in main [tab:New order · Ada Shop Ltd]");
         host.stepFailure = DomainStepFailed.of(addToCart(call(ROW_CLICK, "click(row)", true), failed),
-                new RuntimeException("click failed"));
+                new RuntimeException("click failed"), true, UnaryOperator.<String>identity());
         host.verbs.candidates = Collections.singletonList("button 'Add to basket' in main [tab:New order · Ada Shop Ltd]");
 
         FlowResult result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(null))
@@ -201,7 +202,7 @@ class FlowExecutorTest {
     @Test
     void aBodyThatFailsOnItsOwnNamesNoChild() {
         host.stepFailure = DomainStepFailed.of(addToCart(call(ROW_CLICK, "click(row)", true)),
-                new AssertionError("expected 1 line in the cart"));
+                new AssertionError("expected 1 line in the cart"), false, UnaryOperator.<String>identity());
 
         StepResult step = run(DO).steps.get(0);
 

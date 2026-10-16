@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -560,6 +561,21 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void aTypedCallWithoutAValueSaysSo() {
+        Map<String, String> values = new LinkedHashMap<String, String>();
+        values.put("product", null);
+        JavaTestWriter.DoForms forms = step -> JavaTestWriter.DoForm.call("Add it", "x.Steps", step.step.equals("a")
+                ? "addToCart(ui, {product})" : "addQtyToCart(ui, {qty})", values, Collections.<String>emptySet());
+
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.write(flow(doStep("a", null), doStep("b", null)), "p",
+                "SmokeUiIT", "walk", forms), ExportRefused.class);
+
+        assertThat(e.problems()).containsExactly(
+                "step 1: the java call addToCart(ui, {product}) names {product}, which has no value here",
+                "step 2: the java call addQtyToCart(ui, {qty}) names {qty}, which is no param of the step");
+    }
+
+    @Test
     void anUntraceableDoStepIsRefused() {
         DoStepForms forms = orderDesk(DomainStep.act("logIn", "Log in as the clerk")
                 .code((ui, p) -> ui.password("Password").fill(ui.secret("clerk", "password")))
@@ -570,7 +586,10 @@ class JavaTestWriterTest {
 
         assertThat(e.problems()).containsExactly("step 1: Log in as the clerk (order-desk:logIn) has no Java form: the step "
                 + "names no java(...) call, and its body cannot be written out as steps (the body reads a secret, which a "
-                + "trace must not keep); give the step a java(...) call");
+                + "trace must not keep); give the step a java(...) call in the plugin, or export the recording as a recorded test");
+        // a recording keeps it: left out of the Java check, the steps around it still checked
+        assertThat(JavaTestWriter.lines(flow(new CloseAction(), doStep("order-desk:logIn", null)), forms.keeping()))
+                .containsExactly("ui.closeActiveTab();", null);
         ExportRefused unknown = catchThrowableOfType(() -> JavaTestWriter.write(flow(doStep("order-desk:addToCrat", null)), "p",
                 "SmokeUiIT", "walk", forms), ExportRefused.class);
         assertThat(unknown.problems()).containsExactly("step 1: do(order-desk:addToCrat) has no Java form: no domain step "

@@ -79,7 +79,10 @@ public final class JavaTestWriter {
         DoForm of(DoAction step);
     }
 
-    /** A do step's Java form: a typed call, the steps it makes, or why it has neither. */
+    /**
+     * A do step's Java form: a typed call, the steps it makes, or why it has neither: refused (a problem), or, for a
+     * recording that may hold such a step, left out ({@link #withoutJava}: no statement, no problem).
+     */
     public static final class DoForm {
         final String sentence;
         final String javaClass;
@@ -88,9 +91,10 @@ public final class JavaTestWriter {
         final Set<String> numbers;
         final List<Action> steps;
         final String refused;
+        final boolean leftOut;
 
         private DoForm(String sentence, String javaClass, String call, Map<String, String> values, Set<String> numbers,
-                       List<Action> steps, String refused) {
+                       List<Action> steps, String refused, boolean leftOut) {
             this.sentence = sentence;
             this.javaClass = javaClass;
             this.call = call;
@@ -98,6 +102,7 @@ public final class JavaTestWriter {
             this.numbers = numbers;
             this.steps = steps;
             this.refused = refused;
+            this.leftOut = leftOut;
         }
 
         /**
@@ -107,17 +112,31 @@ public final class JavaTestWriter {
         public static DoForm call(String sentence, String javaClass, String call, Map<String, String> values,
                                   Set<String> numberParams) {
             return new DoForm(sentence, javaClass, call, new LinkedHashMap<String, String>(values),
-                    new HashSet<String>(numberParams), null, null);
+                    new HashSet<String>(numberParams), null, null, false);
         }
 
         /** The steps the domain step makes, written under its sentence. */
         public static DoForm steps(String sentence, List<Action> steps) {
-            return new DoForm(sentence, null, null, null, null, Collections.unmodifiableList(new ArrayList<Action>(steps)), null);
+            return new DoForm(sentence, null, null, null, null, Collections.unmodifiableList(new ArrayList<Action>(steps)), null,
+                    false);
         }
 
         /** No Java form: {@code why} is the whole problem after "step 3: ", e.g. "Log in as the clerk (...) has no Java form: ...". */
         public static DoForm refused(String why) {
-            return new DoForm(null, null, null, null, null, null, why);
+            return new DoForm(null, null, null, null, null, null, why, false);
+        }
+
+        /**
+         * A step with no Java form ({@code why}, as {@link #refused} gives it) that a recording keeps: the writer leaves it
+         * out, with no problem and no {@link #lines} entry (null), so the rest of the recording is still checked.
+         */
+        public static DoForm withoutJava(String why) {
+            return new DoForm(null, null, null, null, null, null, why, true);
+        }
+
+        /** Why the step has no Java form; null when it has one. */
+        public String why() {
+            return refused;
         }
     }
 
@@ -320,6 +339,7 @@ public final class JavaTestWriter {
          */
         private void doStep(int i, DoAction d, String what) {
             DoForm f = doForms.of(d);
+            if (f.leftOut) return;
             if (f.refused != null) {
                 problems.add(what + ": " + f.refused);
                 return;
@@ -367,7 +387,8 @@ public final class JavaTestWriter {
                 String name = m.group(1);
                 String value = f.values.get(name);
                 if (value == null) {
-                    problems.add(what + ": the java call " + f.call + " names {" + name + "}, which is no param of the step");
+                    problems.add(what + ": the java call " + f.call + " names {" + name + "}, "
+                            + (f.values.containsKey(name) ? "which has no value here" : "which is no param of the step"));
                     return null;
                 }
                 String literal = f.numbers.contains(name) ? String.valueOf(Integer.parseInt(value)) : quote(value);

@@ -70,8 +70,9 @@ import java.util.Map;
 
 /**
  * Runs steps against the live client's {@link StepHost}, reports its {@link UiInventory} for
- * {@code describe_ui}, and records the steps that succeed and have a Java form, for {@code export_test}
- * to write as a JUnit {@code @UiTest} class.
+ * {@code describe_ui}, and records the steps that succeed and can be exported, for {@code export_recorded_test} to
+ * write as a recorded test and {@code export_test} as a JUnit {@code @UiTest} class (a do step whose domain step has no
+ * Java form is recorded too; only {@code export_test} refuses it).
  */
 public class UiMcpSession {
 
@@ -80,6 +81,11 @@ public class UiMcpSession {
     private final Plugins plugins;
     /** How a do step is written in Java: through {@link #plugins}' vocabulary, else refused. */
     private final JavaTestWriter.DoForms doForms;
+    /**
+     * {@link #doForms} for what the recording may hold: a do step with no Java form is kept (left out of the Java check),
+     * as a recording is exported as a recorded test too. Only {@code export_test} uses {@link #doForms} itself.
+     */
+    private final JavaTestWriter.DoForms keptForms;
     private final UiInventory inventory;
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
@@ -214,7 +220,9 @@ public class UiMcpSession {
     public UiMcpSession(StepHost host, UiInventory inventory, ObjectMapper mapper, Supplier<ExportDefaults> exportDefaults) {
         this.host = host;
         this.plugins = host instanceof Plugins ? (Plugins) host : null;
-        this.doForms = plugins != null ? new DoStepForms(plugins) : JavaTestWriter.DoForms.NONE;
+        DoStepForms forms = plugins != null ? new DoStepForms(plugins) : null;
+        this.doForms = forms != null ? forms : JavaTestWriter.DoForms.NONE;
+        this.keptForms = forms != null ? forms.keeping() : JavaTestWriter.DoForms.NONE;
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
@@ -1032,7 +1040,8 @@ public class UiMcpSession {
      * <p>A step that passes but has no Java form (a {@code loginAs} after the first step, a target that
      * needs a ref) is not recorded, and the result says why ({@code notRecorded}): recorded, it would make
      * every later {@code export_test} refuse, and nothing else ever empties the recording. So the
-     * recording is always exportable, and such steps stay usable for exploring.
+     * recording is always exportable, and such steps stay usable for exploring. The exception is a do step whose
+     * domain step has no Java form: it is recorded (a recorded test holds it), and only {@code export_test} refuses.
      */
     private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author) {
         return runStep(actionJson, record, author, null).result;
@@ -1253,13 +1262,14 @@ public class UiMcpSession {
 
     /**
      * What {@link JavaTestWriter} would refuse if {@code next} followed the steps recorded so far; empty
-     * when it would write it. The recording itself is always exportable, so every problem is {@code next}'s.
+     * when it would write it, leaving out do steps with no Java form ({@link #keptForms}). The recording itself passes
+     * this check, so every problem is {@code next}'s.
      */
     private List<String> exportProblems(Action next) {
         List<Action> steps = model.actions();
         steps.add(next);
         try {
-            JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
+            JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, keptForms);
             return Collections.emptyList();
         } catch (ExportRefused e) {
             return e.problems();
@@ -1496,7 +1506,8 @@ public class UiMcpSession {
      * reset, an empty recording or a bad class/method/package name - {@link JavaTestWriter#write}
      * collects every such problem into one {@link ExportRefused} - and refuses (naming the path) when the
      * file already exists, so a hand-edited test is never overwritten. A step with no Java form never
-     * reaches the recording ({@link #runAndRecord}), and a refusal leaves the recording as it was, so the
+     * reaches the recording ({@link #runAndRecord}) - except a do step whose domain step has none, refused here naming
+     * the step - and a refusal leaves the recording as it was, so the
      * export can be retried with other names. {@code clear} empties the recording after a write; the next one
      * needs a reset first, and is refused while a recording someone started runs ({@link #refuseClearWhileRecording}).
      */
@@ -1864,14 +1875,15 @@ public class UiMcpSession {
 
     /**
      * Makes the recording the steps of a recorded test file, as if they had just been run after a reset: every step needs a Java
-     * form (the recording stays exportable as a test), else this refuses and changes nothing. A broken file fails
+     * form (the recording stays exportable as a test), except a do step whose domain step has none, else this refuses and
+     * changes nothing. A broken file fails
      * with {@link RecordedTestFiles}' message. Returns {@code {loaded, name, description, steps}}.
      */
     public synchronized String loadRecordedTest(Path file) {
         Flow flow = RecordedTestFiles.read(file);
         checkDoSteps(flow, file.toAbsolutePath().normalize().toString());
         try {
-            JavaTestWriter.write(flow, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
+            JavaTestWriter.write(flow, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, keptForms);
         } catch (ExportRefused e) {
             throw new IllegalArgumentException(flow.name + " cannot be loaded into the recording: "
                     + String.join("; ", e.problems()) + "; run it with run_recorded_test or the JUnit runner instead");
@@ -2349,7 +2361,7 @@ public class UiMcpSession {
     private void validateEdit(List<Action> after) {
         if (after.isEmpty()) return;
         try {
-            JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
+            JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, keptForms);
         } catch (ExportRefused e) {
             throw new DriverException(Reason.BAD_INPUT, String.join("; ", e.problems()) + " (the recording is unchanged)");
         }
@@ -2372,7 +2384,8 @@ public class UiMcpSession {
     }
 
     // Each edit below is first tried on a copy of the recording (RecordingModel.copy): the model refuses a bad address
-    // or structure there (nothing is placed or widened for it), validateEdit refuses a result with no Java form, and only
+    // or structure there (nothing is placed or widened for it), validateEdit refuses a result with no Java form (a do step
+    // whose domain step has none excepted), and only
     // then is the real recording edited.
 
     /** Puts {@code step} at {@code at} (a step position for an action, a check label for a check) without running it; it counts as edited until a replay passes it. */
@@ -2560,7 +2573,7 @@ public class UiMcpSession {
         List<String> java = null;
         if (!actions.isEmpty()) {
             try {
-                java = JavaTestWriter.lines(flow, doForms);
+                java = JavaTestWriter.lines(flow, keptForms);
                 if (java.size() != actions.size()) java = null;
             } catch (ExportRefused e) {
                 // the recording as a whole has no Java form (a step the writer refuses): list the steps without it
@@ -2605,7 +2618,7 @@ public class UiMcpSession {
             if (!st.checkOnly()) {
                 RecordedStep a = first;
                 o.put("line", a.action.describe());
-                if (java != null) o.put("java", java.get(st.action));
+                putJava(o, java, a.action, st.action);
                 o.set("step", stripNulls(mapper.valueToTree(a.action)));
                 if (a.action.say != null) o.put("say", a.action.say);
                 if (a.edited) o.put("edited", true);
@@ -2619,7 +2632,7 @@ public class UiMcpSession {
                 co.put("n", labels.get(flat));
                 co.put("author", c.author.json);
                 co.put("line", c.action.describe());
-                if (java != null) co.put("java", java.get(flat));
+                putJava(co, java, c.action, flat);
                 co.set("step", stripNulls(mapper.valueToTree(c.action)));
                 if (c.action.say != null) co.put("say", c.action.say);
                 if (c.edited) co.put("edited", true);
@@ -2661,6 +2674,20 @@ public class UiMcpSession {
             }
         }
         view.changed(notice);
+    }
+
+    /**
+     * The record's {@code java} line, from {@code java} (null: the recording has none); a do step with no Java form gets
+     * {@code noJava}, why, instead.
+     */
+    private void putJava(ObjectNode into, List<String> java, Action action, int flat) {
+        if (java == null) return;
+        if (java.get(flat) != null) {
+            into.put("java", java.get(flat));
+        } else if (action instanceof DoAction) {
+            String why = doForms.of((DoAction) action).why();
+            if (why != null) into.put("noJava", why);
+        }
     }
 
     /** What the table row a record names is, and how it is named now; null for a record with no row. */

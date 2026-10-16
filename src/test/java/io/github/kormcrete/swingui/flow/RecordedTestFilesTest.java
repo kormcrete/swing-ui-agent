@@ -238,6 +238,8 @@ class RecordedTestFilesTest {
         refused("{\"version\":3,\"start\":\"reset\",\"requires\":[\"extras\"],\"steps\":[" + DO_ADD + "]}",
                 "step 1 (do)", "plugin 'order-desk'", "not in \"requires\"");
         refused(V3 + "\"steps\":[{\"action\":\"do\",\"params\":{}}]}", "step 1 (do)", "needs \"step\"");
+        refused(V3 + "\"steps\":[{\"action\":\"close\"}]}", "\"requires\" names plugins, but the recorded test has no do "
+                + "steps: leave it out");
     }
 
     @Test

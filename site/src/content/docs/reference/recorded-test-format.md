@@ -54,7 +54,7 @@ A step is an object with an `action` and the fields of that action: the same ste
 
 A check is an `expect` step without the `"action"`: its `target` and what it expects (`text`, ...), and an optional `say`. Checks go under the step they check, never as steps of their own. A step that is `"action": "expect"` is refused.
 
-A `do` step (version 3) runs one of a plugin's domain steps with concrete values: `{"action": "do", "step": "order-desk:addToCart", "params": {"product": "Gel pen, black"}}`. The agent names the plugin before the step's id. A domain check sits in `checks` and keeps its `"action": "do"`.
+A `do` step (version 3) runs one of a plugin's domain steps with concrete values: `{"action": "do", "step": "order-desk:addToCart", "params": {"product": "Gel pen, black"}}`. The agent names the plugin before the step's id. A domain check sits in `checks` and keeps its `"action": "do"`. A recorded test can hold any domain step; only an export as a Java test needs the plugin to give the step a Java form.
 
 The first step may hold only `checks`: `{"checks": [...]}`. They run before any action, for example on the screen after the reset. It cannot have a `say` of its own; put the sentence on a check. No other step may be check-only.
 
@@ -81,7 +81,7 @@ The reader is strict: a typo never silently drops what a step means. Every refus
 - **An unknown field** on the file, a step, a check or a group, with the fields it knows: `step 1 (press): unknown field 'colour'; known: [fragile, keys, say, target, timeout, via]`.
 - **`params`, `capture`:** `a recorded test holds exact values only; values per run or read from the app belong in a Java test`.
 - **Fields of later formats** (`author`) are refused with `belongs to a newer recorded test format; update swing-ui-agent`.
-- **`do` and `requires` in a version 2 file:** `needs format version 3`. A version 3 file with `do` steps needs `requires`, and names each plugin once.
+- **`do` and `requires` in a version 2 file:** `needs format version 3`. A version 3 file with `do` steps needs `requires`, and names each plugin once; `requires` without `do` steps is refused too.
 - **A `start` other than `reset`**, a missing `steps`, an empty `steps`.
 - **A check-only step that is not step 1**, an `expect` as a step, an empty `checks`.
 - **A group** without a `say`, with fewer than two steps, or inside another group.

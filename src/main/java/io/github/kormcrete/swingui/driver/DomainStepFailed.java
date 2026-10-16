@@ -24,11 +24,6 @@ public final class DomainStepFailed extends DriverException {
         return outcome;
     }
 
-    /** {@link #of(VerbOutcome, Throwable, boolean, UnaryOperator)} for a body that failed with its last step, if that one failed. */
-    public static DomainStepFailed of(VerbOutcome outcome, Throwable thrown) {
-        return of(outcome, thrown, true, UnaryOperator.<String>identity());
-    }
-
     /**
      * The failure of the domain step {@code outcome} describes, after its body threw {@code thrown}. When {@code byLastStep}
      * (the body threw the failure of its last step on, as is or as a cause) and that step failed, it gives the reason,

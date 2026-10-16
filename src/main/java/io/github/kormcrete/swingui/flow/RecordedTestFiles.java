@@ -233,7 +233,10 @@ public final class RecordedTestFiles {
         return names;
     }
 
-    /** Refuses do steps without a step id, without {@code "requires"}, or naming a plugin {@code "requires"} does not. */
+    /**
+     * Refuses do steps without a step id, without {@code "requires"}, or naming a plugin {@code "requires"} does not, and a
+     * {@code "requires"} without do steps.
+     */
     private static void doSteps(Reading r) {
         List<String> named = new ArrayList<String>();
         boolean any = false;
@@ -251,6 +254,9 @@ public final class RecordedTestFiles {
             if (!r.flow.requires.isEmpty() && !r.flow.requires.contains(plugin)) {
                 throw bad(r.source, label + ": its plugin '" + plugin + "' is not in \"requires\" " + r.flow.requires);
             }
+        }
+        if (!any && !r.flow.requires.isEmpty()) {
+            throw bad(r.source, "\"requires\" names plugins, but the recorded test has no do steps: leave it out");
         }
         if (any && r.flow.requires.isEmpty()) {
             throw bad(r.source, "needs \"requires\": the names of the plugins its do steps come from"
