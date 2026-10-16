@@ -175,6 +175,43 @@ class BodyTraceTest {
         assertThat(BodyTrace.of(step).why()).isEqualTo(BodyTrace.DEPENDS_ON_VALUES);
     }
 
+    /** A body that waits for ever, until its thread is interrupted. */
+    private static final DomainStep.Body WAITS = (ui, p) -> {
+        try {
+            new java.util.concurrent.CountDownLatch(1).await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    };
+
+    @Test
+    void aBodyThatDoesNotEndIsStoppedAtTheTimeLimit() {
+        DomainStep step = DomainStep.act("waitForStock", "Wait for {product}").param("product", ParamType.TEXT)
+                .code(WAITS).build();
+
+        long start = System.nanoTime();
+        BodyTrace.Result pattern = BodyTrace.of(step, java.time.Duration.ofMillis(200));
+        BodyTrace.Result concrete = BodyTrace.steps(step, Collections.singletonMap("product", "Gel pen, black"),
+                java.time.Duration.ofMillis(200));
+
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(5));
+        assertThat(pattern.derivable()).isFalse();
+        assertThat(pattern.why()).isEqualTo("the body did not end within 200 ms: it waits, loops or blocks");
+        assertThat(concrete.why()).isEqualTo("the body did not end within 200 ms: it waits, loops or blocks");
+    }
+
+    @Test
+    void withinTheTimeLimitATraceIsAsWithoutOne() {
+        DomainStep step = DomainStep.act("addToCart", "Add {product} to the cart")
+                .param("product", ParamType.TEXT)
+                .code((ui, p) -> addToCart(ui, p.text("product")))
+                .build();
+
+        assertThat(steps(BodyTrace.of(step, BodyTrace.TIME_LIMIT))).isEqualTo(steps(BodyTrace.of(step)));
+        assertThatThrownBy(() -> BodyTrace.steps(step, Collections.<String, String>emptyMap(), BodyTrace.TIME_LIMIT))
+                .isInstanceOf(DriverException.class).hasMessageContaining("needs param 'product'");
+    }
+
     @Test
     void aCheckedExceptionOrAStackOverflowIsAFailedBody() {
         DomainStep sneaky = DomainStep.act("sneaky", "Throw a checked exception")

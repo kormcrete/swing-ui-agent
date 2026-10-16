@@ -12,12 +12,18 @@ import com.fasterxml.jackson.databind.node.LongNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,7 +31,8 @@ import java.util.regex.Pattern;
  * A domain step's Java body as the steps it makes. {@link #of} gives them with {@code {param}} placeholders where its
  * values went, as a pattern: e.g. {@code addToCart(ui, product)} becomes a click on the table row whose Product is
  * {@code {product}} and a click on Add to cart. {@link #steps} gives them for concrete values. The body runs, in the
- * calling thread, on a {@link Client} over {@link TracingVerbs}: its Client calls reach no app. Anything else the
+ * calling thread (or, given a time limit, on a thread of its own), on a {@link Client} over {@link TracingVerbs}: its
+ * Client calls reach no app. Anything else the
  * body does (plugin or app code, files, a database) runs for real, once per run: with {@link #of}'s sentinel values
  * (below), or with the values given to {@link #steps}.
  *
@@ -87,6 +94,13 @@ public final class BodyTrace {
 
     private BodyTrace() {}
 
+
+    /**
+     * How long a trace may take when the agent runs one (at ready, for a recording's Java form): a body that waits,
+     * loops or blocks must not hold up the plugin or the session.
+     */
+    public static final Duration TIME_LIMIT = Duration.ofSeconds(5);
+
     /** Traces {@code step}'s Java body as a pattern; a step given as declarative steps has none to trace. */
     public static Result of(DomainStep step) {
         requireBody(step);
@@ -105,6 +119,53 @@ public final class BodyTrace {
             placeholders.add((ObjectNode) first.swap(s, null, "/" + i, numbers));
         }
         return new Result(placeholders, numbers, null);
+    }
+
+    /**
+     * {@link #of}, on a daemon thread of its own, given up after {@code limit}: a body still running then is not
+     * derivable ("the body did not end within ..."). Its thread is interrupted and left to end by itself (a body that
+     * ignores the interrupt keeps it busy; it never holds the caller).
+     */
+    public static Result of(DomainStep step, Duration limit) {
+        requireBody(step);
+        return bounded(step, limit, () -> of(step));
+    }
+
+    /**
+     * {@link #steps(DomainStep, Map)} within {@code limit}, as {@link #of(DomainStep, Duration)}; values it refuses are
+     * still BAD_INPUT, thrown here.
+     */
+    public static Result steps(DomainStep step, Map<String, String> values, Duration limit) {
+        requireBody(step);
+        return bounded(step, limit, () -> steps(step, values));
+    }
+
+    private static Result bounded(DomainStep step, Duration limit, Callable<Result> trace) {
+        FutureTask<Result> task = new FutureTask<Result>(trace);
+        Thread runner = new Thread(task, "swing-ui-agent trace " + step.id());
+        runner.setDaemon(true);
+        runner.setContextClassLoader(Thread.currentThread().getContextClassLoader());
+        runner.start();
+        try {
+            return task.get(limit.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            runner.interrupt();
+            return notDerivable("the body did not end within " + said(limit) + ": it waits, loops or blocks");
+        } catch (InterruptedException e) {
+            runner.interrupt();
+            Thread.currentThread().interrupt();
+            return notDerivable("the trace was interrupted");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            return notDerivable("the trace failed: " + cause);
+        }
+    }
+
+    private static String said(Duration d) {
+        long ms = d.toMillis();
+        return ms % 1000 == 0 ? ms / 1000 + " s" : ms + " ms";
     }
 
     /**

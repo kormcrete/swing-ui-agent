@@ -250,6 +250,48 @@ class ResolverTest {
         assertThat(resolver.resolve(Locator.of("section", "Header")).role).isEqualTo("section");
     }
 
+    /** A tab whose title leads with what it is and ends with data, e.g. the customer of a new order. */
+    private JButton newOrderTab() {
+        JTabbedPane orders = new JTabbedPane();
+        JPanel cart = new JPanel();
+        JButton add = new JButton("Add to cart");
+        cart.add(add);
+        orders.addTab("New order · Ada Shop Ltd", cart);
+        mainContent.add(orders);
+        return add;
+    }
+
+    @Test
+    void aTabScopeStepEndingInAStarMatchesThePrefix() {
+        JButton add = newOrderTab();
+        Locator l = Locator.of("button", "Add to cart");
+        l.scope = Arrays.asList("tab:New order*");
+        assertThat(resolver.resolve(l).component).isSameAs(add);
+        Locator section = Locator.of("table", null);
+        section.scope = Arrays.asList("tab:Line*", "section:Ord*");
+        assertThat(resolver.resolve(section).component).isSameAs(table);
+        Locator other = Locator.of("button", "Add to cart");
+        other.scope = Arrays.asList("tab:Orders*");
+        assertThat(catchThrowableOfType(() -> resolver.resolve(other), DriverException.class).reason())
+                .isEqualTo(Reason.NOT_FOUND);
+    }
+
+    @Test
+    void withoutAStarItStaysExact() {
+        JButton add = newOrderTab();
+        Locator prefix = Locator.of("button", "Add to cart");
+        prefix.scope = Arrays.asList("tab:New order");
+        assertThat(catchThrowableOfType(() -> resolver.resolve(prefix), DriverException.class).reason())
+                .isEqualTo(Reason.NOT_FOUND);
+        Locator exact = Locator.of("button", "Add to cart");
+        exact.scope = Arrays.asList("tab:New order · Ada Shop Ltd");
+        assertThat(resolver.resolve(exact).component).isSameAs(add);
+        // a star leading or inside the title is text, as is a star on an id step
+        Locator lead = Locator.of("button", "Add to cart");
+        lead.scope = Arrays.asList("tab:*Ada Shop Ltd");
+        assertThat(resolver.matches(lead)).isEmpty();
+    }
+
     @Test
     void windowTokensNarrowTheSearch() {
         Locator bare = Locator.of("button", "Assign");

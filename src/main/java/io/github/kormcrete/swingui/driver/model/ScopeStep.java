@@ -5,7 +5,8 @@ package io.github.kormcrete.swingui.driver.model;
  * {@code id:<name>}. An id step means "strictly inside a component whose {@code getName()} is
  * {@code <name>}" - never that component itself, and never a section id a source contributed. Only a
  * caller writes id steps ({@code Target.byId(x)} used as a container, or an MCP target's scope);
- * {@code Trail} and the recorder never derive one.
+ * {@code Trail} and the recorder never derive one. A tab or section title that ends in {@code *} matches every title
+ * that starts with the rest ({@code tab:New order*}), for a title that ends with data such as the customer.
  */
 public final class ScopeStep {
 

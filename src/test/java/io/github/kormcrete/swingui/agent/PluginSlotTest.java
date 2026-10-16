@@ -174,6 +174,34 @@ class PluginSlotTest {
     }
 
     @Test
+    void aPatternThatDoesNotParseIsAProblem() {
+        PluginSlot slot = vocabularySlot("order-desk", addToCart(),
+                DomainStep.act("addQtyToCart", "Add {qty} × {product} to the cart").param("product", ParamType.TEXT)
+                        .param("qty", ParamType.INT).code(NOTHING)
+                        .match("{\"action\":\"click\",\"target\":{\"row\":{\"Product\":\"{product}\"}}}",
+                                "{\"action\":\"type\",\"text\":\"{count}\"}").build(),
+                DomainStep.act("placeOrder", "Place the order").code(NOTHING)
+                        .match("{\"target\":{\"name\":\"Place order\"}}").build());
+        assertThat(ids(slot.vocabulary())).containsExactly("addToCart");
+        assertThat(slot.patterns()).hasSize(1);
+        assertThat(slot.patterns().get(0).step()).isSameAs(slot.vocabulary().get(0));
+        assertThat(slot.vocabularyProblems()).containsExactly(
+                "order-desk: step 'addQtyToCart' dropped: match entry 2 names {count}, which is not a declared param",
+                "order-desk: step 'placeOrder' dropped: match entry 1 has no action");
+    }
+
+    @Test
+    void aStepWhosePatternCannotBeDerivedStaysWithAWhy() {
+        PluginSlot slot = vocabularySlot("order-desk", addToCart(),
+                DomainStep.act("placeOrder", "Place the order").code((ui, p) -> ui.button("Place order").click()).build());
+        assertThat(ids(slot.vocabulary())).containsExactly("addToCart", "placeOrder");
+        assertThat(slot.vocabularyProblems()).isEmpty();
+        assertThat(slot.patterns().get(0).why()).isEqualTo("the body makes no steps");
+        assertThat(slot.patterns().get(1).why()).isNull();
+        assertThat(slot.patterns().get(1).patterns()).hasSize(1);
+    }
+
+    @Test
     void optionalAndChoicesBeforeAnyParamAreRefusedAtOnce() {
         assertThatThrownBy(() -> DomainStep.act("placeOrder", "Place the order").optional("1"))
                 .isInstanceOf(IllegalStateException.class)

@@ -284,9 +284,20 @@ public final class Resolver {
     private static boolean isSubsequence(List<String> wanted, List<String> trail) {
         int i = 0;
         for (String step : trail) {
-            if (i < wanted.size() && wanted.get(i).equals(step)) i++;
+            if (i < wanted.size() && scopeStepMatches(wanted.get(i), step)) i++;
         }
         return i == wanted.size();
+    }
+
+    /**
+     * A wanted {@code tab:} or {@code section:} step whose title ends in {@code *} matches every title that starts with
+     * the rest ({@code tab:New order*} reaches {@code tab:New order · Ada Shop Ltd}); any other step only itself. A
+     * star elsewhere in the title is text, and a title that really ends in {@code *} still matches itself.
+     */
+    static boolean scopeStepMatches(String wanted, String step) {
+        if (wanted.equals(step)) return true;
+        boolean glob = wanted.endsWith("*") && (wanted.startsWith("tab:") || wanted.startsWith("section:"));
+        return glob && step.startsWith(wanted.substring(0, wanted.length() - 1));
     }
 
     private Resolved found(Component c, Integer tab, String role, String name, WindowRoot root,

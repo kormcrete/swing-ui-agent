@@ -216,12 +216,12 @@ public final class Plugins implements StepHost, UiInventory {
 
     /**
      * The steps {@code d} makes for its values, as do_action takes them: a declarative body's steps filled in, a Java
-     * body's traced ({@link BodyTrace#steps}: its code runs once more, twice, on a Client that reaches no app); none, with
-     * why, when the body cannot be traced.
+     * body's traced ({@link BodyTrace#steps}: its code runs once more, twice, on a Client that reaches no app, within
+     * {@link BodyTrace#TIME_LIMIT}); none, with why, when the body cannot be traced.
      */
     public static BodyTrace.Result steps(DoStep d) {
         DomainStep step = d.found.step;
-        if (step.body() != null) return BodyTrace.steps(step, d.values);
+        if (step.body() != null) return BodyTrace.steps(step, d.values, BodyTrace.TIME_LIMIT);
         MapParams values = MapParams.of(step, d.values);
         List<ObjectNode> filled = new ArrayList<ObjectNode>();
         for (int i = 0; i < step.steps().size(); i++) {

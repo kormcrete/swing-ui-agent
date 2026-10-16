@@ -502,6 +502,7 @@ class JavaTestWriterTest {
                 doStep("order-desk:addQtyToCart", "Add 03 × A4 paper, \"500\" to the cart", "product", "A4 paper, \"500\"", "qty", "03"),
                 doStep("order-desk:placeOrder", "Place it"));
         ((MenuVerb) f.steps.get(0)).path = Arrays.asList("Orders", "New order");
+        int atReady = ran.get();   // the plugin traced each body for its match pattern when it became ready
 
         String java = JavaTestWriter.write(f, "com.example.uitest.recorded", "SmokeUiIT", "walk", forms);
 
@@ -514,7 +515,7 @@ class JavaTestWriterTest {
                 "        // Place it",
                 "        OrderDeskSteps.placeOrder(ui);",
                 "");
-        assertThat(ran.get()).isZero();   // a typed call needs no trace of the body
+        assertThat(ran.get()).isEqualTo(atReady);   // a typed call needs no trace of the body
         assertThat(JavaTestWriter.lines(f, forms)).containsExactly("ui.menu(\"Orders\", \"New order\");",
                 "OrderDeskSteps.addQtyToCart(ui, \"A4 paper, \\\"500\\\"\", 3);", "OrderDeskSteps.placeOrder(ui);");
     }

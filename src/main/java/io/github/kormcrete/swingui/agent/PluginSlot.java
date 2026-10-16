@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.PluginParts;
+import io.github.kormcrete.swingui.vocab.PatternCompiler;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,6 +46,11 @@ public final class PluginSlot {
     public List<DomainStep> vocabulary() { return vocabulary.steps; }
     /** One line per dropped step (or a vocabulary that failed), naming the plugin; set and emptied with {@link #vocabulary}. */
     public List<String> vocabularyProblems() { return vocabulary.problems; }
+    /**
+     * The patterns of the {@link #vocabulary} steps, one {@link PatternCompiler.Compiled} per step in the same order
+     * (a step without a pattern says why); set and emptied with {@link #vocabulary}.
+     */
+    public List<PatternCompiler.Compiled> patterns() { return vocabulary.patterns; }
 
     public synchronized void waiting(String detail) { set(State.WAITING, detail); }
     public synchronized void starting(String detail) { set(State.STARTING, detail); }
@@ -57,7 +63,10 @@ public final class PluginSlot {
         set(State.FAILED, wasReady ? "failed after ready: " + detail : detail);
     }
 
-    /** Reads and checks the vocabulary first (plugin code, so outside the lock); a step that fails a check is dropped. */
+    /**
+     * Reads and checks the vocabulary first (plugin code, so outside the lock): a step that fails a check is dropped, and
+     * a Java body without {@code match(...)} is traced for its pattern (each within {@link BodyTrace#TIME_LIMIT}).
+     */
     public void ready(PluginParts parts, String detail) {
         VocabularyCheck checked = VocabularyCheck.of(name, parts == null ? null : parts.vocabulary);
         readyChecked(parts, checked, detail);

@@ -59,6 +59,14 @@ class TargetTest {
     }
 
     @Test
+    void aTabTitleWithAStarPassesThroughAsItIs() {
+        ui.tab("New order*").button("Add to cart").click();
+        Locator expected = loc("button", "Add to cart");
+        expected.scope = Arrays.asList("tab:New order*");
+        assertThat(verbs.calls).containsExactly("click " + expected + " null null null null");
+    }
+
+    @Test
     void aTabActedOnIsTheTabItself() {
         ui.tab("Master data").click();
         assertThat(verbs.calls.get(0)).startsWith("click " + loc("tab", "Master data"));
