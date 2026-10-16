@@ -37,6 +37,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1172,7 +1173,7 @@ final class StepsPanel extends JPanel {
     }
 
     /** {@code lead} and {@code text} as HTML for a list row: {@code values} bold where the text shows them, spaces kept. */
-    static String html(String lead, String text, java.util.Collection<String> values) {
+    static String html(String lead, String text, Collection<String> values) {
         boolean[] bold = new boolean[text.length()];
         for (String v : values) {
             if (v == null || v.isEmpty()) continue;

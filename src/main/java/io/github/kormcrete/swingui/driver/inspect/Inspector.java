@@ -230,11 +230,32 @@ public final class Inspector {
         String foldHint();
 
         /**
+         * {@link #steps}, {@link #undoLabel} and {@link #foldHint} as of one change of the recording, read together: the
+         * steps panel shows them as one. Never waits, as {@link #steps}.
+         */
+        StepsView stepsView();
+
+        /**
          * The app plugin's domain checks that {@code checks} (the expect steps the Check menu offers for one element, from
          * what it shows now; {@code seen}: the element as it was seen, or null) fit, each filled with the values they
          * show; empty without a vocabulary. Off the EDT and never under the session's lock: it only matches.
          */
         List<DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen);
+    }
+
+    /** What the steps panel shows of the recording, as of one change: its steps, what undo would take back, the hint. */
+    public static final class StepsView {
+        public final List<StepLine> steps;
+        /** Null when nothing. */
+        public final String undoLabel;
+        /** Null when none. */
+        public final String hint;
+
+        public StepsView(List<StepLine> steps, String undoLabel, String hint) {
+            this.steps = steps;
+            this.undoLabel = undoLabel;
+            this.hint = hint;
+        }
     }
 
     /** A domain check the Check menu offers: its sentence with the values filled in, and the {@code do} step that is it. */

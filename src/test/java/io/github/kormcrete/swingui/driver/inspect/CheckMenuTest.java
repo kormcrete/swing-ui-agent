@@ -125,6 +125,13 @@ class CheckMenuTest {
         assertThat(menu.labels()).containsSubsequence("Total", "✓ The cart total is €31.32", "Reads “€31.32”");
         menu.choose("✓ The cart total is €31.32");
         assertThat(chosen).containsExactly(cartTotal);
+        // still on their way: a greyed "…" holds their place, and they take it when they come
+        CheckMenu later = CheckMenu.of(target, choices, null, (step, t) -> chosen.add(step));
+        assertThat(later.labels()).containsSubsequence("Total", CheckMenu.WAITING, "Reads “€31.32”");
+        assertThat(later.waiting()).isTrue();
+        later.domain(Collections.singletonList(new Inspector.DomainCheck("The cart total is €31.32", cartTotal)));
+        assertThat(later.labels()).containsSubsequence("Total", "✓ The cart total is €31.32", "Reads “€31.32”")
+                .doesNotContain(CheckMenu.WAITING);
         // without a plugin's check the menu is as before
         assertThat(CheckMenu.of(target, choices, Collections.<Inspector.DomainCheck>emptyList(), (step, t) -> { }).labels())
                 .noneMatch(l -> l.startsWith("✓"));

@@ -52,23 +52,28 @@ final class CheckMenu extends JPopupMenu {
 
     /**
      * The menu for {@code t}: its title is what the person sees there, not the locator, which would make the menu
-     * wider than the window and means nothing to them; then the plugin's {@code domain} checks, then the element's own
-     * {@code choices} ({@link #choices}).
+     * wider than the window and means nothing to them; then the plugin's {@code domain} checks (null: still on their way,
+     * a greyed "…" holds their place until {@link #domain}), then the element's own {@code choices} ({@link #choices}).
      */
     static CheckMenu of(Target t, List<Choice> choices, List<Inspector.DomainCheck> domain,
                         BiConsumer<Map<String, Object>, Target> run) {
         CheckMenu menu = new CheckMenu();
+        menu.target = t;
+        menu.run = run;
         JMenuItem title = new JMenuItem(t.shown);
         title.setEnabled(false);
         title.setFont(title.getFont().deriveFont(Font.BOLD));
         menu.add(title);
         menu.addSeparator();
-        for (Inspector.DomainCheck d : domain) {
-            JMenuItem item = new JMenuItem("✓ " + d.sentence);
-            item.addActionListener(x -> run.accept(d.step, t));
-            menu.add(item);
+        if (domain == null) {
+            // the plugin's checks are still being matched: a greyed line holds their place
+            menu.waiting = new JMenuItem(WAITING);
+            menu.waiting.setEnabled(false);
+            menu.add(menu.waiting);
+            menu.addSeparator();
+        } else {
+            menu.addDomain(domain, 2);
         }
-        if (!domain.isEmpty()) menu.addSeparator();
         for (Choice c : choices) {
             JMenuItem item = new JMenuItem(c.step == null ? c.label + "   (expect cannot check this yet)" : c.label);
             item.setEnabled(c.step != null);
@@ -76,6 +81,43 @@ final class CheckMenu extends JPopupMenu {
             menu.add(item);
         }
         return menu;
+    }
+
+    /** What holds the place of the plugin's checks while they are matched. */
+    static final String WAITING = "…";
+
+    private Target target;
+    private BiConsumer<Map<String, Object>, Target> run;
+    /** The greyed "…" while the plugin's checks are on their way; null when they came (or were never asked for). */
+    private JMenuItem waiting;
+
+    /**
+     * The plugin's checks came ({@code domain}, maybe none): they take the place of the greyed "…", and a menu that
+     * shows grows to hold them. Nothing when they came already.
+     */
+    void domain(List<Inspector.DomainCheck> domain) {
+        if (waiting == null) return;
+        int at = getComponentIndex(waiting);
+        remove(at);   // the "…"
+        remove(at);   // and its separator
+        waiting = null;
+        addDomain(domain, at);
+        if (isVisible()) pack(); else revalidate();
+    }
+
+    /** Whether the plugin's checks are still on their way. */
+    boolean waiting() {
+        return waiting != null;
+    }
+
+    /** Puts a "✓ …" item per domain check at {@code at}, then a separator when there is any. */
+    private void addDomain(List<Inspector.DomainCheck> domain, int at) {
+        for (Inspector.DomainCheck d : domain) {
+            JMenuItem item = new JMenuItem("✓ " + d.sentence);
+            item.addActionListener(x -> run.accept(d.step, target));
+            insert(item, at++);
+        }
+        if (!domain.isEmpty()) insert(new JPopupMenu.Separator(), at);
     }
 
     /** The bold title on top. */

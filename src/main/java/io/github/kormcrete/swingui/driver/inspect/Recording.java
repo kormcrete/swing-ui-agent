@@ -12,6 +12,7 @@ import java.awt.Component;
 import java.awt.KeyEventDispatcher;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,7 +23,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -102,7 +105,7 @@ final class Recording {
     /** Counts the Check menu's clicks: plugin checks that come back for an older click are dropped. */
     private int checkAsked;
     /** Shows the Check menu where the person clicked (a seam for tests); not on a window that closed meanwhile. */
-    java.util.function.BiConsumer<CheckMenu, java.awt.event.MouseEvent> showMenu = (m, e) -> {
+    BiConsumer<CheckMenu, MouseEvent> showMenu = (m, e) -> {
         if (e.getComponent().isShowing()) m.show(e.getComponent(), e.getX(), e.getY());
     };
     /** How long a check's result stays on the bar in Check mode before the way out is shown again. */
@@ -195,6 +198,8 @@ final class Recording {
     void mode(boolean check) {
         if (replaying || agentReplay != null || state == State.STOPPED) return;
         if (check) steps.flush();
+        // a Check menu's plugin checks still on their way belong to the mode it was opened in
+        checkAsked++;
         state = check ? State.CHECKING : State.RECORDING;
         if (check) activeBar.relabel("Record", BACK); else activeBar.relabel(BACK, "Record");
         activeBar.active(check ? "Check" : "Record");
@@ -215,26 +220,41 @@ final class Recording {
     }
 
     /**
-     * The Check menu for {@code t}, clicked with {@code e} in the window of {@code o}: the element's checks from what it
-     * shows now, and first the app plugin's domain checks they fit, which the sink thread matches (never the EDT). It
-     * shows once those are known, unless Check mode ended or the person clicked again meanwhile.
+     * Matches the Check menu's clicks against the app plugin's domain checks: its own thread, so a click never waits
+     * for the sink thread, which may wait for the session (a check timing out, the agent's step). Matching takes no lock.
      */
-    void offerChecks(Target t, java.awt.event.MouseEvent e, Overlay o) {
+    private static final ExecutorService CHECKS = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "swingui-inspect-checks");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * The Check menu for {@code t}, clicked with {@code e} in the window of {@code o}: at once, with the element's checks
+     * from what it shows now, and a greyed "…" where the app plugin's domain checks go; those are matched off the EDT
+     * ({@link #CHECKS}) and take the "…"'s place when they come. Checks that come for an older click, or after Check mode
+     * ended, add nothing.
+     */
+    void offerChecks(Target t, MouseEvent e, Overlay o) {
         List<CheckMenu.Choice> choices = CheckMenu.choices(t);
         List<Map<String, Object>> steps = CheckMenu.steps(choices);
         int asked = ++checkAsked;
-        sinkThread.submit(() -> {
+        CheckMenu menu = CheckMenu.of(t, choices, steps.isEmpty() ? Collections.<Inspector.DomainCheck>emptyList() : null,
+                (step, target) -> check(step, target, o));
+        showMenu.accept(menu, e);
+        if (steps.isEmpty()) return;
+        CHECKS.submit(() -> {
             List<Inspector.DomainCheck> domain;
             try {
-                domain = steps.isEmpty() ? Collections.<Inspector.DomainCheck>emptyList() : sink.domainChecks(steps, t.seen);
+                domain = sink.domainChecks(steps, t.seen);
             } catch (RuntimeException broken) {
                 // the plugin's checks are extra: the element's own are offered all the same
                 domain = Collections.emptyList();
             }
             List<Inspector.DomainCheck> found = domain;
             SwingUtilities.invokeLater(() -> {
-                if (asked != checkAsked || state != State.CHECKING || replaying || agentReplay != null) return;
-                showMenu.accept(CheckMenu.of(t, choices, found, (step, target) -> check(step, target, o)), e);
+                boolean current = asked == checkAsked && state == State.CHECKING && !replaying && agentReplay == null;
+                menu.domain(current ? found : Collections.<Inspector.DomainCheck>emptyList());
             });
         });
     }
@@ -659,6 +679,7 @@ final class Recording {
             Inspector.Result r = sink.delete(id);
             SwingUtilities.invokeLater(() -> {
                 if (r.ok) marks.remove(id);
+                endRecognised();
                 bar.text(r.ok ? r.line : "✗ not deleted: " + r.line);
                 refresh(record);
             });
@@ -695,22 +716,18 @@ final class Recording {
                 r = new Inspector.Result(false, why(e));
             }
             Inspector.Result done = r;
-            List<Inspector.StepLine> read;
-            String label;
+            Inspector.StepsView read;
             try {
-                read = sink.steps();
-                label = sink.undoLabel();
+                read = sink.stepsView();
             } catch (RuntimeException e) {
                 // the edit's answer still comes: a field waiting for it never stays uneditable
                 read = null;
-                label = null;
             }
-            List<Inspector.StepLine> all = read;
-            String undoLabel = label;
-            String hint = all == null ? null : foldHint();
+            Inspector.StepsView view = read;
             SwingUtilities.invokeLater(() -> {
+                endRecognised();
                 bar.text(done.ok ? done.line : refused + done.line);
-                if (all != null) showSteps(all, undoLabel, hint, -1); else refresh(-1);
+                if (view != null) showSteps(view, -1); else refresh(-1);
                 result.complete(done);
             });
         });
@@ -722,6 +739,7 @@ final class Recording {
         sinkThread.submit(() -> {
             Inspector.Result r = sink.undo();
             SwingUtilities.invokeLater(() -> {
+                endRecognised();
                 bar.text(r.ok ? "undid: " + r.line : "✗ not undone: " + r.line);
                 refresh(-1);
             });
@@ -731,27 +749,19 @@ final class Recording {
     /** Re-reads the recording into the panel; {@code select} picks a record's row (-1 keeps the selection). */
     private void refresh(int select) {
         sinkThread.submit(() -> {
-            List<Inspector.StepLine> all = sink.steps();
-            String undoLabel = sink.undoLabel();
-            String hint = foldHint();
-            SwingUtilities.invokeLater(() -> showSteps(all, undoLabel, hint, select));
+            Inspector.StepsView view = sink.stepsView();
+            SwingUtilities.invokeLater(() -> showSteps(view, select));
         });
     }
 
-    /** The sink's hint of what the last steps could become; null when none, or when it cannot be read. Sink thread. */
-    private String foldHint() {
-        try {
-            return sink.foldHint();
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
     /**
-     * Shows the recording {@code all} as read on the sink thread, and under it {@code hint}; {@code select} as for
-     * {@link #refresh}. EDT.
+     * Shows the recording as {@code view} has it (read on the sink thread, as of one change), and under it its hint;
+     * {@code select} as for {@link #refresh}. EDT.
      */
-    private void showSteps(List<Inspector.StepLine> all, String undoLabel, String hint, int select) {
+    private void showSteps(Inspector.StepsView view, int select) {
+        List<Inspector.StepLine> all = view.steps;
+        String undoLabel = view.undoLabel;
+        String hint = view.hint;
         Set<Integer> ids = new HashSet<Integer>();
         for (Inspector.StepLine s : all) ids.add(s.id);
         marks.keySet().retainAll(ids);

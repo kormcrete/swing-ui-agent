@@ -3004,28 +3004,61 @@ class RecordingTest {
         MouseEvent click = new MouseEvent(scene.save, MouseEvent.MOUSE_PRESSED, 0, 0, 5, 5, 1, false);
         Overlay o = onEdt(() -> scene.inspector.overlay(frame.getRootPane()));
 
-        // two clicks before the plugin's checks are known: only the last one's menu shows
+        // each click's menu shows at once, a "…" where the plugin's checks go; only the last click's get them
         SwingUtilities.invokeAndWait(() -> {
             recording.offerChecks(save, click, o);
             recording.offerChecks(save, click, o);
         });
-        CheckMenu menu = eventually(() -> shown.isEmpty() ? null : shown.get(0));
-        settle();
-        assertThat(shown).hasSize(1);
-        assertThat(menu.labels()).containsSubsequence("Save", "✓ The order is placed", "Reads “Save”");
+        assertThat(shown).hasSize(2);
+        CheckMenu older = shown.get(0);
+        CheckMenu menu = shown.get(1);
+        eventually(() -> menu.waiting() || older.waiting() ? null : Boolean.TRUE);
+        assertThat(menu.labels()).containsSubsequence("Save", "✓ The order is placed", "Reads “Save”")
+                .doesNotContain(CheckMenu.WAITING);
+        assertThat(older.labels()).doesNotContain(CheckMenu.WAITING).noneMatch(l -> l.startsWith("✓"));
         // the plugin's checks were matched with the element's own checks, as offered
         assertThat(sink.askedChecks.get(0)).anySatisfy(s -> assertThat(s).containsEntry("text", "Save"));
         SwingUtilities.invokeAndWait(() -> menu.choose("✓ The order is placed"));
         eventually(() -> sink.lines().contains("do") ? Boolean.TRUE : null);
 
-        // out of Check mode before the answer came: no menu
+        // out of Check mode and back before the answer came: that menu gets none
         shown.clear();
         SwingUtilities.invokeAndWait(() -> {
             recording.offerChecks(save, click, o);
             recording.mode(false);
+            recording.mode(true);
         });
-        settle();
-        assertThat(shown).isEmpty();
+        CheckMenu left = shown.get(0);
+        eventually(() -> left.waiting() ? null : Boolean.TRUE);
+        assertThat(left.labels()).noneMatch(l -> l.startsWith("✓"));
+    }
+
+    @Test
+    void theCheckMenuOpensAtOnceWhileTheSinkThreadIsBusy() throws Exception {
+        sink.domainChecks = Collections.singletonList(new Inspector.DomainCheck("The order is placed",
+                Collections.<String, Object>singletonMap("action", "do")));
+        List<CheckMenu> shown = Collections.synchronizedList(new java.util.ArrayList<CheckMenu>());
+        withSteps();   // the recording on this test's sink thread, which the test holds below
+        SwingUtilities.invokeAndWait(() -> {
+            recording.showMenu = (m, e) -> shown.add(m);
+            recording.mode(true);
+        });
+        Target save = onEdt(() -> scene.inspector.component(scene.save));
+        MouseEvent click = new MouseEvent(scene.save, MouseEvent.MOUSE_PRESSED, 0, 0, 5, 5, 1, false);
+        Overlay o = onEdt(() -> scene.inspector.overlay(frame.getRootPane()));
+        // the person's step (or a check waiting out its timeout) holds the sink thread
+        CountDownLatch busy = new CountDownLatch(1);
+        sinkThread.submit(() -> { busy.await(); return null; });
+        try {
+            SwingUtilities.invokeAndWait(() -> recording.offerChecks(save, click, o));
+            assertThat(shown).hasSize(1);
+            assertThat(shown.get(0).labels()).contains("Reads “Save”");
+            // the plugin's checks do not wait for the sink thread either
+            eventually(() -> shown.get(0).waiting() ? null : Boolean.TRUE);
+            assertThat(shown.get(0).labels()).contains("✓ The order is placed");
+        } finally {
+            busy.countDown();
+        }
     }
 
     @Test

@@ -783,10 +783,13 @@ public class UiMcpSession {
             public Inspector.Result undoFold(int id) {
                 if (agentReplaying != null) return AGENT_REPLAYING;
                 synchronized (UiMcpSession.this) {
-                    String did = model.undoFold(id, RecordedStep.Author.PERSON);
-                    if (did == null) {
+                    if (!model.lastEditFolded(id)) {
                         return new Inspector.Result(false, "the recording changed since: Unfold on its row takes the fold back");
                     }
+                    // checked as the palette's ↶ Undo checks what it would leave
+                    Inspector.Result refused = refusedEdit(model.undoPreview().steps);
+                    if (refused != null) return refused;
+                    String did = model.undoFold(id, RecordedStep.Author.PERSON);
                     publish();
                     String undid = "undid the ";
                     return new Inspector.Result(true, did.startsWith(undid) ? did.substring(undid.length()) : did);
@@ -796,6 +799,12 @@ public class UiMcpSession {
             @Override
             public String foldHint() {
                 return published.hint;
+            }
+
+            @Override
+            public Inspector.StepsView stepsView() {
+                Published p = published;
+                return new Inspector.StepsView(p.lines, p.undoLabel, p.hint);
             }
 
             @Override
@@ -2913,8 +2922,8 @@ public class UiMcpSession {
 
     /**
      * The domain checks of the ready plugins whose pattern is one step and fits one of {@code checks} (the Check menu's
-     * expect steps for one element, {@code seen} how it was seen), each with its values, the most specific first; a
-     * check fitted twice is offered once. Matches only: no lock, no step runs.
+     * expect steps for one element, {@code seen} how it was seen), each with its values, in the order of the checks they
+     * fit; a check fitted twice is offered once. Matches only: no lock, no step runs.
      */
     List<Inspector.DomainCheck> domainChecks(List<Map<String, Object>> checks, Locator seen) {
         List<Inspector.DomainCheck> out = new ArrayList<Inspector.DomainCheck>();

@@ -810,9 +810,13 @@ final class RecordingModel {
      * (nothing changes) when it is not, or no fold made it.
      */
     String undoFold(int id, RecordedStep.Author by) {
+        return lastEditFolded(id) ? undo(by) : null;
+    }
+
+    /** Whether the last edit is the fold that made the record {@code id}, which is still there. */
+    boolean lastEditFolded(int id) {
         Edit e = history.peekFirst();
-        if (e == null || e.folded != id || indexOf(id) < 0) return null;
-        return undo(by);
+        return e != null && e.folded == id && indexOf(id) >= 0;
     }
 
     /** Puts the raw steps of fold {@code n} back in its place, each kept raw; its checks stay under the last one. */

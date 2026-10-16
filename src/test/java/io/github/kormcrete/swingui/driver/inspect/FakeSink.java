@@ -245,6 +245,7 @@ final class FakeSink implements Inspector.Sink {
     /** The live hint under the steps list (null: none). */
     volatile String foldHint;
     @Override public String foldHint() { return foldHint; }
+    @Override public Inspector.StepsView stepsView() { return new Inspector.StepsView(steps(), undoLabel(), foldHint()); }
 
     /** The domain checks the Check menu is offered; and the checks it asked about, each time. */
     volatile List<Inspector.DomainCheck> domainChecks = Collections.emptyList();
