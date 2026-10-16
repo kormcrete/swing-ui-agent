@@ -1,11 +1,14 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.spi.PluginParts;
+import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Recorder;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.RecordedTestFolderNotWritable;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
+import io.github.kormcrete.swingui.spi.DomainStep;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +18,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -166,6 +171,32 @@ class UiMcpExportRecordedTestTest {
         session.startRecording(true);
         clickSave();
         assertThat(export("save-order-2", true).has("startWarning")).isFalse();
+    }
+
+    /** A session whose order-desk plugin offers one domain step made of {@code body}; recording began at no defined start. */
+    private UiMcpSession withDomainStep(java.util.function.Consumer<io.github.kormcrete.swingui.junit.Client> body) {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Collections.singletonList(
+                DomainStep.act("openNewOrder", "Open a new order").code((ui, p) -> body.accept(ui)).build())), "ok");
+        UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
+        s.recordedDir(testsDir, true);
+        s.startRecording(false);
+        return s;
+    }
+
+    @Test
+    void aLeadingDoStepThatOpensAMenuIsADefinedStart() throws Exception {
+        UiMcpSession s = withDomainStep(ui -> ui.menu("Orders", "New order"));
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openNewOrder\"}"));
+        assertThat(mapper.readTree(s.exportRecordedTest("open", "", "", true)).has("startWarning")).isFalse();
+    }
+
+    @Test
+    void aLeadingDoStepThatClicksStillWarns() throws Exception {
+        UiMcpSession s = withDomainStep(ui -> ui.button("Archive").click());
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openNewOrder\"}"));
+        assertThat(mapper.readTree(s.exportRecordedTest("open", "", "", true)).path("startWarning").asText())
+                .contains("begin with a menu");
     }
 
     @Test

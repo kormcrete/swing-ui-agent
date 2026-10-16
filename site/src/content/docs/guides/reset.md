@@ -73,6 +73,8 @@ Without a plugin, it also adds a `startWarning` when the first step is not a men
 the test begins with 'click(tab 'Orders')', which works only on the screen the app happens to show after a reset (no app plugin: a reset only closes dialogs); begin with a menu, a key shortcut or navigate so the test gets to its own starting screen
 ```
 
+A plugin that adds only domain steps (a vocabulary, no app hooks) does not change the reset: it still closes dialogs only. A first step that is one of its domain steps counts as getting to the starting screen when the steps it stands for begin with a menu, a key press or `navigate`; one that begins with a click still warns.
+
 With a plugin that resets the app to a defined state, there is no warning: the test starts where the recording did.
 
 `export_test` with `"clear":true` empties the recording after writing it; the next test needs a reset first.

@@ -253,15 +253,20 @@ final class SessionTool implements McpToolDefinition {
     }
 
     /**
-     * The app plugin's hooks for a reset; null when no plugin is configured or the app plugin has no AppHooks, and then
-     * a reset that names a user is a CAPABILITY_GAP. A configured app plugin that is not ready fails as {@link #app}.
+     * The app plugin's hooks for a reset; null when no plugin is configured, the plugins are ready and none has app
+     * hooks (a vocabulary only: the plugin-less reset), or the app plugin has no AppHooks, and then a reset that names
+     * a user is a CAPABILITY_GAP. A plugin that is not ready (it may be the app plugin) fails as {@link #app}.
      */
     private AppHooks resetHooks(JsonNode a) {
         AppHooks app = null;
         if (!plugins.slots().isEmpty()) {
             PluginParts p = plugins.app();
-            if (p == null) throw new DriverException(Reason.CAPABILITY_GAP, plugins.unavailable("reset"));
-            app = p.app;
+            if (p != null) {
+                app = p.app;
+            } else if (plugins.appSlot().state() != PluginSlot.State.READY) {
+                // loading or failed: it may be the app plugin. All ready and none with a host: a vocabulary only
+                throw new DriverException(Reason.CAPABILITY_GAP, plugins.unavailable("reset"));
+            }
         }
         if (app == null && a != null && (a.hasNonNull("alias") || a.hasNonNull("user"))) {
             throw new DriverException(Reason.CAPABILITY_GAP, "logging in as " + who(a)

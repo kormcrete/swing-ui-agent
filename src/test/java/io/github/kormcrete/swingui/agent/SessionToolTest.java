@@ -14,6 +14,7 @@ import io.github.kormcrete.swingui.spi.StepHost;
 
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.function.IntSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -329,6 +330,36 @@ class SessionToolTest {
         plugins.add("demo", Paths.get("l")).waiting("waiting for a.B to load");
         assertThatThrownBy(() -> tool(plugins, null, () -> 0).invoke(mapper.readTree("{\"op\":\"reset\"}")))
                 .hasMessageContaining("CAPABILITY_GAP: reset needs the app plugin; demo is waiting");
+    }
+
+    private static Plugins vocabularyOnly() {
+        Plugins plugins = new Plugins(null);
+        plugins.add("order-desk", Paths.get("l")).ready(new PluginParts(() -> Collections.<DomainStep>emptyList()), "ok");
+        return plugins;
+    }
+
+    @Test
+    void aVocabularyOnlyPluginKeepsThePluginLessReset() throws Exception {
+        String out = tool(vocabularyOnly(), null, () -> 0).invoke(mapper.readTree("{\"op\":\"reset\"}"));
+        assertThat(mapper.readTree(out).path("reset").asText()).isEqualTo("dialogs");
+        assertThat(dialogs.calls).containsExactly("resetPointer", "snapshot dialog");
+    }
+
+    @Test
+    void aPluginStillLoadingRefusesReset() {
+        Plugins plugins = vocabularyOnly();
+        plugins.add("later", Paths.get("m")).waiting("waiting for a.B to load");
+        assertThatThrownBy(() -> tool(plugins, null, () -> 0).invoke(mapper.readTree("{\"op\":\"reset\"}")))
+                .hasMessageContaining("reset needs the app plugin; order-desk is ready (ok), later is waiting");
+        assertThat(dialogs.calls).isEmpty();
+    }
+
+    @Test
+    void loginWithoutAnAppPluginStaysACapabilityGap() {
+        assertThatThrownBy(() -> tool(vocabularyOnly(), null, () -> 0)
+                .invoke(mapper.readTree("{\"op\":\"reset\",\"alias\":\"alice\"}")))
+                .hasMessageContaining("CAPABILITY_GAP: logging in as alice needs an app plugin with AppHooks");
+        assertThat(dialogs.calls).isEmpty();
     }
 
     @Test

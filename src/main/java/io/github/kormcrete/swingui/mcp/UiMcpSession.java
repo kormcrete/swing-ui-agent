@@ -3398,13 +3398,15 @@ public class UiMcpSession {
 
     /**
      * Without a defined start state the test must get to its starting screen from anywhere: null when its first step
-     * (after a leading loginAs) is navigate, menu or press, else why that step may not be there. {@code plugin}: an app
-     * plugin could reset to a defined state, but the recording did not begin at its reset.
+     * (after a leading loginAs) is navigate, menu or press, or a domain step that begins with one, else why that step
+     * may not be there. {@code plugin}: an app plugin could reset to a defined state, but the recording did not begin
+     * at its reset.
      */
-    static String startWarning(List<Action> steps, boolean plugin) {
+    private String startWarning(List<Action> steps, boolean plugin) {
         for (Action a : steps) {
             if (a instanceof LoginAsAction) continue;
             if (a instanceof NavigateAction || a instanceof MenuVerb || a instanceof PressVerb) return null;
+            if (a instanceof DoAction && opensWithAGetToStep((DoAction) a)) return null;
             String where = plugin
                     ? "the screen the recording began on (it did not begin at the app plugin's reset)"
                     : "the screen the app happens to show after a reset (no app plugin: a reset only closes dialogs)";
@@ -3412,5 +3414,26 @@ public class UiMcpSession {
                     + "menu, a key shortcut or navigate so the test gets to its own starting screen";
         }
         return null;
+    }
+
+    /**
+     * True when the domain step {@code d} stands for begins with a menu, press or navigate step, as its pattern says
+     * (the ready-time trace or the declared steps; the body is not run). Every pattern the step has must begin so.
+     */
+    private boolean opensWithAGetToStep(DoAction d) {
+        if (plugins == null) return false;
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) {
+            if (!(v.plugin + ":" + v.step.id()).equals(d.step) && !v.step.id().equals(d.step)) continue;
+            PatternCompiler.Compiled c = plugins.patternsOf(v);
+            if (c == null || c.patterns().isEmpty()) return false;
+            for (Pattern p : c.patterns()) {
+                List<ObjectNode> first = p.source();
+                if (first.isEmpty() || first.get(0).path("optional").asBoolean()) return false;
+                String action = first.get(0).path("action").asText();
+                if (!"menu".equals(action) && !"press".equals(action) && !"navigate".equals(action)) return false;
+            }
+            return true;
+        }
+        return false;
     }
 }
