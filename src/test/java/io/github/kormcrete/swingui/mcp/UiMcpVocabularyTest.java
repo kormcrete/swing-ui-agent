@@ -6,10 +6,17 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ParamType;
 import io.github.kormcrete.swingui.spi.PluginParts;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -131,12 +138,51 @@ class UiMcpVocabularyTest {
         assertThat(e.getMessage()).contains("nope").contains("addToCart");
     }
 
+    @TempDir Path dir;
+
     @Test
-    void matchWaitsForTheMatcher() {
-        DriverException e = catchThrowableOfType(() -> call(session(addToCart()), "{\"op\":\"match\",\"from\":1,\"to\":2}"),
+    void matchIsADryRunOfWhatARecordingRangeWouldFoldInto() throws Exception {
+        UiMcpSession s = session(addToCart());
+        // a loaded recorded test: its raw steps were never folded
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "add a pen";
+        flow.start = RecordedTestFiles.START_RESET;
+        String tab = "\"scope\":[\"tab:New order · Ada Shop Ltd\"]";
+        for (String step : new String[] {
+                "{\"action\":\"click\",\"target\":{" + tab + ",\"role\":\"table\",\"row\":{\"Product\":\"Gel pen, black\"},"
+                        + "\"column\":\"Product\"}}",
+                "{\"action\":\"click\",\"target\":{" + tab + ",\"role\":\"button\",\"name\":\"Add to cart\"}}",
+                "{\"action\":\"click\",\"target\":{" + tab + ",\"role\":\"button\",\"name\":\"Checkout…\"}}"}) {
+            flow.steps.add(FlowJson.mapper().readValue(step, io.github.kormcrete.swingui.flow.Action.class));
+        }
+        Path file = dir.resolve("add-pen.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        s.loadRecordedTest(file);
+        JsonNode before = mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}")));
+
+        JsonNode r = call(s, "{\"op\":\"match\",\"from\":1,\"to\":3}");
+
+        assertThat(r.path("folds")).hasSize(1);
+        assertThat(r.path("folds").get(0)).isEqualTo(mapper.readTree("{\"from\":1,\"to\":2,\"step\":\"order-desk:addToCart\","
+                + "\"params\":{\"product\":\"Gel pen, black\"},\"say\":\"Add Gel pen, black to the cart\"}"));
+        assertThat(r.path("notes")).isEmpty();
+        // a dry run: the recording is as it was
+        assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}")))).isEqualTo(before);
+        // a range that is no steps is refused
+        DriverException e = catchThrowableOfType(() -> call(s, "{\"op\":\"match\",\"from\":2,\"to\":9}"),
                 DriverException.class);
-        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
-        assertThat(e.getMessage()).contains("arrives with the matcher");
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+    }
+
+    @Test
+    void withoutAPluginMatchFoldsNothingWithAHint() throws Exception {
+        UiMcpSession plain = new UiMcpSession(backend, new UiMcpToolsTest.FakeInventory(), mapper);
+
+        JsonNode r = call(plain, "{\"op\":\"match\",\"from\":1,\"to\":2}");
+
+        assertThat(r.path("folds")).isEmpty();
+        assertThat(r.path("hint").asText()).contains("plugins=");
     }
 
     @Test

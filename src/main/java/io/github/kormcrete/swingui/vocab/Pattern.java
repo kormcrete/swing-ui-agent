@@ -99,6 +99,28 @@ public final class Pattern {
 
     List<Element> elements() { return elements; }
 
+    /** The fewest steps a run of this pattern has: its pattern steps that are not optional. */
+    int shortest() {
+        int n = 0;
+        for (Boolean optional : flatOptional) if (!optional) n++;
+        return n;
+    }
+
+    /** The most steps a run of this pattern has: all its pattern steps. */
+    int longest() {
+        return flat.size();
+    }
+
+    /**
+     * How specific the pattern is: the literal characters of its texts plus one per number, true, false or null it
+     * names, in the pattern steps that are not optional (what every run of it holds).
+     */
+    int literals() {
+        int n = 0;
+        for (int i = 0; i < flat.size(); i++) if (!flatOptional.get(i)) n += flat.get(i).node.literals();
+        return n;
+    }
+
     /** Fresh elements, so each pattern step of this pattern is its own object (a step used twice is two). */
     private static List<Element> copy(List<Element> elements) {
         List<Element> out = new ArrayList<Element>();
@@ -367,6 +389,9 @@ public final class Pattern {
                                                  Search search);
 
         abstract void captures(List<String> into);
+
+        /** Its literal characters, plus one per number, true, false or null (see {@link Pattern#literals}). */
+        abstract int literals();
     }
 
     /** An object: every field it names matches, the others are free. */
@@ -393,6 +418,12 @@ public final class Pattern {
         @Override void captures(List<String> into) {
             for (Map.Entry<String, Node> f : fields) f.getValue().captures(into);
         }
+
+        @Override int literals() {
+            int n = 0;
+            for (Map.Entry<String, Node> f : fields) n += f.getValue().literals();
+            return n;
+        }
     }
 
     /** An array: as many items, each matching in turn. */
@@ -417,6 +448,12 @@ public final class Pattern {
 
         @Override void captures(List<String> into) {
             for (Node n : items) n.captures(into);
+        }
+
+        @Override int literals() {
+            int n = 0;
+            for (Node i : items) n += i.literals();
+            return n;
         }
     }
 
@@ -453,6 +490,12 @@ public final class Pattern {
         @Override void captures(List<String> into) {
             for (Text t : wanted) t.captures(into);
         }
+
+        @Override int literals() {
+            int n = 0;
+            for (Text t : wanted) n += t.literals();
+            return n;
+        }
     }
 
     /** A number, true, false or null: the same value (a number by its value: 3 is 3.0). */
@@ -476,6 +519,8 @@ public final class Pattern {
         }
 
         @Override void captures(List<String> into) { }
+
+        @Override int literals() { return 1; }
     }
 
     /** Text of literal parts, {@code *} (any text) and captures; its fits in the order the class describes. */
@@ -681,6 +726,12 @@ public final class Pattern {
 
         @Override void captures(List<String> into) {
             for (Object p : parts) if (p instanceof Capture) into.add(((Capture) p).name);
+        }
+
+        @Override int literals() {
+            int n = 0;
+            for (Object p : parts) if (p instanceof Literal) n += ((Literal) p).text.length();
+            return n;
         }
     }
 

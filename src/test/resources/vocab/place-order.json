@@ -1,0 +1,30 @@
+{
+  "about": "PlaceOrderUiIT as a person records it in Order Desk: each step as a pattern matches it (the element's full scope, role, name and every cell of its row, as seen when it was recorded), with the person's checks between the steps",
+  "steps": [
+    {"step": {"action": "menu", "path": ["File", "New order"]}},
+    {"check": {"action": "expect", "target": {"window": "main", "role": "tab", "name": "New order"}, "state": "selected"}},
+    {"step": {"action": "type", "target": {"window": "main", "scope": ["tab:New order"], "role": "text", "name": "Customer"}, "text": "Ada"}},
+    {"step": {"action": "press", "keys": "Enter"}},
+    {"check": {"action": "expect", "target": {"window": "main", "role": "tab", "name": "New order · Ada Shop Ltd"}, "state": "selected"}},
+    {"check": {"action": "expect", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "label", "name": "Account · Invoice 30 days · Credit limit €2,000.00"}, "visible": true}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"SKU": "PAP-A4-500", "Product": "A4 paper, 500 sheets", "Price": "€4.90", "Stock": "120"}, "column": "SKU"}}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "button", "name": "Add to cart"}}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"SKU": "PEN-GEL-BLK", "Product": "Gel pen, black", "Price": "€1.20", "Stock": "800"}, "column": "SKU"}}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "button", "name": "Add to cart"}}},
+    {"step": {"action": "type", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"Product": "A4 paper, 500 sheets", "Qty": "1", "Price": "€4.90", "Line total": "€4.90"}, "column": "Qty"}, "text": "3", "commit": true}},
+    {"step": {"action": "type", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"Product": "Gel pen, black", "Qty": "1", "Price": "€1.20", "Line total": "€1.20"}, "column": "Qty"}, "text": "10", "commit": true}},
+    {"check": {"action": "expect", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "label", "name": "Subtotal"}, "text": "€26.70"}},
+    {"check": {"action": "expect", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "label", "name": "Total"}, "text": "€31.32"}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "button", "name": "Checkout…"}}},
+    {"check": {"action": "expect", "target": {"window": "dialog", "role": "text", "name": "Postal code"}, "value": "10119"}},
+    {"step": {"action": "click", "target": {"window": "dialog", "role": "button", "name": "Next"}}},
+    {"check": {"action": "expect", "target": {"window": "dialog", "role": "radio", "name": "Standard · 3–5 business days"}, "state": "checked"}},
+    {"step": {"action": "click", "target": {"window": "dialog", "role": "button", "name": "Next"}}},
+    {"check": {"action": "expect", "target": {"window": "dialog", "role": "label", "name": "Enter the PO number"}, "visible": true}},
+    {"step": {"action": "type", "target": {"window": "dialog", "role": "text", "name": "PO number"}, "text": "PO-7781"}},
+    {"step": {"action": "click", "target": {"window": "dialog", "role": "button", "name": "Next"}}},
+    {"check": {"action": "expect", "target": {"window": "dialog", "role": "label", "name": "Total"}, "text": "€37.20"}},
+    {"step": {"action": "click", "target": {"window": "dialog", "role": "button", "name": "Place order"}}},
+    {"step": {"action": "answer", "button": "Place order"}}
+  ]
+}

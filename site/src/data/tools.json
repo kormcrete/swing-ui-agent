@@ -804,7 +804,7 @@
     },
     {
       "name": "recording",
-      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its checks nested under it ({n: \"7.1\", ...}), plus groups [{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: an action at a step number (before the step now there) or a check at a label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) and may come with target, text or step. group {from, to, say}: steps from..to (two or more, whole steps, groups do not nest or overlap) under one sentence; the same range renames it. ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a table row names it by value (the key column's text: it still finds the row after a sort or a new row) or by position (its index); list shows each one's row {by, value, index}; the other way is known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, by you or the person. Numbers close up after a delete; deleting or moving a step takes its checks along; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again without recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with one {n, action, passed, ms, message?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
+      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its checks nested under it ({n: \"7.1\", ...}), plus groups [{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: an action at a step number (before the step now there) or a check at a label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) and may come with target, text or step. group {from, to, say}: steps from..to (two or more, whole steps, groups do not nest or overlap) under one sentence; the same range renames it. ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a table row names it by value (the key column's text: it still finds the row after a sort or a new row) or by position (its index); list shows each one's row {by, value, index}; the other way is known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, by you or the person (a fold too). With a plugin vocabulary, raw steps fold as they are recorded: a run of one author's steps that is a domain step's pattern becomes one do step (step JSON {action: do, step, params, say}); list shows folded (how many raw steps) and raw (their lines), keepRaw, and where a run did not fold foldCandidates (a tie), foldSuggested (a step that only suggests) or foldUndecided (why). Checks, do steps, an author change, groups, steps with their own sentence, kept raw steps and a replay's start stop a fold. fold {from, to, step?}: folds those steps into the domain step whose pattern they match (step names it when more fit). unfold {n}: puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. Numbers close up after a delete; deleting or moving a step takes its checks along; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again without recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with one {n, action, passed, ms, message?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -822,6 +822,9 @@
               "ungroup",
               "row",
               "undo",
+              "fold",
+              "unfold",
+              "keepRaw",
               "replay",
               "redo",
               "export",
@@ -840,11 +843,11 @@
               "integer",
               "string"
             ],
-            "description": "delete, move, edit, ungroup, row: a step number (7) or a check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group."
+            "description": "delete, move, edit, ungroup, row, unfold: a step number (7) or a check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; unfold takes a folded step."
           },
           "from": {
             "type": "integer",
-            "description": "delete, group: first step of a range; replay: first step (default 1); redo: the step to record again (steps+1 continues)."
+            "description": "delete, group, fold, keepRaw: first step of a range; replay: first step (default 1); redo: the step to record again (steps+1 continues)."
           },
           "speed": {
             "type": "string",
@@ -897,7 +900,7 @@
           },
           "to": {
             "type": "integer",
-            "description": "delete, group: last step of a range; move: the step number it has afterwards; replay: last step (default: the last)."
+            "description": "delete, group, fold, keepRaw: last step of a range; move: the step number it has afterwards; replay: last step (default: the last)."
           },
           "say": {
             "type": "string",
@@ -912,8 +915,11 @@
             ]
           },
           "step": {
-            "type": "object",
-            "description": "insert, edit: a step or check as do_action takes it."
+            "type": [
+              "object",
+              "string"
+            ],
+            "description": "insert, edit: a step or check as do_action takes it (an object); fold: the id of the domain step to fold into, when more than one fits (a string, from vocabulary list)."
           },
           "target": {
             "type": "object",
@@ -1015,7 +1021,7 @@
           },
           "rev": {
             "type": "integer",
-            "description": "insert, delete, move, edit, group, ungroup, row, undo, redo: the rev of your last list; refused if the recording changed since."
+            "description": "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, redo: the rev of your last list; refused if the recording changed since."
           },
           "reset": {
             "type": "boolean",
@@ -1037,7 +1043,7 @@
     },
     {
       "name": "vocabulary",
-      "description": "The domain steps the ready plugins offer: one step that stands for the clicks and checks it takes, e.g. \"Add {product} to the cart\". list: every step with id, kind (act or check), sentence, about, params {name, type, optional, default}, plugin and folds (a one-line summary of the patterns a recording must match to fold into it, or why it has none), plus problems for steps a plugin offered that were dropped. describe {step}: one step in full: its params with choices (the values that fit in the app right now, e.g. product names; they help you pick, a call may pass others), its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: a dry run of which steps of a recording range would fold; arrives with the matcher (CAPABILITY_GAP until then). Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without a plugin that offers a vocabulary, list is empty with a hint.",
+      "description": "The domain steps the ready plugins offer: one step that stands for the clicks and checks it takes, e.g. \"Add {product} to the cart\". list: every step with id, kind (act or check), sentence, about, params {name, type, optional, default}, plugin and folds (a one-line summary of the patterns a recording must match to fold into it, or why it has none), plus problems for steps a plugin offered that were dropped. describe {step}: one step in full: its params with choices (the values that fit in the app right now, e.g. product names; they help you pick, a call may pass others), its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: a dry run of what steps from..to of the recording would fold into, each raw step looked at as if just recorded (the recording is not changed): folds [{from, to, step, params, say}] and notes [{from, to, kind: tie|suggested|undecided, steps, why?}]. Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without a plugin that offers a vocabulary, list is empty with a hint.",
       "inputSchema": {
         "type": "object",
         "properties": {

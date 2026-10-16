@@ -374,8 +374,8 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
-                        .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("row").add("undo").add("replay").add("redo")
-                        .add("export").add("load");
+                        .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("row").add("undo")
+                        .add("fold").add("unfold").add("keepRaw").add("replay").add("redo").add("export").add("load");
                 ObjectNode at = p.putObject("at");
                 at.putArray("type").add("integer").add("string");
                 at.put("description", "insert: where it goes. An action: the step number it gets (1 to steps+1), before "
@@ -384,12 +384,13 @@ public final class UiMcpTools {
                         + "or a check label (\"7.2\").");
                 ObjectNode n = p.putObject("n");
                 n.putArray("type").add("integer").add("string");
-                n.put("description", "delete, move, edit, ungroup, row: a step number (7) or a check label (\"7.2\"). "
+                n.put("description", "delete, move, edit, ungroup, row, unfold: a step number (7) or a check label (\"7.2\"). "
                         + "delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step "
-                        + "(with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group.");
+                        + "(with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; unfold "
+                        + "takes a folded step.");
                 p.putObject("from").put("type", "integer").put("description",
-                        "delete, group: first step of a range; replay: first step (default 1); redo: the step to record "
-                        + "again (steps+1 continues).");
+                        "delete, group, fold, keepRaw: first step of a range; replay: first step (default 1); redo: the step "
+                        + "to record again (steps+1 continues).");
                 p.putObject("speed").put("type", "string").put("description",
                         "replay: pauses for a person watching.").putArray("enum").add("fast").add("normal").add("slow");
                 p.putObject("as").put("type", "string").put("description", "export: the format (required).")
@@ -406,8 +407,8 @@ public final class UiMcpTools {
                         + "by start or the person's Record runs.");
                 p.putObject("path").put("type", "string").put("description", "load: a recorded test file.");
                 p.putObject("to").put("type", "integer").put("description",
-                        "delete, group: last step of a range; move: the step number it has afterwards; replay: last "
-                        + "step (default: the last).");
+                        "delete, group, fold, keepRaw: last step of a range; move: the step number it has afterwards; "
+                        + "replay: last step (default: the last).");
                 p.putObject("say").put("type", "string").put("description",
                         "edit: the step's or check's sentence, one line of at most 200 characters (\"\" removes it), "
                         + "alone or with target, text or step; group: the group's sentence.");
@@ -415,14 +416,16 @@ public final class UiMcpTools {
                         "row: how the table row of step or check n is named: value (its key column's text, as recorded "
                         + "when a column told the rows apart) or position (its index).").putArray("enum")
                         .add("value").add("position");
-                p.putObject("step").put("type", "object").put("description",
-                        "insert, edit: a step or check as do_action takes it.");
+                ObjectNode stepParam = p.putObject("step");
+                stepParam.putArray("type").add("object").add("string");
+                stepParam.put("description", "insert, edit: a step or check as do_action takes it (an object); fold: the id "
+                        + "of the domain step to fold into, when more than one fits (a string, from vocabulary list).");
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("text").put("type", "string").put("description",
                         "edit: the new text of a type, expect, setClipboard or drop step or check.");
                 p.putObject("rev").put("type", "integer").put("description",
-                        "insert, delete, move, edit, group, ungroup, row, undo, redo: the rev of your last list; refused if the recording "
-                        + "changed since.");
+                        "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, redo: the rev of your "
+                        + "last list; refused if the recording changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
                         "start: reset the app first, as a test starts (default false).");
                 p.putObject("wait").put("type", "integer").put("description",
@@ -450,7 +453,14 @@ public final class UiMcpTools {
                         + "table row names it by value (the key column's text: it still finds the row after a sort or a new "
                         + "row) or by position (its index); list shows each one's row {by, value, index}; the other way is "
                         + "known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, "
-                        + "by you or the person. Numbers close up after a delete; deleting or moving a step takes its checks "
+                        + "by you or the person (a fold too). With a plugin vocabulary, raw steps fold as they are recorded: "
+                        + "a run of one author's steps that is a domain step's pattern becomes one do step (step JSON "
+                        + "{action: do, step, params, say}); list shows folded (how many raw steps) and raw (their lines), "
+                        + "keepRaw, and where a run did not fold foldCandidates (a tie), foldSuggested (a step that only "
+                        + "suggests) or foldUndecided (why). Checks, do steps, an author change, groups, steps with their own "
+                        + "sentence, kept raw steps and a replay's start stop a fold. fold {from, to, step?}: folds those "
+                        + "steps into the domain step whose pattern they match (step names it when more fit). unfold {n}: "
+                        + "puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. Numbers close up after a delete; deleting or moving a step takes its checks "
                         + "along; pass rev from your last list so an edit is refused if the person changed the recording "
                         + "meanwhile. Every edit returns the new list. While one runs, session reset and test runs are "
                         + "refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again "
@@ -484,8 +494,9 @@ public final class UiMcpTools {
                         + "offered that were dropped. describe {step}: one step in full: its params with choices (the values "
                         + "that fit in the app right now, e.g. product names; they help you pick, a call may pass others), "
                         + "its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: "
-                        + "a dry run of which steps of a recording range would fold; arrives with the matcher (CAPABILITY_GAP "
-                        + "until then). Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without "
+                        + "a dry run of what steps from..to of the recording would fold into, each raw step looked at as if "
+                        + "just recorded (the recording is not changed): folds [{from, to, step, params, say}] and notes "
+                        + "[{from, to, kind: tie|suggested|undecided, steps, why?}]. Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without "
                         + "a plugin that offers a vocabulary, list is empty with a hint.", schema));
             }
             @Override public String invoke(JsonNode args) { return session.vocabulary(args); }

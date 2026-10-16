@@ -94,6 +94,13 @@ public final class Inspector {
      */
     public static final String ROW_INDEX = "rowIndex";
 
+    /**
+     * A key beside the person's step map (never part of the step): the step's target as the element was seen
+     * ({@link io.github.kormcrete.swingui.driver.model.Recorder#seen}), which the session keeps inside the recording
+     * for a vocabulary's patterns. It is removed before the step is parsed.
+     */
+    public static final String SEEN = "seen";
+
     /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     public interface Sink {
         /**
@@ -1128,7 +1135,7 @@ public final class Inspector {
         Resolved r = resolver.resolve(l);
         Recorder.Recorded rec = recorder.record(r);
         return new Target(rec.locator, rec.fragile, "cell " + rowText(l.row) + " · " + l.column + suffix(rec),
-                Target.shown(r.role, resolver.seenName(r), rec.locator), "cell", table, null, row, column);
+                Target.shown(r.role, resolver.seenName(r), rec.locator), "cell", table, null, row, column, rec.seen);
     }
 
     /** A whole table column, addressed by its header. EDT. */
@@ -1138,7 +1145,7 @@ public final class Inspector {
         Resolved r = resolver.resolve(l);
         Recorder.Recorded rec = recorder.record(r);
         return new Target(rec.locator, rec.fragile, "column '" + l.column + "'" + suffix(rec),
-                Target.shown(r.role, resolver.seenName(r), rec.locator), "column", table, null, -1, column);
+                Target.shown(r.role, resolver.seenName(r), rec.locator), "column", table, null, -1, column, rec.seen);
     }
 
     /** The target for a component on its own (no cell), as a locator addresses it; null when nothing does. EDT. */
@@ -1181,7 +1188,7 @@ public final class Inspector {
         s.append(suffix(rec));
         // the agent reads the locator; the person reads the name they see, also when the locator goes by id
         return new Target(rec.locator, rec.fragile, s.toString(), Target.shown(r.role, resolver.seenName(r), rec.locator), role,
-                r.component, r.tab, row, column);
+                r.component, r.tab, row, column, rec.seen);
     }
 
     private static String suffix(Recorder.Recorded rec) {

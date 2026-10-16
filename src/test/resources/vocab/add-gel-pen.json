@@ -1,0 +1,8 @@
+{
+  "about": "A person adds Gel pen, black to the cart of a new order in Order Desk and sets its quantity to 10",
+  "steps": [
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"SKU": "PEN-GEL-BLK", "Product": "Gel pen, black", "Price": "€1.20", "Stock": "800"}, "column": "Product"}}},
+    {"step": {"action": "click", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "button", "name": "Add to cart"}}},
+    {"step": {"action": "type", "target": {"window": "main", "scope": ["tab:New order · Ada Shop Ltd"], "role": "table", "row": {"Product": "Gel pen, black", "Qty": "1", "Price": "€1.20", "Line total": "€1.20"}, "column": "Qty"}, "text": "10", "commit": true}}
+  ]
+}

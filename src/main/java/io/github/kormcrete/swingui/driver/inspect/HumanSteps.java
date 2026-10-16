@@ -512,6 +512,8 @@ final class HumanSteps implements AWTEventListener {
         step.put("target", t.locator);
         // the person's click on a row: the session keeps the row's position beside its value
         if (t.row >= 0 && t.locator.row != null) step.put(Inspector.ROW_INDEX, t.row);
+        // and what the element was, for a vocabulary's patterns: kept inside the recording, never in a file
+        if (t.seen != null) step.put(Inspector.SEEN, t.seen);
         return step;
     }
 

@@ -972,11 +972,13 @@ public final class LiveVerbs implements Verbs {
                 Aimed aimed = targets.get(e.getKey());
                 // both ways to name the row a step means: its position, and its value when a column tells rows apart
                 RowChoice row = aimed == null ? null : Recorder.rowChoice(aimed.resolved);
+                // the element as seen, whichever locator is recorded: what a vocabulary's patterns match
+                Locator seen = aimed == null ? null : Recorder.seen(aimed.resolved);
                 if (given.ref != null) {
                     Recorder.Recorded rec = driver.recorder().record(aimed.resolved);
-                    out.put(e.getKey(), new Recorder.Recorded(rec.locator, rec.fragile, row));
+                    out.put(e.getKey(), new Recorder.Recorded(rec.locator, rec.fragile, row, seen));
                 } else {
-                    out.put(e.getKey(), new Recorder.Recorded(given.copy(), given.nth != null, row));
+                    out.put(e.getKey(), new Recorder.Recorded(given.copy(), given.nth != null, row, seen));
                 }
             }
             return out;

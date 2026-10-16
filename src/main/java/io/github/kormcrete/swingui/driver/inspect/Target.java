@@ -28,9 +28,17 @@ public final class Target {
     final Integer tab;
     final int row;
     final int column;
+    /** The element as it was seen when this target was made ({@code Recorder.seen}); null when not known. */
+    final Locator seen;
 
     Target(Locator locator, boolean fragile, String element, String shown, String role, Component component,
            Integer tab, int row, int column) {
+        this(locator, fragile, element, shown, role, component, tab, row, column, null);
+    }
+
+    Target(Locator locator, boolean fragile, String element, String shown, String role, Component component,
+           Integer tab, int row, int column, Locator seen) {
+        this.seen = seen;
         this.locator = locator;
         this.fragile = fragile;
         this.element = element;

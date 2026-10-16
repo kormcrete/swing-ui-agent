@@ -26,7 +26,7 @@ import java.util.concurrent.TimeoutException;
  * called, say, take and fold from. Read-only. {@code list} gives every step with a one-line {@code folds} summary of its
  * patterns; {@code describe} one step in full, its params with the values that fit right now ({@link DomainStep.Param#choices},
  * asked on a thread of its own and given up after {@link #CHOICES_LIMIT_MS}); {@code match} (a dry run of a recording range)
- * waits for the recording's folding matcher. No op runs a step's body: a body's steps are shown from the trace made when
+ * is the session's ({@link UiMcpSession#vocabularyMatch}), as it reads the recording. No op runs a step's body: a body's steps are shown from the trace made when
  * the plugin became ready. A choices supplier that ignores the interrupt after the limit keeps its daemon thread.
  */
 final class VocabularyTool {
@@ -69,7 +69,7 @@ final class VocabularyTool {
             case "list": return list().toString();
             case "describe": return describe(args.path("step").asText("")).toString();
             case "match":
-                throw new DriverException(Reason.CAPABILITY_GAP, "match arrives with the matcher");
+                throw new IllegalStateException("match reads the recording: the session answers it");
             default:
                 throw new DriverException(Reason.BAD_INPUT, "vocabulary needs 'op': list, describe or match"
                         + (op.isEmpty() ? "" : " (got '" + op + "')"));

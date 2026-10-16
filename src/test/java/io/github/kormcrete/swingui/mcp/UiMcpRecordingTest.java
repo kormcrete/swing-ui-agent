@@ -182,7 +182,8 @@ class UiMcpRecordingTest {
         for (String args : new String[] {"{}", "{\"op\":\"dance\"}"}) {
             DriverException e = catchThrowableOfType(() -> call(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, replay, redo, export, load");
+            assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, "
+                    + "fold, unfold, keepRaw, replay, redo, export, load");
         }
     }
 
@@ -2072,6 +2073,220 @@ class UiMcpRecordingTest {
         JsonNode run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"name\":\"add-pen\"}")));
         assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
         assertThat(run.path("steps").get(0).path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
+    }
+
+    // ---- folding: the person's and the agent's raw steps become do steps ------------------------------------------
+
+    private JsonNode recording(UiMcpSession s, String json) throws Exception {
+        return mapper.readTree(s.recording(mapper.readTree(json)));
+    }
+
+    private static Map<String, Object> row(String... keysAndValues) {
+        Map<String, Object> row = new LinkedHashMap<String, Object>();
+        for (int i = 0; i < keysAndValues.length; i += 2) row.put(keysAndValues[i], keysAndValues[i + 1]);
+        return row;
+    }
+
+    /**
+     * The person adds Gel pen, black to the cart: a click on its row (recorded by the table's id and the row's SKU, the
+     * cell seen with every column of its row), then Add to cart.
+     */
+    private static void addGelPen(Inspector.Sink person) {
+        Locator cell = Locator.ofId("products");
+        cell.row = row("SKU", "PEN-GEL-BLK");
+        cell.column = "Product";
+        Locator seen = new Locator();
+        seen.role = "table";
+        seen.row = row("SKU", "PEN-GEL-BLK", "Product", "Gel pen, black", "Price", "€1.20");
+        seen.column = "Product";
+        Map<String, Object> click = step("click", cell);
+        click.put(Inspector.SEEN, seen);
+        assertThat(person.done(click).ok).isTrue();
+        assertThat(person.done(step("click", Locator.of("button", "Add to cart"))).ok).isTrue();
+    }
+
+    private static final String ADD_GEL_PEN = "{\"action\":\"do\",\"say\":\"Add Gel pen, black to the cart\","
+            + "\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}";
+
+    @Test
+    void aPersonsTwoStepsFoldIntoOneDoStep() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        addGelPen(s.humanSink());
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(1);
+        JsonNode add = steps.get(0);
+        assertThat(add.path("author").asText()).isEqualTo("person");
+        assertThat(add.path("step")).isEqualTo(mapper.readTree(ADD_GEL_PEN));
+        assertThat(add.path("folded").asInt()).isEqualTo(2);
+        assertThat(add.path("raw").get(1).asText()).isEqualTo("click(button 'Add to cart')");
+        assertThat(add.path("java").asText()).isEqualTo("OrderDeskSteps.addToCart(ui, \"Gel pen, black\");");
+        assertThat(s.recordedSteps()).hasSize(1);
+        // the recorded test holds the do step only: none of the raw steps, nor how their elements were seen
+        JsonNode file = mapper.readTree(s.exportRecordedTest("add-pen", quoted(dir), null, false)).path("test");
+        assertThat(file.path("steps")).hasSize(1);
+        assertThat(file.path("steps").get(0).path("step").asText()).isEqualTo("order-desk:addToCart");
+        assertThat(file.toString()).doesNotContain("PEN-GEL-BLK").doesNotContain("€1.20").doesNotContain("Add to cart\"}");
+    }
+
+    @Test
+    void unfoldRestoresTheRawStepsAndAddsABarrier() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        int rev = recording(s, "{\"op\":\"list\"}").path("rev").asInt();
+
+        JsonNode unfolded = recording(s, "{\"op\":\"unfold\",\"n\":1,\"rev\":" + rev + "}");
+
+        assertThat(unfolded.path("did").asText()).isEqualTo("unfolded step 1 into steps 1-2");
+        JsonNode steps = unfolded.path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("step").path("target").path("id").asText()).isEqualTo("products");
+        assertThat(steps.get(0).path("keepRaw").asBoolean()).isTrue();
+        assertThat(steps.get(1).path("keepRaw").asBoolean()).isTrue();
+        assertThat(steps.get(0).path("author").asText()).isEqualTo("person");
+        // kept raw: the same two steps again fold, the unfolded ones stay as they are
+        addGelPen(person);
+        steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(3);
+        assertThat(steps.get(0).has("folded")).isFalse();
+        assertThat(steps.get(1).has("folded")).isFalse();
+        assertThat(steps.get(2).path("folded").asInt()).isEqualTo(2);
+        // asked by name, they fold again: their elements are still known as they were seen
+        JsonNode folded = recording(s, "{\"op\":\"fold\",\"from\":1,\"to\":2}");
+        assertThat(folded.path("did").asText()).isEqualTo("folded steps 1-2 into \"Add Gel pen, black to the cart\"");
+        assertThat(folded.path("steps")).hasSize(2);
+        assertThat(folded.path("steps").get(0).path("step")).isEqualTo(mapper.readTree(ADD_GEL_PEN));
+        assertThat(folded.path("steps").get(0).has("keepRaw")).isFalse();
+    }
+
+    @Test
+    void undoTakesBackAFold() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+
+        JsonNode undone = recording(s, "{\"op\":\"undo\"}");
+
+        assertThat(undone.path("did").asText()).isEqualTo("undid the fold of steps 1-2 into \"Add Gel pen, black to the "
+                + "cart\" by the person");
+        JsonNode steps = undone.path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("step").path("action").asText()).isEqualTo("click");
+        // the steps undo brought back are kept raw: a later step does not fold them again
+        assertThat(steps.get(1).path("keepRaw").asBoolean()).isTrue();
+        assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(3).noneMatch(n -> n.has("folded"));
+    }
+
+    @Test
+    void theAgentsRawStepsFoldButNeverWithThePersons() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        String row = "{\"target\":{\"role\":\"table\",\"row\":{\"Product\":\"Gel pen, black\"},\"column\":\"Product\"}}";
+        String add = "{\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}";
+        s.verb("click", mapper.readTree(row));
+        s.verb("click", mapper.readTree(add));
+        // the person picks the row, the agent clicks Add to cart: two authors, no fold
+        Locator cell = new Locator();
+        cell.role = "table";
+        cell.row = row("Product", "Gel pen, black");
+        cell.column = "Product";
+        assertThat(s.humanSink().done(step("click", cell)).ok).isTrue();
+        s.verb("click", mapper.readTree(add));
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(3);
+        assertThat(steps.get(0).path("author").asText()).isEqualTo("agent");
+        assertThat(steps.get(0).path("folded").asInt()).isEqualTo(2);
+        assertThat(steps.get(1).has("folded")).isFalse();
+        assertThat(steps.get(2).has("folded")).isFalse();
+        DriverException mixed = catchThrowableOfType(() -> recording(s, "{\"op\":\"fold\",\"from\":2,\"to\":3}"),
+                DriverException.class);
+        assertThat(mixed.getMessage()).contains("steps 2-3 are not one author's");
+        DriverException none = catchThrowableOfType(() -> recording(s, "{\"op\":\"fold\",\"from\":3,\"to\":3}"),
+                DriverException.class);
+        assertThat(none.getMessage()).contains("step 3 matches no domain step's pattern");
+    }
+
+    @Test
+    void keepRawKeepsAStepOutOfFolds() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Locator cell = new Locator();
+        cell.role = "table";
+        cell.row = row("Product", "Gel pen, black");
+        cell.column = "Product";
+        assertThat(s.humanSink().done(step("click", cell)).ok).isTrue();
+
+        JsonNode kept = recording(s, "{\"op\":\"keepRaw\",\"from\":1,\"to\":1}");
+        assertThat(s.humanSink().done(step("click", Locator.of("button", "Add to cart"))).ok).isTrue();
+
+        assertThat(kept.path("did").asText()).isEqualTo("kept step 1 raw");
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2).noneMatch(n -> n.has("folded"));
+        assertThat(steps.get(0).path("keepRaw").asBoolean()).isTrue();
+        assertThat(recording(s, "{\"op\":\"keepRaw\",\"from\":1,\"to\":1}").path("did").asText())
+                .isEqualTo("step 1 is kept raw already");
+    }
+
+    @Test
+    void aStepBeforeAReplayDoesNotFoldWithOneAfterIt() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Locator cell = new Locator();
+        cell.role = "table";
+        cell.row = row("Product", "Gel pen, black");
+        cell.column = "Product";
+        assertThat(s.humanSink().done(step("click", cell)).ok).isTrue();
+        assertThat(recording(s, "{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+
+        assertThat(s.humanSink().done(step("click", Locator.of("button", "Add to cart"))).ok).isTrue();
+
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(2).noneMatch(n -> n.has("folded"));
+    }
+
+    @Test
+    void aTieIsListedWithItsCandidatesAndFoldByNameSettlesIt() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("extras", Paths.get("extras")).ready(new PluginParts(() -> Arrays.asList(
+                DomainStep.act("addToBasket", "Put {product} in the basket")
+                        .param("product", ParamType.TEXT)
+                        .code((ui, p) -> {
+                            ui.table().row("Product", p.text("product")).cell("Product").click();
+                            ui.button("Add to cart").click();
+                        })
+                        .build())), "ok");
+        UiMcpSession s = orderDesk(plugins);
+        addGelPen(s.humanSink());
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(2).noneMatch(n -> n.has("folded"));
+        JsonNode tie = steps.get(1).path("foldCandidates");
+        assertThat(tie.path("from").asInt()).isEqualTo(1);
+        assertThat(tie.path("to").asInt()).isEqualTo(2);
+        assertThat(tie.path("steps")).extracting(n -> n.path("step").asText())
+                .containsExactlyInAnyOrder("extras:addToBasket", "order-desk:addToCart");
+        DriverException ask = catchThrowableOfType(() -> recording(s, "{\"op\":\"fold\",\"from\":1,\"to\":2}"),
+                DriverException.class);
+        assertThat(ask.getMessage()).contains("match more than one domain step").contains("name one with 'step'");
+        JsonNode folded = recording(s, "{\"op\":\"fold\",\"from\":1,\"to\":2,\"step\":\"addToBasket\"}");
+        assertThat(folded.path("steps")).hasSize(1);
+        assertThat(folded.path("steps").get(0).path("step").path("step").asText()).isEqualTo("extras:addToBasket");
+        assertThat(folded.path("steps").get(0).path("say").asText()).isEqualTo("Put Gel pen, black in the basket");
+    }
+
+    @Test
+    void withoutAVocabularyNothingFolds() throws Exception {
+        addGelPen(sink);
+
+        JsonNode steps = call("{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(2).noneMatch(n -> n.has("folded") || n.has("keepRaw"));
+        DriverException e = catchThrowableOfType(() -> call("{\"op\":\"fold\",\"from\":1,\"to\":2}"),
+                DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
     }
 
     @Test

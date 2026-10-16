@@ -43,6 +43,9 @@ import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.UiInventory;
+import io.github.kormcrete.swingui.vocab.Matcher;
+import io.github.kormcrete.swingui.vocab.Pattern;
+import io.github.kormcrete.swingui.vocab.PatternCompiler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,6 +66,7 @@ import java.util.Base64;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.LinkedHashMap;
@@ -90,6 +94,12 @@ public class UiMcpSession {
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
     private final RecordingModel model = new RecordingModel();
+    /** Folds the recording's raw steps into the vocabulary's domain steps, off the EDT and this lock ({@link #scheduleFolding}). */
+    private final Folding folding = new Folding(this, this::applyFolds);
+    /** Folding has looked at every record up to this id; a later raw step is fresh. */
+    private int foldedUpTo;
+    /** What folding noted where a run ends (by that step's record id): a tie, a suggestion, a run it could not decide. */
+    private final Map<Integer, FoldNote> foldNotes = new HashMap<Integer, FoldNote>();
     /** The recording began at a reset of the app (or was shown to by a passing replay from it); {@code list} says so. */
     private boolean recordingFromReset;
     /**
@@ -446,6 +456,7 @@ public class UiMcpSession {
             public Inspector.Result done(Map<String, Object> step) {
                 Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
                 Object viewIndex = plain.remove(Inspector.ROW_INDEX);
+                JsonNode seen = seen(plain.remove(Inspector.SEEN));
                 JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
                     synchronized (UiMcpSession.this) {
@@ -460,8 +471,9 @@ public class UiMcpSession {
                             publish();
                             return new Inspector.Result(false, line);
                         }
-                        model.append(action, RecordedStep.Author.PERSON, personRow(json, viewIndex));
+                        model.append(action, RecordedStep.Author.PERSON, personRow(json, viewIndex), seen);
                         publish();
+                        scheduleFolding();
                         return new Inspector.Result(true, action.describe());
                     }
                 } catch (RuntimeException e) {
@@ -512,6 +524,7 @@ public class UiMcpSession {
                     RecordedStep step = model.at(index + 1);
                     id = step.id;
                     json = stripNulls(mapper.valueToTree(step.action));
+                    model.replayStarted();   // nothing recorded before it folds with what follows
                 }
                 try {
                     StepRun run = replayStep(json);
@@ -544,6 +557,7 @@ public class UiMcpSession {
                     Inspector.Result refused = refusedEdit(scratch.actions());
                     if (refused != null) return refused;
                     String did = model.cutFromStep(at.step, RecordedStep.Author.PERSON);
+                    model.replayStarted();   // a redo: the steps before the cut replay, the next ones are new
                     publish();
                     return new Inspector.Result(true, did);
                 }
@@ -750,6 +764,7 @@ public class UiMcpSession {
                 if (agentReplaying != null) return AGENT_REPLAYING;
                 Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
                 Object viewIndex = plain.remove(Inspector.ROW_INDEX);
+                plain.remove(Inspector.SEEN);
                 JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
                     JsonNode result = runStepLocked(json, personRow(json, viewIndex));
@@ -1036,6 +1051,7 @@ public class UiMcpSession {
 
     /** The {@code vocabulary} tool: {@code list}, {@code describe {step}} and {@code match {from,to}}. Read-only. */
     public String vocabulary(JsonNode args) {
+        if (args != null && "match".equals(args.path("op").asText(""))) return vocabularyMatch(integer(args, "from"), integer(args, "to"));
         return new VocabularyTool(plugins, mapper).run(args);
     }
 
@@ -1115,8 +1131,9 @@ public class UiMcpSession {
                 row = rowOf(recordedAction, step.outcome, given);
                 List<String> problems = exportProblems(recordedAction);
                 if (problems.isEmpty()) {
-                    model.append(recordedAction, author, row);
+                    model.append(recordedAction, author, row, action instanceof DoAction ? null : seenOf(step.outcome));
                     r.set("recorded", mapper.valueToTree(recordedAction));
+                    scheduleFolding();
                 } else {
                     model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
                     r.put("notRecorded", "it ran, but export_test has no Java form for it (" + String.join("; ", problems)
@@ -1539,6 +1556,7 @@ public class UiMcpSession {
      * needs a reset first, and is refused while a recording someone started runs ({@link #refuseClearWhileRecording}).
      */
     public synchronized String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
+        folding.settle(FOLD_WAIT_MS, true);   // the last steps' folds are in
         if (clear) refuseClearWhileRecording();
         requireResetStart();
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
@@ -1627,6 +1645,7 @@ public class UiMcpSession {
      * a further export saves over; a clearing one is refused while a recording someone started runs.
      */
     public synchronized String exportRecordedTest(String name, String dir, String description, boolean clear) throws Exception {
+        folding.settle(FOLD_WAIT_MS, true);   // the last steps' folds are in
         if (clear) refuseClearWhileRecording();
         requireResetStart();
         List<String> problems = new ArrayList<String>();
@@ -1918,6 +1937,7 @@ public class UiMcpSession {
         Path abs = file.toAbsolutePath().normalize();
         model.load(flow, RecordedStep.Author.LOADED);
         model.loaded();
+        foldNotes.clear();
         recordingFromReset = true;
         freshStart = true;
         definedStart = appReset.defined();
@@ -1974,6 +1994,7 @@ public class UiMcpSession {
      */
     synchronized void startRecording(boolean fromReset, boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
+        foldNotes.clear();
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
         recordingFromReset = fromReset;
         freshStart = true;
@@ -2039,6 +2060,7 @@ public class UiMcpSession {
                 return published.json;
             }
             case "list": {
+                folding.settle(FOLD_WAIT_MS, false);   // folds of the steps recorded so far are in the list
                 Integer wait = integer(args, "wait");
                 long waitMs = wait == null ? 0L : Math.max(0L, Math.min(wait.longValue(), MAX_RECORDING_WAIT_MS));
                 long deadline = System.currentTimeMillis() + waitMs;
@@ -2096,6 +2118,29 @@ public class UiMcpSession {
             }
             case "undo":
                 return recordingUndo(integer(args, "rev"));
+            case "fold": {
+                Integer from = integer(args, "from");
+                Integer to = integer(args, "to");
+                if (from == null || to == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "fold needs 'from' and 'to' (step numbers) and may name the 'step'");
+                }
+                JsonNode step = args.get("step");
+                if (step != null && !step.isNull() && !step.isTextual()) {
+                    throw new DriverException(Reason.BAD_INPUT, "fold's 'step' is the id of a domain step (from vocabulary list)");
+                }
+                return recordingFold(from, to, text(args, "step"), integer(args, "rev"));
+            }
+            case "unfold": {
+                StepAddress n = address(args, "n");
+                if (n == null || n.isCheck()) throw new DriverException(Reason.BAD_INPUT, "unfold needs 'n': the number of a folded step");
+                return recordingUnfold(n.step, integer(args, "rev"));
+            }
+            case "keepRaw": {
+                Integer from = integer(args, "from");
+                Integer to = integer(args, "to");
+                if (from == null || to == null) throw new DriverException(Reason.BAD_INPUT, "keepRaw needs 'from' and 'to' (step numbers)");
+                return recordingKeepRaw(from, to, integer(args, "rev"));
+            }
             case "replay":
                 return recordingReplay(integer(args, "from"), integer(args, "to"), text(args, "speed"));
             case "redo": {
@@ -2119,10 +2164,12 @@ public class UiMcpSession {
     }
 
     /** Every op of the recording tool, as its errors list them. */
-    private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, replay, redo, export, load";
+    private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, fold, "
+            + "unfold, keepRaw, replay, redo, export, load";
 
     private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
-            java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "row", "undo"));
+            java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "row", "undo", "fold", "unfold",
+                    "keepRaw"));
 
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
@@ -2199,6 +2246,7 @@ public class UiMcpSession {
     /** Replays steps {@code a} to {@code b} under the agent's hold (see {@link #agentReplaying}); resets first from step 1. */
     private ObjectNode replay(int a, int b, long pause) {
         int[] range = model.flatRange(a, b);   // refuses a number that is no step
+        model.replayStarted();   // nothing recorded before it folds with what follows
         boolean reset = a == 1;
         ObjectNode r = mapper.createObjectNode();
         ArrayNode results = mapper.createArrayNode();
@@ -2333,6 +2381,7 @@ public class UiMcpSession {
 
     /** A redo from the first step has nothing to replay: only the reset. */
     private ObjectNode resetOnly() {
+        model.replayStarted();
         if (palette) view.agentReplaying("resetting the app");
         agentReplaying = "reset";
         Inspector.agentActing(true);
@@ -2583,6 +2632,360 @@ public class UiMcpSession {
         return edited(model.undo(RecordedStep.Author.AGENT));
     }
 
+    // ---- folding: a vocabulary's domain steps from the recording's raw steps -------------------------------------
+
+    /** Longest a reader (list, an export) waits for folding to finish with the steps recorded so far. */
+    static final long FOLD_WAIT_MS = Folding.BUDGET_MS + 1000;
+
+    /** What folding noted about a run (see {@link Matcher.Note}), by the record ids of its steps. */
+    private static final class FoldNote {
+        final Matcher.Note.Kind kind;
+        final List<Integer> ids;
+        final List<Matcher.Choice> choices;
+        final String why;
+
+        FoldNote(Matcher.Note.Kind kind, List<Integer> ids, List<Matcher.Choice> choices, String why) {
+            this.kind = kind;
+            this.ids = ids;
+            this.choices = choices;
+            this.why = why;
+        }
+    }
+
+    /** The domain steps a recording may fold into: every ready plugin's act steps that have patterns. Empty without. */
+    private List<Matcher.Candidate> foldingVocabulary() {
+        List<Matcher.Candidate> out = new ArrayList<Matcher.Candidate>();
+        if (plugins == null) return out;
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) {
+            if (v.step.kind() != DomainStep.Kind.ACT) continue;   // a domain check is the person's Check, never a fold
+            PatternCompiler.Compiled c = plugins.patternsOf(v);
+            if (c == null || c.patterns().isEmpty()) continue;
+            out.add(new Matcher.Candidate(v.plugin + ":" + v.step.id(), c.patterns(), v.step.autoFold()));
+        }
+        return out;
+    }
+
+    /**
+     * Hands the recording to folding when it has raw steps it has not looked at and the plugins have patterns. Under the
+     * lock; the matching itself happens on folding's thread ({@link #applyFolds} applies it).
+     */
+    private void scheduleFolding() {
+        List<Matcher.Candidate> vocabulary = foldingVocabulary();
+        if (vocabulary.isEmpty()) return;
+        List<RecordedStep> records = model.records();
+        List<Matcher.Item> items = foldItems(records, foldedUpTo);
+        int newest = foldedUpTo;
+        boolean fresh = false;
+        for (Matcher.Item i : items) {
+            if (i.fresh) {
+                fresh = true;
+                newest = Math.max(newest, (Integer) i.key);
+            }
+        }
+        if (!fresh) return;
+        folding.schedule(new Folding.Job(model.rev(), items, vocabulary, newest));
+    }
+
+    /**
+     * {@code records} as folding sees them, each keyed by its id: a raw step is fresh when its id is above {@code freshAfter}.
+     * A step kept raw, there before the last replay started, in a group or with a sentence of its own is a barrier.
+     */
+    private List<Matcher.Item> foldItems(List<RecordedStep> records, int freshAfter) {
+        List<Matcher.Item> items = new ArrayList<Matcher.Item>(records.size());
+        for (RecordedStep r : records) {
+            String author = r.author.json;
+            boolean barrier = r.keepRaw || r.id <= model.replayFloor() || r.group != null;
+            if (StepNumbers.isCheck(r.action)) {
+                items.add(Matcher.Item.check(r.id, author));
+            } else if (r.folded()) {
+                List<Matcher.Item> raw = new ArrayList<Matcher.Item>();
+                for (RecordedStep s : r.raw) raw.add(Matcher.Item.raw(s.id, author, matchForm(s), false, false));
+                items.add(Matcher.Item.folded(r.id, author, raw, barrier));
+            } else if (r.action instanceof DoAction) {
+                items.add(Matcher.Item.doStep(r.id, author));
+            } else {
+                // a step the person or the agent named is theirs to keep as it is
+                items.add(Matcher.Item.raw(r.id, author, matchForm(r), barrier || r.action.say != null, r.id > freshAfter));
+            }
+        }
+        return items;
+    }
+
+    /** A raw step as a pattern matches it: as its elements were seen, its row by position when it names it so. */
+    private JsonNode matchForm(RecordedStep r) {
+        JsonNode json = stripNulls(mapper.valueToTree(r.action));
+        ObjectNode holder = rowHolder(json);
+        boolean position = false;
+        if (holder != null) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = mapper.convertValue(holder.get("row"), Map.class);
+            position = byPosition(row, r.row);
+        }
+        return Matcher.matchForm(json, r.seen, position);
+    }
+
+    /** The person's step's target as its element was seen ({@link Inspector#SEEN}), as a recording keeps it; null when none. */
+    private JsonNode seen(Object seen) {
+        if (!(seen instanceof Locator)) return null;
+        ObjectNode out = mapper.createObjectNode();
+        out.set("target", locatorJson((Locator) seen));
+        return out;
+    }
+
+    /** Each target field of a step that ran as its element was seen ({@link Recorder.Recorded#seen}); null when none. */
+    private JsonNode seenOf(VerbOutcome outcome) {
+        if (outcome == null) return null;
+        ObjectNode out = null;
+        for (Map.Entry<String, Recorder.Recorded> e : outcome.recorded.entrySet()) {
+            if (e.getValue().seen == null) continue;
+            if (out == null) out = mapper.createObjectNode();
+            out.set(e.getKey(), locatorJson(e.getValue().seen));
+        }
+        return out;
+    }
+
+    /**
+     * Applies what folding found, under the lock: each fold as one edit (undo takes it back), and its notes. A result for
+     * a recording that changed meanwhile is dropped and folding looks again.
+     */
+    private void applyFolds(Folding.Job job, Matcher.Result result) {
+        if (model.rev() != job.rev) {
+            scheduleFolding();
+            return;
+        }
+        foldedUpTo = Math.max(foldedUpTo, job.newest);
+        if (result == null) return;
+        Map<Matcher.Fold, Integer> made = new HashMap<Matcher.Fold, Integer>();
+        boolean changed = false;
+        for (Matcher.Fold f : result.folds) {
+            DoAction action = foldAction(f.choice);
+            if (action == null) break;   // its plugin went: a later fold may build on this one, so none is made
+            RecordedStep.Author by = author(f.item.author);
+            made.put(f, model.fold(ids(f.span, made), action, by, by).step.id);
+            changed = true;
+        }
+        for (Matcher.Note n : result.notes) {
+            Object last = n.span.get(n.span.size() - 1).key;
+            if (!(last instanceof Integer)) continue;
+            foldNotes.put((Integer) last, new FoldNote(n.kind, ids(n.span, made), n.choices, n.why));
+            changed = true;
+        }
+        if (changed) publish();
+    }
+
+    /** The record ids of {@code span}: a fold made in the same look by the id it got ({@code made}). */
+    private static List<Integer> ids(List<Matcher.Item> span, Map<Matcher.Fold, Integer> made) {
+        List<Integer> ids = new ArrayList<Integer>();
+        for (Matcher.Item i : span) {
+            Integer id = i.key instanceof Matcher.Fold ? made.get(i.key) : (Integer) i.key;
+            if (id != null) ids.add(id);
+        }
+        return ids;
+    }
+
+    private static RecordedStep.Author author(String json) {
+        for (RecordedStep.Author a : RecordedStep.Author.values()) if (a.json.equals(json)) return a;
+        return RecordedStep.Author.AGENT;
+    }
+
+    /** The do step a fold into {@code c} records: the step by its plugin, the values the steps gave, its sentence; null when no plugin offers it now. */
+    private DoAction foldAction(Matcher.Choice c) {
+        Plugins.DoStep d;
+        try {
+            d = plugins.lookUp(c.step, c.params);
+        } catch (DriverException gone) {
+            return null;
+        }
+        DoAction action = new DoAction();
+        action.step = d.qualified();
+        action.params = new LinkedHashMap<String, String>(c.params);
+        action.say = d.sentence;
+        return action;
+    }
+
+    /**
+     * Folds steps {@code from} to {@code to} into one domain step, the agent asking: the steps (whole, one author's, no
+     * check between them, in no group) must be a domain step's pattern; {@code step} names which one when more fit. A
+     * step kept raw may be folded so. The steps are matched without the session's lock; a recording that changed
+     * meanwhile is refused (BUSY).
+     */
+    String recordingFold(int from, int to, String step, Integer rev) {
+        List<Matcher.Candidate> vocabulary;
+        List<Matcher.Item> span = new ArrayList<Matcher.Item>();
+        List<Integer> ids = new ArrayList<Integer>();
+        RecordedStep.Author by;
+        int seenRev;
+        synchronized (this) {
+            checkRev(rev);
+            vocabulary = foldingVocabulary();
+            if (vocabulary.isEmpty()) {
+                throw new DriverException(Reason.CAPABILITY_GAP, "fold needs a plugin whose vocabulary has patterns; "
+                        + (plugins == null ? "no plugin configured (agent argument plugins=…)" : "none has"));
+            }
+            by = foldSpan(from, to, span, ids);
+            seenRev = model.rev();
+        }
+        String what = from == to ? "step " + from : "steps " + from + "-" + to;
+        List<Matcher.Choice> choices;
+        try {
+            choices = Matcher.matches(span, vocabulary);
+        } catch (Pattern.TooAmbiguous e) {
+            throw new DriverException(Reason.BAD_INPUT, what + ": " + Matcher.couldNotDecide(e.stepId()));
+        }
+        Matcher.Choice chosen = choose(choices, step, what, from == to);
+        DoAction action = foldAction(chosen);
+        if (action == null) throw new DriverException(Reason.CAPABILITY_GAP, "no ready plugin offers '" + chosen.step + "' now");
+        synchronized (this) {
+            checkRev(seenRev);
+            return edited(model.fold(ids, action, by, RecordedStep.Author.AGENT).did);
+        }
+    }
+
+    /**
+     * Steps {@code from} to {@code to} as a fold by name takes them: their action records as folding sees them into
+     * {@code span}, their ids into {@code ids}; their one author. BAD_INPUT when they cannot fold. Under the lock.
+     */
+    private RecordedStep.Author foldSpan(int from, int to, List<Matcher.Item> span, List<Integer> ids) {
+        model.flatRange(from, to);   // refuses a number that is no step
+        List<StepNumbers.Step> st = StepNumbers.of(model.actions());
+        List<RecordedStep> records = model.records();
+        RecordedStep.Author by = null;
+        for (int n = from; n <= to; n++) {
+            StepNumbers.Step s = st.get(n - 1);
+            if (s.checkOnly()) throw new DriverException(Reason.BAD_INPUT, "step " + n + " holds only checks: a fold takes actions");
+            if (n < to && !s.checks.isEmpty()) {
+                throw new DriverException(Reason.BAD_INPUT, "check " + n + ".1 sits between the steps: a fold takes no "
+                        + "check between its steps (checks after the last one stay under it)");
+            }
+            RecordedStep r = records.get(s.action);
+            if (r.action instanceof DoAction && !r.folded()) {
+                throw new DriverException(Reason.BAD_INPUT, "step " + n + " is a do step: it folds into nothing");
+            }
+            if (r.group != null) throw new DriverException(Reason.BAD_INPUT, "step " + n + " is in a group: ungroup it first");
+            if (by == null) by = r.author;
+            if (r.author != by) {
+                throw new DriverException(Reason.BAD_INPUT, "steps " + from + "-" + to + " are not one author's: the "
+                        + "person's and the agent's steps never fold together");
+            }
+            if (r.folded()) {
+                List<Matcher.Item> raw = new ArrayList<Matcher.Item>();
+                for (RecordedStep x : r.raw) raw.add(Matcher.Item.raw(x.id, r.author.json, matchForm(x), false, false));
+                span.add(Matcher.Item.folded(r.id, r.author.json, raw, false));
+            } else {
+                span.add(Matcher.Item.raw(r.id, r.author.json, matchForm(r), false, false));
+            }
+            ids.add(r.id);
+        }
+        return by;
+    }
+
+    /** The choice a fold by name takes: the one {@code step} names, else the only best one; {@code one}: a single step. */
+    private static Matcher.Choice choose(List<Matcher.Choice> choices, String step, String what, boolean one) {
+        List<String> names = new ArrayList<String>();
+        for (Matcher.Choice c : choices) names.add(c.step + c.params);
+        String match = one ? " matches" : " match";
+        if (choices.isEmpty()) throw new DriverException(Reason.BAD_INPUT, what + match + " no domain step's pattern");
+        if (step != null) {
+            for (Matcher.Choice c : choices) if (c.step.equals(step) || c.step.endsWith(":" + step)) return c;
+            throw new DriverException(Reason.BAD_INPUT, what + (one ? " is not '" : " are not '") + step + "'; "
+                    + (one ? "it" : "they") + match + " " + String.join(", ", names));
+        }
+        if (choices.size() > 1) {
+            throw new DriverException(Reason.BAD_INPUT, what + match + " more than one domain step: " + String.join(", ", names)
+                    + "; name one with 'step'");
+        }
+        return choices.get(0);
+    }
+
+    /** Puts the raw steps of fold {@code n} back, kept raw (folding leaves them as they are). */
+    synchronized String recordingUnfold(int n, Integer rev) {
+        checkRev(rev);
+        return edited(model.unfold(n, RecordedStep.Author.AGENT));
+    }
+
+    /** Keeps steps {@code from} to {@code to} raw: folding never takes them into a fold nor folds across them. */
+    synchronized String recordingKeepRaw(int from, int to, Integer rev) {
+        checkRev(rev);
+        String did = model.keepRaw(from, to, RecordedStep.Author.AGENT);
+        if (did != null) return edited(did);
+        ObjectNode unchanged = (ObjectNode) readTree(published.json);
+        unchanged.put("did", (from == to ? "step " + from + " is" : "steps " + from + "-" + to + " are") + " kept raw already");
+        return unchanged.toString();
+    }
+
+    /**
+     * The {@code vocabulary} tool's {@code match {from, to}}: what folding would make of steps {@code from} to
+     * {@code to}, every raw step looked at as if just recorded (barriers as folding has them), without changing the
+     * recording. {@code folds: [{from, to, step, params, say}]} in step numbers, {@code notes} for runs that did not fold.
+     */
+    String vocabularyMatch(Integer from, Integer to) {
+        if (from == null || to == null) throw new DriverException(Reason.BAD_INPUT, "match needs 'from' and 'to' (step numbers)");
+        List<Matcher.Item> items;
+        List<Matcher.Candidate> vocabulary;
+        Map<Integer, Integer> numbers = new HashMap<Integer, Integer>();
+        ObjectNode r = mapper.createObjectNode();
+        r.put("from", from);
+        r.put("to", to);
+        ArrayNode folds = r.putArray("folds");
+        ArrayNode notes = r.putArray("notes");
+        synchronized (this) {
+            vocabulary = foldingVocabulary();
+            if (vocabulary.isEmpty()) {
+                r.put("hint", plugins == null ? "no plugin configured (agent argument plugins=…): nothing folds"
+                        : "no ready plugin's vocabulary has a pattern: nothing folds");
+                return r.toString();
+            }
+            int[] flat = model.flatRange(from, to);
+            List<RecordedStep> records = model.records().subList(flat[0], flat[1] + 1);
+            items = foldItems(records, Integer.MIN_VALUE);
+            for (RecordedStep x : records) numbers.put(x.id, model.addressOf(x.id).step);
+        }
+        Matcher.Result result = Matcher.fold(items, vocabulary,
+                System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Folding.BUDGET_MS));
+        for (Matcher.Item i : result.items) {
+            if (!(i.key instanceof Matcher.Fold)) continue;
+            Matcher.Fold f = (Matcher.Fold) i.key;
+            ObjectNode o = folds.addObject();
+            int[] range = range(f.span, numbers);
+            o.put("from", range[0]);
+            o.put("to", range[1]);
+            putChoice(o, f.choice);
+        }
+        for (Matcher.Note n : result.notes) {
+            ObjectNode o = notes.addObject();
+            int[] range = range(n.span, numbers);
+            o.put("from", range[0]);
+            o.put("to", range[1]);
+            o.put("kind", n.kind.name().toLowerCase(java.util.Locale.ROOT));
+            ArrayNode steps = o.putArray("steps");
+            for (Matcher.Choice c : n.choices) putChoice(steps.addObject(), c);
+            if (n.why != null) o.put("why", n.why);
+        }
+        if (result.outOfTime) r.put("outOfTime", true);
+        return r.toString();
+    }
+
+    /** The first and last step number {@code span} covers (a fold made in the same look by its own span). */
+    private static int[] range(List<Matcher.Item> span, Map<Integer, Integer> numbers) {
+        int a = Integer.MAX_VALUE;
+        int b = Integer.MIN_VALUE;
+        for (Matcher.Item i : span) {
+            int[] own = i.key instanceof Matcher.Fold ? range(((Matcher.Fold) i.key).span, numbers)
+                    : new int[] {numbers.get(i.key), numbers.get(i.key)};
+            a = Math.min(a, own[0]);
+            b = Math.max(b, own[1]);
+        }
+        return new int[] {a, b};
+    }
+
+    /** {@code step}, {@code params} and (when a plugin offers it) {@code say} of a domain step a run matches. */
+    private void putChoice(ObjectNode o, Matcher.Choice c) {
+        o.put("step", c.step);
+        o.set("params", mapper.valueToTree(c.params));
+        DoAction a = foldAction(c);
+        if (a != null) o.put("say", a.say);
+    }
+
     /** {@link #publish(String)} for a change the palette needs no note about. */
     private void publish() {
         publish(null);
@@ -2650,6 +3053,7 @@ public class UiMcpSession {
                 if (a.action.say != null) o.put("say", a.action.say);
                 if (a.edited) o.put("edited", true);
                 putRow(o, rowLine(a));
+                putFolding(o, a);
             }
             if (first.group != null) o.put("group", groupNumbers.get(first.group.id));
             ArrayNode checks = o.putArray("checks");
@@ -2701,6 +3105,34 @@ public class UiMcpSession {
             }
         }
         view.changed(notice);
+    }
+
+    /**
+     * What folding knows of a step's action record: {@code folded} (how many raw steps it stands for) and {@code raw}
+     * (their lines) for a fold, {@code keepRaw}, and a note where a run ending at it did not fold: {@code foldCandidates}
+     * (a tie), {@code foldSuggested} (a step that only suggests), {@code foldUndecided} (why).
+     */
+    private void putFolding(ObjectNode into, RecordedStep a) {
+        if (a.folded()) {
+            into.put("folded", a.raw.size());
+            ArrayNode raw = into.putArray("raw");
+            for (RecordedStep r : a.raw) raw.add(r.action.describe());
+        }
+        if (a.keepRaw) into.put("keepRaw", true);
+        FoldNote note = a.folded() ? null : foldNotes.get(a.id);
+        if (note == null) return;
+        StepAddress first = model.addressOf(note.ids.get(0));
+        StepAddress last = model.addressOf(a.id);
+        if (first == null || last == null) return;
+        if (note.kind == Matcher.Note.Kind.UNDECIDED) {
+            into.put("foldUndecided", note.why);
+            return;
+        }
+        ObjectNode o = into.putObject(note.kind == Matcher.Note.Kind.TIE ? "foldCandidates" : "foldSuggested");
+        o.put("from", first.step);
+        o.put("to", last.step);
+        ArrayNode steps = o.putArray("steps");
+        for (Matcher.Choice c : note.choices) putChoice(steps.addObject(), c);
     }
 
     /**

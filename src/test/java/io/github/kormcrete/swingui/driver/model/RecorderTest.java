@@ -107,6 +107,36 @@ class RecorderTest {
     }
 
     @Test
+    void theElementAsSeenHasItsWholeTrailAndEveryCellOfItsRow() {
+        for (int r = 0; r < 3; r++) {
+            scene.table.setValueAt("ORD-" + (r + 1), r, 0);
+            scene.table.setValueAt("open", r, 1);
+        }
+        String ref = snapshot.build(null, null, 400, 20).find("table", "Orders").ref;
+        Locator l = Locator.ofRef(ref);
+        l.row = Collections.<String, Object>singletonMap("A", "ORD-2");
+        l.column = "B";
+
+        Recorder.Recorded r = recorder.record(scene.resolver.resolve(l));
+
+        // the recorder writes the shortest locator; the element as seen keeps all there was
+        assertThat(r.locator.scope).isNull();
+        assertThat(r.seen.scope).containsExactly("tab:Line items", "section:Orders");
+        assertThat(r.seen.role).isEqualTo("table");
+        assertThat(r.seen.name).isEqualTo("Orders");
+        java.util.Map<String, Object> cells = new java.util.LinkedHashMap<String, Object>();
+        cells.put("A", "ORD-2");
+        cells.put("B", "open");
+        assertThat(r.seen.row).isEqualTo(cells);
+        assertThat(r.seen.column).isEqualTo("B");
+        assertThat(r.seen.ref).isNull();
+        // a locator given as it is (not a ref) is seen the same way
+        Locator given = Locator.of("table", "Orders");
+        given.row = Collections.<String, Object>singletonMap("index", 1);
+        assertThat(Recorder.seen(scene.resolver.resolve(given)).row).isEqualTo(cells);
+    }
+
+    @Test
     void rowChoiceHasThePositionAndTheValue() {
         for (int r = 0; r < 3; r++) {
             scene.table.setValueAt("ORD-" + (r + 1), r, 0);

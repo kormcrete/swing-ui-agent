@@ -5,11 +5,14 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.window.WindowRoot;
 import io.github.kormcrete.swingui.driver.window.WindowRoots;
 import io.github.kormcrete.swingui.driver.window.WindowSource;
+import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 
 import javax.swing.JTable;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Turns a resolved target into the locator a recorded test stores: the first form that resolves to
@@ -22,15 +25,22 @@ public final class Recorder {
         public final boolean fragile;
         /** The table row the locator names, both ways (see {@link #rowChoice}); null when it names none. */
         public final RowChoice row;
+        /** The element as it was seen when recorded ({@link #seen(Resolved)}); null when not known. */
+        public final Locator seen;
 
         public Recorded(Locator locator, boolean fragile) {
             this(locator, fragile, null);
         }
 
         public Recorded(Locator locator, boolean fragile, RowChoice row) {
+            this(locator, fragile, row, null);
+        }
+
+        public Recorded(Locator locator, boolean fragile, RowChoice row, Locator seen) {
             this.locator = locator;
             this.fragile = fragile;
             this.row = row;
+            this.seen = seen;
         }
     }
 
@@ -57,7 +67,40 @@ public final class Recorder {
         return new RowChoice(index, TableWidget.uniqueRowKey(table, index));
     }
 
+    /**
+     * {@code r} as it is seen now, not as a recorded test finds it: its window, every scope step around it (the tabs and
+     * titled sections, root first), its role and name, its sub-target (row, column, item, point), and for a table row
+     * every cell of that row by column (a row that no longer resolves stays as the locator named it). A recording keeps
+     * it to tell what a step was about (a vocabulary's patterns match it); it is never written to a file. EDT.
+     */
+    public static Locator seen(Resolved r) {
+        Locator l = with(subTargets(r.locator), r.window, r.trail.isEmpty() ? null : new ArrayList<String>(r.trail),
+                r.role, r.name, null);
+        if (r.component instanceof JTable && r.row() != null) {
+            JTable table = (JTable) r.component;
+            try {
+                int index = TableWidget.row(table, r.row());
+                List<String> headers = TableWidget.headers(table);
+                Map<String, Object> cells = new LinkedHashMap<String, Object>();
+                for (int c = 0; c < headers.size(); c++) {
+                    if (cells.containsKey(headers.get(c))) continue;
+                    String text = Cells.table(table, index, c).text;
+                    cells.put(headers.get(c), text == null ? "" : text);
+                }
+                l.row = cells;
+            } catch (DriverException gone) {
+                // the row moved or went: keep it as the locator named it
+            }
+        }
+        return l;
+    }
+
     public Recorded record(Resolved target) {
+        Recorded found = locate(target);
+        return new Recorded(found.locator, found.fragile, found.row, seen(target));
+    }
+
+    private Recorded locate(Resolved target) {
         Locator sub = subTargets(target.locator);
         String window = shortWindow(target.window);
         List<Locator> tries = new ArrayList<Locator>();

@@ -9,14 +9,17 @@ import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.StepNumbers;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The records made so far, each with an id that is never reused and an author. In memory the list is flat, one record
@@ -75,6 +78,8 @@ final class RecordingModel {
     private long startedAt;
     /** The palette shows it and the person's steps join it. */
     private boolean shared;
+    /** Records with this id or a lower one were there when a replay last started: none folds with a later one. */
+    private int replayFloor;
 
     State state() {
         return state;
@@ -152,7 +157,10 @@ final class RecordingModel {
     /** Longest history of edits kept. */
     static final int HISTORY = 50;
 
-    /** One edit that undo can take back: the steps from before it, and the highest id right after. */
+    /**
+     * One edit that undo can take back: the steps from before it, and the highest id right after; for a fold, the ids of
+     * the records it took, kept raw once undo brings them back (folding would only make the fold again).
+     */
     private static final class Edit {
         final String label;
         final String past;
@@ -160,15 +168,17 @@ final class RecordingModel {
         final List<RecordedStep> before;
         final int maxIdAfter;
         final boolean cut;
+        final Set<Integer> keepRawOnUndo;
 
         Edit(String label, String past, RecordedStep.Author author, List<RecordedStep> before, int maxIdAfter,
-                boolean cut) {
+                boolean cut, Set<Integer> keepRawOnUndo) {
             this.label = label;
             this.past = past;
             this.author = author;
             this.before = before;
             this.maxIdAfter = maxIdAfter;
             this.cut = cut;
+            this.keepRawOnUndo = keepRawOnUndo;
         }
     }
 
@@ -188,8 +198,8 @@ final class RecordingModel {
 
     /** Records the edit just made (steps before it in {@code before}) and returns its past-tense text. */
     private String edited(String label, String past, RecordedStep.Author author, List<RecordedStep> before,
-            boolean cut) {
-        history.addFirst(new Edit(label + " by " + by(author), past, author, before, nextId - 1, cut));
+            boolean cut, Set<Integer> keepRawOnUndo) {
+        history.addFirst(new Edit(label + " by " + by(author), past, author, before, nextId - 1, cut, keepRawOnUndo));
         while (history.size() > HISTORY) history.removeLast();
         changed(by(author) + " " + past);
         return past;
@@ -204,9 +214,14 @@ final class RecordingModel {
 
     /** As {@link #append(Action, RecordedStep.Author)}, with the alternatives of the table row the action names (null: none known). */
     RecordedStep append(Action action, RecordedStep.Author author, RowChoice row) {
+        return append(action, author, row, null);
+    }
+
+    /** As {@link #append(Action, RecordedStep.Author, RowChoice)}, with how its elements were seen (see {@link RecordedStep#seen}). */
+    RecordedStep append(Action action, RecordedStep.Author author, RowChoice row, JsonNode seen) {
         boolean isCheck = StepNumbers.isCheck(action);
         RecordedStep.Group group = isCheck && !steps.isEmpty() ? steps.get(steps.size() - 1).group : null;
-        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, row);
+        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, row, seen, null, false);
         steps.add(step);
         changed("the " + author.json + " recorded " + (isCheck ? "check " : "step ") + addressOf(step.id));
         return step;
@@ -436,7 +451,7 @@ final class RecordingModel {
 
     /** The end of every edit: the groups are repaired, the edit is kept for undo, and its past-tense text returned. */
     private String finish(String label, String past, RecordedStep.Author author, List<RecordedStep> before, boolean cut) {
-        return edited(label, past + repairGroups(), author, before, cut);
+        return edited(label, past + repairGroups(), author, before, cut, Collections.<Integer>emptySet());
     }
 
     // ------------------------------------------------------------------ edits (steps and checks)
@@ -580,8 +595,9 @@ final class RecordingModel {
                     + (check ? "a check" : "an action") + " (delete it and insert the other kind)");
         }
         List<RecordedStep> before = copyOfRecords();
-        // an edit that is not about the row may have moved it: what was known about the row is learned again by a replay
-        steps.set(flatOf(at.step, at.check, false), keepRow ? old.with(action, true) : old.with(action, true).withRow(null));
+        // an edit that is not about the row may have moved it: what was known about the row is learned again by a replay;
+        // and it may be about another element: no longer what was seen, nor the fold of its raw steps
+        steps.set(flatOf(at.step, at.check, false), keepRow ? old.with(action, true) : old.changed(action).withRow(null));
         String what = (check ? "check " : "step ") + at;
         return finish(label + what + labelSuffix, past + what, author, before, false);
     }
@@ -710,13 +726,122 @@ final class RecordingModel {
         return StepNumbers.flatIndex(actions(), step, check);
     }
 
+    // ------------------------------------------------------------------ folds (a vocabulary's do steps)
+
+    /** A replay starts: no record there now folds with one recorded after it. */
+    void replayStarted() {
+        replayFloor = nextId - 1;
+    }
+
+    /** Records with this id or a lower one were there when a replay last started (see {@link #replayStarted}). */
+    int replayFloor() {
+        return replayFloor;
+    }
+
+    /** What {@link #fold} made: the new record, and the edit's past-tense text. */
+    static final class Folded {
+        final RecordedStep step;
+        final String did;
+
+        Folded(RecordedStep step, String did) {
+            this.step = step;
+            this.did = did;
+        }
+    }
+
+    /**
+     * Puts {@code action}, a {@code do} step by {@code by}, in the place of the records {@code ids}: action records (raw
+     * steps or earlier folds) next to each other, in order, in one group or none. It keeps their raw steps
+     * ({@link RecordedStep#raw}, an earlier fold's own); checks after the last stay under it. {@code editor} made the
+     * fold; undo brings the records back kept raw.
+     */
+    Folded fold(List<Integer> ids, Action action, RecordedStep.Author by, RecordedStep.Author editor) {
+        if (ids.isEmpty()) throw bad("a fold takes at least one step");
+        int first = indexOf(ids.get(0));
+        if (first < 0) throw bad("that step is gone: the recording changed since (nothing folded)");
+        List<RecordedStep> raw = new ArrayList<RecordedStep>();
+        RecordedStep.Group group = steps.get(first).group;
+        for (int k = 0; k < ids.size(); k++) {
+            int i = first + k;
+            if (i >= steps.size() || steps.get(i).id != ids.get(k)) {
+                throw bad("only steps next to each other fold, with no check between them (nothing folded)");
+            }
+            RecordedStep r = steps.get(i);
+            if (StepNumbers.isCheck(r.action)) throw bad("a check does not fold (nothing folded)");
+            if (r.group == null ? group != null : !same(r.group, group)) {
+                throw bad("the steps are not in one group (nothing folded)");
+            }
+            if (r.folded()) raw.addAll(r.raw);
+            else raw.add(r.keptRaw(false));
+        }
+        int a = addressOf(ids.get(0)).step;
+        int b = addressOf(ids.get(ids.size() - 1)).step;
+        List<RecordedStep> before = copyOfRecords();
+        RecordedStep made = RecordedStep.fold(nextId++, by, action, raw).inGroup(group);
+        for (int k = 0; k < ids.size(); k++) steps.remove(first);
+        steps.add(first, made);
+        String what = stepsText(a, b);
+        String into = action.say == null ? action.describe() : action.say;
+        String did = edited("fold of " + what + " into \"" + into + "\"", "folded " + what + " into \"" + into + "\"",
+                editor, before, false, new HashSet<Integer>(ids));
+        return new Folded(made, did);
+    }
+
+    /** Puts the raw steps of fold {@code n} back in its place, each kept raw; its checks stay under the last one. */
+    String unfold(int n, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (n < 1 || n > st.size()) throw outOfRange(n);
+        StepNumbers.Step s = st.get(n - 1);
+        RecordedStep fold = s.checkOnly() ? null : steps.get(s.action);
+        if (fold == null || !fold.folded()) {
+            throw bad("step " + n + " is no fold: only a do step a recording folded from raw steps unfolds");
+        }
+        List<RecordedStep> before = copyOfRecords();
+        steps.remove(s.action);
+        for (int k = fold.raw.size() - 1; k >= 0; k--) {
+            steps.add(s.action, fold.raw.get(k).keptRaw(true).inGroup(fold.group));
+        }
+        int last = n + fold.raw.size() - 1;
+        return finish("unfold of step " + n, "unfolded step " + n + " into " + stepsText(n, last), author, before, false);
+    }
+
+    /**
+     * Keeps steps {@code from} to {@code to} raw: folding never takes them into a fold nor folds across them. A fold
+     * among them is refused (unfold it); null when they all are kept raw already (nothing changes).
+     */
+    String keepRaw(int from, int to, RecordedStep.Author author) {
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        if (from < 1 || from > st.size()) throw outOfRange(from);
+        if (to < from || to > st.size()) throw outOfRange(to);
+        List<Integer> marked = new ArrayList<Integer>();
+        for (int n = from; n <= to; n++) {
+            StepNumbers.Step s = st.get(n - 1);
+            if (s.checkOnly()) continue;
+            RecordedStep r = steps.get(s.action);
+            if (r.folded()) throw bad("step " + n + " is a fold: unfold it to keep its raw steps raw");
+            if (!r.keepRaw) marked.add(s.action);
+        }
+        if (marked.isEmpty()) return null;
+        List<RecordedStep> before = copyOfRecords();
+        for (int i : marked) steps.set(i, steps.get(i).keptRaw(true));
+        String what = stepsText(from, to);
+        return finish("keep raw of " + what, "kept " + what + " raw", author, before, false);
+    }
+
+    /** The flat index of the record with {@code id}, or -1. */
+    private int indexOf(int id) {
+        for (int i = 0; i < steps.size(); i++) if (steps.get(i).id == id) return i;
+        return -1;
+    }
+
     // ------------------------------------------------------------------ undo
 
     /** The records after the last edit is taken back, or null when there is nothing to undo. */
     private List<RecordedStep> undone() {
         Edit e = history.peekFirst();
         if (e == null) return null;
-        List<RecordedStep> out = new ArrayList<RecordedStep>(e.before);
+        List<RecordedStep> out = new ArrayList<RecordedStep>(e.before.size());
+        for (RecordedStep s : e.before) out.add(e.keepRawOnUndo.contains(s.id) ? s.keptRaw(true) : s);
         if (!e.cut) {
             // records made since join as they would have: an action never in a group, a check in its step's
             for (RecordedStep s : steps) {
