@@ -62,6 +62,7 @@ public final class JavaTestWriter {
     private static final String PACKAGE_NAME_PATTERN = "[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*";
 
     private static final String FRAGILE = "FRAGILE: the recorder needed nth to make this target unique";
+    private static final String FRAGILE_POINT = "FRAGILE: clicked at a point: breaks if the layout moves";
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z]\\w*)\\}");
     /** Simple names the class already uses: a do step's class of the same name is written by its full name. */
     private static final Set<String> TAKEN = new HashSet<String>(Arrays.asList("Client", "LoginAs", "UiTest", "Test",
@@ -322,7 +323,7 @@ public final class JavaTestWriter {
             if (v instanceof ScreenshotVerb && ((ScreenshotVerb) v).maxSize != null) {
                 lines.add("// maxSize " + ((ScreenshotVerb) v).maxSize + " dropped");
             }
-            if (Boolean.TRUE.equals(v.fragile)) lines.add("// " + FRAGILE);
+            if (Boolean.TRUE.equals(v.fragile)) lines.add("// " + fragile(v));
             lines.add(stmt);
             return lines;
         }
@@ -330,7 +331,15 @@ public final class JavaTestWriter {
         /** The {@link #lines} entry of a step whose Java lines are {@code java}: its statement, a fragile one marked after it. */
         private String stepLine(Action a, List<String> java) {
             String stmt = java.get(java.size() - 1);
-            return a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile) ? stmt + "  // " + FRAGILE : stmt;
+            return a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile) ? stmt + "  // " + fragile((VerbAction) a) : stmt;
+        }
+
+        /** Why a fragile step is: its target is a point, or it needed nth. */
+        private String fragile(VerbAction v) {
+            for (Locator l : v.targets().values()) {
+                if (l != null && l.point != null) return FRAGILE_POINT;
+            }
+            return FRAGILE;
         }
 
         /**
@@ -508,7 +517,7 @@ public final class JavaTestWriter {
             String chain = actionChain(v.target, v.timeout, what);
             if (chain == null) return null;
             if (v.target.point != null) {
-                // Only a plain click gets here with a point (hasBadLocator); a step marked fragile stays so.
+                // Only a plain click gets here with a point (hasBadLocator); the recorder marked it fragile.
                 return chain + ".clickAt(" + v.target.point.get("x") + ", " + v.target.point.get("y") + ");";
             }
             boolean leftOrNull = v.button == null || "left".equals(v.button);

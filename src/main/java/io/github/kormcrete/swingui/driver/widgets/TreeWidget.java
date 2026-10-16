@@ -41,13 +41,18 @@ public final class TreeWidget {
     }
 
     public static String pathText(JTree tree, int row) {
+        return join(path(tree, row));
+    }
+
+    /** The labels from the top visible level down to {@code row}, as an {@code item} names that row. EDT. */
+    public static List<String> path(JTree tree, int row) {
         List<String> parts = new ArrayList<String>();
         for (TreePath p = tree.getPathForRow(row); p != null; p = p.getParentPath()) {
             if (p.getParentPath() == null && !tree.isRootVisible()) break;
             int r = tree.getRowForPath(p);
             parts.add(0, r < 0 ? String.valueOf(p.getLastPathComponent()) : Cells.tree(tree, r).text);
         }
-        return join(parts);
+        return parts;
     }
 
     /** The visible row showing {@code path}; collapsed rows are not searched. */

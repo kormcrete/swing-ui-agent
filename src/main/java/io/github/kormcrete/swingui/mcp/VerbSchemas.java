@@ -78,7 +78,7 @@ final class VerbSchemas {
         return (doc == null ? "" : doc.value() + " ")
                 + "Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; "
                 + "the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct "
-                + "Swing call, fragile:true a target that needed nth).";
+                + "Swing call, fragile:true a target that needed nth or is a point).";
     }
 
     static ObjectNode inputSchema(ObjectMapper m, Class<?> type) {

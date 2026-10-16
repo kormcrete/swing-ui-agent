@@ -11,6 +11,7 @@ import io.github.kormcrete.swingui.driver.window.WindowSource;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JTable;
 import javax.swing.RootPaneContainer;
 import javax.swing.JTextField;
@@ -25,8 +26,15 @@ final class Scene implements WindowSource {
 
     final List<WindowRoot> roots = new ArrayList<WindowRoot>();
     final Refs refs = new Refs(c -> true);
-    final Names names = new Names(Visibility.TREE);
-    final Resolver resolver = new Resolver(Visibility.TREE, names, refs, this);
+    /** As {@link Visibility#TREE}, except that a root the scene lists counts as shown: an unshown popup root is not visible otherwise. */
+    final Visibility visibility = c -> {
+        for (Component x = c; x != null; x = x.getParent()) {
+            if (!x.isVisible() && !listed(x)) return false;
+        }
+        return true;
+    };
+    final Names names = new Names(visibility);
+    final Resolver resolver = new Resolver(visibility, names, refs, this);
     final Recorder recorder = new Recorder(resolver, this);
     final Inspector inspector = new Inspector(refs, resolver, recorder);
 
@@ -56,6 +64,17 @@ final class Scene implements WindowSource {
         w.setSize(width, height);
         w.doLayout();
         ((RootPaneContainer) w).getRootPane().doLayout();
+    }
+
+    /** Lists {@code popup} as a showing popup of the scene ({@code window:"popup"}), invoked from {@code invoker}. */
+    void popup(JPopupMenu popup, Component invoker) {
+        popup.setInvoker(invoker);
+        roots.add(new WindowRoot(popup, "menu", "", false, null, false));
+    }
+
+    private boolean listed(Component c) {
+        for (WindowRoot r : roots) if (r.content == c) return true;
+        return false;
     }
 
     private void place(Component c, int x, int y, int w, int h) {

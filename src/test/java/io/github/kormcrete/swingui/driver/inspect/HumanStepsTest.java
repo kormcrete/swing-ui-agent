@@ -82,6 +82,111 @@ class HumanStepsTest {
     }
 
     @Test
+    void aSuggestionPickInAPopupListIsAClickOnItsItem() {
+        // a field's suggestions: a list in a popup the field opens as the person types (Order Desk's Customer field)
+        javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+        popup.add(suggestions);
+        suggestions.setBounds(0, 0, 200, 40);
+        scene.popup(popup, scene.customer);
+        focus(scene.customer, FocusEvent.FOCUS_GAINED);
+        typeInto(scene.customer, "Ada");
+
+        java.awt.Rectangle ada = suggestions.getCellBounds(0, 0);
+        click(suggestions, ada.x + 4, ada.y + 2, 1);
+        scene.customer.setText("Ada Shop Ltd");   // the app takes the pick
+        human.flush();
+
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada");
+        assertThat(steps.get(1)).containsEntry("action", "click").doesNotContainKey("count");
+        Locator target = (Locator) steps.get(1).get("target");
+        Locator expected = Locator.of("list", null);
+        expected.window = "popup";
+        expected.item = java.util.Collections.singletonList("Ada Shop Ltd");
+        assertThat(target).isEqualTo(expected);
+        assertThat(((Locator) steps.get(1).get(Inspector.SEEN)).item).containsExactly("Ada Shop Ltd");
+    }
+
+    @Test
+    void aListEntryClickIsAClickOnItsItem() {
+        javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        customers.setBounds(320, 130, 150, 40);
+        scene.content.add(customers);
+        java.awt.Rectangle birch = customers.getCellBounds(1, 1);
+
+        click(customers, birch.x + 4, birch.y + 2, 1);
+        human.flush();
+        click(customers, birch.x + 4, birch.y + 2, 1);
+        click(customers, birch.x + 4, birch.y + 2, 2);
+        human.flush();
+        // below the last entry: no entry, no step
+        click(customers, 4, customers.getHeight() - 1, 1);
+        human.flush();
+
+        assertThat(steps).hasSize(2);
+        Locator target = (Locator) steps.get(0).get("target");
+        assertThat(target.role).isEqualTo("list");
+        assertThat(target.item).containsExactly("Birch & Co");
+        assertThat(steps.get(0)).doesNotContainKey("count").doesNotContainKey(Inspector.ROW_INDEX);
+        assertThat(steps.get(1)).containsEntry("count", 2);
+        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Birch & Co");
+    }
+
+    @Test
+    void aTreeRowClickIsAClickOnItsPath() {
+        javax.swing.tree.DefaultMutableTreeNode products = new javax.swing.tree.DefaultMutableTreeNode("Products");
+        javax.swing.tree.DefaultMutableTreeNode office = new javax.swing.tree.DefaultMutableTreeNode("Office");
+        office.add(new javax.swing.tree.DefaultMutableTreeNode("Paper"));
+        office.add(new javax.swing.tree.DefaultMutableTreeNode("Pens"));
+        products.add(office);
+        products.add(new javax.swing.tree.DefaultMutableTreeNode("Coffee"));
+        javax.swing.JTree categories = new javax.swing.JTree(products);
+        categories.setRootVisible(false);
+        categories.setShowsRootHandles(true);
+        categories.expandRow(0);
+        categories.setBounds(320, 130, 150, 100);
+        scene.content.add(categories);
+        java.awt.Rectangle pens = categories.getRowBounds(2);
+
+        click(categories, pens.x + 2, pens.y + 2, 1);
+        human.flush();
+        java.awt.Rectangle officeRow = categories.getRowBounds(0);
+        click(categories, officeRow.x + 2, officeRow.y + 2, 1);
+        click(categories, officeRow.x + 2, officeRow.y + 2, 2);
+        human.flush();
+        // the expand handle left of a row is not the row
+        click(categories, 0, officeRow.y + 2, 1);
+        human.flush();
+
+        assertThat(steps).hasSize(2);
+        Locator target = (Locator) steps.get(0).get("target");
+        assertThat(target.role).isEqualTo("tree");
+        assertThat(target.item).containsExactly("Office", "Pens");
+        assertThat(steps.get(0)).doesNotContainKey("count");
+        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office");
+        assertThat(steps.get(1)).containsEntry("count", 2);
+    }
+
+    @Test
+    void aComboPopupStaysASelect() {
+        javax.swing.JComboBox<String> customer = new javax.swing.JComboBox<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        customer.setBounds(320, 130, 150, 24);
+        scene.content.add(customer);
+        javax.swing.plaf.basic.ComboPopup popup = (javax.swing.plaf.basic.ComboPopup) customer.getUI().getAccessibleChild(customer, 0);
+        ((javax.swing.JPopupMenu) popup).setInvoker(customer);   // as showing it does
+        javax.swing.JList<?> list = popup.getList();
+        list.setSize(150, 40);
+        java.awt.Rectangle birch = list.getCellBounds(1, 1);
+
+        click(list, birch.x + 4, birch.y + 2, 1);
+        human.flush();
+
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0)).containsEntry("action", "select").containsEntry("item", "Birch & Co");
+    }
+
+    @Test
     void spinnerArrowsInATableCellAreOneTypeOfTheValueWhenTheEditEnds() {
         Spinners cart = new Spinners();
         cart.table.editCellAt(0, 1);

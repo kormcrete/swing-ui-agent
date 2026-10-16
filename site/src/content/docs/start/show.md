@@ -61,7 +61,8 @@ shows it at once.
 
 Use the app as you normally would:
 
-- **Clicks and double clicks** are recorded on the element you click.
+- **Clicks and double clicks** are recorded on the element you click. On a list or a tree, that is the entry or row
+  you click, by its text. A pick from a suggestion popup (Order Desk's Customer field) is a click on that entry.
 - **Check boxes and toggle buttons** become a `check` step with the state they end in.
 - **Typing** is recorded when you leave the field or press Enter, and only when you typed: text the app filled in is
   not a step.

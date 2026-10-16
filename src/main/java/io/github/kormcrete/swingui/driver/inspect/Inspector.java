@@ -11,15 +11,19 @@ import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.model.Resolver;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
+import io.github.kormcrete.swingui.driver.widgets.ListWidget;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
+import io.github.kormcrete.swingui.driver.widgets.TreeWidget;
 import io.github.kormcrete.swingui.driver.window.Modality;
 
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLayeredPane;
+import javax.swing.JList;
 import javax.swing.JRootPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JTree;
 import javax.swing.RootPaneContainer;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -1236,6 +1240,57 @@ public final class Inspector {
         Recorder.Recorded rec = recorder.record(r);
         return new Target(rec.locator, rec.fragile, "column '" + l.column + "'" + suffix(rec),
                 Target.shown(r.role, resolver.seenName(r), rec.locator), "column", table, null, -1, column, rec.seen);
+    }
+
+    /**
+     * The entry of {@code list} at {@code p} (list coordinates), addressed as an {@code item} by its text as {@link Cells}
+     * renders it; null when {@code p} is on no entry, or another entry reads the same (the item would find either). EDT.
+     */
+    Target listItem(JList<?> list, Point p) {
+        int index = list.locationToIndex(p);
+        Rectangle cell = index < 0 ? null : list.getCellBounds(index, index);
+        if (cell == null || !cell.contains(p)) return null;
+        String text = Cells.list(list, index).text;
+        try {
+            if (ListWidget.index(list, text) != index) return null;
+        } catch (DriverException notOne) {
+            return null;
+        }
+        return item(list, Collections.singletonList(text), index);
+    }
+
+    /**
+     * The row of {@code tree} at {@code p} (tree coordinates), addressed as an {@code item} by its path; null when {@code p}
+     * is on no row (left of it lie the expand handle and the indent) or the path is not unique. EDT.
+     */
+    Target treeRow(JTree tree, Point p) {
+        int row = tree.getClosestRowForLocation(p.x, p.y);
+        Rectangle bounds = row < 0 ? null : tree.getRowBounds(row);
+        if (bounds == null || p.y < bounds.y || p.y >= bounds.y + bounds.height || p.x < bounds.x) return null;
+        List<String> path = TreeWidget.path(tree, row);
+        try {
+            if (TreeWidget.row(tree, path) != row) return null;
+        } catch (DriverException notOne) {
+            return null;
+        }
+        return item(tree, path, row);
+    }
+
+    /** A list entry or tree row ({@code row}, its view index) as a locator with {@code item} addresses it; null when none does. */
+    private Target item(Component c, List<String> item, int row) {
+        try {
+            Locator l = Locator.ofRef(refs.add(c, null));
+            l.item = new ArrayList<String>(item);
+            Resolved r = resolver.resolve(l);
+            Recorder.Recorded rec = recorder.record(r);
+            StringBuilder s = new StringBuilder(r.role);
+            if (r.name != null) s.append(" '").append(r.name).append('\'');
+            s.append(" · ").append(String.join(" > ", item)).append(suffix(rec));
+            return new Target(rec.locator, rec.fragile, s.toString(), Target.shown(r.role, resolver.seenName(r), rec.locator),
+                    r.role, c, null, row, -1, rec.seen);
+        } catch (DriverException notAddressable) {
+            return null;
+        }
     }
 
     /** The target for a component on its own (no cell), as a locator addresses it; null when nothing does. EDT. */

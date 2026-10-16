@@ -8,7 +8,7 @@ import java.util.Map;
 /**
  * One addressable element as the inspector shows it: the locator the recorder writes for it, how it reads to the
  * agent ({@link #element}) and to the person ({@link #shown}), and where to draw its box. A table cell has a row and a
- * column, a whole column only a column (view indices, -1 none).
+ * column, a whole column only a column, a list entry or tree row only a row (view indices, -1 none).
  */
 public final class Target {
     /**

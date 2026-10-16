@@ -16,6 +16,7 @@ import javax.swing.JRadioButton;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
+import javax.swing.JTree;
 import javax.swing.MenuElement;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -42,7 +43,8 @@ import java.util.function.Consumer;
 
 /**
  * Turns what the person does in the app into the steps the agent would have sent: a press-and-release on one
- * element is a {@code click} (a double click one click with {@code count}), a check box a {@code check}, a menu-bar item
+ * element is a {@code click} (a double click one click with {@code count}; on a list's entry or a tree's row, also a
+ * suggestion list in a popup, a click on its {@code item}), a check box a {@code check}, a menu-bar item
  * a {@code menu} (from its action, so the macOS screen menu bar and accelerators count too), a context-menu item a
  * {@code context_menu}, a choice from a button's dropdown a {@code pick}, a combo choice a {@code select}, a text
  * field's new content a {@code type} when focus leaves it (with {@code commit} when Enter left it), a table cell edited
@@ -171,7 +173,7 @@ final class HumanSteps implements AWTEventListener {
                 return;
             }
             if (ignoredForClicks(deepest)) return;
-            pressedTarget = inspector.snapNow(deepest, at);
+            pressedTarget = clickTarget(deepest, at);
             return;
         }
         if (e.getID() != MouseEvent.MOUSE_RELEASED) return;
@@ -209,7 +211,7 @@ final class HumanSteps implements AWTEventListener {
             return;
         }
         if (!SwingUtilities.isLeftMouseButton(e) || pressedTarget == null || ignoredForClicks(deepest)) return;
-        Target t = inspector.snapNow(deepest, at);
+        Target t = clickTarget(deepest, at);
         if (t == null || !t.same(pressedTarget)) return;
         if (t.component instanceof JCheckBox
                 || (t.component instanceof JToggleButton && !(t.component instanceof JRadioButton))) {
@@ -232,9 +234,25 @@ final class HumanSteps implements AWTEventListener {
         pendingTimer.start();
     }
 
-    /** Text fields take focus, menus and combos record through their own paths, popups are not clicked into. */
+    /**
+     * What a click on {@code deepest} at {@code at} is aimed at: a list's entry or a tree's row by its {@code item} (null
+     * off every entry or row: no step), else the element under it. Not cached: the element may have changed since the
+     * pointer passed over it.
+     */
+    private Target clickTarget(Component deepest, Point at) {
+        if (deepest instanceof JList) return inspector.listItem((JList<?>) deepest, at);
+        if (deepest instanceof JTree) return inspector.treeRow((JTree) deepest, at);
+        return inspector.snapNow(deepest, at);
+    }
+
+    /**
+     * Text fields take focus, menus and combos record through their own paths, popups are not clicked into - except a
+     * list in one that is no combo's (a field's suggestions): a pick there is a click on its entry.
+     */
     private static boolean ignoredForClicks(Component c) {
-        if (c instanceof JMenuItem || SwingUtilities.getAncestorOfClass(JPopupMenu.class, c) != null) return true;
+        if (c instanceof JMenuItem) return true;
+        JPopupMenu popup = (JPopupMenu) SwingUtilities.getAncestorOfClass(JPopupMenu.class, c);
+        if (popup != null && (!(c instanceof JList) || popup instanceof ComboPopup)) return true;
         if (c instanceof JComboBox || SwingUtilities.getAncestorOfClass(JComboBox.class, c) != null) return true;
         return c instanceof JTextComponent && !(c.getParent() instanceof JTable);
     }

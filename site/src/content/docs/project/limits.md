@@ -34,7 +34,8 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **Narrow dialogs:** the palette follows an open modal dialog, but not into one narrower than its buttons. Then it stays in the main window and cannot be used until the dialog closes.
 - **The agent's question bar:** it stays in the window of what the agent asks about, even when another window is in front.
 - **Column checks:** checks on a whole table column are shown greyed, because no `expect` kind exists for them yet.
-- **Not recorded as steps of their own yet:** clicks on spinner arrows, drags, and clicks on list or tree items. Re-do those with the agent, or write them by hand.
+- **Not recorded as steps of their own yet:** clicks on spinner arrows, and drags. Re-do those with the agent, or write them by hand.
+- **Lists and trees:** a click on a list entry or a tree row is recorded by its text, also a pick from a suggestion popup such as Order Desk's Customer field. Two entries that read the same cannot be told apart, so a click on one of them is not recorded. A click on a tree's expand arrow is not recorded either: double-click the row instead.
 - **A tab's close button** is painted by the look and feel and has no element of its own, so it can be neither found nor recorded. Close the tab as a user would with the menu or shortcut: in Order Desk File ▸ Close tab, or Mod+W (⌘W on macOS, Ctrl+W elsewhere).
 - **Password fields:** never recorded, by design. What a person types into one is not stored, and the agent never reads one.
 - **Replay all** begins with a reset, as the test will. Without a plugin that only closes dialogs, so there is no defined start to return to: the first step has to get there.

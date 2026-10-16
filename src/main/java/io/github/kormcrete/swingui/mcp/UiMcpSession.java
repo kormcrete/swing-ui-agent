@@ -1330,7 +1330,7 @@ public class UiMcpSession {
 
     private Action action(JsonNode json) {
         try {
-            return mapper.treeToValue(json, Action.class);
+            return fragileAtPoint(mapper.treeToValue(json, Action.class));
         } catch (InvalidTypeIdException e) {
             // An unknown step type, or none.
             throw FlowJson.unknownStepType(e);
@@ -1339,6 +1339,18 @@ public class UiMcpSession {
         } catch (IllegalArgumentException e) {
             throw new DriverException(Reason.BAD_INPUT, "malformed action: " + e.getMessage());
         }
+    }
+
+    /**
+     * {@code a}, marked {@code fragile} when one of its targets is a point: a click there lands elsewhere once the layout
+     * moves. Every step recorded, inserted or edited is parsed here, the agent's and the person's alike.
+     */
+    private static Action fragileAtPoint(Action a) {
+        if (!(a instanceof VerbAction)) return a;
+        for (Locator l : ((VerbAction) a).targets().values()) {
+            if (l != null && l.point != null) ((VerbAction) a).fragile = true;
+        }
+        return a;
     }
 
     /** Names the export check uses; valid, so every problem it finds belongs to the step checked. */
@@ -1364,7 +1376,7 @@ public class UiMcpSession {
 
     /**
      * The step as export_test records it: a ref becomes the recorder's locator,
-     * {@code via:"api"} marks a direct Swing call, {@code fragile:true} a target that needed nth.
+     * {@code via:"api"} marks a direct Swing call, {@code fragile:true} a target that needed nth or is a point.
      */
     private Action recordable(Action action, VerbOutcome outcome) {
         if (!(action instanceof VerbAction) || outcome == null) return action;

@@ -19,7 +19,7 @@ public abstract class VerbAction extends Action {
     /** Written by the recorder when the step needed a direct Swing call. */
     public String via;
 
-    /** Written by the recorder when the target needed nth to be unique. */
+    /** Written by the recorder when the target needed nth to be unique, or is a point (it breaks when the layout moves). */
     public Boolean fragile;
 
     public abstract VerbOutcome run(Verbs verbs);

@@ -345,15 +345,18 @@ class JavaTestWriterTest {
     }
 
     @Test
-    void aClickAtAPointIsWrittenAsClickAt() {
-        Locator l = Locator.of("clickable", "Canvas");
-        l.point = new LinkedHashMap<>();
-        l.point.put("x", 0.5);
-        l.point.put("y", 0.25);
-        ClickVerb c = click(l);
-        c.fragile = true;
-        String java = write(c);
-        assertThat(java).containsPattern("// FRAGILE: [^\\n]*\\n        ui\\.clickable\\(\"Canvas\"\\)\\.clickAt\\(0\\.5, 0\\.25\\);");
+    void aClickAtAPointIsWrittenAsClickAt() throws Exception {
+        // recorded as the agent's step is: a click at a point is fragile, and the comment says why
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        UiMcpSession session = new UiMcpSession(new UiMcpReadToolsTest.DriverHost(), new UiMcpToolsTest.FakeInventory(), mapper);
+        session.folderMemory(FolderMemory.inMemory());
+        session.startRecording(true);
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"clickable\",\"name\":\"Canvas\","
+                + "\"point\":{\"x\":0.5,\"y\":0.25}}}"));
+        Action recorded = session.recordedSteps().get(0).action;
+
+        assertThat(write(recorded)).contains("        // FRAGILE: clicked at a point: breaks if the layout moves\n"
+                + "        ui.clickable(\"Canvas\").clickAt(0.5, 0.25);\n");
     }
 
     @Test

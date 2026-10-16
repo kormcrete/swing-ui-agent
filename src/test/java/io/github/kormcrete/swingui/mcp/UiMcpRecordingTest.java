@@ -354,6 +354,63 @@ class UiMcpRecordingTest {
         assertThat(call("{\"op\":\"list\"}").path("steps")).hasSize(1);
     }
 
+    /** The person's pick of a Customer suggestion, as the palette records it: a click on the popup list's entry. */
+    private static Map<String, Object> suggestionPick(String customer) {
+        Locator entry = Locator.of("list", null);
+        entry.window = "popup";
+        entry.item = Arrays.asList(customer);
+        Map<String, Object> pick = step("click", entry);
+        pick.put(Inspector.SEEN, entry.copy());
+        return pick;
+    }
+
+    @Test
+    void aPersonsSuggestionPickIsRecordedWithItsJava() throws Exception {
+        assertThat(sink.done(suggestionPick("Ada Shop Ltd")).ok).isTrue();
+
+        JsonNode steps = call("{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("author").asText()).isEqualTo("person");
+        assertThat(steps.get(0).path("java").asText()).isEqualTo("ui.popup().list(null).item(\"Ada Shop Ltd\").click();");
+    }
+
+    @Test
+    void aPersonsSuggestionPickFoldsIntoTheStepThatMatchesItsItem() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("chooseCustomer", "Choose the customer {customer}")
+                .param("customer", ParamType.TEXT)
+                .code((ui, p) -> ui.popup().list(null).item(p.text("customer")).click())
+                .match("{\"action\":\"click\",\"target\":{\"role\":\"list\",\"item\":[\"{customer}\"]}}")
+                .java(STEPS_CLASS, "chooseCustomer(ui, {customer})")
+                .build());
+        assertThat(s.humanSink().done(suggestionPick("Ada Shop Ltd")).ok).isTrue();
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("step")).isEqualTo(mapper.readTree("{\"action\":\"do\",\"say\":\"Choose the customer "
+                + "Ada Shop Ltd\",\"step\":\"order-desk:chooseCustomer\",\"params\":{\"customer\":\"Ada Shop Ltd\"}}"));
+        assertThat(steps.get(0).path("java").asText()).isEqualTo("OrderDeskSteps.chooseCustomer(ui, \"Ada Shop Ltd\");");
+    }
+
+    @Test
+    void aClickAtAPointIsFragileWhoeverRecordsIt() throws Exception {
+        Locator at = Locator.ofId("canvas");
+        at.point = new LinkedHashMap<String, Double>();
+        at.point.put("x", 0.5);
+        at.point.put("y", 0.25);
+        assertThat(sink.done(step("click", at)).ok).isTrue();
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"canvas\",\"point\":{\"x\":0.2,\"y\":0.2}}}"));
+
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(steps).extracting(r -> r.author).containsExactly(RecordedStep.Author.PERSON, RecordedStep.Author.AGENT);
+        assertThat(steps).allMatch(r -> Boolean.TRUE.equals(((ClickVerb) r.action).fragile));
+        // an edit to another point stays fragile, one off the point is not
+        JsonNode step = call("{\"op\":\"edit\",\"n\":1,\"target\":{\"id\":\"canvas\",\"point\":{\"x\":0.7,\"y\":0.7}}}")
+                .path("steps").get(0).path("step");
+        assertThat(step.path("fragile").asBoolean()).isTrue();
+        step = call("{\"op\":\"edit\",\"n\":1,\"target\":{\"id\":\"canvas\"}}").path("steps").get(0).path("step");
+        assertThat(step.has("fragile")).isFalse();
+    }
+
     @Test
     void theListSaysWhatThePersonCouldNotRecord() throws Exception {
         Locator at = Locator.ofId("canvas");
@@ -2020,9 +2077,9 @@ class UiMcpRecordingTest {
     private static final String STEPS_CLASS = "io.github.kormcrete.orderdesk.uitest.OrderDeskSteps";
     private static final String ADD = "{\"action\":\"do\",\"step\":\"addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}";
 
-    /** A session over plugins whose order-desk plugin offers addToCart (a typed call) and cartTotalIs (a check). */
-    private UiMcpSession orderDesk(Plugins plugins) {
-        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Arrays.asList(
+    /** A session over plugins whose order-desk plugin offers addToCart (a typed call), cartTotalIs (a check) and {@code more}. */
+    private UiMcpSession orderDesk(Plugins plugins, DomainStep... more) {
+        List<DomainStep> steps = new java.util.ArrayList<DomainStep>(Arrays.asList(
                 DomainStep.act("addToCart", "Add {product} to the cart")
                         .param("product", ParamType.TEXT)
                         .code((ui, p) -> {
@@ -2034,7 +2091,9 @@ class UiMcpRecordingTest {
                 DomainStep.check("cartTotalIs", "The cart total is {total}")
                         .param("total", ParamType.TEXT)
                         .steps("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"{total}\"}")
-                        .build())), "ok");
+                        .build()));
+        steps.addAll(Arrays.asList(more));
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> steps), "ok");
         UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
         s.folderMemory(FolderMemory.inMemory());
         s.recordedDir(dir, true);
