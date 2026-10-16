@@ -32,9 +32,12 @@ import java.util.Map;
  * never final while the rest is matched: when a later field or step uses the same param, the fits are tried until
  * one holds for both (the tab above and a row {@code Order = ORD-1640} give {@code ORD-1640}).
  *
- * <p>Trying fits costs: a match tries at most {@link #FIT_BUDGET} of them and then throws {@link TooAmbiguous}
- * instead of answering. Before each pattern step it asks whether the rest of the pattern can still match the rest of
- * the run at all, each pattern step on its own with its captures free (remembered per match): a run that fails on a
+ * <p>Trying fits costs. Inside a text only ends that can work are tried (a last {@code *} or capture takes the rest; one
+ * before a literal ends only where the literal occurs), and a text whose literals are not in it fails in one pass. A
+ * match hands on at most {@link #FIT_BUDGET} whole text fits and then throws {@link TooAmbiguous} instead of
+ * answering ({@link #WORK_LIMIT} bounds the tries inside texts). Before each pattern step it asks whether the rest of
+ * the pattern can still match the rest of the run at all, each pattern step on its own with its captures free
+ * (remembered per match, on a smaller budget of its own that answers yes when it runs out): a run that fails on a
  * later step's literal fails at once, without trying every fit of the steps before. Beyond that there is no memo:
  * when only the same param in two places disagrees, fits are tried until the budget ends. Each fit that holds
  * nests the rest of the match in the call stack, so the depth grows with steps × fields × text parts: match a window
@@ -138,24 +141,28 @@ public final class Pattern {
     @Override public String toString() { return stepId + (derived ? " (derived) " : " ") + source; }
 
     /**
-     * The most fits one {@link #match} tries (an optional entry taken or left out, a scope item at one place, a
-     * {@code *} or a capture of one length): a run that is still undecided then is {@link TooAmbiguous}, not "no
-     * match". Patterns of plain text and a few captures need far fewer. It is for a run where every step fits alone
-     * but the captures cannot agree (several {@code *{p}*} whose values must also make up a later text): trying every
+     * The most fits one {@link #match} hands on: a whole text fitted (its captures bound) with the rest of the match
+     * still to go, or an optional entry left out. A run still undecided then is {@link TooAmbiguous}, not "no match".
+     * Trying within one text does not count here (see {@link #WORK_LIMIT}): a capture or {@code *} is only tried at
+     * ends that can work. Real runs need far fewer; the budget is for runs where every step fits alone but the
+     * captures cannot agree (several {@code *{p}*} whose values must also make up a later text), where trying every
      * combination could take minutes.
      */
-    public static final int FIT_BUDGET = 10000;
+    public static final int FIT_BUDGET = 100000;
+
+    /** The most tries inside texts (a part placed at one position) one {@link #match} makes, as a last bound. */
+    public static final int WORK_LIMIT = 2000000;
 
     /**
-     * A run whose match this pattern could not decide within {@link #FIT_BUDGET} fits: neither a match nor a mismatch.
-     * Folding should leave the run as it is and can say why ({@link #getMessage}).
+     * A run whose match this pattern could not decide within {@link #FIT_BUDGET} or {@link #WORK_LIMIT}: neither a
+     * match nor a mismatch. Folding should leave the run as it is and can say why ({@link #getMessage}).
      */
     public static final class TooAmbiguous extends RuntimeException {
         private final String stepId;
 
         TooAmbiguous(String stepId) {
-            super("the pattern of '" + stepId + "' is too ambiguous: no answer within " + FIT_BUDGET + " fits", null,
-                    false, false);
+            super("the pattern of '" + stepId + "' is too ambiguous: its captures fit the steps in more ways than a match "
+                    + "tries", null, false, false);
             this.stepId = stepId;
         }
 
@@ -172,21 +179,32 @@ public final class Pattern {
     static final class Search {
         private final Pattern pattern;
         private final List<? extends JsonNode> steps;
-        private int left = FIT_BUDGET;
+        private int left;
+        private int work;
         /** [pattern step][step]: null not asked yet. */
         private final Boolean[][] alone;
         /** [pattern step][step]: whether pattern steps from the first on can match steps from the second on. */
         private final Boolean[][] finish;
 
         Search(Pattern pattern, List<? extends JsonNode> steps) {
+            this(pattern, steps, FIT_BUDGET, WORK_LIMIT);
+        }
+
+        private Search(Pattern pattern, List<? extends JsonNode> steps, int fits, int work) {
             this.pattern = pattern;
             this.steps = steps;
+            this.left = fits;
+            this.work = work;
             this.alone = new Boolean[pattern.flat.size()][steps.size()];
             this.finish = new Boolean[pattern.flat.size() + 1][steps.size() + 1];
         }
 
         void spend() {
             if (--left < 0) throw new TooAmbiguous(pattern.stepId);
+        }
+
+        void work() {
+            if (--work < 0) throw new TooAmbiguous(pattern.stepId);
         }
 
         /** Whether {@code one} can match the step at {@code at} and the pattern steps after it the steps after that. */
@@ -209,11 +227,24 @@ public final class Pattern {
             return can;
         }
 
+        /** A search for one {@link #alone} question: a tenth of the budgets. */
+        private Search probe() {
+            return new Search(pattern, steps, FIT_BUDGET / 10, WORK_LIMIT / 10);
+        }
+
+        /**
+         * Whether pattern step {@code i} alone, captures free, can match the step at {@code at}. On a budget of its
+         * own; when that runs out the answer is yes (looser, so still never a wrong no).
+         */
         private boolean alone(int i, int at) {
             Boolean known = alone[i][at];
             if (known == null) {
                 Map<String, String> free = Collections.emptyMap();
-                known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, this) != null;
+                try {
+                    known = pattern.flat.get(i).node.match(steps.get(at), free, b -> b, probe()) != null;
+                } catch (TooAmbiguous e) {
+                    known = true;
+                }
                 alone[i][at] = known;
             }
             return known;
@@ -374,7 +405,7 @@ public final class Pattern {
             if (k == wanted.size()) return rest.go(bound);
             if (actual == null) return null;
             for (int i = start; i < actual.size(); i++) {
-                search.spend();
+                search.work();
                 int at = i;
                 Map<String, String> found = wanted.get(k).match(actual.get(i), bound,
                         b -> from(k + 1, actual, at + 1, b, rest, search), search);
@@ -451,6 +482,7 @@ public final class Pattern {
             } else {
                 return null;
             }
+            if (!literalsFit(s)) return null;
             return fit(0, s, 0, bound, rest, search);
         }
 
@@ -458,41 +490,91 @@ public final class Pattern {
             return parts.size() == 1 && parts.get(0) instanceof Capture && ((Capture) parts.get(0)).digits;
         }
 
-        /** Parts from {@code k} on fit {@code s} from {@code at} on, each fit tried in turn. */
-        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest, Search search) {
-            if (k == parts.size()) return at == s.length() ? rest.go(bound) : null;
-            Object p = parts.get(k);
-            if (p instanceof Literal) {
-                String lit = ((Literal) p).text;
-                return s.startsWith(lit, at) ? fit(k + 1, s, at + lit.length(), bound, rest, search) : null;
+        /**
+         * Whether the literal parts can be in {@code s} at all: in order, the first at the start when the text starts
+         * with one, the last at the end when it ends with one. A text that fails this has no fit, found in one pass.
+         */
+        private boolean literalsFit(String s) {
+            int at = 0;
+            for (int k = 0; k < parts.size(); k++) {
+                if (!(parts.get(k) instanceof Literal)) continue;
+                String lit = ((Literal) parts.get(k)).text;
+                int found = k == 0 ? (s.startsWith(lit) ? 0 : -1) : s.indexOf(lit, at);
+                if (found < 0) return false;
+                at = found + lit.length();
             }
+            Object last = parts.isEmpty() ? null : parts.get(parts.size() - 1);
+            return !(last instanceof Literal) || parts.size() == 1 || s.endsWith(((Literal) last).text);
+        }
+
+        /** The text part {@code k} must be: a literal, or a capture already bound; null when it is free. */
+        private static String fixed(Object part, Map<String, String> bound) {
+            if (part instanceof Literal) return ((Literal) part).text;
+            if (part instanceof Capture) return bound.get(((Capture) part).name);
+            return null;
+        }
+
+        /**
+         * Parts from {@code k} on fit {@code s} from {@code at} on, each fit tried in turn. Only ends that can work are
+         * tried: a {@code *} or capture that is the last part takes the rest, and one followed by a literal (or a bound
+         * capture) ends only where that text occurs. Each attempt is {@link Search#work}; each whole fit handed on is
+         * {@link Search#spend}.
+         */
+        private Map<String, String> fit(int k, String s, int at, Map<String, String> bound, Rest rest, Search search) {
+            if (k == parts.size()) {
+                if (at != s.length()) return null;
+                search.spend();
+                return rest.go(bound);
+            }
+            search.work();
+            Object p = parts.get(k);
+            String here = fixed(p, bound);
+            if (here != null) return s.startsWith(here, at) ? fit(k + 1, s, at + here.length(), bound, rest, search) : null;
+            boolean last = k + 1 == parts.size();
+            String next = last ? null : fixed(parts.get(k + 1), bound);
             if (p == STAR) {
+                if (last) return fit(k + 1, s, s.length(), bound, rest, search);
+                if (next != null) {
+                    for (int end = s.indexOf(next, at); end >= 0; end = s.indexOf(next, end + 1)) {
+                        Map<String, String> found = fit(k + 1, s, end, bound, rest, search);
+                        if (found != null) return found;
+                    }
+                    return null;
+                }
                 for (int end = at; end <= s.length(); end++) {
-                    search.spend();
                     Map<String, String> found = fit(k + 1, s, end, bound, rest, search);
                     if (found != null) return found;
                 }
                 return null;
             }
             Capture c = (Capture) p;
-            String known = bound.get(c.name);
-            if (known != null) {
-                return s.startsWith(known, at) ? fit(k + 1, s, at + known.length(), bound, rest, search) : null;
-            }
             int longest = at;
             while (longest < s.length() && (!c.digits || isDigit(s.charAt(longest)))) longest++;
-            boolean greedy = k + 1 < parts.size() && parts.get(k + 1) == STAR;
+            if (longest == at) return null;
+            if (last) return longest == s.length() ? bind(c, s, at, longest, k, bound, rest, search) : null;
+            if (next != null) {
+                for (int end = s.indexOf(next, at + 1); end >= 0 && end <= longest; end = s.indexOf(next, end + 1)) {
+                    Map<String, String> found = bind(c, s, at, end, k, bound, rest, search);
+                    if (found != null) return found;
+                }
+                return null;
+            }
+            boolean greedy = parts.get(k + 1) == STAR;
             for (int n = 1; n <= longest - at; n++) {
-                int end = greedy ? longest - n + 1 : at + n;
-                String value = s.substring(at, end);
-                if (c.digits && !fitsAnInt(value)) continue;
-                search.spend();
-                Map<String, String> b = new LinkedHashMap<String, String>(bound);
-                b.put(c.name, value);
-                Map<String, String> found = fit(k + 1, s, end, b, rest, search);
+                Map<String, String> found = bind(c, s, at, greedy ? longest - n + 1 : at + n, k, bound, rest, search);
                 if (found != null) return found;
             }
             return null;
+        }
+
+        /** Capture {@code c} as {@code s[at, end)} and fit the parts after it from {@code end}. */
+        private Map<String, String> bind(Capture c, String s, int at, int end, int k, Map<String, String> bound, Rest rest,
+                                         Search search) {
+            String value = s.substring(at, end);
+            if (c.digits && !fitsAnInt(value)) return null;
+            Map<String, String> b = new LinkedHashMap<String, String>(bound);
+            b.put(c.name, value);
+            return fit(k + 1, s, end, b, rest, search);
         }
 
         private static boolean isDigit(char ch) {

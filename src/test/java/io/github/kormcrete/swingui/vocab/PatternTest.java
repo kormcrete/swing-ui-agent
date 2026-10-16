@@ -192,9 +192,61 @@ class PatternTest {
 
         long start = System.nanoTime();
         assertThatThrownBy(() -> p.match(run)).isInstanceOf(Pattern.TooAmbiguous.class)
-                .hasMessage("the pattern of 'notes' is too ambiguous: no answer within " + Pattern.FIT_BUDGET + " fits");
+                .hasMessage("the pattern of 'notes' is too ambiguous: its captures fit the steps in more ways than a match tries");
         assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
         assertThat(catchThrowableOfType(() -> p.match(run), Pattern.TooAmbiguous.class).stepId()).isEqualTo("notes");
+    }
+
+    /** Order Desk words, repeated to {@code length} characters, as a long typed note. */
+    private static String longNote(int length) {
+        StringBuilder t = new StringBuilder();
+        while (t.length() < length) t.append("gel pen black paper sheets note ");
+        return t.substring(0, length);
+    }
+
+    private static String note(String field, String text) {
+        return "{'action':'type','target':{'name':'" + field + "'},'text':'" + text + "'}";
+    }
+
+    @Test
+    void longTextsStillMatchWhenALaterStepNarrowsTheCapture() {
+        for (int length : new int[] {150, 200}) {
+            String text = longNote(length);
+            Pattern prefix = only(DomainStep.act("notePo", "Note PO {p}").param("p", ParamType.TEXT).code(NOTHING)
+                    .match(json(note("Note", "{p}*")), json(note("PO", "{p}"))).build());
+            Pattern contains = only(DomainStep.act("notePo", "Note PO {p}").param("p", ParamType.TEXT).code(NOTHING)
+                    .match(json(note("Note", "*{p}*")), json(note("PO", "{p}"))).build());
+
+            assertThat(prefix.match(steps(note("Note", text), note("PO", "gel pen"))).params())
+                    .containsExactly(entry("p", "gel pen"));
+            assertThat(contains.match(steps(note("Note", text), note("PO", "sheets note gel"))).params())
+                    .containsExactly(entry("p", "sheets note gel"));
+            assertThat(contains.match(steps(note("Note", text), note("PO", "note ")))).isNotNull();
+        }
+    }
+
+    @Test
+    void aCostlyOptionalEntryThatCannotFitIsLeftOut() {
+        Pattern p = only(DomainStep.act("note", "Note {p}").param("p", ParamType.TEXT).param("q", ParamType.TEXT)
+                .optional("").code(NOTHING)
+                .match(json("{'optional':true," + note("Note", "*{q}*!").substring(1)), json(note("Note", "{p}"))).build());
+        String text = longNote(200);
+
+        assertThat(p.match(steps(note("Note", text))).params()).containsExactly(entry("p", text));
+    }
+
+    @Test
+    void aLiteralTheTextLacksIsNoMatchAtOnce() {
+        Pattern p = only(DomainStep.act("note", "Note {p}").param("p", ParamType.TEXT).code(NOTHING)
+                .match(json(note("Note", "*{p}* urgent"))).build());
+
+        long start = System.nanoTime();
+        assertThat(p.match(steps(note("Note", longNote(200))))).isNull();
+        assertThat(p.match(steps(note("Note", longNote(40))))).isNull();
+        assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+        // a capture before a * is the longest fit: all of the text before " urgent"
+        assertThat(p.match(steps(note("Note", longNote(40) + " urgent"))).params())
+                .containsExactly(entry("p", longNote(40)));
     }
 
     /** {@code n} notes typing {@link #FORTY}, then {@code last}. */
