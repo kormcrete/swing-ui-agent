@@ -132,7 +132,7 @@ export const run = {
 	config: 'UI tests',
 	total: '4 s 149 ms',
 	seconds: '4.1 s',
-	agentLine: '[ui] 127.0.0.1:8770 agent 0.1.0-SNAPSHOT built …; app started …; plugin none',
+	agentLine: '[ui] 127.0.0.1:8770 agent 0.1.0-SNAPSHOT built …; app started …; plugin ready',
 	firstFrame: 'c00',
 	lastFrame: 'p10',
 	frames: ['c00', ...new Set(tests.flatMap((t) => t.steps.flatMap((s) =>
