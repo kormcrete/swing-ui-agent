@@ -78,6 +78,15 @@ public final class JavaTestWriter {
 
         /** {@code step}'s Java form; never null. */
         DoForm of(DoAction step);
+
+        /**
+         * True for a recording's forms ({@link DoStepForms#keeping}): a do step the writer cannot write - its expansion
+         * holds a step with no Java form, its call names no value - is left out like a {@link DoForm#withoutJava} one,
+         * with no problem. False: it is a problem, as export_test must say.
+         */
+        default boolean keeps() {
+            return false;
+        }
     }
 
     /**
@@ -349,6 +358,13 @@ public final class JavaTestWriter {
         private void doStep(int i, DoAction d, String what) {
             DoForm f = doForms.of(d);
             if (f.leftOut) return;
+            int before = problems.size();
+            writeDoStep(i, d, what, f);
+            // a recording keeps the step: what the writer refused in it is only the Java export's problem
+            if (doForms.keeps()) problems.subList(before, problems.size()).clear();
+        }
+
+        private void writeDoStep(int i, DoAction d, String what, DoForm f) {
             if (f.refused != null) {
                 problems.add(what + ": " + f.refused);
                 return;

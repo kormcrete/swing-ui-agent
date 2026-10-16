@@ -133,12 +133,15 @@ public final class UiMcpTools {
                         + "Each step runs, answers and records exactly as its own tool call would, so export_test "
                         + "writes the same test either way; 'read' steps record nothing, and a 'read' that finds "
                         + "nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, "
-                        + "ms, recorded?, notRecorded?, ...}], snapshot?, snapshotError?}. A snapshot that cannot be taken keeps the steps and reports {errorType, message, details} as snapshotError. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool "
+                        + "ms, recorded?, notRecorded?, ...}], snapshot?, snapshotError?}. A snapshot that cannot be "
+                        + "taken keeps the steps and reports {errorType, message, details} as snapshotError. A harness "
+                        + "error (CAPABILITY_GAP, INPUT_ERROR) is a tool "
                         + "error naming the step; the steps before it ran and were recorded. Example: {\"steps\":["
-                        + "{\"verb\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},"
-                        + "{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Name\"},\"text\":\"X\"},"
-                        + "{\"verb\":\"expect\",\"target\":{\"role\":\"button\",\"name\":\"Save\"},"
-                        + "\"state\":[\"!disabled\"]}]}.", schema);
+                        + "{\"verb\":\"menu\",\"path\":[\"File\",\"New order\"]},"
+                        + "{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Customer\"},\"text\":\"Ada\"},"
+                        + "{\"verb\":\"press\",\"keys\":\"Enter\"},"
+                        + "{\"verb\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"New order · Ada Shop Ltd\"},"
+                        + "\"state\":[\"selected\"]}]}.", schema);
             }
             @Override public String invoke(JsonNode args) { return session.batch(args); }
         });
@@ -165,7 +168,9 @@ public final class UiMcpTools {
                 return tool(m, "export_test",
                         "Write the steps recorded since the last session reset as a JUnit @UiTest class under "
                         + "<module>/src/test/java/<package>/<class>.java (the module is the app plugin's export "
-                        + "module, else the working directory; dir or -Dswingui.testsDir overrides, and a working directory with no pom.xml or build.gradle makes the result carry a warning naming where the file went). The test starts where "
+                        + "module, else the working directory; dir or -Dswingui.testsDir overrides, and a working "
+                        + "directory with no pom.xml or build.gradle makes the result carry a warning naming where the "
+                        + "file went). The test starts where "
                         + "the recording did, right after a reset, so it must begin by getting to its own starting "
                         + "screen: without an app plugin a reset only closes dialogs, and startWarning flags a test "
                         + "that does not begin with menu, press or navigate. Only steps with a Java form are recorded "
@@ -244,7 +249,10 @@ public final class UiMcpTools {
                         + "[{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step "
                         + "number (7) or a check label (\"7.2\"); action is the step's technical line. After a "
                         + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
-                        + "answers or replays in the palette. From a shell the CLI exits 4 when the recorded test fails.", schema);
+                        + "answers or replays in the palette. A file with do steps is checked before anything runs: a "
+                        + "plugin its 'requires' names that is not ready is CAPABILITY_GAP, a step or param that plugin "
+                        + "does not offer is BAD_INPUT naming the step and its line. From a shell the CLI exits 4 when "
+                        + "the recorded test fails.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.runRecordedTest(args);
@@ -500,7 +508,10 @@ public final class UiMcpTools {
                         + "its patterns, its body as steps with {param} placeholders, and its Java call. match {from, to}: "
                         + "a dry run of what steps from..to of the recording would fold into, each raw step looked at as if "
                         + "just recorded (the recording is not changed): folds [{from, to, step, params, say}] and notes "
-                        + "[{from, to, kind: tie|suggested|undecided, steps, why?}]. Call one in do_action as {\"action\":\"do\",\"step\":<id>,\"params\":{...}}. Without "
+                        + "[{from, to, kind: tie|suggested|undecided, steps, why?}], outOfTime:true when the matching ran "
+                        + "out of time first; with no pattern to match, a hint instead. Call one with do_action "
+                        + "{\"action\":{\"action\":\"do\",\"step\":<id>,\"params\":{...}}} (a batch step: "
+                        + "{\"verb\":\"do\",\"step\":<id>,\"params\":{...}}). Without "
                         + "a plugin that offers a vocabulary, list is empty with a hint.", schema));
             }
             @Override public String invoke(JsonNode args) { return session.vocabulary(args); }

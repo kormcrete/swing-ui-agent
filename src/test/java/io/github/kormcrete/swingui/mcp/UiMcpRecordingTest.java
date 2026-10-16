@@ -1606,6 +1606,51 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void whileTheAgentRunsARecordedTestThePalettesEditsSaySo() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"stop\"}");   // a running recording keeps a test run out
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "two clicks";
+        flow.start = RecordedTestFiles.START_RESET;
+        ClickVerb a = new ClickVerb(); a.target = Locator.ofId("a");
+        ClickVerb b = new ClickVerb(); b.target = Locator.ofId("b");
+        flow.steps.add(a);
+        flow.steps.add(b);
+        Path file = dir.resolve("two.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        final java.util.concurrent.CountDownLatch inStep = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> {
+            if (inStep.getCount() > 0) {
+                inStep.countDown();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        Thread run = new Thread(() -> {
+            try {
+                session.runRecordedTest(mapper.readTree("{\"path\":" + mapper.writeValueAsString(file.toString()) + "}"));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        run.start();
+        try {
+            assertThat(inStep.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            assertThat(sink.delete(id(0)).line).isEqualTo("the agent is running recorded test two clicks");
+        } finally {
+            release.countDown();
+            run.join(10_000);
+        }
+    }
+
+    @Test
     void redoCutsReplaysUpToTheStepAndRecordsOn() throws Exception {
         fakeReset();
         four();
@@ -2645,6 +2690,134 @@ class UiMcpRecordingTest {
         // an agent's insert of one is accepted too
         s.recording(mapper.readTree("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"do\",\"step\":\"addOneMore\"}}"));
         assertThat(s.recordedSteps()).hasSize(3);
+    }
+
+    /** A domain step whose steps the Java writer refuses: a row with three keys. */
+    private static DomainStep pickAndCheckOut() {
+        return DomainStep.act("pickAndCheckOut", "Pick {product} and check out")
+                .param("product", ParamType.TEXT)
+                .steps("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"row\":{\"SKU\":\"PEN-GEL-BLK\","
+                                + "\"Product\":\"{product}\",\"Price\":\"€1.20\"},\"column\":\"Product\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Checkout…\"}}")
+                .build();
+    }
+
+    @Test
+    void aDoStepWhoseStepsHaveNoJavaFormIsRecordedAndSoAreTheStepsAfterIt() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), pickAndCheckOut());
+
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"pickAndCheckOut\",\"params\":{\"product\":\"Gel pen, black\"}}")));
+        JsonNode next = mapper.readTree(s.doAction(mapper.readTree(ADD)));
+
+        assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
+        assertThat(r.has("notRecorded")).as(r.toString()).isFalse();
+        assertThat(next.has("notRecorded")).as(next.toString()).isFalse();
+        assertThat(s.recordedSteps()).hasSize(2);
+        JsonNode steps = mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps");
+        assertThat(steps.get(0).has("java")).isFalse();
+        assertThat(steps.get(0).path("noJava").asText()).contains("row with more than two keys");
+
+        // only the Java export refuses it
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, dir.resolve("tests").toString());
+        try {
+            ExportRefused refused = catchThrowableOfType(() -> s.exportTest("PickUiIT", null, "demo", false),
+                    ExportRefused.class);
+            assertThat(refused.problems()).hasSize(1);
+            assertThat(refused.problems().get(0)).startsWith("step 1").contains("row with more than two keys");
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        }
+    }
+
+    @Test
+    void aFoldIntoADoStepWithNoJavaFormNeverFreezesTheRecording() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("extras", Paths.get("extras")).ready(new PluginParts(() -> Arrays.asList(pickAndCheckOut())), "ok");
+        UiMcpSession s = orderDesk(plugins);
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("step").path("step").asText()).isEqualTo("extras:pickAndCheckOut");
+
+        // the person's next step is recorded, and so is the agent's
+        Inspector.Result after = person.done(step("click", Locator.of("button", "Next")));
+        assertThat(after.ok).as(after.line).isTrue();
+        JsonNode agent = mapper.readTree(s.doAction(mapper.readTree(ADD)));
+        assertThat(agent.has("notRecorded")).as(agent.toString()).isFalse();
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(3);
+    }
+
+    @Test
+    void aDoStepWhosePluginIsNotReadyNeverFreezesTheRecording() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        UiMcpSession s = orderDesk(plugins);
+        s.doAction(mapper.readTree(ADD));
+        // the plugin fails (a reload that breaks it): no ready plugin offers the recorded do step
+        plugins.slot("order-desk").failed("reloading");
+
+        Inspector.Result after = s.humanSink().done(step("click", Locator.of("button", "Checkout…")));
+
+        assertThat(after.ok).as(after.line).isTrue();
+        assertThat(s.recordedSteps()).hasSize(2);
+    }
+
+    /** The palette replays by position: while it does, nothing folds under it. */
+    @Test
+    void noFoldIsMadeWhileThePaletteReplays() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        s.paletteReplaying = () -> "a person is replaying their recording in the app";
+        addGelPen(s.humanSink());
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(2).noneMatch(n -> n.has("folded"));
+    }
+
+    /** Whether folding's thread comes to wait for the session's lock (it matched and would apply), within 10 s. */
+    private static boolean matcherWaitsForTheLock() throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            for (Thread t : Thread.getAllStackTraces().keySet()) {
+                if (t.getName().equals("swing-ui-agent folding") && t.getState() == Thread.State.BLOCKED) return true;
+            }
+            Thread.sleep(10);
+        }
+        return false;
+    }
+
+    /** A fold matched before a replay started is never made after it: its steps may be the replay's by then. */
+    @Test
+    void aFoldMatchedBeforeAReplayStartedIsNotMadeAfterIt() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        s.paletteReplaying = () -> null;
+        Inspector.Sink person = s.humanSink();
+        Locator cell = Locator.ofId("products");
+        cell.row = row("SKU", "PEN-GEL-BLK");
+        cell.column = "Product";
+        Locator seen = new Locator();
+        seen.role = "table";
+        seen.row = row("SKU", "PEN-GEL-BLK", "Product", "Gel pen, black", "Price", "€1.20");
+        seen.column = "Product";
+        Map<String, Object> click = step("click", cell);
+        click.put(Inspector.SEEN, seen);
+        assertThat(person.done(click).ok).isTrue();
+        recording(s, "{\"op\":\"list\"}");   // folding has looked at the first step
+        synchronized (s) {
+            // the step that completes the pattern: folding matches it, then waits for this lock to apply the fold
+            assertThat(person.done(step("click", Locator.of("button", "Add to cart"))).ok).isTrue();
+            assertThat(matcherWaitsForTheLock()).isTrue();
+            // a replay starts on the steps (the click without a row: its replay changes nothing in the recording)
+            assertThat(person.replay(1).ok).isTrue();
+        }
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps).hasSize(2).noneMatch(n -> n.has("folded"));
     }
 
     @Test

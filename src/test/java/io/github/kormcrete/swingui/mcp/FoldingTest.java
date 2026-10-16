@@ -25,7 +25,7 @@ class FoldingTest {
     }
 
     private static Folding.Job job(int rev) {
-        return new Folding.Job(rev, Collections.<Matcher.Item>emptyList(), Collections.<Matcher.Candidate>emptyList(), 0);
+        return new Folding.Job(rev, 0, Collections.<Matcher.Item>emptyList(), Collections.<Matcher.Candidate>emptyList(), 0);
     }
 
     @Test
@@ -114,7 +114,7 @@ class FoldingTest {
             if (result != null) results.add(result);
         });
 
-        f.schedule(new Folding.Job(1, null, Collections.<Matcher.Candidate>emptyList(), 0));   // the match throws
+        f.schedule(new Folding.Job(1, 0, null, Collections.<Matcher.Candidate>emptyList(), 0));   // the match throws
         f.settle(5000);
         f.schedule(job(2));
         f.settle(5000);

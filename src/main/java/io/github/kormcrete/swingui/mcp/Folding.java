@@ -13,8 +13,9 @@ import java.util.logging.Logger;
  * Runs a recording's folding ({@link Matcher#fold}) on a thread of its own, off the EDT and without the session's lock:
  * the session hands over a {@link Job} (its records as of one revision) under its lock, the matcher thread matches, and
  * the result is applied under the lock again ({@link Apply}), where the session drops it when the recording changed
- * meanwhile (and hands over a new job). A reader waits for it without the lock ({@link #settle}). A newer job replaces one not started yet. Lock order: the session's monitor, then this one; the matcher
- * thread never holds this monitor while it waits for the session's.
+ * meanwhile (and hands over a new job). A reader waits for it without the lock ({@link #settle}). A newer job replaces
+ * one not started yet. Lock order: the session's monitor, then this one; the matcher thread never holds this monitor
+ * while it waits for the session's.
  */
 final class Folding {
 
@@ -27,16 +28,19 @@ final class Folding {
     /** An idle matcher thread ends after this long; the next job starts a new one. */
     private static final long IDLE_MS = 30_000;
 
-    /** One look at the recording, as of revision {@link #rev}. */
+    /** One look at the recording, as of revision {@link #rev} and replay floor {@link #floor}. */
     static final class Job {
         final int rev;
+        /** The recording's replay floor when the job was made: a replay that started since makes the result stale. */
+        final int floor;
         final List<Matcher.Item> items;
         final List<Matcher.Candidate> vocabulary;
         /** The highest record id among the items: every record up to it has been looked at once this job is applied. */
         final int newest;
 
-        Job(int rev, List<Matcher.Item> items, List<Matcher.Candidate> vocabulary, int newest) {
+        Job(int rev, int floor, List<Matcher.Item> items, List<Matcher.Candidate> vocabulary, int newest) {
             this.rev = rev;
+            this.floor = floor;
             this.items = items;
             this.vocabulary = vocabulary;
             this.newest = newest;
@@ -175,10 +179,14 @@ final class Folding {
                 }
             }
         } finally {
-            // however this thread ends, a reader never waits for it, and a job still waiting gets a thread of its own
+            // however this thread ends, a reader never waits for it, and a job still waiting gets a thread of its own.
+            // running is only ever this thread's while it is the thread: once take() let it go idle (thread null), a new
+            // thread may already be matching its own job, which must stay running for settle
             synchronized (this) {
-                if (thread == Thread.currentThread()) thread = null;
-                running = null;
+                if (thread == Thread.currentThread()) {
+                    thread = null;
+                    running = null;
+                }
                 if (pending != null && thread == null) startThread();
                 notifyAll();
             }

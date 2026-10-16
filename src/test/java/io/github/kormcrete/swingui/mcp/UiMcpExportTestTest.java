@@ -101,6 +101,17 @@ class UiMcpExportTestTest {
         assertThat(out.has("warning")).isFalse();
     }
 
+    /** dir names the place: no package and no app plugin is no "generic location" then. */
+    @Test
+    void dirWithoutAPackageGivesNoGenericLocationWarning(@TempDir Path elsewhere) throws Exception {
+        clickSave();
+        System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        JsonNode out = mapper.readTree(session.exportTest("DirNoPackageUiIT", "m", null, false, elsewhere.toString()));
+        assertThat(out.path("savedTo").asText())
+                .isEqualTo(elsewhere.resolve("recorded/DirNoPackageUiIT.java").toAbsolutePath().normalize().toString());
+        assertThat(out.has("warning")).as(out.toString()).isFalse();
+    }
+
     @Test
     void recordingExportAsJavaHonoursDir(@TempDir Path elsewhere) throws Exception {
         clickSave();

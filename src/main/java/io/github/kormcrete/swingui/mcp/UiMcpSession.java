@@ -151,6 +151,12 @@ public class UiMcpSession {
     };
 
     /**
+     * Why the person's palette replays or runs steps now (it addresses them by position), or null; a seam for tests. No
+     * fold is made meanwhile: it would move the steps under the replay.
+     */
+    Supplier<String> paletteReplaying = Inspector::drivingReason;
+
+    /**
      * The recording as {@code recording list} answers it and the palette's steps list shows it, rebuilt after every
      * change; read without the session's lock.
      */
@@ -443,7 +449,7 @@ public class UiMcpSession {
         return new Inspector.Sink() {
             @Override
             public Inspector.Result begin() {
-                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
+                if (agentReplaying != null) return agentReplayingResult(); // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
                     // a recording someone started on purpose is not wiped: the palette shows that one instead
                     if (model.state() == RecordingModel.State.RECORDING && model.explicit()) {
@@ -537,7 +543,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result replay(int index) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 JsonNode json;
                 int id;
                 synchronized (UiMcpSession.this) {
@@ -571,7 +577,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result cutFrom(int id) {
-                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
+                if (agentReplaying != null) return agentReplayingResult(); // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing cut");
@@ -598,7 +604,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result delete(int id) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing deleted");
@@ -614,7 +620,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result describe(int fromId, int toId, String say) {
-                if (agentReplaying != null) return AGENT_REPLAYING; // read before the monitor: the agent's replay holds it
+                if (agentReplaying != null) return agentReplayingResult(); // read before the monitor: the agent's replay holds it
                 synchronized (UiMcpSession.this) {
                     StepAddress a = model.addressOf(fromId);
                     StepAddress b = model.addressOf(toId);
@@ -640,7 +646,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result ungroup(int id) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing ungrouped");
@@ -656,7 +662,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result rowBy(int id, String by) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("row not changed");
@@ -672,7 +678,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result undo() {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     Flow after = model.undoPreview();
                     if (after == null) return new Inspector.Result(false, "nothing to undo in this recording");
@@ -775,7 +781,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result unfold(int id) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing unfolded");
@@ -791,7 +797,7 @@ public class UiMcpSession {
 
             @Override
             public Inspector.Result undoFold(int id) {
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 synchronized (UiMcpSession.this) {
                     if (!model.lastEditFolded(id)) {
                         return new Inspector.Result(false, "the recording changed since: Unfold on its row takes the fold back");
@@ -833,7 +839,7 @@ public class UiMcpSession {
             @Override
             public Inspector.Result check(Map<String, Object> step) {
                 // a check runs on the screen as it is: not on one the agent's replay is changing
-                if (agentReplaying != null) return AGENT_REPLAYING;
+                if (agentReplaying != null) return agentReplayingResult();
                 Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
                 Object viewIndex = plain.remove(Inspector.ROW_INDEX);
                 plain.remove(Inspector.SEEN);
@@ -1370,13 +1376,24 @@ public class UiMcpSession {
     private static final String CHECK_METHOD = "recorded";
 
     /**
-     * What {@link JavaTestWriter} would refuse if {@code next} followed the steps recorded so far; empty
-     * when it would write it, leaving out do steps with no Java form ({@link #keptForms}). The recording itself passes
-     * this check, so every problem is {@code next}'s.
+     * What {@link JavaTestWriter} would refuse if {@code next} followed the steps recorded so far, and does not refuse
+     * without it; empty when it would write it, leaving out do steps with no Java form ({@link #keptForms}). Only
+     * {@code next}'s problems count: whatever the steps before have (a fold puts in steps nothing checked), they never
+     * make the steps after them refused.
      */
     private List<String> exportProblems(Action next) {
-        List<Action> steps = model.actions();
+        List<Action> before = model.actions();
+        List<Action> steps = new ArrayList<Action>(before);
         steps.add(next);
+        List<String> problems = writeProblems(steps);
+        if (problems.isEmpty()) return problems;
+        List<String> fresh = new ArrayList<String>(problems);
+        fresh.removeAll(writeProblems(before));
+        return fresh;
+    }
+
+    /** What {@link JavaTestWriter} refuses in {@code steps} as a recording ({@link #keptForms}); empty when it writes them. */
+    private List<String> writeProblems(List<Action> steps) {
         try {
             JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, keptForms);
             return Collections.emptyList();
@@ -1686,8 +1703,10 @@ public class UiMcpSession {
         String source = JavaTestWriter.write(model.flow(), packageName, className, methodName, doForms);
 
         String configured = System.getProperty(TESTS_DIR_PROP);
-        boolean genericLocation = defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty()) && configured == null;
         boolean dirGiven = dir != null && !dir.trim().isEmpty();
+        // dir names the place itself: then no location is generic
+        boolean genericLocation = !dirGiven && defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty())
+                && configured == null;
         Path root = dirGiven ? workingDir.resolve(dir.trim())
                 : configured != null ? Paths.get(configured) : testsDir(workingDir, defaults.moduleDir);
         if (Files.isRegularFile(root)) {
@@ -1720,8 +1739,8 @@ public class UiMcpSession {
         result.put("fragile", fragile);
         if (genericLocation) {
             result.put("warning", "no app plugin is ready, so the file went to the generic location "
-                    + "(src/test/java/" + packageName.replace('.', '/') + " under the working directory); name a package or set -D"
-                    + TESTS_DIR_PROP + " to place it");
+                    + "(src/test/java/" + packageName.replace('.', '/') + " under the working directory); name a package, pass dir "
+                    + "(the test sources root) or set -D" + TESTS_DIR_PROP + " to place it");
         }
         if (!dirGiven && configured == null && defaults.moduleDir == null && !hasBuildFile(workingDir.toAbsolutePath())) {
             String where = file.toAbsolutePath().normalize().toString();
@@ -2035,8 +2054,8 @@ public class UiMcpSession {
             }
             String by = ", plugin" + (among.size() == 1 ? " " : "s ") + String.join(", ", among) + ": ";
             if (offered.isEmpty()) {
-                throw new DriverException(Reason.BAD_INPUT, where + by + (among.size() == 1 ? among.get(0) + " has"
-                        : "none of them has") + " no domain step '" + id + "' (" + (among.size() == 1 ? "its" : "their")
+                throw new DriverException(Reason.BAD_INPUT, where + by + (among.size() == 1 ? among.get(0) + " has no"
+                        : "none of them has a") + " domain step '" + id + "' (" + (among.size() == 1 ? "its" : "their")
                         + " steps: " + (ids.isEmpty() ? "none" : String.join(", ", ids)) + ")");
             }
             if (offered.size() > 1) {
@@ -2325,9 +2344,15 @@ public class UiMcpSession {
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
 
-    /** The palette's edits while the agent replays: refused, like the agent's own (see {@link #agentReplaying}). */
-    private static final Inspector.Result AGENT_REPLAYING =
-            new Inspector.Result(false, "the agent is replaying the recording");
+    /**
+     * The palette's edits while the agent replays or runs a recorded test: refused, like the agent's own (see
+     * {@link #agentReplaying}), saying which.
+     */
+    private Inspector.Result agentReplayingResult() {
+        String replaying = agentReplaying;
+        return new Inspector.Result(false, replaying != null && replaying.startsWith("running ")
+                ? "the agent is " + replaying : "the agent is replaying the recording");
+    }
 
     /** The palette's edit of a step that is no longer in the recording (the agent deleted it, or an undo took it). */
     private static Inspector.Result gone(String what) {
@@ -2847,7 +2872,7 @@ public class UiMcpSession {
             }
         }
         if (!fresh) return;
-        folding.schedule(new Folding.Job(model.rev(), items, vocabulary, newest));
+        folding.schedule(new Folding.Job(model.rev(), model.replayFloor(), items, vocabulary, newest));
     }
 
     /**
@@ -2917,13 +2942,18 @@ public class UiMcpSession {
 
     /**
      * Applies what folding found, under the lock: each fold as one edit (undo takes it back), and its notes. A result for
-     * a recording that changed meanwhile is dropped and folding looks again.
+     * a recording that changed meanwhile, or that a replay started on, is dropped and folding looks again; while the
+     * palette replays, it is dropped.
      */
     private void applyFolds(Folding.Job job, Matcher.Result result) {
-        if (model.rev() != job.rev) {
+        // a replay started since the job was made: what it looked at may now be under the replay's floor
+        if (model.rev() != job.rev || model.replayFloor() != job.floor) {
             scheduleFolding();
             return;
         }
+        // the palette replays by position: nothing folds under it. Looked at again with the next change; what was there
+        // before the replay started is under its floor by then and stays as it is.
+        if (paletteReplaying.get() != null) return;
         foldedUpTo = Math.max(foldedUpTo, job.newest);
         if (result == null) return;
         Map<Matcher.Fold, Integer> made = new HashMap<Matcher.Fold, Integer>();
@@ -3431,8 +3461,23 @@ public class UiMcpSession {
             into.put("java", java.get(flat));
         } else if (action instanceof DoAction) {
             String why = doForms.of((DoAction) action).why();
+            if (why == null) why = unwritable((DoAction) action);
             if (why != null) into.put("noJava", why);
         }
+    }
+
+    /**
+     * Why the writer refuses do step {@code d} though it has a form (a step it makes that has no Java form), as the Java
+     * export says it ("step 1" becomes "this step"); null when that is not it.
+     */
+    private String unwritable(DoAction d) {
+        List<String> problems = new ArrayList<String>();
+        try {
+            JavaTestWriter.write(Collections.<Action>singletonList(d), CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
+        } catch (ExportRefused e) {
+            for (String p : e.problems()) if (p.startsWith("step 1")) problems.add("this step" + p.substring("step 1".length()));
+        }
+        return problems.isEmpty() ? null : String.join("; ", problems);
     }
 
     /** What the table row a record names is, and how it is named now; null for a record with no row. */

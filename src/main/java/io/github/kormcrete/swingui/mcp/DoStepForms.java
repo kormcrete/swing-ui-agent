@@ -23,9 +23,9 @@ import java.util.WeakHashMap;
 /**
  * The Java form of a {@code do} step, from the vocabulary of the plugin that offers it: the typed call when the step
  * names one ({@code java(...)}), else the steps it makes for its values (a declarative body filled in, a Java body
- * traced, see {@link Plugins#steps}); a step with neither, or one no ready plugin offers, is refused ({@link #keeping}: a
- * step with neither is left out). A trace runs the body's code, so each form is kept per domain step and values: a
- * recording asks for it on every change.
+ * traced, see {@link Plugins#steps}); a step with neither, or one no ready plugin offers, is refused ({@link #keeping}: it
+ * is left out). A trace runs the body's code, so each form is kept per domain step and values: a recording asks for it
+ * on every change.
  */
 public final class DoStepForms implements JavaTestWriter.DoForms {
 
@@ -44,10 +44,21 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
 
     /**
      * These forms for a recording, which keeps a do step that has no Java form: such a step is left out
-     * ({@link JavaTestWriter.DoForm#withoutJava}) rather than refused. A step no ready plugin offers is still refused.
+     * ({@link JavaTestWriter.DoForm#withoutJava}, {@link JavaTestWriter.DoForms#keeps}) rather than refused - one whose
+     * steps the writer refuses, and one no ready plugin offers now (its plugin reloading, say) too, so a recording never
+     * refuses the steps after it. Recording a do step looks it up first ({@code do_action}, an insert, a load), so an
+     * unknown step never gets in this way.
      */
     public JavaTestWriter.DoForms keeping() {
-        return d -> of(d, true);
+        return new JavaTestWriter.DoForms() {
+            @Override public JavaTestWriter.DoForm of(DoAction d) {
+                return DoStepForms.this.of(d, true);
+            }
+
+            @Override public boolean keeps() {
+                return true;
+            }
+        };
     }
 
     private JavaTestWriter.DoForm of(DoAction d, boolean keep) {
@@ -55,8 +66,8 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
         try {
             found = plugins.lookUp(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
         } catch (DriverException e) {
-            return JavaTestWriter.DoForm.refused(d.describe() + " has no Java form: "
-                    + DriverException.stripReason(e.getMessage(), e.reason()));
+            String why = d.describe() + " has no Java form: " + DriverException.stripReason(e.getMessage(), e.reason());
+            return keep ? JavaTestWriter.DoForm.withoutJava(why) : JavaTestWriter.DoForm.refused(why);
         }
         DomainStep step = found.found.step;
         synchronized (made) {
