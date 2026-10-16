@@ -82,9 +82,9 @@ final class Lease {
         long now = clock.now();
         expire(now);
         String blocked = blocker.get();
-        if (blocked != null) throw new DriverException(Reason.BUSY, "busy: " + blocked);
+        if (blocked != null) throw new DriverException(Reason.BUSY, "" + blocked);
         if (tokenlessInFlight > 0) {
-            throw new DriverException(Reason.BUSY, "busy: a call without a lease is running");
+            throw new DriverException(Reason.BUSY, "a call without a lease is running");
         }
         if (held != null) {
             if (inFlight > 0 || now - lastCall < TAKEOVER_IDLE_MS) throw busy();
@@ -112,7 +112,7 @@ final class Lease {
         long now = clock.now();
         expire(now);
         String driving = driver.get();
-        if (driving != null) throw new DriverException(Reason.BUSY, "busy: " + driving);
+        if (driving != null) throw new DriverException(Reason.BUSY, "" + driving);
         if (token == null) {
             if (held != null) throw busy();
             tokenlessInFlight++;
@@ -179,7 +179,7 @@ final class Lease {
     }
 
     private String holderText() {
-        return "busy: leased by " + held.owner + " since " + new SimpleDateFormat("HH:mm:ss").format(new Date(held.since));
+        return "leased by " + held.owner + " since " + new SimpleDateFormat("HH:mm:ss").format(new Date(held.since));
     }
 
     private String newToken() {

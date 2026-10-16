@@ -179,7 +179,7 @@
         "properties": {
           "class": {
             "type": "string",
-            "description": "Test class name; must end in UiIT, e.g. OrderSaveUiIT"
+            "description": "Test class name; must end in UiIT, e.g. PlaceOrderUiIT"
           },
           "method": {
             "type": "string",

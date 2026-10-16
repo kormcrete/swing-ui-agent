@@ -47,7 +47,7 @@ class LeaseGateTest {
         Lease.Grant g = lease.acquire("suite", null);
         tools.get(0).invoke(m.readTree("{\"target\":{}}"));
         assertThatThrownBy(() -> tools.get(1).invoke(m.readTree("{\"action\":{}}")))
-                .hasMessageContaining("busy: leased by suite");
+                .hasMessageContaining("BUSY: leased by suite");
         tools.get(1).invoke(m.readTree("{\"action\":{},\"_lease\":\"" + g.token + "\"}"));
         assertThat(seen).containsExactly("read {\"target\":{}}", "do_action {\"action\":{}}");
     }
@@ -81,7 +81,7 @@ class LeaseGateTest {
         now[0] = 10_000L;
         read.invoke(m.readTree("{\"target\":{},\"_lease\":\"" + g.token + "\"}"));
         now[0] = 20_000L;
-        assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("busy: leased by polling test");
+        assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("BUSY: leased by polling test");
         // the token is stripped before the tool sees its arguments, as for a mutating tool
         assertThat(seen).containsExactly("read {\"target\":{}}");
     }
@@ -127,7 +127,7 @@ class LeaseGateTest {
         Lease.Grant g = lease.acquire("suite", null);
         recording.invoke(m.readTree("{\"op\":\"list\"}"));
         assertThatThrownBy(() -> recording.invoke(m.readTree("{\"op\":\"start\"}")))
-                .hasMessageContaining("busy: leased by suite");
+                .hasMessageContaining("BUSY: leased by suite");
         recording.invoke(m.readTree("{\"op\":\"start\",\"_lease\":\"" + g.token + "\"}"));
         assertThat(seen).containsExactly("recording {\"op\":\"list\"}", "recording {\"op\":\"start\"}");
     }
@@ -138,7 +138,7 @@ class LeaseGateTest {
         lease.drivenBy(() -> "a person is replaying their recording in the app");
         recording.invoke(m.readTree("{\"op\":\"list\"}"));
         assertThatThrownBy(() -> recording.invoke(m.readTree("{\"op\":\"stop\"}")))
-                .hasMessageContaining("busy: a person is replaying");
+                .hasMessageContaining("BUSY: a person is replaying");
         assertThat(seen).containsExactly("recording {\"op\":\"list\"}");
     }
 
@@ -158,7 +158,7 @@ class LeaseGateTest {
         now[0] = 10_000L;
         recording.invoke(m.readTree("{\"op\":\"list\",\"_lease\":\"" + g.token + "\"}"));
         now[0] = 20_000L;
-        assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("busy: leased by polling test");
+        assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("BUSY: leased by polling test");
         assertThat(seen).containsExactly("recording {\"op\":\"list\"}");
     }
 }

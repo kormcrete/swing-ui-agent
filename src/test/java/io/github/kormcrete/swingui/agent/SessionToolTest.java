@@ -242,7 +242,7 @@ class SessionToolTest {
     @Test
     void resetWithoutTheHoldersTokenIsBusy() throws Exception {
         call("{\"op\":\"lease\",\"owner\":\"suite\"}");
-        assertThatThrownBy(() -> call("{\"op\":\"reset\"}")).hasMessageContaining("busy: leased by suite");
+        assertThatThrownBy(() -> call("{\"op\":\"reset\"}")).hasMessageContaining("BUSY: leased by suite");
     }
 
     @Test
@@ -331,7 +331,7 @@ class SessionToolTest {
         McpToolDefinition tool = toolOn(session);
         session.recording(mapper.readTree("{\"op\":\"start\"}"));
         assertThatThrownBy(() -> tool.invoke(mapper.readTree("{\"op\":\"reset\"}")))
-                .hasMessageContaining("busy:").hasMessageContaining("a recording is running");
+                .hasMessageContaining("BUSY: a recording").hasMessageNotContaining("busy:").hasMessageContaining("a recording is running");
         session.recording(mapper.readTree("{\"op\":\"stop\"}"));
         assertThat(mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"reset\"}"))).path("reset").asText())
                 .isEqualTo("dialogs");

@@ -322,21 +322,21 @@ class JavaTestWriterTest {
     }
 
     @Test
-    void anItemLocatorIsRefused() {
+    void anItemLocatorIsNamedAsItemOnly() {
         Locator l = Locator.of("list", "Favourites");
         l.item = Arrays.asList("a");
         ExportRefused e = catchThrowableOfType(() -> write(click(l)), ExportRefused.class);
-        assertThat(e.problems().get(0)).contains("step 1", "item");
+        assertThat(e.problems().get(0)).contains("step 1", "uses item, which a test cannot express").doesNotContain("ref/point/item");
     }
 
     @Test
-    void aPointLocatorIsRefused() {
+    void aPointLocatorIsNamedAsPointOnly() {
         Locator l = Locator.of("clickable", "Canvas");
         l.point = new LinkedHashMap<>();
         l.point.put("x", 0.5);
         l.point.put("y", 0.5);
         ExportRefused e = catchThrowableOfType(() -> write(click(l)), ExportRefused.class);
-        assertThat(e.problems().get(0)).contains("step 1", "point");
+        assertThat(e.problems().get(0)).contains("step 1", "uses point, which a test cannot express").doesNotContain("ref/point/item");
     }
 
     @Test

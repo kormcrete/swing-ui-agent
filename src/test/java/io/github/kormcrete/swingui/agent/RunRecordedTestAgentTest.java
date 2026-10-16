@@ -76,7 +76,7 @@ class RunRecordedTestAgentTest {
         try (PaletteDriving palette = new PaletteDriving("a person is running add-to-cart in the app")) {
             assertThatThrownBy(() -> client.call("click", click))
                     .isInstanceOf(DriverException.class)
-                    .hasMessageContaining("busy: a person is running add-to-cart in the app")
+                    .hasMessageContaining("BUSY: a person is running add-to-cart in the app")
                     .satisfies(e -> assertThat(((DriverException) e).reason()).isEqualTo(Reason.BUSY));
             assertThat(verbs.calls).noneMatch(c -> c.startsWith("click"));
             // the run ended: the app is everyone's again

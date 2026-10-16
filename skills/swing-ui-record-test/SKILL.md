@@ -24,7 +24,7 @@ $UI tools                   # every tool; `$UI tools expect` prints one tool's s
 Exit codes: 0 ok, 1 tool error (message on stderr), 2 usage, 3 no agent reachable (the app is not running with the
 agent: stop and say so). A step that ran and failed exits 0 with `"passed":false`: always read `passed`.
 
-`busy: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
+`BUSY: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
 agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner":"recorder"}'`, pass
 `--lease <token>` before the tool name on every call, and `session '{"op":"release","token":"<token>"}'` at the end.
 

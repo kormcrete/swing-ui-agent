@@ -244,15 +244,18 @@ public final class JavaTestWriter {
             statements.add(indent("// " + comment(say)));
         }
 
-        /** True (and a problem recorded per bad locator) when any of this verb's targets uses ref, point or item. */
+        /** True (and a problem recorded per bad locator) when any of this verb's targets uses point, item or an unconverted ref. */
         private boolean hasBadLocator(VerbAction v, String what) {
             boolean bad = false;
             for (Locator l : v.targets().values()) {
                 if (l == null) continue;
-                if (l.ref != null || l.point != null || l.item != null) {
-                    problems.add(what + ": locator " + l + " uses ref/point/item, which a test cannot express");
-                    bad = true;
-                }
+                List<String> uses = new ArrayList<String>();
+                if (l.ref != null) uses.add("ref");
+                if (l.point != null) uses.add("point");
+                if (l.item != null) uses.add("item");
+                if (uses.isEmpty()) continue;
+                problems.add(what + ": locator " + l + " uses " + String.join("/", uses) + ", which a test cannot express");
+                bad = true;
             }
             return bad;
         }

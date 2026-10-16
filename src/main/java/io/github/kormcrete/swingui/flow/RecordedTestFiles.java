@@ -180,7 +180,7 @@ public final class RecordedTestFiles {
             if (member.isObject() && member.has("steps")) throw bad(source, where + ": groups do not nest");
             step(reader, member, flow, number, true, source);
         }
-        if (members.size() == 0) throw bad(source, "the group at step " + first + " has no steps: a group holds at least 2 steps");
+        if (members.size() == 0) throw bad(source, "the group at step " + first + " holds no steps: a group holds at least 2 steps");
         String range = "the group of steps " + first + "-" + number[0];
         if (members.size() < 2) throw bad(source, range + ": a group holds at least 2 steps");
         JsonNode say = node.get("say");

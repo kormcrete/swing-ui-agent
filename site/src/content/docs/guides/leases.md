@@ -17,7 +17,7 @@ The examples run from the Order Desk folder, with `UI="java -jar target/swing-ui
 So a CLI call with no lease is its own one-call lease: it runs when the app is free and is refused while someone else holds it:
 
 ```json
-{"errorType":"INPUT_ERROR","reason":"BUSY","message":"BUSY: busy: leased by docs-walkthrough since 12:35:04"}
+{"errorType":"INPUT_ERROR","reason":"BUSY","message":"BUSY: leased by docs-walkthrough since 12:35:04"}
 ```
 
 The CLI exits with code 1. `session` shows who holds the lease, under `lease`.
@@ -55,7 +55,7 @@ You never handle the lease in a test. Before each `@UiTest` method the extension
 4. keeps the lease alive with a heartbeat every 5 seconds, even while the test waits on something else;
 5. releases it after the test, whatever happened, and on JVM shutdown.
 
-While a test runs, the agent's own CLI calls are refused with `busy: leased by PlaceOrderUiIT#placesAnOrderForAda …`. That is the agent's cue to wait, not to take the lease from a run that is still going.
+While a test runs, the agent's own CLI calls are refused with `BUSY: leased by PlaceOrderUiIT#placesAnOrderForAda …`. That is the agent's cue to wait, not to take the lease from a run that is still going.
 
 ## A person at the app
 
@@ -64,7 +64,7 @@ With the palette on (the default), a person at the screen can record steps and a
 - **While the person records, picks an element, answers a question or replays steps,** no test run can take the lease. The test waits as above and then fails with what the person is doing:
 
 ```text
-busy: a person is recording in the app (they end it with Done in its palette)
+BUSY: a person is recording in the app (they end it with Done in its palette)
 ```
 
 - **While a test run holds the lease,** the palette leaves the window, so the person cannot start anything; it comes back when the lease ends.

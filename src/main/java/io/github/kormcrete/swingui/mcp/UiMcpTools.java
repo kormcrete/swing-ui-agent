@@ -147,7 +147,7 @@ public final class UiMcpTools {
                 ObjectNode schema = emptyObjectSchema(m);
                 ObjectNode p = schema.with("properties");
                 p.putObject("class").put("type", "string")
-                        .put("description", "Test class name; must end in UiIT, e.g. OrderSaveUiIT");
+                        .put("description", "Test class name; must end in UiIT, e.g. PlaceOrderUiIT");
                 p.putObject("method").put("type", "string").put("description", "Test method name (default: recorded)");
                 p.putObject("package").put("type", "string")
                         .put("description", "Java package (default: the app plugin's export package, else 'recorded')");

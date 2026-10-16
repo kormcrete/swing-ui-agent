@@ -31,7 +31,7 @@ class LeaseTest {
         String since = new SimpleDateFormat("HH:mm:ss").format(new Date(now));
         assertThatThrownBy(() -> lease.enter(null))
                 .isInstanceOf(DriverException.class)
-                .hasMessage("BUSY: busy: leased by ReleaseGateSuite (run 7f3) since " + since);
+                .hasMessage("BUSY: leased by ReleaseGateSuite (run 7f3) since " + since);
     }
 
     @Test
@@ -47,7 +47,7 @@ class LeaseTest {
         Lease.Grant g = lease.acquire("a", null);
         lease.enter(g.token);
         now += 60_000L;
-        assertThatThrownBy(() -> lease.acquire("b", null)).hasMessageContaining("busy: leased by a");
+        assertThatThrownBy(() -> lease.acquire("b", null)).hasMessageContaining("BUSY: leased by a");
     }
 
     @Test
@@ -63,7 +63,7 @@ class LeaseTest {
         Lease.Grant a = lease.acquire("a", null);
         lease.enter(a.token);
         now += 10 * Lease.TAKEOVER_IDLE_MS;
-        assertThatThrownBy(() -> lease.acquire("b", null)).hasMessageContaining("busy: leased by a");
+        assertThatThrownBy(() -> lease.acquire("b", null)).hasMessageContaining("BUSY: leased by a");
         lease.exit(a.token);
     }
 
@@ -113,7 +113,7 @@ class LeaseTest {
         lease.enter(null);
         assertThatThrownBy(() -> lease.acquire("b", null))
                 .isInstanceOf(DriverException.class)
-                .hasMessage("BUSY: busy: a call without a lease is running");
+                .hasMessage("BUSY: a call without a lease is running");
         lease.exit(null);
         assertThat(lease.acquire("b", null)).isNotNull();
     }
@@ -153,7 +153,7 @@ class LeaseTest {
         lease.blockedBy(() -> reason[0]);
         assertThatThrownBy(() -> lease.acquire("suite", null))
                 .isInstanceOf(DriverException.class)
-                .hasMessage("BUSY: busy: a person is recording in the app");
+                .hasMessage("BUSY: a person is recording in the app");
         reason[0] = null;
         assertThat(lease.acquire("suite", null).owner).isEqualTo("suite");
     }
@@ -175,7 +175,7 @@ class LeaseTest {
         lease.drivenBy(() -> "a person is running place-order in the app");
         assertThatThrownBy(() -> lease.enter(null))
                 .isInstanceOf(DriverException.class)
-                .hasMessage("BUSY: busy: a person is running place-order in the app");
+                .hasMessage("BUSY: a person is running place-order in the app");
         assertThat(lease.holder()).isNull();
         // the holder's own calls wait too: the person's run owns the app until it ends
         lease.drivenBy(() -> null);
@@ -183,7 +183,7 @@ class LeaseTest {
         lease.drivenBy(() -> "a person is replaying their recording in the app");
         assertThatThrownBy(() -> lease.enter(g.token))
                 .isInstanceOf(DriverException.class)
-                .hasMessage("BUSY: busy: a person is replaying their recording in the app");
+                .hasMessage("BUSY: a person is replaying their recording in the app");
     }
 
     @Test
@@ -202,7 +202,7 @@ class LeaseTest {
     void afterTheRunCallsGoThroughAgain() {
         String[] reason = {"a person is running place-order in the app"};
         lease.drivenBy(() -> reason[0]);
-        assertThatThrownBy(() -> lease.enter(null)).hasMessageContaining("busy: a person is running");
+        assertThatThrownBy(() -> lease.enter(null)).hasMessageContaining("BUSY: a person is running");
         reason[0] = null;
         assertThatCode(() -> {
             lease.enter(null);

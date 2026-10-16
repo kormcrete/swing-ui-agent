@@ -448,13 +448,13 @@ class RecordedTestFilesTest {
     }
 
     @Test
-    void anEmptyGroupSaysWhereItIs() {
+    void anEmptyGroupSaysSo() {
         refused(HEAD + "\"steps\":[{\"action\":\"close\"},{\"say\":\"Nothing\",\"steps\":[]}]}",
-                "the group at step 2 has no steps");
+                "the group at step 2 holds no steps");
     }
 
     @Test
-    void aBadCheckSentenceIsNamedAsACheck() throws Exception {
+    void aBadCheckSentenceNamesTheCheck() throws Exception {
         Flow f = stepsOf("{\"action\":\"close\"}", "{\"action\":\"expect\",\"target\":{\"role\":\"label\"},\"text\":\"1\"}");
         f.steps.get(1).say = "a\nb";
         assertThat(RecordedTestFiles.structureProblems(f)).containsExactly("check 1.1: a sentence is one line, without line breaks");

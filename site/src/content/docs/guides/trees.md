@@ -58,7 +58,7 @@ A step aimed at a tree row runs, but `export_test` does not write it yet: the an
 
 ```json
 {"passed":true,"action":"click(tree [tab:New order] item=[Office, Pens])","message":"","ms":11,
- "notRecorded":"it ran, but export_test has no Java form for it (step 4: locator tree [tab:New order] item=[Office, Pens] uses ref/point/item, which a test cannot express); write it by hand into the exported test with the app plugin's test helpers or the Client API"}
+ "notRecorded":"it ran, but export_test has no Java form for it (step 4: locator tree [tab:New order] item=[Office, Pens] uses item, which a test cannot express); write it by hand into the exported test with the app plugin's test helpers or the Client API"}
 ```
 
 Add the step to the exported test by hand. The `Client` API has the form for it:

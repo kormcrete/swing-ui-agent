@@ -72,7 +72,7 @@ class UiRunTest {
         first.begin(null, "r1");
         assertThatThrownBy(() -> new UiRun(client, "B#b (r2)").begin(null, "r2"))
                 .isInstanceOf(DriverException.class)
-                .hasMessageContaining("busy: leased by A#a (r1)")
+                .hasMessageContaining("BUSY: leased by A#a (r1)")
                 .extracting(e -> ((DriverException) e).reason()).isEqualTo(Reason.BUSY);
         first.end();
     }

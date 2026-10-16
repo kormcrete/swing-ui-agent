@@ -1506,7 +1506,7 @@ public class UiMcpSession {
     private void refuseClearWhileRecording() {
         String busy = recordingReason();
         if (busy != null) {
-            throw new DriverException(Reason.BUSY, "busy: " + busy + "; export without clear, or stop it first");
+            throw new DriverException(Reason.BUSY, "" + busy + "; export without clear, or stop it first");
         }
     }
 
@@ -1624,7 +1624,7 @@ public class UiMcpSession {
             if (flow.name == null || flow.name.isEmpty()) flow.name = "inline";
         }
         String busy = personBusy.get();
-        if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
+        if (busy != null) throw new DriverException(Reason.BUSY, "" + busy);
         if (host.verbs() == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed: nothing to run the recorded test on");
         JsonNode ev = args.get("evidence");
         Path evidence = ev != null && ev.isTextual() && !ev.asText().trim().isEmpty()
@@ -1830,7 +1830,7 @@ public class UiMcpSession {
             case "start": {
                 String busy = recordingReason();
                 if (busy == null) busy = Inspector.engagedReason();
-                if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy + "; stop it first");
+                if (busy != null) throw new DriverException(Reason.BUSY, "" + busy + "; stop it first");
                 boolean defined = false;
                 boolean reset = args.path("reset").asBoolean(false);
                 if (reset) {
@@ -1973,7 +1973,7 @@ public class UiMcpSession {
     private void refuseWhileReplaying() {
         String replaying = agentReplaying;
         if (replaying != null) {
-            throw new DriverException(Reason.BUSY, "busy: the agent is replaying the recording (" + replaying + ")");
+            throw new DriverException(Reason.BUSY, "the agent is replaying the recording (" + replaying + ")");
         }
     }
 
@@ -2193,7 +2193,7 @@ public class UiMcpSession {
     /** Makes the recorded test file the recording (stopped); refused while a recording runs or a person is busy. */
     public synchronized String recordingLoad(String name, String path) {
         String busy = personBusy.get();
-        if (busy != null) throw new DriverException(Reason.BUSY, "busy: " + busy);
+        if (busy != null) throw new DriverException(Reason.BUSY, "" + busy);
         loadRecordedTest(recordedTestFile(name, path));
         if (palette) view.agentLoaded(loadedName, model.steps());
         return published.json;

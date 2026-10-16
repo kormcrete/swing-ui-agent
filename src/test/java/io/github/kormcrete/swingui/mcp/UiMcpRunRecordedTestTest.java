@@ -205,7 +205,7 @@ class UiMcpRunRecordedTestTest {
         session.personBusy = () -> "a person is recording";
         DriverException e = catchThrowableOfType(() -> run("{\"name\":\"place-order\"}"), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.BUSY);
-        assertThat(e.getMessage()).contains("busy: a person is recording");
+        assertThat(e.getMessage()).contains("BUSY: a person is recording");
         assertThat(backend.verbs.calls).isEmpty();
     }
 

@@ -59,7 +59,7 @@ class RecordingAgentTest {
         String token = client.callJson("session", lease()).path("token").asText();
         // another caller, no token: a read op still answers; start is the lease holder's
         assertThat(recording("list").path("state").asText()).isEqualTo("idle");
-        assertThatThrownBy(() -> recording("start")).hasMessageContaining("busy: leased by suite");
+        assertThatThrownBy(() -> recording("start")).hasMessageContaining("BUSY: leased by suite");
         ObjectNode start = client.args();
         start.put("op", "start");
         assertThat(client.withLease(token).callJson("recording", start).path("state").asText()).isEqualTo("recording");

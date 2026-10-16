@@ -70,7 +70,7 @@ Expect back at most a few lines: verdict, counts (passed / failed / gaps), the r
 - **No export unless asked** (`export_recorded_test`, `export_test`). Steps are recorded either way; exporting
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
   the first step reaches the start screen; `recording` `edit`/`group` with `say` for names).
-- **Busy agent.** `busy: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
+- **Busy agent.** `BUSY: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
   run still going. If that run is dead, retry after 15 s idle, or `$UI session '{"op":"lease","owner":"driver"}'`,
   pass `--lease <token>` before the tool name on each call, and release it at the end.
 - **Plugin-only steps.** `navigate`, `close`, `loginAs`, `describe_ui` app facts and resets to a start state need

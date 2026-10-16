@@ -106,7 +106,7 @@ final class SessionTool implements McpToolDefinition {
                 if (person == null) person = session.recordingReason();
                 if (person != null) {
                     // a reset starts a fresh recording: it must not wipe what is being recorded or what the person answers
-                    throw new DriverException(Reason.BUSY, "busy: " + person);
+                    throw new DriverException(Reason.BUSY, "" + person);
                 }
                 final AppHooks app = resetHooks(a);
                 final ResetSpec spec = app == null ? null : who(a);
