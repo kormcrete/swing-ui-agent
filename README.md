@@ -87,8 +87,8 @@ To see all of it, use [Order Desk](https://github.com/kormcrete/swing-order-desk
 
 ## What a test looks like
 
-A recorded test on Order Desk, after the agent named its steps: a sentence per step, the checks under their step,
-exact values only. The palette's Steps list shows the same sentences.
+An example recorded test, after the agent named its steps: a sentence per step, the checks under their step, exact
+values only. The palette's Steps list shows the same sentences.
 
 <!-- TODO Task 25: swap in Order Desk's uitest/place-order.json once it lands. -->
 
@@ -117,24 +117,15 @@ The tool writes one field per line; short objects are joined here. To run every 
 add `io.github.kormcrete:swing-ui-agent:0.1.0-SNAPSHOT` as a test dependency and one small JUnit class; see
 [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
 
-**Java tests.** Where a test must read a value that changes per run, the agent writes a Java test. An excerpt from
-Order Desk's `PlaceOrderUiIT`, recorded by an agent and then reviewed:
+**Java tests.** Where a test must read a value that changes per run, the agent writes a Java test. From Order Desk's
+`PlaceOrderUiIT`:
 
 ```java
-@UiTest
-class PlaceOrderUiIT {
-
-    @Test
-    void placesAnOrderForAda(Client ui) {
-        ui.menu("File", "New order");
-        ui.tab("New order").field("Customer").type("Ada");
-        ui.press("Enter");
-
-        // … the cart, the checkout steps, and the new order's number, read from the status bar …
-
-        ui.tab("Orders").click();
-        assertThat(ui.tab("Orders").table().cell("Status")).hasCell(row("Order", order), "Status", "Placed");
-    }
+@Test
+void placesAnOrderForAda(Client ui) {
+    ui.menu("File", "New order");
+    // … the cart, the checkout, and the new order's number, read from the status bar …
+    assertThat(ui.tab("Orders").table().cell("Status")).hasCell(row("Order", order), "Status", "Placed");
 }
 ```
 

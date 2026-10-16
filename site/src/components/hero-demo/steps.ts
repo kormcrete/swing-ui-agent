@@ -80,7 +80,7 @@ export const steps: Step[] = [
 export const story = {
 	all: ALL,
 	// The recorded test's name (uitest/<name>.json). The frames come from Order Desk's CartTotalsUiIT run, the same steps.
-	// TODO Task 25: if Order Desk ships this scenario as a recorded test, use its file name here.
+	// TODO Task 24/25: matches Order Desk's uitest/cart-totals.json
 	test: 'cart-totals',
 	firstFrame: 'f0',
 	lastFrame: 'r09',
