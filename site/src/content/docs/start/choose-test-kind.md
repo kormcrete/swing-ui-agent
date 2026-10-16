@@ -33,10 +33,11 @@ A Java test can do more than the screen shows. After the UI steps it can check w
 
 ```java
 @Test
-void storesTheOrder(Client ui, DataSource db) throws Exception {
+void storesTheOrder(Client ui) throws Exception {
     // … the UI steps that place the order …
 
-    try (Connection c = db.getConnection();
+    // your own connection to the database the app writes to
+    try (Connection c = DriverManager.getConnection(DB_URL);
          PreparedStatement s = c.prepareStatement("select status from orders where number = ?")) {
         s.setString(1, orderNumber);
         try (ResultSet r = s.executeQuery()) {
@@ -57,25 +58,31 @@ void storesTheOrder(Client ui, DataSource db) throws Exception {
 - Nothing to compile or install. The file is JSON, one step per action, with its checks under it.
 - It runs from the palette, from the agent (`run_recorded_test`), from a shell, and in Maven or CI with the JUnit runner `RecordedTests`.
 - Steps and checks have one numbering, `7` and `7.2`, in the palette, in reports and in the file.
-- It can be reviewed and fixed by the person who recorded it: replay a step, redo from a step, delete or rename it, and save it back.
+- It can be reviewed and fixed by the person who recorded it: replay a step, redo from a step, describe it (give it a sentence) or delete it, and save it back.
 
-A recorded test, as the agent exports it and runs it (a small order form, output shortened):
+A recorded test, as the agent exports it and runs it on Order Desk. The recording began at a reset with **File ▸ New order**, so the export has no `startWarning`:
 
 ```sh
-$UI export_recorded_test '{"name":"save-order","description":"Saves an order for Ada Shop Ltd."}'
-{"steps": 2, "checks": 1, "overwrote": false, "test": {"version": 2, "name": "save-order", "start": "reset",
-  "steps": [{"action": "type", "target": {"role": "text", "name": "customer"}, "text": "Ada Shop Ltd"},
-            {"action": "click", "target": {"role": "button", "name": "save"},
-             "checks": [{"target": {"role": "label", "name": "Total"}, "text": "€7.32"}]}]}}
+$UI export_recorded_test '{"name":"add-to-cart","description":"Starts an order for Ada Shop Ltd and adds A4 paper."}'
+{"steps": 5, "checks": 1, "fragile": 0, "overwrote": false, "test": {"version": 2, "name": "add-to-cart", "start": "reset",
+  "steps": [{"action": "menu", "path": ["File", "New order"]},
+            {"action": "type", "target": {"role": "text", "name": "Customer"}, "text": "Ada"},
+            {"action": "press", "keys": "Enter"},
+            {"action": "click", "target": {"role": "table", "row": {"Product": "A4 paper, 500 sheets"}, "column": "SKU"}},
+            {"action": "click", "target": {"role": "button", "name": "Add to cart"},
+             "checks": [{"target": {"role": "label", "name": "Total"}, "text": "€5.88"}]}]}}
 
-$UI run_recorded_test '{"name":"save-order"}'
-Recorded test 'save-order' passed:
-  [1] PASS type(text 'customer' 'Ada Shop Ltd')
-  [2] PASS click(button 'save')
-    [2.1] PASS expect(label 'Total' text '€7.32')
+$UI run_recorded_test '{"name":"add-to-cart"}'
+Recorded test 'add-to-cart' passed:
+  [1] PASS menu([File, New order])
+  [2] PASS type(text 'Customer' 'Ada')
+  [3] PASS press(Enter)
+  [4] PASS click(table row={Product=A4 paper, 500 sheets} column=SKU)
+  [5] PASS click(button 'Add to cart')
+    [5.1] PASS expect(label 'Total' text '€5.88')
 ```
 
-On Order Desk, a check on the cart total has the same shape: `{"role":"label","name":"Total"}` with `"text":"€31.32"`.
+Left out of the quote: the file's `description` and `savedTo` in the export, and the timings in the run report. One A4 paper makes the cart total `€5.88`; with three A4 paper and ten Gel pen it reads `€31.32`.
 
 ## Data is yours
 
