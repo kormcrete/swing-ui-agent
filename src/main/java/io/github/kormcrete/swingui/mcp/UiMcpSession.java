@@ -34,7 +34,9 @@ import io.github.kormcrete.swingui.flow.FlowResult;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
 import io.github.kormcrete.swingui.flow.StepResult;
+import io.github.kormcrete.swingui.agent.PluginSlot;
 import io.github.kormcrete.swingui.agent.Plugins;
+import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
@@ -74,6 +76,10 @@ import java.util.Map;
 public class UiMcpSession {
 
     private final StepHost host;
+    /** The host's plugins, when it is them (the agent's session): their vocabulary records, writes and checks do steps. */
+    private final Plugins plugins;
+    /** How a do step is written in Java: through {@link #plugins}' vocabulary, else refused. */
+    private final JavaTestWriter.DoForms doForms;
     private final UiInventory inventory;
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
@@ -207,6 +213,8 @@ public class UiMcpSession {
 
     public UiMcpSession(StepHost host, UiInventory inventory, ObjectMapper mapper, Supplier<ExportDefaults> exportDefaults) {
         this.host = host;
+        this.plugins = host instanceof Plugins ? (Plugins) host : null;
+        this.doForms = plugins != null ? new DoStepForms(plugins) : JavaTestWriter.DoForms.NONE;
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
@@ -1062,10 +1070,14 @@ public class UiMcpSession {
         long elapsed = System.currentTimeMillis() - started;
         StepResult step = result.steps.isEmpty() ? null : result.steps.get(0);
         if (step != null && !step.passed && step.reason != null && Reason.valueOf(step.reason).isToolError()) {
-            // "The harness can't do this" is a tool error, not a failed step.
+            // "The harness can't do this" is a tool error, not a failed step; a do step's details list the steps it ran.
             Reason reason = Reason.valueOf(step.reason);
-            throw new DriverException(reason, DriverException.stripReason(step.message, reason),
-                    step.details == null ? Collections.<String>emptyList() : step.details);
+            List<String> details = new ArrayList<String>();
+            if (step.details != null) details.addAll(step.details);
+            if (step.steps != null) {
+                for (StepResult c : step.steps) details.add((c.index + 1) + ". " + c.action + (c.passed ? " passed" : " failed"));
+            }
+            throw new DriverException(reason, DriverException.stripReason(step.message, reason), details);
         }
         boolean passed = step != null && step.passed;
         ObjectNode r = mapper.createObjectNode();
@@ -1078,15 +1090,12 @@ public class UiMcpSession {
         r.put("ms", elapsed);
         if (step != null && step.steps != null) r.set("steps", children(step.steps));
         if (passed && record) {
-            if (action instanceof DoAction) {
-                model.refused(step.action + " - " + DO_NOT_RECORDED);
-                r.put("notRecorded", DO_NOT_RECORDED);
-                publish();
-            } else if (model.state() == RecordingModel.State.STOPPED) {
+            if (model.state() == RecordingModel.State.STOPPED) {
                 r.put("notRecorded", "the recording is stopped (Done in the palette, or recording stop): recording redo "
                         + "continues it, recording start begins a new one");
             } else {
-                Action recordedAction = recordable(action, step.outcome);
+                Action recordedAction = action instanceof DoAction ? recordedDo((DoAction) action, step.action)
+                        : recordable(action, step.outcome);
                 row = rowOf(recordedAction, step.outcome, given);
                 List<String> problems = exportProblems(recordedAction);
                 if (problems.isEmpty()) {
@@ -1112,9 +1121,29 @@ public class UiMcpSession {
         return new StepRun(r, row);
     }
 
-    /** Why a passing {@code do} step is not recorded: a recorded test cannot hold one in this version. */
-    static final String DO_NOT_RECORDED = "it ran, but a domain step (do) is not recorded yet: a recorded test cannot "
-            + "hold one in this version; to record what it did, run its steps (the result's steps) as steps of their own";
+    /**
+     * The do step {@code d} as a recording keeps it: ONE step, by {@link #namedDo}, its params as given (concrete values),
+     * and its sentence: the one given, else {@code sentence}, the step's own filled in.
+     */
+    private Action recordedDo(DoAction d, String sentence) {
+        DoAction kept = namedDo(d);
+        if (kept.say == null && sentence != null && !sentence.isEmpty()) kept.say = sentence;
+        return kept;
+    }
+
+    /**
+     * A copy of {@code d} that names its plugin ({@code <plugin>:<id>}, so a plugin added later cannot make it ambiguous)
+     * and is a check when its domain step is one; {@code d} unchanged without plugins (its export is refused then).
+     * BAD_INPUT when no plugin offers it with those params.
+     */
+    private DoAction namedDo(DoAction d) {
+        DoAction kept = (DoAction) FlowJson.mapper().convertValue(d, Action.class);
+        if (plugins == null) return kept;
+        Plugins.DoStep found = plugins.lookUp(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
+        kept.step = found.qualified();
+        kept.check = found.found.step.kind() == DomainStep.Kind.CHECK ? Boolean.TRUE : null;
+        return kept;
+    }
 
     /** A {@code do} step's child results, numbered from 1, each with its step as do_action takes it. */
     private ArrayNode children(List<StepResult> steps) {
@@ -1230,7 +1259,7 @@ public class UiMcpSession {
         List<Action> steps = model.actions();
         steps.add(next);
         try {
-            JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+            JavaTestWriter.write(steps, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
             return Collections.emptyList();
         } catch (ExportRefused e) {
             return e.problems();
@@ -1477,7 +1506,7 @@ public class UiMcpSession {
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
         ExportDefaults defaults = exportDefaults.get();
         String packageName = pkg == null || pkg.isEmpty() ? defaults.packageName : pkg;
-        String source = JavaTestWriter.write(model.flow(), packageName, className, methodName);
+        String source = JavaTestWriter.write(model.flow(), packageName, className, methodName, doForms);
 
         String configured = System.getProperty(TESTS_DIR_PROP);
         boolean genericLocation = defaults == Plugins.GENERIC_EXPORT && (pkg == null || pkg.isEmpty()) && configured == null;
@@ -1649,6 +1678,7 @@ public class UiMcpSession {
             flow = RecordedTestFiles.parse(text, "the 'test' argument");
             if (flow.name == null || flow.name.isEmpty()) flow.name = "inline";
         }
+        checkDoSteps(flow, file != null ? file.toString() : "the 'test' argument");
         String busy = personBusy.get();
         if (busy != null) throw new DriverException(Reason.BUSY, "" + busy);
         if (host.verbs() == null) throw new DriverException(Reason.CAPABILITY_GAP, "no UI driver is installed: nothing to run the recorded test on");
@@ -1754,14 +1784,94 @@ public class UiMcpSession {
     }
 
     /**
+     * Refuses a recorded test whose do steps cannot run here: a plugin its {@code requires} names that is not ready
+     * (CAPABILITY_GAP naming it), a step or param that plugin does not offer, or a domain check and an action in each
+     * other's place (BAD_INPUT naming the step, its line in the file and the plugin). Each do step then names its plugin
+     * ({@code <plugin>:<id>}), as a recording does. {@code source} names the file.
+     */
+    private void checkDoSteps(Flow flow, String source) {
+        List<Integer> dos = new ArrayList<Integer>();
+        for (int i = 0; i < flow.steps.size(); i++) if (flow.steps.get(i) instanceof DoAction) dos.add(i);
+        if (dos.isEmpty()) return;
+        List<String> requires = RecordedTestFiles.requiresOf(flow);
+        String needs = source + " requires the plugin" + (requires.size() == 1 ? " " : "s ");
+        if (plugins == null) {
+            throw new DriverException(Reason.CAPABILITY_GAP, needs + String.join(", ", requires)
+                    + "; no plugin configured (agent argument plugins=…)");
+        }
+        List<String> configured = new ArrayList<String>();
+        for (PluginSlot slot : plugins.slots()) configured.add(slot.name());
+        List<String> missing = new ArrayList<String>();
+        for (String name : requires) {
+            PluginSlot slot = null;
+            for (PluginSlot s : plugins.slots()) if (s.name().equals(name)) slot = s;
+            if (slot == null) {
+                missing.add(name + ", which is not configured");
+            } else if (slot.state() != PluginSlot.State.READY) {
+                missing.add(name + ", which is " + slot.state().name().toLowerCase(java.util.Locale.ROOT) + " (" + slot.detail() + ")");
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new DriverException(Reason.CAPABILITY_GAP, needs + String.join(", and ", missing) + " (the plugins: "
+                    + (configured.isEmpty() ? "none" : String.join(", ", configured)) + ")");
+        }
+        List<Plugins.VocabularyStep> vocabulary = plugins.vocabulary();
+        List<String> labels = StepNumbers.labels(flow.steps);
+        for (int i : dos) {
+            DoAction d = (DoAction) flow.steps.get(i);
+            Integer line = i < flow.lines.size() ? flow.lines.get(i) : null;
+            String where = source + ": " + (StepNumbers.isCheck(d) ? "check " : "step ") + labels.get(i)
+                    + (line != null ? " (line " + line + ")" : "");
+            String plugin = RecordedTestFiles.pluginOf(d);
+            String id = plugin == null ? d.step : d.step.substring(plugin.length() + 1);
+            List<String> among = plugin != null ? Collections.singletonList(plugin) : requires;
+            List<Plugins.VocabularyStep> offered = new ArrayList<Plugins.VocabularyStep>();
+            List<String> ids = new ArrayList<String>();
+            for (Plugins.VocabularyStep v : vocabulary) {
+                if (!among.contains(v.plugin)) continue;
+                ids.add(v.step.id());
+                if (v.step.id().equals(id)) offered.add(v);
+            }
+            String by = ", plugin" + (among.size() == 1 ? " " : "s ") + String.join(", ", among) + ": ";
+            if (offered.isEmpty()) {
+                throw new DriverException(Reason.BAD_INPUT, where + by + (among.size() == 1 ? among.get(0) + " has"
+                        : "none of them has") + " no domain step '" + id + "' (" + (among.size() == 1 ? "its" : "their")
+                        + " steps: " + (ids.isEmpty() ? "none" : String.join(", ", ids)) + ")");
+            }
+            if (offered.size() > 1) {
+                List<String> names = new ArrayList<String>();
+                for (Plugins.VocabularyStep v : offered) names.add(v.plugin + ":" + id);
+                throw new DriverException(Reason.BAD_INPUT, where + by + "'" + id + "' is offered by more than one of them; "
+                        + "name one: " + String.join(", ", names));
+            }
+            Plugins.VocabularyStep v = offered.get(0);
+            String at = where + ", plugin " + v.plugin + ": ";
+            try {
+                plugins.lookUp(v.plugin + ":" + id, d.params == null ? Collections.<String, String>emptyMap() : d.params);
+            } catch (DriverException e) {
+                throw new DriverException(e.reason(), at + DriverException.stripReason(e.getMessage(), e.reason()));
+            }
+            boolean check = v.step.kind() == DomainStep.Kind.CHECK;
+            if (check && !StepNumbers.isCheck(d)) {
+                throw new DriverException(Reason.BAD_INPUT, at + id + " is a check: it goes under the step it checks (in its \"checks\")");
+            }
+            if (!check && StepNumbers.isCheck(d)) {
+                throw new DriverException(Reason.BAD_INPUT, at + id + " is an action: it is a step of its own, not in \"checks\"");
+            }
+            d.step = v.plugin + ":" + id;
+        }
+    }
+
+    /**
      * Makes the recording the steps of a recorded test file, as if they had just been run after a reset: every step needs a Java
      * form (the recording stays exportable as a test), else this refuses and changes nothing. A broken file fails
      * with {@link RecordedTestFiles}' message. Returns {@code {loaded, name, description, steps}}.
      */
     public synchronized String loadRecordedTest(Path file) {
         Flow flow = RecordedTestFiles.read(file);
+        checkDoSteps(flow, file.toAbsolutePath().normalize().toString());
         try {
-            JavaTestWriter.write(flow, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+            JavaTestWriter.write(flow, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
         } catch (ExportRefused e) {
             throw new IllegalArgumentException(flow.name + " cannot be loaded into the recording: "
                     + String.join("; ", e.problems()) + "; run it with run_recorded_test or the JUnit runner instead");
@@ -2239,7 +2349,7 @@ public class UiMcpSession {
     private void validateEdit(List<Action> after) {
         if (after.isEmpty()) return;
         try {
-            JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD);
+            JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, doForms);
         } catch (ExportRefused e) {
             throw new DriverException(Reason.BAD_INPUT, String.join("; ", e.problems()) + " (the recording is unchanged)");
         }
@@ -2269,6 +2379,7 @@ public class UiMcpSession {
     synchronized String recordingInsert(StepAddress at, JsonNode step, Integer rev) {
         checkRev(rev);
         Action action = action(step);
+        if (action instanceof DoAction) action = namedDo((DoAction) action);
         sentenced(action, (StepNumbers.isCheck(action) ? "check " : "step ") + at);
         RecordingModel scratch = model.copy();
         scratch.insert(at, action, RecordedStep.Author.AGENT);
@@ -2364,7 +2475,8 @@ public class UiMcpSession {
             if (sentence.isEmpty()) tree.remove("say");
             else tree.put("say", sentence);
         }
-        Action replaced = sentenced(action(tree), what);
+        Action edited = action(tree);
+        Action replaced = sentenced(edited instanceof DoAction ? namedDo((DoAction) edited) : edited, what);
         RecordingModel scratch = model.copy();
         scratch.replace(n, replaced, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
@@ -2448,7 +2560,7 @@ public class UiMcpSession {
         List<String> java = null;
         if (!actions.isEmpty()) {
             try {
-                java = JavaTestWriter.lines(flow);
+                java = JavaTestWriter.lines(flow, doForms);
                 if (java.size() != actions.size()) java = null;
             } catch (ExportRefused e) {
                 // the recording as a whole has no Java form (a step the writer refuses): list the steps without it

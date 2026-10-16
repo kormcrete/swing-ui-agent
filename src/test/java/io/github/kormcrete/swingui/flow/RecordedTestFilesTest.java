@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.flow;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,9 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** The recorded test file format, version 2: strict reading, stable writing, names and folders. */
+/** The recorded test file format, versions 2 and 3: strict reading, stable writing, names and folders. */
 class RecordedTestFilesTest {
 
     @TempDir Path tmp;
@@ -95,15 +97,14 @@ class RecordedTestFilesTest {
         m.put("navigate", "{\"action\":\"navigate\",\"target\":\"Orders\"}");
         m.put("close", "{\"action\":\"close\"}");
         m.put("loginAs", "{\"action\":\"loginAs\",\"as\":\"clerk\"}");
+        m.put("do", DO_ADD);
         return m;
     }
 
     @Test
     void everyStepTypeReadsBackStrictly() throws Exception {
         Map<String, String> samples = samples();
-        List<String> fileTypes = new ArrayList<String>(FlowJson.stepTypes());
-        fileTypes.removeAll(RecordedTestFiles.LATER_STEP_TYPES); // runs live, not in a file yet
-        assertThat(samples.keySet()).containsExactlyInAnyOrderElementsOf(fileTypes);
+        assertThat(samples.keySet()).containsExactlyInAnyOrderElementsOf(FlowJson.stepTypes());
         String before = samples.get("click");
         for (Map.Entry<String, String> e : samples.entrySet()) {
             // an expect is a check: it is written under the sample before it
@@ -132,8 +133,8 @@ class RecordedTestFilesTest {
 
     @Test
     void aNewerVersionSaysToUpdateTheAgent() {
-        refused("{\"version\":3,\"start\":\"reset\",\"steps\":[]}",
-                "is format version 3, written by a newer swing-ui-agent; this one reads version 2 - update the agent");
+        refused("{\"version\":4,\"start\":\"reset\",\"steps\":[]}",
+                "is format version 4, written by a newer swing-ui-agent; this one reads version 3 - update the agent");
     }
 
     @Test
@@ -170,7 +171,7 @@ class RecordedTestFilesTest {
     @Test
     void laterTopLevelFieldsAreNamedAsNewer() {
         refused("{\"version\":2,\"start\":\"reset\",\"requires\":{},\"steps\":[{\"action\":\"close\"}]}",
-                "requires", "newer recorded test format");
+                "'requires' needs format version 3");
         refused("{\"version\":2,\"start\":\"reset\",\"params\":{},\"steps\":[{\"action\":\"close\"}]}",
                 "'params'", "exact values only", "belong in a Java test");
     }
@@ -200,9 +201,129 @@ class RecordedTestFilesTest {
     }
 
     @Test
-    void aDoStepNeedsANewerFormat() {
-        refused(HEAD + "\"steps\":[{\"action\":\"do\"}]}", "step 1", "'do'", "newer recorded test format");
+    void anUnknownStepTypeIsNamed() {
         refused(HEAD + "\"steps\":[{\"action\":\"clik\"}]}", "step 1", "there is no step type 'clik'");
+    }
+
+    // ---- version 3: do steps and the plugins they need
+
+    private static final String DO_ADD = "{\"action\":\"do\",\"step\":\"order-desk:addToCart\","
+            + "\"params\":{\"product\":\"Gel pen, black\"}}";
+    private static final String V3 = "{\"version\":3,\"name\":\"x\",\"start\":\"reset\",\"requires\":[\"order-desk\"],";
+
+    @Test
+    void aDoStepNeedsVersion3() throws Exception {
+        refused(HEAD + "\"steps\":[" + DO_ADD + "]}", "step 1", "'do' needs format version 3");
+        refused("{\"version\":2,\"start\":\"reset\",\"requires\":[\"order-desk\"],\"steps\":[{\"action\":\"close\"}]}",
+                "'requires' needs format version 3");
+
+        Flow flow = RecordedTestFiles.parse(V3 + "\"steps\":[" + DO_ADD + "]}", "x");
+
+        assertThat(flow.version).isEqualTo(3);
+        assertThat(flow.requires).containsExactly("order-desk");
+        DoAction d = (DoAction) flow.steps.get(0);
+        assertThat(d.step).isEqualTo("order-desk:addToCart");
+        assertThat(d.params).containsExactly(entry("product", "Gel pen, black"));
+        assertThat(d.check).isNull();
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(3);
+        assertThat(RecordedTestFiles.versionFor(stepsOf("{\"action\":\"close\"}"))).isEqualTo(2);
+        // the plugins its do steps need are named, once each, and a plugin a step names is among them
+        refused("{\"version\":3,\"start\":\"reset\",\"steps\":[" + DO_ADD + "]}", "needs \"requires\"", "order-desk");
+        refused("{\"version\":3,\"start\":\"reset\",\"requires\":[],\"steps\":[" + DO_ADD + "]}", "\"requires\"",
+                "at least one plugin");
+        refused("{\"version\":3,\"start\":\"reset\",\"requires\":[\"order-desk\",\"order-desk\"],\"steps\":[" + DO_ADD
+                + "]}", "\"requires\"", "'order-desk' twice");
+        refused("{\"version\":3,\"start\":\"reset\",\"requires\":[\"order-desk\",3],\"steps\":[" + DO_ADD + "]}",
+                "\"requires\"", "plugin names");
+        refused("{\"version\":3,\"start\":\"reset\",\"requires\":[\"extras\"],\"steps\":[" + DO_ADD + "]}",
+                "step 1 (do)", "plugin 'order-desk'", "not in \"requires\"");
+        refused(V3 + "\"steps\":[{\"action\":\"do\",\"params\":{}}]}", "step 1 (do)", "needs \"step\"");
+    }
+
+    @Test
+    void requiresIsWrittenFromTheDoSteps() throws Exception {
+        Flow flow = stepsOf("{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]}", DO_ADD,
+                "{\"action\":\"do\",\"step\":\"extras:giftWrap\"}",
+                "{\"action\":\"do\",\"step\":\"order-desk:setQuantity\",\"params\":{\"product\":\"Gel pen, black\",\"qty\":\"3\"}}");
+
+        String text = RecordedTestFiles.write(flow);
+
+        JsonNode root = FlowJson.mapper().readTree(text);
+        assertThat(root.path("version").asInt()).isEqualTo(3);
+        assertThat(root.path("requires").toString()).isEqualTo("[\"order-desk\",\"extras\"]");
+        assertThat(text.indexOf("\"start\"")).isLessThan(text.indexOf("\"requires\""));
+        assertThat(text.indexOf("\"requires\"")).isLessThan(text.indexOf("\"steps\""));
+        assertThat(root.path("steps").get(1).toString()).isEqualTo(DO_ADD);
+        Flow back = RecordedTestFiles.parse(text, "x");
+        assertThat(back.requires).containsExactly("order-desk", "extras");
+        assertThat(RecordedTestFiles.write(back)).isEqualTo(text);
+
+        // without do steps it stays version 2, with no requires
+        Flow plain = stepsOf("{\"action\":\"close\"}");
+        plain.requires.add("order-desk");
+        assertThat(RecordedTestFiles.write(plain)).contains("\"version\" : 2,").doesNotContain("requires");
+        // a do step by its bare id names no plugin: the plugins the file read are kept, else it cannot be written
+        Flow bare = stepsOf("{\"action\":\"do\",\"step\":\"addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}");
+        assertThatThrownBy(() -> RecordedTestFiles.write(bare)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires").hasMessageContaining("<plugin>:<id>");
+        bare.requires.add("order-desk");
+        assertThat(FlowJson.mapper().readTree(RecordedTestFiles.write(bare)).path("requires").toString())
+                .isEqualTo("[\"order-desk\"]");
+    }
+
+    @Test
+    void version2FilesStillLoad() throws Exception {
+        String v2 = "{\"version\":2,\"name\":\"add-paper\",\"start\":\"reset\",\"steps\":["
+                + "{\"say\":\"Open a new order\",\"steps\":[{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"]},"
+                + "{\"action\":\"type\",\"target\":{\"role\":\"textbox\",\"name\":\"Customer\"},\"text\":\"Ada\"}]},"
+                + "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"},"
+                + "\"checks\":[" + CHECK + "]}]}";
+
+        Flow flow = RecordedTestFiles.parse(v2, "x");
+
+        assertThat(flow.version).isEqualTo(2);
+        assertThat(flow.requires).isEmpty();
+        assertThat(flow.steps).hasSize(4);
+        assertThat(flow.groups).hasSize(1);
+        assertThat(StepNumbers.labels(flow.steps)).containsExactly("1", "2", "3", "3.1");
+        String text = RecordedTestFiles.write(flow);
+        assertThat(text).contains("\"version\" : 2,");
+        assertThat(RecordedTestFiles.write(RecordedTestFiles.parse(text, "x"))).isEqualTo(text);
+    }
+
+    @Test
+    void aDoCheckSitsUnderItsStep() throws Exception {
+        String doCheck = "{\"action\":\"do\",\"say\":\"The cart total is 4.99\",\"step\":\"order-desk:cartTotalIs\","
+                + "\"params\":{\"total\":\"4.99\"}}";
+        Flow flow = RecordedTestFiles.parse(V3 + "\"steps\":[{\"action\":\"click\",\"target\":{\"role\":\"button\","
+                + "\"name\":\"Add to cart\"},\"checks\":[" + doCheck + "," + CHECK + "]}," + DO_ADD + "]}", "x");
+
+        assertThat(StepNumbers.labels(flow.steps)).containsExactly("1", "1.1", "1.2", "2");
+        DoAction check = (DoAction) flow.steps.get(1);
+        assertThat(check.check).isTrue();
+        assertThat(check.say).isEqualTo("The cart total is 4.99");
+        assertThat(((DoAction) flow.steps.get(3)).check).isNull();
+        String text = RecordedTestFiles.write(flow);
+        JsonNode checks = FlowJson.mapper().readTree(text).path("steps").get(0).path("checks");
+        assertThat(checks.get(0).toString()).isEqualTo(doCheck);   // its action stays, "check" is never written
+        assertThat(checks.get(1).has("action")).isFalse();
+        assertThat(RecordedTestFiles.write(RecordedTestFiles.parse(text, "x"))).isEqualTo(text);
+
+        refused(V3 + "\"steps\":[{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\",\"check\":true}]}",
+                "step 1 (do)", "'check'", "under the step it checks");
+        refused(V3 + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\","
+                + "\"check\":true}]}]}", "check 1.1 (do)", "'check'");
+        refused(V3 + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"click\"}]}]}", "check 1.1",
+                "only an expect or a domain check (do)");
+    }
+
+    @Test
+    void theLineOfEachStepIsKept() {
+        Flow flow = RecordedTestFiles.parse("{\"version\":3,\"start\":\"reset\",\"requires\":[\"order-desk\"],\n"
+                + "\"steps\":[\n{\"action\":\"close\",\n\"checks\":[\n" + CHECK + "]},\n"
+                + "{\"say\":\"Two\",\"steps\":[\n" + DO_ADD + ",\n{\"action\":\"close\"}]}]}", "x");
+
+        assertThat(flow.lines).containsExactly(3, 5, 7, 8);
     }
 
     @Test
@@ -351,7 +472,7 @@ class RecordedTestFilesTest {
     @Test
     void aVersion1FileSaysToNestTheChecks() {
         refused("{\"version\":1,\"start\":\"reset\",\"steps\":[{\"action\":\"close\"}]}",
-                "is format version 1 (one flat list)", "reads version 2", "nest each check under the step before it");
+                "is format version 1 (one flat list)", "reads versions 2 and 3", "nest each check under the step before it");
     }
 
     @Test
@@ -377,7 +498,7 @@ class RecordedTestFilesTest {
     @Test
     void anActionInsideChecksIsRefused() {
         refused(HEAD + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"click\"}]}]}",
-                "check 1.1", "only an expect");
+                "check 1.1", "only an expect or a domain check (do)");
         assertThat(RecordedTestFiles.parse(HEAD + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"expect\","
                 + "\"target\":{\"role\":\"label\"},\"text\":\"1\"}]}]}", "x").steps).hasSize(2);
     }
@@ -480,9 +601,9 @@ class RecordedTestFilesTest {
     void theReservedNamesStillSayNewerFormat() {
         refused(HEAD + "\"steps\":[{\"action\":\"close\",\"author\":\"person\"}]}", "step 1 (close)", "'author'",
                 "newer recorded test format");
-        refused(HEAD + "\"steps\":[{\"action\":\"do\"}]}", "step 1", "'do'", "newer recorded test format");
-        refused("{\"version\":2,\"start\":\"reset\",\"requires\":[],\"steps\":[{\"action\":\"close\"}]}", "'requires'",
-                "newer recorded test format");
+        refused(HEAD + "\"steps\":[" + DO_ADD + "]}", "step 1", "'do' needs format version 3");
+        refused("{\"version\":2,\"start\":\"reset\",\"requires\":[],\"steps\":[{\"action\":\"close\"}]}",
+                "'requires' needs format version 3");
     }
 
     @Test
@@ -492,7 +613,7 @@ class RecordedTestFilesTest {
         base.start = "reset";
 
         Flow newer = copy(base);
-        newer.version = 3;
+        newer.version = 4;
         assertThatThrownBy(() -> RecordedTestFiles.write(newer)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("version");
 

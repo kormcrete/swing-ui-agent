@@ -1,6 +1,6 @@
 ---
 title: Recorded test format
-description: The fields of a recorded test file, version 2, how steps and checks are numbered, and what the reader refuses.
+description: The fields of a recorded test file, versions 2 and 3, how steps and checks are numbered, and what the reader refuses.
 sidebar:
   order: 4
 ---
@@ -36,10 +36,11 @@ The tool writes one field per line; short objects are joined here. With sentence
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Required. A whole number, 1 or more. This agent reads and writes `2`; an older or a newer one is refused (see below). |
+| `version` | Required. A whole number, 1 or more. This agent reads `2` and `3`. It writes `2`, or `3` when the test holds `do` steps; an older or a newer one is refused (see below). |
 | `name` | Optional text. A file without one is named after the file. |
 | `description` | Optional text. Shown in the palette's **Load recorded test…** list. |
 | `start` | Required. `"reset"`: every run begins with the app reset. The only start there is. |
+| `requires` | Version 3 only, required when the test holds `do` steps: the names of the plugins they come from, such as `["order-desk"]`. The agent writes it from the steps. |
 | `steps` | Required. A non-empty array of steps and groups. |
 
 A test name is 1 to 100 characters: letters, digits, space, `.`, `_`, `-`; it starts with a letter or digit, does not end in `.` or a space, and is not a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`).
@@ -52,6 +53,8 @@ A step is an object with an `action` and the fields of that action: the same ste
 - **`checks`:** optional, not empty when present. The checks that run after the step.
 
 A check is an `expect` step without the `"action"`: its `target` and what it expects (`text`, ...), and an optional `say`. Checks go under the step they check, never as steps of their own. A step that is `"action": "expect"` is refused.
+
+A `do` step (version 3) runs one of a plugin's domain steps with concrete values: `{"action": "do", "step": "order-desk:addToCart", "params": {"product": "Gel pen, black"}}`. The agent names the plugin before the step's id. A domain check sits in `checks` and keeps its `"action": "do"`.
 
 The first step may hold only `checks`: `{"checks": [...]}`. They run before any action, for example on the screen after the reset. It cannot have a `say` of its own; put the sentence on a check. No other step may be check-only.
 
@@ -73,15 +76,18 @@ The palette, the agent's `recording` list, run reports and the refusals below us
 
 The reader is strict: a typo never silently drops what a step means. Every refusal is `BAD_INPUT`. A file that cannot be read at all fails with `cannot read recorded test file <path>: …`; every other refusal starts with the file or the `test` argument it came from.
 
-- **A newer version** is refused with the reason: `is format version 3, written by a newer swing-ui-agent; this one reads version 2 - update the agent`.
+- **A newer version** is refused with the reason: `is format version 4, written by a newer swing-ui-agent; this one reads version 3 - update the agent`.
 - **An older one** (version 1, one flat list) is refused too: export it again, or nest each check under the step before it.
 - **An unknown field** on the file, a step, a check or a group, with the fields it knows: `step 1 (press): unknown field 'colour'; known: [fragile, keys, say, target, timeout, via]`.
 - **`params`, `capture`:** `a recorded test holds exact values only; values per run or read from the app belong in a Java test`.
-- **Fields and step types of later formats** (`requires`, `author`, `do`) are refused with `belongs to a newer recorded test format; update swing-ui-agent`.
+- **Fields of later formats** (`author`) are refused with `belongs to a newer recorded test format; update swing-ui-agent`.
+- **`do` and `requires` in a version 2 file:** `needs format version 3`. A version 3 file with `do` steps needs `requires`, and names each plugin once.
 - **A `start` other than `reset`**, a missing `steps`, an empty `steps`.
 - **A check-only step that is not step 1**, an `expect` as a step, an empty `checks`.
 - **A group** without a `say`, with fewer than two steps, or inside another group.
 - **A `say`** that is empty, has a line break, or is longer than 200 characters.
+
+When the agent runs or loads a test with `do` steps, it also checks them against the plugins. A plugin that `requires` names and that is not ready is `CAPABILITY_GAP`. A step or param the plugin does not offer, or a domain check outside `checks`, is `BAD_INPUT` naming the step, its line in the file and the plugin.
 
 ## Keep reading
 

@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.mcp;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
+import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
@@ -32,12 +33,24 @@ import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Turns a recorded MCP session (a list of {@link Action}s) into the Java source of a {@code @UiTest}
  * class on the {@code io.github.kormcrete.swingui.junit} API. Emits text only; it does not reference those types.
+ *
+ * <p>A {@code do} step, a plugin's domain step, is written as its {@link DoForms} says: the typed call the step names
+ * ({@code OrderDeskSteps.addToCart(ui, "Gel pen, black");}, its class imported), else the steps it makes, under its
+ * sentence as a comment; a step with neither is refused.
  *
  * <p>Every problem a step has is collected before anything is thrown, so one {@link ExportRefused}
  * names everything wrong with the recording instead of stopping at the first.
@@ -48,15 +61,83 @@ public final class JavaTestWriter {
     private static final String METHOD_NAME_PATTERN = "[a-z][A-Za-z0-9_]*";
     private static final String PACKAGE_NAME_PATTERN = "[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*";
 
+    private static final String FRAGILE = "FRAGILE: the recorder needed nth to make this target unique";
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z]\\w*)\\}");
+    /** Simple names the class already uses: a do step's class of the same name is written by its full name. */
+    private static final Set<String> TAKEN = new HashSet<String>(Arrays.asList("Client", "LoginAs", "UiTest", "Test",
+            "Duration", "Boolean", "String", "Integer", "Object", "System", "Math"));
+
     private JavaTestWriter() {}
 
+    /** How {@link #write} writes a {@code do} step: through the vocabulary of the plugin that offers it. */
+    public interface DoForms {
+        /** No vocabulary here: every do step is refused. */
+        DoForms NONE = step -> DoForm.refused(step.describe() + " has no Java form here: a do step is written through "
+                + "the plugin that offers it, and none is configured");
+
+        /** {@code step}'s Java form; never null. */
+        DoForm of(DoAction step);
+    }
+
+    /** A do step's Java form: a typed call, the steps it makes, or why it has neither. */
+    public static final class DoForm {
+        final String sentence;
+        final String javaClass;
+        final String call;
+        final Map<String, String> values;
+        final Set<String> numbers;
+        final List<Action> steps;
+        final String refused;
+
+        private DoForm(String sentence, String javaClass, String call, Map<String, String> values, Set<String> numbers,
+                       List<Action> steps, String refused) {
+            this.sentence = sentence;
+            this.javaClass = javaClass;
+            this.call = call;
+            this.values = values;
+            this.numbers = numbers;
+            this.steps = steps;
+            this.refused = refused;
+        }
+
+        /**
+         * The static method call {@code call} of {@code javaClass}, e.g. {@code addQtyToCart(ui, {product}, {qty})}: each
+         * {@code {name}} becomes the value as a Java literal, a number for a name in {@code numberParams}.
+         */
+        public static DoForm call(String sentence, String javaClass, String call, Map<String, String> values,
+                                  Set<String> numberParams) {
+            return new DoForm(sentence, javaClass, call, new LinkedHashMap<String, String>(values),
+                    new HashSet<String>(numberParams), null, null);
+        }
+
+        /** The steps the domain step makes, written under its sentence. */
+        public static DoForm steps(String sentence, List<Action> steps) {
+            return new DoForm(sentence, null, null, null, null, Collections.unmodifiableList(new ArrayList<Action>(steps)), null);
+        }
+
+        /** No Java form: {@code why} is the whole problem after "step 3: ", e.g. "Log in as the clerk (...) has no Java form: ...". */
+        public static DoForm refused(String why) {
+            return new DoForm(null, null, null, null, null, null, why);
+        }
+    }
+
     public static String write(List<Action> steps, String packageName, String className, String methodName) {
-        return write(plain(steps), packageName, className, methodName);
+        return write(plain(steps), packageName, className, methodName, DoForms.NONE);
+    }
+
+    /** {@link #write(List, String, String, String)} with {@code do} steps written as {@code forms} says. */
+    public static String write(List<Action> steps, String packageName, String className, String methodName, DoForms forms) {
+        return write(plain(steps), packageName, className, methodName, forms);
     }
 
     /** The class for a recorded test: a step (its action and its checks) is one block; sentences and groups become comments. */
     public static String write(Flow flow, String packageName, String className, String methodName) {
-        return new Writer(flow, packageName, className, methodName).build();
+        return write(flow, packageName, className, methodName, DoForms.NONE);
+    }
+
+    /** {@link #write(Flow, String, String, String)} with {@code do} steps written as {@code forms} says. */
+    public static String write(Flow flow, String packageName, String className, String methodName, DoForms forms) {
+        return new Writer(flow, packageName, className, methodName, forms).build();
     }
 
     private static Flow plain(List<Action> steps) {
@@ -76,7 +157,12 @@ public final class JavaTestWriter {
 
     /** {@link #lines(List)} of a recorded test: still one entry per record (action or check), without comments. */
     public static List<String> lines(Flow flow) {
-        Writer w = new Writer(flow, "lines", "LinesUiIT", "lines");
+        return lines(flow, DoForms.NONE);
+    }
+
+    /** {@link #lines(Flow)} with {@code do} steps as {@code forms} says; an expanded one's statements are one entry, one per line. */
+    public static List<String> lines(Flow flow, DoForms forms) {
+        Writer w = new Writer(flow, "lines", "LinesUiIT", "lines", forms);
         w.build();
         return new ArrayList<String>(w.stepLines);
     }
@@ -103,13 +189,17 @@ public final class JavaTestWriter {
         private boolean usesAssertThat;
 
         private final List<FlowGroup> groups;
+        private final DoForms doForms;
+        /** The classes of do steps' typed calls, by the simple name the calls use; imported. */
+        private final Map<String, String> doClasses = new LinkedHashMap<String, String>();
 
-        Writer(Flow flow, String packageName, String className, String methodName) {
+        Writer(Flow flow, String packageName, String className, String methodName, DoForms doForms) {
             this.steps = flow.steps;
             this.groups = flow.groups == null ? new ArrayList<FlowGroup>() : flow.groups;
             this.packageName = packageName;
             this.className = className;
             this.methodName = methodName;
+            this.doForms = doForms;
         }
 
         String build() {
@@ -166,72 +256,156 @@ public final class JavaTestWriter {
                 String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
                 Action a = steps.get(i);
                 stepLines.add(null);
-
-                if (a instanceof LoginAsAction) {
-                    problems.add(what + ": loginAs is only exportable as the first step");
+                if (a instanceof DoAction) {
+                    doStep(i, (DoAction) a, what);
                     continue;
                 }
-                // The app steps the Client has a 1:1 form for; any other non-verb step is refused.
-                if (a instanceof NavigateAction) {
-                    String target = ((NavigateAction) a).target;
-                    if (target == null || target.trim().isEmpty()) {
-                        problems.add(what + ": navigate needs a target");
-                    } else {
-                        begin(i, a, false);
-                        statements.add(indent("ui.navigate(" + quote(target) + ");"));
-                        stepLines.set(i, "ui.navigate(" + quote(target) + ");");
-                    }
-                    continue;
-                }
-                if (a instanceof CloseAction) {
-                    begin(i, a, false);
-                    statements.add(indent("ui.closeActiveTab();"));
-                    stepLines.set(i, "ui.closeActiveTab();");
-                    continue;
-                }
-                if (!(a instanceof VerbAction) || (a instanceof ContextMenuAction && ((ContextMenuAction) a).target == null)) {
-                    problems.add(what + ": " + a.describe() + " is not a step the Client API has a Java form for");
-                    continue;
-                }
-
-                VerbAction v = (VerbAction) a;
-                if (hasBadLocator(v, what)) continue;
-
-                String stmt = buildStatement(v, what);
-                if (stmt == null) {
-                    // A problem (e.g. a row with more than two keys) was already recorded; nothing to emit.
-                    continue;
-                }
-
+                List<String> java = javaOf(a, what);
+                if (java == null) continue;
                 // a screenshot belongs to the block before it: it shows what those steps left on screen
-                begin(i, v, v instanceof ExpectVerb);
-                if (v instanceof ScreenshotVerb && ((ScreenshotVerb) v).maxSize != null) {
-                    statements.add(indent("// maxSize " + ((ScreenshotVerb) v).maxSize + " dropped"));
-                }
-                if (Boolean.TRUE.equals(v.fragile)) {
-                    statements.add(indent("// FRAGILE: the recorder needed nth to make this target unique"));
-                }
-                statements.add(indent(stmt));
-                stepLines.set(i, Boolean.TRUE.equals(v.fragile)
-                        ? stmt + "  // FRAGILE: the recorder needed nth to make this target unique" : stmt);
+                begin(i, a, a.say, a instanceof ExpectVerb);
+                for (String line : java) statements.add(indent(line));
+                stepLines.set(i, stepLine(a, java));
             }
         }
 
         /**
+         * The Java lines of one step that is not a {@code do} step, its statement last (comments before it), or null when it
+         * has none (the problem is recorded, named {@code what}).
+         */
+        private List<String> javaOf(Action a, String what) {
+            if (a instanceof LoginAsAction) {
+                problems.add(what + ": loginAs is only exportable as the first step");
+                return null;
+            }
+            // The app steps the Client has a 1:1 form for; any other non-verb step is refused.
+            if (a instanceof NavigateAction) {
+                String target = ((NavigateAction) a).target;
+                if (target == null || target.trim().isEmpty()) {
+                    problems.add(what + ": navigate needs a target");
+                    return null;
+                }
+                return Collections.singletonList("ui.navigate(" + quote(target) + ");");
+            }
+            if (a instanceof CloseAction) return Collections.singletonList("ui.closeActiveTab();");
+            if (!(a instanceof VerbAction) || (a instanceof ContextMenuAction && ((ContextMenuAction) a).target == null)) {
+                problems.add(what + ": " + a.describe() + " is not a step the Client API has a Java form for");
+                return null;
+            }
+
+            VerbAction v = (VerbAction) a;
+            if (hasBadLocator(v, what)) return null;
+
+            String stmt = buildStatement(v, what);
+            // null: a problem (e.g. a row with more than two keys) was already recorded; nothing to emit.
+            if (stmt == null) return null;
+            List<String> lines = new ArrayList<String>();
+            if (v instanceof ScreenshotVerb && ((ScreenshotVerb) v).maxSize != null) {
+                lines.add("// maxSize " + ((ScreenshotVerb) v).maxSize + " dropped");
+            }
+            if (Boolean.TRUE.equals(v.fragile)) lines.add("// " + FRAGILE);
+            lines.add(stmt);
+            return lines;
+        }
+
+        /** The {@link #lines} entry of a step whose Java lines are {@code java}: its statement, a fragile one marked after it. */
+        private String stepLine(Action a, List<String> java) {
+            String stmt = java.get(java.size() - 1);
+            return a instanceof VerbAction && Boolean.TRUE.equals(((VerbAction) a).fragile) ? stmt + "  // " + FRAGILE : stmt;
+        }
+
+        /**
+         * Writes do step {@code d} at record {@code i}: its typed call (under its {@code say} when that is not just its
+         * sentence), or the steps it makes under {@code say}, else its sentence.
+         */
+        private void doStep(int i, DoAction d, String what) {
+            DoForm f = doForms.of(d);
+            if (f.refused != null) {
+                problems.add(what + ": " + f.refused);
+                return;
+            }
+            boolean check = StepNumbers.isCheck(d);
+            String say = d.say == null || d.say.trim().isEmpty() ? null : d.say.trim();
+            if (f.javaClass != null) {
+                String stmt = typedCall(f, what);
+                if (stmt == null) return;
+                begin(i, d, say != null && !say.equals(f.sentence) ? say : null, check);
+                statements.add(indent(stmt));
+                stepLines.set(i, stmt);
+                return;
+            }
+            List<String> lines = new ArrayList<String>();
+            List<String> entries = new ArrayList<String>();
+            boolean written = true;
+            for (int k = 0; k < f.steps.size(); k++) {
+                Action c = f.steps.get(k);
+                String part = what + " (" + f.sentence + "), its step " + (k + 1);
+                if (c instanceof DoAction) {
+                    problems.add(part + ": a domain step's steps hold no do step");
+                    written = false;
+                    continue;
+                }
+                List<String> java = javaOf(c, part);
+                if (java == null) {
+                    written = false;
+                    continue;
+                }
+                lines.addAll(java);
+                entries.add(stepLine(c, java));
+            }
+            if (!written) return;
+            begin(i, d, say != null ? say : f.sentence, check);
+            for (String line : lines) statements.add(indent(line));
+            stepLines.set(i, String.join("\n", entries));
+        }
+
+        /** {@code f}'s call with its values as Java literals, on its class; null (a problem recorded) when it names no param. */
+        private String typedCall(DoForm f, String what) {
+            Matcher m = PLACEHOLDER.matcher(f.call);
+            StringBuffer out = new StringBuffer();
+            while (m.find()) {
+                String name = m.group(1);
+                String value = f.values.get(name);
+                if (value == null) {
+                    problems.add(what + ": the java call " + f.call + " names {" + name + "}, which is no param of the step");
+                    return null;
+                }
+                String literal = f.numbers.contains(name) ? String.valueOf(Integer.parseInt(value)) : quote(value);
+                m.appendReplacement(out, Matcher.quoteReplacement(literal));
+            }
+            m.appendTail(out);
+            String call = out.toString().trim();
+            return classRef(f.javaClass) + "." + (call.endsWith(";") ? call : call + ";");
+        }
+
+        /** How a call names {@code className}: by its simple name, imported, unless the class already uses that name. */
+        private String classRef(String className) {
+            int dot = className.lastIndexOf('.');
+            if (dot < 0) return className;   // the default package cannot be imported
+            String simple = className.substring(dot + 1);
+            String imported = doClasses.get(simple);
+            if (imported == null && !TAKEN.contains(simple)) {
+                doClasses.put(simple, className);
+                return simple;
+            }
+            return className.equals(imported) ? simple : className;
+        }
+
+        /**
          * Opens the statement of record {@code i}: a blank line where checking turns back to acting and before a step with
-         * a sentence or a group (never first, never twice), then the group's comment, then the step's own sentence (a
+         * a sentence or a group (never first, never twice), then the group's comment, then the sentence {@code say} (a
          * check's sentence goes right above its line). A screenshot joins the block before it. {@code checking} is null
          * before the first statement.
          */
-        private void begin(int i, Action a, boolean check) {
+        private void begin(int i, Action a, String say, boolean check) {
             boolean screenshot = a instanceof ScreenshotVerb;
             boolean groupStart = false;
             for (FlowGroup g : groups) if (g.from == i) groupStart = true;
-            boolean hasSay = !check && a.say != null && !a.say.trim().isEmpty();
+            boolean hasSay = !check && say != null && !say.trim().isEmpty();
             boolean turn = !check && !screenshot && Boolean.TRUE.equals(checking);
             if (turn || groupStart || hasSay) blank();
             for (FlowGroup g : groups) if (g.from == i) addComment(g.say);
-            addComment(a.say);
+            addComment(say);
             checking = screenshot ? Boolean.valueOf(Boolean.TRUE.equals(checking)) : Boolean.valueOf(check);
         }
 
@@ -658,10 +832,12 @@ public final class JavaTestWriter {
             StringBuilder sb = new StringBuilder();
             sb.append("package ").append(packageName).append(";\n\n");
 
-            sb.append("import io.github.kormcrete.swingui.junit.Client;\n");
-            if (loginAlias != null) sb.append("import io.github.kormcrete.swingui.junit.LoginAs;\n");
-            sb.append("import io.github.kormcrete.swingui.junit.UiTest;\n");
-            sb.append("import org.junit.jupiter.api.Test;\n");
+            Set<String> imports = new TreeSet<String>(doClasses.values());
+            imports.add("io.github.kormcrete.swingui.junit.Client");
+            if (loginAlias != null) imports.add("io.github.kormcrete.swingui.junit.LoginAs");
+            imports.add("io.github.kormcrete.swingui.junit.UiTest");
+            imports.add("org.junit.jupiter.api.Test");
+            for (String type : imports) sb.append("import ").append(type).append(";\n");
 
             if (usesDuration) {
                 sb.append("\nimport java.time.Duration;\n");

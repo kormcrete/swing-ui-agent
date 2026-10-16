@@ -305,6 +305,89 @@ class PluginsTest {
     }
 
     @Test
+    void aBodyThatGetsPastAFailedCallAndThenFailsIsTheFailureNotTheCall() {
+        Plugins plugins = new Plugins(verbs);
+        readyWith(plugins, "order-desk", DomainStep.act("addToCart", "Add {product} to the cart")
+                .param("product", ParamType.TEXT)
+                .code((ui, p) -> {
+                    try {
+                        ui.button("Add to cart").click();
+                    } catch (RuntimeException tried) {
+                        // the body goes on without it
+                    }
+                    throw new IllegalStateException("the cart has no line for " + p.text("product"));
+                })
+                .build());
+        verbs.failure = new DriverException(Reason.NOT_FOUND, "nothing matches button 'Add to cart'");
+
+        DomainStepFailed e = (DomainStepFailed) org.assertj.core.api.Assertions.catchThrowable(
+                () -> plugins.runStep("addToCart", values("product", "Gel pen, black")));
+
+        assertThat(e.reason()).isEqualTo(Reason.APP_ERROR);
+        assertThat(e.getMessage()).isEqualTo("APP_ERROR: Add Gel pen, black to the cart: the step's body failed: "
+                + "the cart has no line for Gel pen, black");
+        assertThat(e.outcome().calls).extracting(c -> c.passed).containsExactly(false);
+    }
+
+    @Test
+    void aBodysAppStepsWaitForAnAnsweredDialog() {
+        StepHost host = mock(StepHost.class);
+        org.mockito.Mockito.when(host.openDialog()).thenReturn(new io.github.kormcrete.swingui.driver.PendingDialog(
+                "Discard order?", "The cart is not empty.", Arrays.asList("Discard", "Keep"), Collections.<String>emptyList()));
+        Plugins plugins = new Plugins(verbs);
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(host, null, null, null, null, null,
+                () -> Arrays.asList(
+                        DomainStep.act("openOrders", "Open the orders").code((ui, p) -> ui.navigate("Orders")).build(),
+                        DomainStep.act("closeTab", "Close the tab").code((ui, p) -> ui.closeActiveTab()).build(),
+                        DomainStep.act("logIn", "Log in as the clerk").code((ui, p) -> ui.loginAs("clerk")).build(),
+                        DomainStep.act("discard", "Discard the order").code((ui, p) -> ui.answer("Discard")).build())), "ok");
+        String waiting = "a dialog is waiting for an answer: " + host.openDialog().summary()
+                + " - answer it with the 'answer' verb before the next step";
+
+        for (String id : Arrays.asList("openOrders", "closeTab", "logIn")) {
+            DomainStepFailed e = (DomainStepFailed) org.assertj.core.api.Assertions.catchThrowable(
+                    () -> plugins.runStep(id, values()));
+            assertThat(e).as(id).isNotNull();
+            assertThat(e.getMessage()).as(id).endsWith("failed: " + waiting);
+        }
+        org.mockito.Mockito.verify(host, org.mockito.Mockito.never()).navigate(org.mockito.ArgumentMatchers.anyString());
+        org.mockito.Mockito.verify(host, org.mockito.Mockito.never()).closeActiveTab();
+        org.mockito.Mockito.verify(host, org.mockito.Mockito.never()).loginAs(org.mockito.ArgumentMatchers.anyString());
+        // the step itself is not refused: a body may answer the dialog
+        assertThat(calls(plugins.runStep("discard", values()))).containsExactly("{\"action\":\"answer\",\"button\":\"Discard\"} true");
+    }
+
+    @Test
+    void aBodysOwnFailureMasksTheSecretsItRead() {
+        System.setProperty(UiUsers.FILE_PROPERTY, writeUsers("clerk.password=s3cret-Pw"));
+        try {
+            Plugins plugins = new Plugins(verbs);
+            readyWith(plugins, "order-desk",
+                    DomainStep.act("logIn", "Log in as the clerk")
+                            .code((ui, p) -> {
+                                throw new IllegalStateException("the password " + ui.secret("clerk", "password") + " expired");
+                            }).build(),
+                    DomainStep.act("logInAgain", "Log in again as the clerk")
+                            .code((ui, p) -> {
+                                String pw = ui.secret("clerk", "password");
+                                throw new DriverException(Reason.EXPECTATION, "refused " + pw, Arrays.asList("tried " + pw));
+                            }).build());
+
+            DomainStepFailed plain = (DomainStepFailed) org.assertj.core.api.Assertions.catchThrowable(
+                    () -> plugins.runStep("logIn", values()));
+            DomainStepFailed driver = (DomainStepFailed) org.assertj.core.api.Assertions.catchThrowable(
+                    () -> plugins.runStep("logInAgain", values()));
+
+            assertThat(plain.getMessage()).isEqualTo("APP_ERROR: Log in as the clerk: the step's body failed: "
+                    + "the password *** expired");
+            assertThat(driver.getMessage()).isEqualTo("EXPECTATION: Log in again as the clerk: the step's body failed: refused ***");
+            assertThat(driver.details()).containsExactly("tried ***");
+        } finally {
+            System.clearProperty(UiUsers.FILE_PROPERTY);
+        }
+    }
+
+    @Test
     void aDeclarativeStepRunsItsStepsWithTheValues() {
         Plugins plugins = new Plugins(verbs);
         readyWith(plugins, "order-desk", DomainStep.act("openRow", "Open order row {row}")

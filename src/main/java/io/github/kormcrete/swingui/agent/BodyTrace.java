@@ -130,7 +130,12 @@ public final class BodyTrace {
         }
     }
 
-    private static Result notDerivable(String why) {
+    /** The concrete steps of a step without a body to trace (its declarative steps, filled in). */
+    static Result concrete(List<ObjectNode> steps) {
+        return new Result(new ArrayList<ObjectNode>(steps), Collections.<String>emptyList(), null);
+    }
+
+    static Result notDerivable(String why) {
         return new Result(Collections.<ObjectNode>emptyList(), Collections.<String>emptyList(), why);
     }
 

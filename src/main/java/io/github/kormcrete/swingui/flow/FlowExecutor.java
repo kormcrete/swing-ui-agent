@@ -180,7 +180,14 @@ public class FlowExecutor {
      * that blocks it, and may be the step that answers it.
      */
     private static void refuseWhileADialogWaits(Action action, StepHost host) {
-        if (!isAppStep(action)) return;
+        if (isAppStep(action)) refuseAppStepWhileADialogWaits(host);
+    }
+
+    /**
+     * Refuses an app step (navigate, close, loginAs) while {@code host} has a dialog waiting for an answer, as every
+     * step of a recorded test is refused; a domain step's body asks it too before its own app steps.
+     */
+    public static void refuseAppStepWhileADialogWaits(StepHost host) {
         PendingDialog waiting = host.openDialog();
         if (waiting != null) {
             throw new AssertionError("a dialog is waiting for an answer: " + waiting.summary()

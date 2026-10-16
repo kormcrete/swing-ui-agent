@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.client;
 
+import io.github.kormcrete.swingui.driver.DomainStepFailed;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.FileChooserState;
@@ -47,6 +48,8 @@ public final class StepCallVerbs implements Verbs {
     private final StepJson json = new StepJson(AgentClient.mapper());
     private final List<StepCall> calls = new ArrayList<StepCall>();
     private final Set<String> secrets = new LinkedHashSet<String>();
+    /** The failure the last failed step threw on; null while none failed. */
+    private Throwable rethrown;
 
     public StepCallVerbs(Verbs verbs) {
         this.verbs = verbs;
@@ -55,6 +58,18 @@ public final class StepCallVerbs implements Verbs {
     /** The steps so far, in call order: the last one failed when the body stopped on a failed step. */
     public List<StepCall> calls() {
         return Collections.unmodifiableList(new ArrayList<StepCall>(calls));
+    }
+
+    /**
+     * The failure of a domain step whose body threw {@code thrown} after these steps ({@link DomainStepFailed#of}): its last
+     * step is blamed only when {@code thrown} is the failure that step threw, or caused by it; secrets read are masked.
+     */
+    public DomainStepFailed failed(VerbOutcome outcome, Throwable thrown) {
+        boolean byLastStep = false;
+        for (Throwable t = thrown; t != null && !byLastStep; t = t.getCause() == t ? null : t.getCause()) {
+            byLastStep = t == rethrown;
+        }
+        return DomainStepFailed.of(outcome, thrown, byLastStep && rethrown != null, this::mask);
     }
 
     /** {@code app} with its app steps kept as steps, and the secrets read through it remembered for masking. */
@@ -199,6 +214,7 @@ public final class StepCallVerbs implements Verbs {
             c.outcome = out;
             return out;
         } catch (DriverException e) {
+            rethrown = e;
             c.reason = e.reason();
             c.message = mask(e.getMessage());
             if (!e.details().isEmpty()) {
@@ -207,6 +223,7 @@ public final class StepCallVerbs implements Verbs {
             }
             throw e;
         } catch (RuntimeException | AssertionError e) {
+            rethrown = e;
             if (e instanceof UnsupportedOperationException) c.reason = Reason.CAPABILITY_GAP;
             c.message = mask(e.getMessage() != null ? e.getMessage() : e.toString());
             throw e;

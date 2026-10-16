@@ -27,7 +27,7 @@
         "properties": {
           "action": {
             "type": "object",
-            "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.",
+            "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran, and is recorded as one step). The verbs are also tools of their own, with full argument schemas.",
             "properties": {
               "action": {
                 "type": "string",
@@ -90,7 +90,7 @@
             "description": "Steps to run in order",
             "items": {
               "type": "object",
-              "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.",
+              "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran, and is recorded as one step). The verbs are also tools of their own, with full argument schemas.",
               "properties": {
                 "action": {
                   "type": "string",
@@ -207,7 +207,7 @@
     },
     {
       "name": "export_recorded_test",
-      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values: check data the test creates or data known to exist; a value the app makes up (a new order number, today's date) only when your start makes it predictable - otherwise check something else or write a Java test. Format version 2: each step with its checks nested, sentences and groups kept.",
+      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values: check data the test creates or data known to exist; a value the app makes up (a new order number, today's date) only when your start makes it predictable - otherwise check something else or write a Java test. Format version 2 (3 when it holds do steps, with requires naming their plugins): each step with its checks nested, sentences and groups kept.",
       "inputSchema": {
         "type": "object",
         "properties": {

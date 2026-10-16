@@ -1,9 +1,11 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
+import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
@@ -14,12 +16,17 @@ import io.github.kormcrete.swingui.flow.verb.HoverVerb;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.flow.verb.TypeVerb;
+import io.github.kormcrete.swingui.spi.DomainStep;
+import io.github.kormcrete.swingui.spi.ParamType;
+import io.github.kormcrete.swingui.spi.PluginParts;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -455,5 +462,122 @@ class JavaTestWriterTest {
 
         HoverVerb hover = new HoverVerb(); hover.target = Locator.of("button", "Save");
         assertThat(JavaTestWriter.lines(Arrays.<Action>asList(hover))).containsExactly("ui.button(\"Save\").hover();");
+    }
+    // ---- do steps: a typed call when the step names one, else its steps under its sentence
+
+    private static DoAction doStep(String step, String say, String... nameValue) {
+        DoAction d = new DoAction();
+        d.step = step;
+        d.say = say;
+        d.params = new LinkedHashMap<String, String>();
+        for (int i = 0; i < nameValue.length; i += 2) d.params.put(nameValue[i], nameValue[i + 1]);
+        return d;
+    }
+
+    private static DoStepForms orderDesk(DomainStep... steps) {
+        Plugins plugins = new Plugins(null);
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Arrays.asList(steps)), "ok");
+        return new DoStepForms(plugins);
+    }
+
+    private static String[] bodyOf(Flow f, JavaTestWriter.DoForms forms) {
+        return body(JavaTestWriter.write(f, "com.example.uitest.recorded", "SmokeUiIT", "walk", forms));
+    }
+
+    @Test
+    void aDoStepWithAJavaCallBecomesTheTypedCall() {
+        AtomicInteger ran = new AtomicInteger();
+        DoStepForms forms = orderDesk(
+                DomainStep.act("addQtyToCart", "Add {qty} × {product} to the cart")
+                        .param("product", ParamType.TEXT).param("qty", ParamType.INT)
+                        .code((ui, p) -> ran.incrementAndGet())
+                        .java("io.github.kormcrete.orderdesk.uitest.OrderDeskSteps", "addQtyToCart(ui, {product}, {qty})")
+                        .build(),
+                DomainStep.act("placeOrder", "Place the order")
+                        .code((ui, p) -> ran.incrementAndGet())
+                        .java("io.github.kormcrete.orderdesk.uitest.OrderDeskSteps", "placeOrder(ui)")
+                        .build());
+        Flow f = flow(new MenuVerb(),
+                doStep("order-desk:addQtyToCart", "Add 03 × A4 paper, \"500\" to the cart", "product", "A4 paper, \"500\"", "qty", "03"),
+                doStep("order-desk:placeOrder", "Place it"));
+        ((MenuVerb) f.steps.get(0)).path = Arrays.asList("Orders", "New order");
+
+        String java = JavaTestWriter.write(f, "com.example.uitest.recorded", "SmokeUiIT", "walk", forms);
+
+        assertThat(java).contains("import io.github.kormcrete.orderdesk.uitest.OrderDeskSteps;\n"
+                + "import io.github.kormcrete.swingui.junit.Client;\n");
+        assertThat(body(java)).containsExactly(
+                "        ui.menu(\"Orders\", \"New order\");",
+                "        OrderDeskSteps.addQtyToCart(ui, \"A4 paper, \\\"500\\\"\", 3);",   // its sentence is the call: no comment
+                "",
+                "        // Place it",
+                "        OrderDeskSteps.placeOrder(ui);",
+                "");
+        assertThat(ran.get()).isZero();   // a typed call needs no trace of the body
+        assertThat(JavaTestWriter.lines(f, forms)).containsExactly("ui.menu(\"Orders\", \"New order\");",
+                "OrderDeskSteps.addQtyToCart(ui, \"A4 paper, \\\"500\\\"\", 3);", "OrderDeskSteps.placeOrder(ui);");
+    }
+
+    @Test
+    void aDoStepWithoutOneIsExpandedUnderItsSentence() {
+        DoStepForms forms = orderDesk(
+                DomainStep.act("addToCart", "Add {product} to the cart")
+                        .param("product", ParamType.TEXT)
+                        .code((ui, p) -> {
+                            ui.tab("New order*").table().row("Product", p.text("product")).cell("Product").click();
+                            ui.tab("New order*").button("Add to cart").click();
+                        })
+                        .build(),
+                DomainStep.act("openRow", "Open order row {row}")
+                        .param("row", ParamType.INT)
+                        .steps("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"name\":\"Orders\","
+                                + "\"row\":{\"index\":\"{row}\"}},\"count\":2}")
+                        .build(),
+                DomainStep.check("cartTotalIs", "The cart total is {total}")
+                        .param("total", ParamType.TEXT)
+                        .steps("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"{total}\"}")
+                        .build());
+        DoAction total = doStep("order-desk:cartTotalIs", null, "total", "4.99");
+        total.check = true;
+        Flow f = flow(doStep("order-desk:addToCart", "Add Gel pen, black to the cart", "product", "Gel pen, black"), total,
+                doStep("order-desk:openRow", null, "row", "2"));
+
+        String[] lines = bodyOf(f, forms);
+
+        assertThat(lines).containsExactly(
+                "        // Add Gel pen, black to the cart",
+                "        ui.tab(\"New order*\").table().row(\"Product\", \"Gel pen, black\").cell(\"Product\").click();",
+                "        ui.tab(\"New order*\").button(\"Add to cart\").click();",
+                "        // The cart total is 4.99",
+                "        assertThat(ui.label(\"Total\")).hasText(\"4.99\");",
+                "",
+                "        // Open order row 2",
+                "        ui.table(\"Orders\").rowAt(2).doubleClick();",   // the INT placeholder is a number again
+                "");
+        assertThat(JavaTestWriter.lines(f, forms).get(0)).isEqualTo(
+                "ui.tab(\"New order*\").table().row(\"Product\", \"Gel pen, black\").cell(\"Product\").click();\n"
+                        + "ui.tab(\"New order*\").button(\"Add to cart\").click();");
+    }
+
+    @Test
+    void anUntraceableDoStepIsRefused() {
+        DoStepForms forms = orderDesk(DomainStep.act("logIn", "Log in as the clerk")
+                .code((ui, p) -> ui.password("Password").fill(ui.secret("clerk", "password")))
+                .build());
+        Flow f = flow(doStep("order-desk:logIn", "Log in as the clerk"));
+
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.write(f, "p", "SmokeUiIT", "walk", forms), ExportRefused.class);
+
+        assertThat(e.problems()).containsExactly("step 1: Log in as the clerk (order-desk:logIn) has no Java form: the step "
+                + "names no java(...) call, and its body cannot be written out as steps (the body reads a secret, which a "
+                + "trace must not keep); give the step a java(...) call");
+        ExportRefused unknown = catchThrowableOfType(() -> JavaTestWriter.write(flow(doStep("order-desk:addToCrat", null)), "p",
+                "SmokeUiIT", "walk", forms), ExportRefused.class);
+        assertThat(unknown.problems()).containsExactly("step 1: do(order-desk:addToCrat) has no Java form: no domain step "
+                + "'order-desk:addToCrat'; the steps are logIn");
+        ExportRefused none = catchThrowableOfType(() -> JavaTestWriter.write(flow(doStep("order-desk:logIn", null)), "p",
+                "SmokeUiIT", "walk"), ExportRefused.class);
+        assertThat(none.problems()).containsExactly("step 1: do(order-desk:logIn) has no Java form here: a do step is written "
+                + "through the plugin that offers it, and none is configured");
     }
 }

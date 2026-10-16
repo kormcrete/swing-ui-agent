@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.driver;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * A plugin's domain step whose body failed, with what it ran up to the failure ({@link #outcome}: the filled sentence
@@ -23,15 +24,22 @@ public final class DomainStepFailed extends DriverException {
         return outcome;
     }
 
-    /**
-     * The failure of the domain step {@code outcome} describes, after its body threw {@code thrown}. A failed last step
-     * gives the reason, details and the message ("Add Gel pen, black to the cart: step 2 (click(...)) failed: ...");
-     * otherwise a DriverException keeps its reason, an AssertionError is EXPECTATION and anything else APP_ERROR.
-     */
+    /** {@link #of(VerbOutcome, Throwable, boolean, UnaryOperator)} for a body that failed with its last step, if that one failed. */
     public static DomainStepFailed of(VerbOutcome outcome, Throwable thrown) {
+        return of(outcome, thrown, true, UnaryOperator.<String>identity());
+    }
+
+    /**
+     * The failure of the domain step {@code outcome} describes, after its body threw {@code thrown}. When {@code byLastStep}
+     * (the body threw the failure of its last step on, as is or as a cause) and that step failed, it gives the reason,
+     * details and the message ("Add Gel pen, black to the cart: step 2 (click(...)) failed: ..."); otherwise the body failed
+     * on its own, e.g. after getting past a failed step: a DriverException keeps its reason, an AssertionError is
+     * EXPECTATION and anything else APP_ERROR, its message and details passed through {@code mask} (secrets the body read).
+     */
+    public static DomainStepFailed of(VerbOutcome outcome, Throwable thrown, boolean byLastStep, UnaryOperator<String> mask) {
         List<StepCall> calls = outcome.calls == null ? Collections.<StepCall>emptyList() : outcome.calls;
         StepCall last = calls.isEmpty() ? null : calls.get(calls.size() - 1);
-        if (last != null && !last.passed) {
+        if (byLastStep && last != null && !last.passed) {
             Reason reason = last.reason != null ? last.reason : thrown instanceof AssertionError ? Reason.EXPECTATION
                     : Reason.APP_ERROR;
             String why = last.reason != null ? DriverException.stripReason(last.message, last.reason) : last.message;
@@ -45,11 +53,11 @@ public final class DomainStepFailed extends DriverException {
             DriverException d = (DriverException) thrown;
             reason = d.reason();
             why = DriverException.stripReason(d.getMessage(), reason);
-            details.addAll(d.details());
+            for (String line : d.details()) details.add(mask.apply(line));
         } else {
             reason = thrown instanceof AssertionError ? Reason.EXPECTATION : Reason.APP_ERROR;
             why = thrown.getMessage() != null ? thrown.getMessage() : thrown.toString();
         }
-        return new DomainStepFailed(reason, outcome.sentence + ": the step's body failed: " + why, details, outcome);
+        return new DomainStepFailed(reason, outcome.sentence + ": the step's body failed: " + mask.apply(why), details, outcome);
     }
 }

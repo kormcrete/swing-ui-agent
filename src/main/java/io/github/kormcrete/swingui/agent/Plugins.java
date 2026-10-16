@@ -5,13 +5,18 @@ import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.flow.FlowExecutor;
+import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.junit.ClientApp;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.PluginParts;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.spi.UiInventory;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -179,6 +184,59 @@ public final class Plugins implements StepHost, UiInventory {
         return StepRunner.run(found.step, values, verbs, clientApp(found.plugin));
     }
 
+    /** A do step looked up and its values checked, not run: what a recording and a Java export know of it. */
+    public static final class DoStep {
+        public final VocabularyStep found;
+        /** Every param's value; an optional one left out holds its default. */
+        public final Map<String, String> values;
+        /** The step's sentence with the values, e.g. "Add Gel pen, black to the cart". */
+        public final String sentence;
+
+        DoStep(VocabularyStep found, Map<String, String> values, String sentence) {
+            this.found = found;
+            this.values = values;
+            this.sentence = sentence;
+        }
+
+        /** {@code <plugin>:<id>}: the name that stays the step's whatever plugins come later. */
+        public String qualified() {
+            return found.plugin + ":" + found.step.id();
+        }
+    }
+
+    /**
+     * The vocabulary step {@code id} with {@code params}, looked up and its values checked as {@link #runStep} does
+     * (BAD_INPUT, CAPABILITY_GAP), without running it.
+     */
+    public DoStep lookUp(String id, Map<String, String> params) {
+        VocabularyStep found = find(id);
+        MapParams values = MapParams.of(found.step, params);
+        return new DoStep(found, values.values(), values.fill(found.step.sentence()));
+    }
+
+    /**
+     * The steps {@code d} makes for its values, as do_action takes them: a declarative body's steps filled in, a Java
+     * body's traced ({@link BodyTrace#steps}: its code runs once more, twice, on a Client that reaches no app); none, with
+     * why, when the body cannot be traced.
+     */
+    public static BodyTrace.Result steps(DoStep d) {
+        DomainStep step = d.found.step;
+        if (step.body() != null) return BodyTrace.steps(step, d.values);
+        MapParams values = MapParams.of(step, d.values);
+        List<ObjectNode> filled = new ArrayList<ObjectNode>();
+        for (int i = 0; i < step.steps().size(); i++) {
+            JsonNode entry;
+            try {
+                entry = StepRunner.fill(FlowJson.mapper().readTree(step.steps().get(i)), values);
+            } catch (IOException e) {
+                return BodyTrace.notDerivable("steps entry " + (i + 1) + " is not JSON: " + e.getMessage());
+            }
+            if (!entry.isObject()) return BodyTrace.notDerivable("steps entry " + (i + 1) + " is not a JSON object");
+            filled.add((ObjectNode) entry);
+        }
+        return BodyTrace.concrete(filled);
+    }
+
     /** The vocabulary step {@code id} names; BAD_INPUT when none or two, CAPABILITY_GAP when there is no vocabulary. */
     private VocabularyStep find(String id) {
         if (id == null || id.trim().isEmpty()) {
@@ -214,15 +272,24 @@ public final class Plugins implements StepHost, UiInventory {
     }
 
     /**
-     * The app side of a domain step's Client: app steps through these plugins (the app plugin's step host), hooks from
-     * the step's own plugin first, then any ready one. A login by user name and password, or again, has no step form:
+     * The app side of a domain step's Client: app steps through these plugins (the app plugin's step host), refused while
+     * a dialog waits for an answer as in a recorded test, hooks from the step's own plugin first, then any ready one. A login by user name and password, or again, has no step form:
      * refused, as a recorded test could not hold it.
      */
     private ClientApp clientApp(final String plugin) {
         return new ClientApp() {
-            @Override public void navigate(String target) { Plugins.this.navigate(target); }
-            @Override public void closeActiveTab() { Plugins.this.closeActiveTab(); }
-            @Override public void loginAs(String alias) { Plugins.this.loginAs(alias); }
+            @Override public void navigate(String target) {
+                FlowExecutor.refuseAppStepWhileADialogWaits(Plugins.this);
+                Plugins.this.navigate(target);
+            }
+            @Override public void closeActiveTab() {
+                FlowExecutor.refuseAppStepWhileADialogWaits(Plugins.this);
+                Plugins.this.closeActiveTab();
+            }
+            @Override public void loginAs(String alias) {
+                FlowExecutor.refuseAppStepWhileADialogWaits(Plugins.this);
+                Plugins.this.loginAs(alias);
+            }
             @Override public void loginAs(String user, String password) {
                 throw new DriverException(Reason.CAPABILITY_GAP, "a domain step logs in by alias only (loginAs(alias)): "
                         + "a login by user name and password has no step form");

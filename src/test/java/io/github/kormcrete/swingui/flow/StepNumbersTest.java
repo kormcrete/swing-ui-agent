@@ -47,6 +47,22 @@ class StepNumbersTest {
         assertThat(StepNumbers.label(f, 5)).isEqualTo("3.1");
     }
 
+    private static final String DO_ACT = "{\"action\":\"do\",\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}";
+    private static final String DO_CHECK = "{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\",\"params\":{\"total\":\"4.99\"},\"check\":true}";
+
+    @Test
+    void aDoCheckIsNumberedAsACheck() throws Exception {
+        List<Action> f = flat(CLICK, DO_CHECK, EXPECT, DO_ACT, DO_CHECK);
+
+        assertThat(StepNumbers.labels(f)).containsExactly("1", "1.1", "1.2", "2", "2.1");
+        assertThat(StepNumbers.isCheck(f.get(1))).isTrue();
+        assertThat(StepNumbers.isCheck(f.get(3))).isFalse();
+        assertThat(StepNumbers.of(flat(DO_CHECK, DO_ACT)).get(0).checkOnly()).isTrue();
+        DoAction unmarked = (DoAction) flat(DO_CHECK).get(0);
+        unmarked.check = false;
+        assertThat(StepNumbers.isCheck(unmarked)).isFalse();
+    }
+
     @Test
     void leadingChecksAreStepOne() throws Exception {
         List<Action> f = flat(EXPECT, EXPECT, CLICK, EXPECT);

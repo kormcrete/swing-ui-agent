@@ -227,10 +227,10 @@ class UiMcpVerbToolsTest {
         assertThat(steps.get(1).path("passed").asBoolean()).isTrue();
         assertThat(steps.get(1).has("ms")).isTrue();
         assertThat(backend.verbs.calls).hasSize(2);
-        // not recorded yet: the recording stays as it was, and the result says why
-        assertThat(r.has("recorded")).isFalse();
-        assertThat(r.path("notRecorded").asText()).isEqualTo(UiMcpSession.DO_NOT_RECORDED);
-        assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps")).isEmpty();
+        // recorded as one step, written out in Java as its two steps (the step names no java call)
+        assertThat(r.path("recorded").path("step").asText()).isEqualTo("order-desk:addToCart");
+        assertThat(r.has("notRecorded")).isFalse();
+        assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps")).hasSize(1);
     }
 
     @Test
@@ -255,6 +255,21 @@ class UiMcpVerbToolsTest {
         assertThat(failed.path("passed").asBoolean()).isFalse();
         assertThat(failed.path("reason").asText()).isEqualTo("NOT_FOUND");
         assertThat(failed.path("message").asText()).isEqualTo("NOT_FOUND: nothing matches button 'Add to cart'");
+    }
+
+    @Test
+    void aChildsToolErrorKeepsTheStepsItRanInTheDetails() throws Exception {
+        UiMcpSession s = withVocabulary();
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 2
+                ? new DriverException(Reason.BAD_INPUT, "a locator needs a role or an id") : null;
+
+        DriverException e = catchThrowableOfType(() -> s.doAction(mapper.readTree(DO_ADD)), DriverException.class);
+
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("Add Gel pen, black to the cart: step 2 (click(").endsWith("a locator needs a role or an id");
+        assertThat(e.details()).hasSize(2);
+        assertThat(e.details().get(0)).startsWith("1. click(").endsWith(") passed");
+        assertThat(e.details().get(1)).startsWith("2. click(").endsWith(") failed");
     }
 
     @Test

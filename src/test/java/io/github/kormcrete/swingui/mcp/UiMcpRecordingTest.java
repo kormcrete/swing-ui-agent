@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.inspect.Inspector;
@@ -10,6 +11,9 @@ import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
+import io.github.kormcrete.swingui.spi.DomainStep;
+import io.github.kormcrete.swingui.spi.ParamType;
+import io.github.kormcrete.swingui.spi.PluginParts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1994,5 +2000,173 @@ class UiMcpRecordingTest {
         // the table has no value to name the row by
         DriverException e = catchThrowableOfType(() -> call("{\"op\":\"row\",\"n\":1,\"by\":\"value\"}"), DriverException.class);
         assertThat(e.getMessage()).contains("step 1's row by value is not known");
+    }
+    // ---- do steps: one recorded step, a version 3 file, checked when a file is loaded -----------
+
+    private static final String STEPS_CLASS = "io.github.kormcrete.orderdesk.uitest.OrderDeskSteps";
+    private static final String ADD = "{\"action\":\"do\",\"step\":\"addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}";
+
+    /** A session over plugins whose order-desk plugin offers addToCart (a typed call) and cartTotalIs (a check). */
+    private UiMcpSession orderDesk(Plugins plugins) {
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Arrays.asList(
+                DomainStep.act("addToCart", "Add {product} to the cart")
+                        .param("product", ParamType.TEXT)
+                        .code((ui, p) -> {
+                            ui.table().row("Product", p.text("product")).cell("Product").click();
+                            ui.button("Add to cart").click();
+                        })
+                        .java(STEPS_CLASS, "addToCart(ui, {product})")
+                        .build(),
+                DomainStep.check("cartTotalIs", "The cart total is {total}")
+                        .param("total", ParamType.TEXT)
+                        .steps("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"{total}\"}")
+                        .build())), "ok");
+        UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
+        s.folderMemory(FolderMemory.inMemory());
+        s.recordedDir(dir, true);
+        s.appReset(new UiMcpSession.AppReset() {
+            @Override public boolean defined() { return false; }
+            @Override public void run() { }
+        });
+        s.personBusy = () -> null;
+        s.startRecording(true);
+        return s;
+    }
+
+    @Test
+    void theAgentsDoStepIsRecordedAsOneStep() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+
+        JsonNode added = mapper.readTree(s.doAction(mapper.readTree(ADD)));
+        JsonNode total = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"cartTotalIs\","
+                + "\"params\":{\"total\":\"4.99\"},\"say\":\"The total is right\"}")));
+
+        assertThat(backend.verbs.calls).hasSize(3);   // the bodies ran their steps ...
+        assertThat(added.has("notRecorded")).isFalse();
+        assertThat(added.path("recorded")).isEqualTo(mapper.readTree("{\"action\":\"do\",\"say\":\"Add Gel pen, black to "
+                + "the cart\",\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}"));
+        assertThat(total.path("recorded").path("say").asText()).isEqualTo("The total is right");
+        assertThat(total.path("recorded").path("check").asBoolean()).isTrue();
+        List<RecordedStep> steps = s.recordedSteps();   // ... and each do step is one record, the check under its step
+        assertThat(steps).hasSize(2).allMatch(r -> r.author == RecordedStep.Author.AGENT);
+        JsonNode list = mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}")));
+        assertThat(list.path("steps")).hasSize(1);
+        assertThat(list.path("steps").get(0).path("java").asText()).isEqualTo("OrderDeskSteps.addToCart(ui, \"Gel pen, black\");");
+        assertThat(list.path("steps").get(0).path("checks").get(0).path("n").asText()).isEqualTo("1.1");
+
+        System.setProperty(UiMcpSession.TESTS_DIR_PROP, dir.resolve("tests").toString());
+        try {
+            String source = mapper.readTree(s.exportTest("AddPenUiIT", null, "demo", false)).path("source").asText();
+            assertThat(source).contains("import " + STEPS_CLASS + ";\n")
+                    .contains("        OrderDeskSteps.addToCart(ui, \"Gel pen, black\");\n"
+                            + "        // The total is right\n"
+                            + "        assertThat(ui.label(\"Total\")).hasText(\"4.99\");\n");
+        } finally {
+            System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
+        }
+        JsonNode file = mapper.readTree(s.exportRecordedTest("add-pen", quoted(dir), null, false)).path("test");
+        assertThat(file.path("version").asInt()).isEqualTo(3);
+        assertThat(file.path("requires").toString()).isEqualTo("[\"order-desk\"]");
+        assertThat(file.path("steps").get(0).path("checks").get(0).path("step").asText()).isEqualTo("order-desk:cartTotalIs");
+        // the file runs again: its do steps through the plugin
+        JsonNode run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"name\":\"add-pen\"}")));
+        assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
+        assertThat(run.path("steps").get(0).path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
+    }
+
+    @Test
+    void aDoStepWithoutAJavaFormIsNotRecordedAndSaysWhy() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("extras", Paths.get("extras")).ready(new PluginParts(() -> Arrays.asList(
+                DomainStep.act("addOneMore", "Add one more of the last product")
+                        .code((ui, p) -> ui.field("Qty").fill(ui.label("Last product").text()))
+                        .build())), "ok");
+        UiMcpSession s = orderDesk(plugins);
+
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addOneMore\"}")));
+
+        assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
+        assertThat(r.has("recorded")).isFalse();
+        assertThat(r.path("notRecorded").asText()).contains("Add one more of the last product (extras:addOneMore) has no "
+                + "Java form").contains("give the step a java(...) call");
+        assertThat(s.recordedSteps()).isEmpty();
+    }
+
+    @Test
+    void aDoStepAfterDoneAddsNothing() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        s.recording(mapper.readTree("{\"op\":\"start\"}"));
+        s.recording(mapper.readTree("{\"op\":\"stop\"}"));
+        String before = s.recording(mapper.readTree("{\"op\":\"list\"}"));
+
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(ADD)));
+
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("notRecorded").asText()).startsWith("the recording is stopped");
+        assertThat(s.recording(mapper.readTree("{\"op\":\"list\"}"))).isEqualTo(before);
+    }
+
+    /** A version 3 file with one step, a do step at line 9 whose step and params are {@code step}. */
+    private Path doFile(String requires, String step) throws Exception {
+        Path file = dir.resolve("broken.json");
+        Files.write(file, ("{\n"
+                + "  \"version\" : 3,\n"
+                + "  \"name\" : \"broken\",\n"
+                + "  \"start\" : \"reset\",\n"
+                + "  \"requires\" : " + requires + ",\n"
+                + "  \"steps\" : [ {\n"
+                + "    \"action\" : \"menu\", \"path\" : [ \"Orders\", \"New order\" ]\n"
+                + "  },\n"
+                + "  " + step + " ]\n"
+                + "}\n").getBytes(StandardCharsets.UTF_8));
+        return file;
+    }
+
+    private DriverException refusedToLoad(UiMcpSession s, Path file) {
+        DriverException run = catchThrowableOfType(() -> s.runRecordedTest(mapper.readTree("{\"path\":\"" + quoted(file) + "\"}")),
+                DriverException.class);
+        DriverException load = catchThrowableOfType(() -> s.loadRecordedTest(file), DriverException.class);
+        assertThat(run).isNotNull();
+        assertThat(load).isNotNull();
+        assertThat(load.getMessage()).isEqualTo(run.getMessage());
+        return run;
+    }
+
+    @Test
+    void loadingARecordedTestWithAnUnknownStepNamesTheLine() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        String at = dir.resolve("broken.json").toAbsolutePath().normalize() + ": step 2 (line 9), plugin order-desk: ";
+
+        DriverException unknown = refusedToLoad(s, doFile("[ \"order-desk\" ]",
+                "{ \"action\" : \"do\", \"step\" : \"order-desk:addToCrat\" }"));
+        assertThat(unknown.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(unknown.getMessage()).isEqualTo("BAD_INPUT: " + at
+                + "order-desk has no domain step 'addToCrat' (its steps: addToCart, cartTotalIs)");
+
+        DriverException bare = refusedToLoad(s, doFile("[ \"order-desk\" ]", "{ \"action\" : \"do\", \"step\" : \"addToCrat\" }"));
+        assertThat(bare.getMessage()).isEqualTo("BAD_INPUT: " + at
+                + "order-desk has no domain step 'addToCrat' (its steps: addToCart, cartTotalIs)");
+
+        DriverException param = refusedToLoad(s, doFile("[ \"order-desk\" ]",
+                "{ \"action\" : \"do\", \"step\" : \"addToCart\", \"params\" : { \"qty\" : \"3\" } }"));
+        assertThat(param.getMessage()).isEqualTo("BAD_INPUT: " + at + "addToCart has no param 'qty' (its params: product)");
+
+        DriverException kind = refusedToLoad(s, doFile("[ \"order-desk\" ]",
+                "{ \"action\" : \"do\", \"step\" : \"cartTotalIs\", \"params\" : { \"total\" : \"4.99\" } }"));
+        assertThat(kind.getMessage()).isEqualTo("BAD_INPUT: " + at + "cartTotalIs is a check: it goes under the step it "
+                + "checks (in its \"checks\")");
+
+        DriverException missing = refusedToLoad(s, doFile("[ \"extras\" ]", "{ \"action\" : \"do\", \"step\" : \"extras:giftWrap\" }"));
+        assertThat(missing.reason()).isEqualTo(Reason.CAPABILITY_GAP);
+        assertThat(missing.getMessage()).isEqualTo("CAPABILITY_GAP: " + dir.resolve("broken.json").toAbsolutePath().normalize()
+                + " requires the plugin extras, which is not configured (the plugins: order-desk)");
+
+        Path ok = doFile("[ \"order-desk\" ]", ADD);
+        DriverException plain = catchThrowableOfType(() -> session.runRecordedTest(mapper.readTree("{\"path\":\"" + quoted(ok)
+                + "\"}")), DriverException.class);
+        assertThat(plain.reason()).isEqualTo(Reason.CAPABILITY_GAP);
+        assertThat(plain.getMessage()).isEqualTo("CAPABILITY_GAP: " + ok.toAbsolutePath().normalize() + " requires the plugin "
+                + "order-desk; no plugin configured (agent argument plugins=…)");
+        assertThat(mapper.readTree(s.loadRecordedTest(ok)).path("steps").asInt()).isEqualTo(2);
     }
 }

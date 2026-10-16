@@ -201,8 +201,9 @@ public final class UiMcpTools {
                         + "palette, or exported before without clear). A folder that cannot be written is refused, "
                         + "naming it. A recorded test holds exact values: check data the test creates or data known to exist; "
                         + "a value the app makes up (a new order number, today's date) only when your start makes it "
-                        + "predictable - otherwise check something else or write a Java test. Format version 2: each step with its "
-                        + "checks nested, sentences and groups kept.", schema);
+                        + "predictable - otherwise check something else or write a Java test. Format version 2 (3 when it holds "
+                        + "do steps, with requires naming their plugins): each step with its checks nested, sentences and groups "
+                        + "kept.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
@@ -569,7 +570,8 @@ public final class UiMcpTools {
         s.put("type", "object");
         s.put("description", "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's "
                 + "domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its "
-                + "filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.");
+                + "filled sentence and the steps it ran, and is recorded as one step). The verbs are also tools of their own, "
+                + "with full argument schemas.");
         ObjectNode action = s.putObject("properties").putObject("action");
         action.put("type", "string");
         ArrayNode names = action.putArray("enum");

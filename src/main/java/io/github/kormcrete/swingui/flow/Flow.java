@@ -20,4 +20,8 @@ public class Flow {
     public List<Action> steps = new ArrayList<>();
     /** The groups of whole steps, as flat indexes into {@link #steps}; the file nests them, this list stays beside the flat one. */
     @JsonIgnore public List<FlowGroup> groups = new ArrayList<>();
+    /** The plugins its {@code do} steps need, as a version 3 file names them; empty when none named. */
+    @JsonIgnore public List<String> requires = new ArrayList<>();
+    /** The line each of {@link #steps} starts at in the file it was read from; empty when it was not read from one. */
+    @JsonIgnore public List<Integer> lines = new ArrayList<>();
 }

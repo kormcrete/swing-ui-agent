@@ -59,7 +59,7 @@ final class StepRunner {
             }
         } catch (Exception | AssertionError | LinkageError | StackOverflowError e) {
             finish(out, kept.calls());
-            throw DomainStepFailed.of(out, e);
+            throw kept.failed(out, e);
         }
         finish(out, kept.calls());
         return out;
