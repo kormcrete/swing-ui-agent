@@ -75,7 +75,7 @@ That wrote `uitest/cart-totals.json`, in Order Desk's repository. Its first thre
     },
 ```
 
-The file goes on the same way: 11 steps and 7 checks. The tool writes the file with one field per line. `"start": "reset"` means every run begins with the app reset.
+The file goes on the same way: 11 steps and 6 checks. The tool writes the file with one field per line. `"start": "reset"` means every run begins with the app reset.
 
 ## Open one in the palette
 

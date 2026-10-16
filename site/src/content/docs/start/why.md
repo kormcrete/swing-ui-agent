@@ -18,11 +18,11 @@ swing-ui-agent lets you record UI tests of your real Swing app, and lets a codin
 ## How it works
 
 - **Drive:** the agent jar runs inside your app and serves a set of tools: `snapshot`, `click`, `type`, `menu`, `expect`, `screenshot` and more. A coding agent calls them from a shell (`java -jar <agent jar> <tool> '<json>'`) or as an MCP client. See [Let your agent drive the app](/swing-ui-agent/start/drive/).
-- **Record:** every step that works is recorded. `export_test` writes the recording as a JUnit 5 `@UiTest` class, `export_recorded_test` as a recorded test (a JSON file, nothing to compile). See [Record a test with the agent](/swing-ui-agent/start/record/).
+- **Record:** every step that works is recorded. `export_recorded_test` saves the recording as a recorded test (a JSON file in `uitest/`, nothing to compile); `export_test` writes it as a JUnit 5 `@UiTest` class when a test needs more. See [Record a test with the agent](/swing-ui-agent/start/record/).
 - **Show it yourself:** with the palette that is on by default, a person records the steps in the app and the agent exports them. See [Record a test by showing it](/swing-ui-agent/start/show/).
-- **Run:** the tests connect to the running app and drive it the same way, from Maven, your IDE or CI. See [Run the tests](/swing-ui-agent/start/run/).
+- **Run:** a recorded test replays against the running app from the palette, the agent, Maven, your IDE or CI; a Java test connects to the app the same way. See [Run the tests](/swing-ui-agent/start/run/).
 
-The tests are meant to be written by the agent, not by hand: a Java test it writes from a recording, or a recorded test it exports. You review them, and you run them. A person who shows the app keeps the recording as a recorded test; an engineer keeps it as a Java test. See [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+The tests are meant to be written by the agent, not by hand: a recorded test it exports, or a Java test it writes from a recording. You review them, and you run them. A person who shows the app keeps the recording as a recorded test; an engineer keeps it as a Java test. See [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 ## The pieces
 
@@ -43,7 +43,7 @@ The tests are meant to be written by the agent, not by hand: a Java test it writ
 - **Your app:** a Swing app on Java 8, 11, 17, 21 or 25, started with one extra `-javaagent:` flag. On Java 9 and newer it needs no `--add-opens` flags.
 - **A desktop:** macOS, Linux (X11) or Windows. On a Linux machine without a display, a virtual one (Xvfb) works.
 - **To build it:** JDK 8 and Maven 3. It is not on Maven Central yet.
-- **For the tests:** JUnit 5.
+- **For Maven and CI runs:** JUnit 5 (it runs recorded tests and Java tests alike). The palette and the agent replay a recorded test without it.
 
 [Limits](/swing-ui-agent/project/limits/) lists what does not work yet.
 

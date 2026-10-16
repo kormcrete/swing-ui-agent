@@ -22,7 +22,7 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **Drag and drop:** `drag` posts a mouse gesture inside one window and never starts a native drag. To deliver files or text, use `drop`.
 - **The macOS screen menu bar** has no input path, so `menu` invokes its item directly. The step is marked `via:api`.
 - **Mouse input:** a component counts as taking mouse input when it has mouse listeners or a popup menu. One that only enables mouse events internally is seen as transparent, so a click on it lands on what is below.
-- **No tool of their own:** `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName` are steps without a tool. Run them through `batch` or `do_action`.
+- **No tool of its own:** `focusFileChooserName` is a step without a tool. Run it through `batch` or `do_action`. (`hover`, `resize_column`, `resize_window` and `close_window` are tools now.)
 
 ## Recording and export
 

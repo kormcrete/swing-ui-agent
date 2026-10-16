@@ -7,7 +7,7 @@ sidebar:
 
 You do not have to touch the app. You say in chat what the test does; the agent drives Order Desk, records each step and each check, and saves the test. You watch the steps appear in the palette and can delete, redo or undo any of them. The agent and you work on **one recording**, with one history.
 
-This is one of three ways to get a recorded test. [Record a test by showing it](/swing-ui-agent/start/show/) is you doing it with the palette. [Record a test with the agent](/swing-ui-agent/start/record/) is the agent writing a Java test. Whether a recorded test or a Java test is the right one: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+This is one of three ways to get a recorded test. [Record a test by showing it](/swing-ui-agent/start/show/) is you doing it with the palette. [Record a test with the agent](/swing-ui-agent/start/record/) is the agent recording it from your words alone. Whether a recorded test or a Java test is the right one: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 You will learn how to:
 

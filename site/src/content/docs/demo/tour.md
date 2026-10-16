@@ -67,22 +67,24 @@ you build both projects.
    (cd swing-ui-agent && mvn -B install -DskipTests)
    ```
 
-2. Build Order Desk. This writes `target/order-desk.jar` and copies the agent jar to
-   `target/swing-ui-agent-agent.jar`:
+2. Build Order Desk: first its plugin (the app's own steps, which its tests use), then the app. This writes
+   `target/order-desk.jar` and copies the agent jar to `target/swing-ui-agent-agent.jar`:
 
    ```bash
    cd swing-order-desk-demo
+   mvn -B -f order-desk-plugin/pom.xml install
    mvn -B package
    ```
 
 3. Start it with the agent:
 
    ```bash
-   java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
+   java -javaagent:target/swing-ui-agent-agent.jar=port=8770,plugins=order-desk-plugin/target/classes \
         -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar
    ```
 
    - `-javaagent:…` lets a coding agent drive the app on port 8770. Without it Order Desk is a normal app.
+   - `plugins=order-desk-plugin/target/classes` loads the plugin; the recorded test `cart-with-steps` needs it.
    - `-Dorderdesk.today=2026-10-12` fixes the date used for new orders and the card expiry check, so every run looks
      the same. Leave it out to use today's date.
 
@@ -221,4 +223,4 @@ Ask your agent to do one of these, or [record it as a test](/swing-ui-agent/star
 - [Let your agent drive the app](/swing-ui-agent/start/drive/)
 - [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/)
 - [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/): a Java test the agent recorded on Order Desk.
-- [Write a Java test with the agent](/swing-ui-agent/start/record/)
+- [Record a test with the agent](/swing-ui-agent/start/record/)

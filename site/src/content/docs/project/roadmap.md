@@ -12,7 +12,12 @@ No dates, just the order we expect to work in. Each item closes a gap from [Limi
 - **Publishing to Maven Central**, so the library and the agent jar no longer have to be built from source.
 - **The site checked against Order Desk in CI.** Today the Order Desk examples on this site are copied from the demo repository, and a script compares them with it. Next, a deploy job builds the demo, starts it with the agent, runs its UI tests and refreshes the tool reference before every deploy.
 - **Recording by showing it, filled in:** a check kind for whole table columns, spinner arrows and drags.
-- **Export gaps:** a tool of their own for `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName`.
+- **Export gaps:** a tool of its own for `focusFileChooserName`.
+
+## Shipped
+
+- **A plugin vocabulary:** a plugin names the app's own steps once ("Add {product} to the cart"); the agent runs them in one call, the recorder folds the clicks into them, recorded tests store them as `do` steps and Java tests call them as typed methods. See [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/).
+- **Tools of their own** for `hover`, `resize_column`, `resize_window` and `close_window`.
 
 ## Later
 

@@ -22,8 +22,15 @@ You will learn how to:
 
 - IntelliJ IDEA with a JDK 8 or later.
 - swing-ui-agent installed in your local Maven repository, as in [Installation](/swing-ui-agent/start/install/#1-build-and-install-it).
-- Order Desk cloned: `git clone https://github.com/kormcrete/swing-order-desk-demo.git`. Open the folder in IntelliJ
-  (**File ▸ Open**) and let it import the Maven project.
+- Order Desk cloned, and its plugin installed (its vocabulary of the app's own steps, which the tests use):
+
+  ```sh
+  git clone https://github.com/kormcrete/swing-order-desk-demo.git
+  cd swing-order-desk-demo
+  mvn -B -f order-desk-plugin/pom.xml install
+  ```
+
+  Then open the folder in IntelliJ (**File ▸ Open**) and let it import the Maven project.
 
 ## The run configurations
 
@@ -44,8 +51,10 @@ Only one Order Desk can listen on port 8770 at a time: stop a running one before
 
 ## 1. Start the app and replay a recorded test
 
-Order Desk ships two recorded tests in `uitest/`: [`place-order.json`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/uitest/place-order.json)
-and [`cart-totals.json`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/uitest/cart-totals.json).
+Order Desk ships three recorded tests in `uitest/`: [`place-order.json`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/uitest/place-order.json),
+[`cart-totals.json`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/uitest/cart-totals.json) and
+[`cart-with-steps.json`](https://github.com/kormcrete/swing-order-desk-demo/blob/main/uitest/cart-with-steps.json),
+which uses the plugin's steps ([Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)).
 
 1. Choose **Order Desk** in the run configuration list and press **Run**. Order Desk opens on its Orders tab.
 2. In the palette, press **Load recorded test…**, choose `cart-totals`, press **Load**, then **▶ Run**. Choose **Step

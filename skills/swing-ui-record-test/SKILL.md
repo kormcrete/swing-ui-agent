@@ -60,9 +60,10 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 A plugin may name the app's steps ("Add {product} to the cart"). At a recording start, call
 `$UI vocabulary '{"op":"list"}'`: an empty list (with a hint) means there are none, and you use the raw verbs.
 
-- **Map the request to a step and concrete values.** `$UI vocabulary '{"op":"describe","step":"addToCart"}'` shows
-  its params, with `choices` for the values that fit in the app right now. Run it as one step:
-  `$UI do_action '{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}'` (`batch` takes it too).
+- **Map the request to a step and concrete values.** `$UI vocabulary '{"op":"describe","step":"order-desk:addToCart"}'`
+  shows its params, with `choices` for the values that fit in the app right now. Run it as one step:
+  `$UI do_action '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`; in a
+  `batch` it is `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`.
   Values are always concrete: no placeholders, nothing carried from one step to the next.
 - **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but

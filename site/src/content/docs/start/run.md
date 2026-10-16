@@ -12,7 +12,7 @@ A recorded test replays against an app that is already running: from the palette
 With the app running with the agent:
 
 - **In the palette:** **Load recorded test…**, choose the file, **▶ Run**. See [Record a test by showing it](/swing-ui-agent/start/show/#6-load-it-again-run-it-save-back).
-- **From the agent or a shell:** `run_recorded_test '{"name":"place-order"}'`. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#run-it-from-the-agent-or-a-shell).
+- **From the agent or a shell:** `run_recorded_test '{"name":"place-order"}'` (Order Desk started with `-Dorderdesk.today=2026-10-12`: `place-order` checks that date). See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#run-it-from-the-agent-or-a-shell).
 - **In Maven and CI:** the sections below. One small class, [`RecordedUiIT`](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci), runs every file in `uitest`; it is named `*UiIT`, so the setup below picks it up with any Java tests.
 
 ## 1. Add the library
@@ -79,10 +79,10 @@ changes the default port.
 
 ## 4. Start the app, then run
 
-Start the app with the agent, then run the UI tests against it (`-Dorderdesk.today=2026-10-12` fixes the date that `place-order` checks):
+Start the app with the agent, then run the UI tests against it (`-Dorderdesk.today=2026-10-12` fixes the date that `place-order` checks; `plugins=` loads the plugin whose steps `cart-with-steps` uses, installed first with `mvn -B -f order-desk-plugin/pom.xml install`):
 
 ```sh
-java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
+java -javaagent:target/swing-ui-agent-agent.jar=port=8770,plugins=order-desk-plugin/target/classes \
      -Dorderdesk.today=2026-10-12 -jar target/order-desk.jar &
 mvn -B -Pui verify
 ```

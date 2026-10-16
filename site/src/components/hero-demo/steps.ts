@@ -14,6 +14,7 @@ const CUSTOMER: View = { x: 0, y: 40, w: 1600 };
 const PRODUCTS: View = { x: 330, y: 300, w: 1760 };
 const CART: View = { x: 1360, y: 250, w: 1040 };
 const TOTALS: View = { x: 1360, y: 720, w: 1040 };
+const CONFIRM: View = { x: 650, y: 400, w: 1100 };
 
 export type Step = {
 	/** act: the step clicks or types (a ripple); check: it asserts (a box that turns green). */
@@ -87,13 +88,13 @@ export const steps: Step[] = [
 		kind: 'check', box: [2274, 1272, 114, 58], view: TOTALS,
 		say: 'The cart total is €31.32',
 	},
-	// No frame for the close: the question "Discard this new order?" is open at that moment.
+	// r10: the question "Discard this new order?" open over the window, drawn as the app shows it (the run demo's c10)
 	{
-		kind: 'act', box: [0, 0, 67, 42], view: TOP,
+		kind: 'act', box: [0, 0, 67, 42], view: TOP, frame: 'r10',
 		say: 'Close the order tab',
 	},
 	{
-		kind: 'act', box: [0, 0, 67, 42], view: TOP, frame: 'f0',
+		kind: 'act', box: [1286, 771, 152, 52], view: CONFIRM, frame: 'f0',
 		say: 'Discard the order',
 	},
 ];

@@ -127,6 +127,17 @@ class Player {
 				stage.ripple(step.box!);
 				await t(200);
 				if (step.frame) await stage.show(step.frame);
+				// a typed call: its further clicks, on the same line
+				for (const part of step.more ?? []) {
+					await t(300);
+					if (part.view && part.view !== stage.view) {
+						stage.aim(part.view);
+						await t(650);
+					}
+					stage.ripple(part.box);
+					await t(200);
+					if (part.frame) await stage.show(part.frame);
+				}
 				l.gutter.textContent = '✓';
 				await t(420);
 			} else if (step.kind === 'check') {

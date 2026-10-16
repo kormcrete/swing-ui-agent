@@ -176,7 +176,7 @@ class Player {
 		}
 		stage.aim(story.all);
 		this.line('', PASSED, 'is-pass').gutter.textContent = '✓';
-		this.line('', 'In CI the same test runs headless on every push.', 'is-out');
+		this.line('', 'In CI the same test runs on every push, under a virtual display.', 'is-out');
 		this.setBadge(`✓ ${story.test} passed`, 'passed');
 		await clock.wait(4000, gen);
 	}
@@ -188,9 +188,10 @@ class Player {
 		this.stage.aim(story.all, false);
 		this.stage.set(story.lastFrame);
 		const last = steps.length - 1;
-		this.line(LABELS[last], sentence(steps[last]), 'is-say is-check is-ran').gutter.textContent = '✓';
+		this.line(LABELS[last], sentence(steps[last]), steps[last].kind === 'check' ? 'is-say is-check is-ran' : 'is-say is-ran')
+			.gutter.textContent = '✓';
 		this.line('', PASSED, 'is-pass').gutter.textContent = '✓';
-		this.line('', 'In CI the same test runs headless on every push.', 'is-out');
+		this.line('', 'In CI the same test runs on every push, under a virtual display.', 'is-out');
 		this.setBadge(`✓ ${story.test} passed`, 'end');
 	}
 }

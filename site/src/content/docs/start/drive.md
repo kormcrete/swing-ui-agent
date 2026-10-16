@@ -129,5 +129,5 @@ An MCP client that speaks streamable HTTP connects to `http://127.0.0.1:8770/mcp
 
 ## What's next
 
-- [Record a test with the agent](/swing-ui-agent/start/record/): turn steps like these into a JUnit test.
+- [Record a test with the agent](/swing-ui-agent/start/record/): turn steps like these into a recorded test.
 - [Record a test by showing it](/swing-ui-agent/start/show/): do the steps yourself in the app.

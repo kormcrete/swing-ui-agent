@@ -154,15 +154,18 @@ so you can still fix it and export again under another name. An existing file is
 
 ![The Export panel over the cart: Recorded test chosen before Java test, a name and the uitest folder, and Cancel and Export buttons](../../../assets/inspector/export.png)
 
-**Or let the agent export it.** When your agent is waiting for you, Done hands it the recording. It exports the
-test, runs it from another screen and fixes the locators it flags, as in
+**Or let the agent export it.** When your agent is waiting for you, Done hands it the recording. It saves the
+recorded test, replays it from another screen and fixes the locators it flags, as in
 [Record a test with the agent](/swing-ui-agent/start/record/):
 
 ```sh
 UI="java -jar target/swing-ui-agent-agent.jar --port 8770"
 $UI recording '{"op":"list","wait":540000}'          # returns at your Done: state stopped, with the steps
-$UI export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.orderdesk"}'
+$UI export_recorded_test '{"name":"new-order-for-ada"}'
+$UI run_recorded_test '{"name":"new-order-for-ada"}'
 ```
+
+For a Java test instead, the agent calls `export_test '{"class":"NewOrderForAdaUiIT","package":"io.github.kormcrete.orderdesk"}'`.
 
 Either way, run the new test once from another screen before you commit it. See
 [Record and run a UI test in IntelliJ](/swing-ui-agent/start/intellij/) for that loop in the IDE.

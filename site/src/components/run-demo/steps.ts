@@ -1,8 +1,9 @@
 /*
  * The IntelliJ page's run demo: the "UI tests" run configuration runs Order Desk's two @UiTest classes, by class
  * name, against the running app. Frames are real 2x screenshots from one such run (title band cropped, 2400 x 1448):
- * cNN after CartTotalsUiIT's NNth action, pNN after PlaceOrderUiIT's steps (its own screenshots where it takes them),
- * c00 the app at start. A dialog open at that moment is drawn, with a title bar, over the main window as it was then,
+ * cNN after the NNth click of CartTotalsUiIT (taken when it still spelled out the clicks its typed calls make now: one
+ * call is one line, its further clicks the ripples and frames of Step.more), pNN after PlaceOrderUiIT's steps (its own
+ * screenshots where it takes them), c00 the app at start. A dialog open at that moment is drawn, with a title bar, over the main window as it was then,
  * centred on the window as the app shows it. Times are from a run without the extra screenshots. Java lines are the
  * tests' own; "…" stands for a part left out to fit the line.
  */
@@ -39,6 +40,8 @@ export type Step = {
 	view?: View;
 	/** The frame after the step. */
 	frame?: string;
+	/** An act line that does several things (a typed call): each further ripple, with its view and frame. */
+	more?: { box: Box; view?: View; frame?: string }[];
 	java: string;
 };
 
@@ -54,18 +57,21 @@ export const tests: Test[] = [
 	{
 		cls: 'CartTotalsUiIT', method: 'totalsTheCart()', time: '703 ms', pace: 0.8,
 		steps: [
-			{ kind: 'act', box: FILE, view: TOP, frame: 'c01', java: 'ui.menu("File", "New order");' },
-			{ kind: 'act', box: CUSTOMER_FIELD, view: TOP, frame: 'c02', java: 'ui.tab("New order").field("Customer").type("Ada");' },
-			{ kind: 'act', box: CUSTOMER_FIELD, view: CUSTOMER, frame: 'c03', java: 'ui.press("Enter");' },
+			{
+				kind: 'act', box: FILE, view: TOP, frame: 'c01', java: 'openNewOrder(ui, "Ada");',
+				more: [{ box: CUSTOMER_FIELD, frame: 'c02' }, { box: CUSTOMER_FIELD, view: CUSTOMER, frame: 'c03' }],
+			},
 			{ kind: 'check', box: ADA_TAB, view: CUSTOMER, java: `assertThat(${ADA}).isSelected();` },
-			{ kind: 'act', box: A4_SKU, view: PRODUCTS, frame: 'c04', java: '….table().row("Product", "A4 paper, 500 sheets").cell("SKU").click();' },
-			{ kind: 'act', box: ADD, view: PRODUCTS, frame: 'c05', java: '….button("Add to cart").click();' },
-			{ kind: 'act', box: PEN_SKU, view: PRODUCTS, frame: 'c06', java: '….table().row("Product", "Gel pen, black").cell("SKU").click();' },
-			{ kind: 'act', box: ADD, view: PRODUCTS, frame: 'c07', java: '….button("Add to cart").click();' },
-			{ kind: 'act', box: QTY_A4, view: CART, frame: 'c08', java: '….row("Product", "A4 paper, 500 sheets").cell("Qty").type("3", null, Boolean.TRUE);' },
-			{ kind: 'act', box: QTY_PEN, view: CART, frame: 'c09', java: '….row("Product", "Gel pen, black").cell("Qty").type("10", null, Boolean.TRUE);' },
+			{
+				kind: 'act', box: A4_SKU, view: PRODUCTS, frame: 'c04', java: 'addQtyToCart(ui, "A4 paper, 500 sheets", 3);',
+				more: [{ box: ADD, frame: 'c05' }, { box: QTY_A4, view: CART }],
+			},
+			{
+				kind: 'act', box: PEN_SKU, view: PRODUCTS, frame: 'c06', java: 'addQtyToCart(ui, "Gel pen, black", 10);',
+				more: [{ box: ADD, frame: 'c07' }, { box: QTY_PEN, view: CART, frame: 'c09' }],
+			},
 			{ kind: 'check', box: [2196, 355, 182, 48], view: CART, java: 'assertThat(….cell("Line total")).hasCell(row("Product", "A4 paper, 500 sheets"), "Line total", "€14.70");' },
-			{ kind: 'check', box: [2274, 1272, 114, 58], view: TOTALS, java: 'assertThat(….label("€31.32")).hasText("€31.32");' },
+			{ kind: 'check', box: [2274, 1272, 114, 58], view: TOTALS, java: 'cartTotalIs(ui, "€31.32");' },
 			{ kind: 'act', box: FILE, view: TOP, frame: 'c10', java: 'ui.menu("File", "Close tab");' },
 			{ kind: 'act', box: [1286, 771, 152, 52], view: CONFIRM, frame: 'c11', java: 'ui.answer("Discard");' },
 			{ kind: 'check', box: [112, 108, 420, 70], view: TOP, java: `assertThat(${ADA}).isAbsent();` },
@@ -129,5 +135,6 @@ export const run = {
 	agentLine: '[ui] 127.0.0.1:8770 agent 0.1.0-SNAPSHOT built …; app started …; plugin none',
 	firstFrame: 'c00',
 	lastFrame: 'p10',
-	frames: ['c00', ...new Set(tests.flatMap((t) => t.steps.flatMap((s) => (s.frame ? [s.frame] : []))))],
+	frames: ['c00', ...new Set(tests.flatMap((t) => t.steps.flatMap((s) =>
+		[s.frame, ...(s.more ?? []).map((m) => m.frame)].filter((f): f is string => !!f))))],
 };

@@ -37,7 +37,7 @@ Then tell it once, in the project's `CLAUDE.md`, how to reach the app:
 ```markdown
 ## UI tests
 - Order Desk runs with swing-ui-agent on port 8770 (run configuration "Order Desk", with the palette). Drive it with `java -jar target/swing-ui-agent-agent.jar --port 8770 <tool> '<json>'`.
-- Export UI tests to the package io.github.kormcrete.orderdesk. Run them with `mvn -B -Pui verify`.
+- Save UI tests as recorded tests in `uitest/` (export_recorded_test) and replay them with run_recorded_test; `mvn -B -Pui verify` runs them all. Java tests (package io.github.kormcrete.orderdesk) only when I ask for one.
 ```
 
 [Skills](/swing-ui-agent/agents/skills/) says what each skill covers.
@@ -51,12 +51,13 @@ Start **Order Desk** (from IntelliJ, or ask Claude Code to start it), then ask:
 The agent:
 
 1. resets the recording and gets the app to the starting screen through a menu item or the Orders tab;
-2. does each step and reads the answer, then adds checks with `expect`, so they become `assertThat` lines;
-3. exports `CancelOrderUiIT` into `src/test/java/io/github/kormcrete/orderdesk/`;
-4. puts the app on another screen and runs the test, to prove it gets to its own start;
-5. fixes what the export or the run flagged, such as a locator that needed "the 2nd table", and shows you the class.
+2. does each step and reads the answer, then adds checks with `expect`;
+3. saves it as the recorded test `uitest/cancel-order.json` with `export_recorded_test`;
+4. puts the app on another screen and replays it with `run_recorded_test`, to prove it gets to its own start;
+5. fixes what the export or the run flagged, such as a locator that needed "the 2nd table", and shows you the steps.
 
-You review the class like any other change and commit it.
+You review the file like any other change and commit it. When a test needs more than a recorded test can say, ask
+for a Java test instead: the agent exports the recording with `export_test` as a JUnit class.
 
 ## 3. Record it together
 
@@ -74,7 +75,7 @@ the agent saves it with `export_recorded_test` (or `export_test` for a Java clas
 
 Or you do the steps. Tell Claude Code:
 
-> I'll record a test for cancelling an order in the app. Wait for me, then export it as CancelOrderUiIT and check it.
+> I'll record a test for cancelling an order in the app. Wait for me, then save it as cancel-order and check it.
 
 The agent waits for your recording. In the app:
 
@@ -82,7 +83,8 @@ The agent waits for your recording. In the app:
 2. use the app, add checks with **Check**, and fix the steps with **Steps**;
 3. press **Done** when the steps are right.
 
-Done hands the recording to the agent: it exports the class, runs it from another screen and reports back.
+Done hands the recording to the agent: it saves `uitest/cancel-order.json`, replays it from another screen and
+reports back. Ask for a Java test (`CancelOrderUiIT`) instead when you need one.
 
 If you would rather name and write the file yourself, press **Export…** instead and ask the agent to check the test.
 

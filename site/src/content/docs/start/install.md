@@ -26,23 +26,27 @@ This installs two jars into your local Maven repository and leaves them in `swin
 ```sh
 git clone https://github.com/kormcrete/swing-order-desk-demo.git
 cd swing-order-desk-demo
+mvn -B -f order-desk-plugin/pom.xml install
 mvn -B package
 ```
 
-This writes `target/order-desk.jar`, the app, and copies the agent jar to `target/swing-ui-agent-agent.jar`.
+The first `mvn` installs Order Desk's plugin (its vocabulary of the app's own steps), which the app's tests use. The
+second writes `target/order-desk.jar`, the app, and copies the agent jar to `target/swing-ui-agent-agent.jar`.
 
 ## 3. Start the app with the agent
 
 Add `-javaagent` to the command that starts the app:
 
 ```sh
-java -javaagent:target/swing-ui-agent-agent.jar=port=8770 \
+java -javaagent:target/swing-ui-agent-agent.jar=port=8770,plugins=order-desk-plugin/target/classes \
      -Dorderdesk.today=2026-10-12 \
      -jar target/order-desk.jar
 ```
 
-- `=port=8770` is the port Order Desk's run configurations and tests use. Without it the agent listens on 8765, at
+- `port=8770` is the port Order Desk's run configurations and tests use. Without it the agent listens on 8765, at
   `http://127.0.0.1:8765/mcp`.
+- `plugins=order-desk-plugin/target/classes` loads Order Desk's plugin. The recorded test `cart-with-steps` uses its
+  steps and fails without it.
 - `-Dorderdesk.today` is Order Desk's own: it fixes the date, so every run looks the same.
 - For your own app, add `-Dswingui.testsDir=/path/to/project/src/test/java`: that is where exported tests go. The default is `src/test/java` under the app's working directory.
 

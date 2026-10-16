@@ -74,8 +74,8 @@ $UI run_recorded_test '{"name":"place-order"}'
 ```
 
 That writes `uitest/place-order.json` in the app's working directory. To watch it run, press **Load recorded test…**
-in the palette, pick it and press **▶ Run**. When a test needs more, the agent keeps the same recording as a Java test
-with `export_test '{"class":"PlaceOrderUiIT"}'`.
+in the palette, pick it and press **▶ Run**. Instead, when a test needs more, the agent exports the recording as a
+Java test (`export_test '{"class":"PlaceOrderUiIT"}'`).
 
 To see all of it, use [Order Desk](https://github.com/kormcrete/swing-order-desk-demo), a demo app made to be driven:
 

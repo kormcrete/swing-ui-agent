@@ -31,7 +31,8 @@ The jar or folder holds two files:
   ```properties
   # required: the app class whose loading starts the plugin
   app-class=io.github.kormcrete.orderdesk.OrderDesk
-  # optional: the name session reports; default: the jar's file name, or the module of target/classes
+  # the name session reports and recorded tests store (<name>:<step>); required when the plugin
+  # has a vocabulary, else optional (default: the jar's file name, or the module of target/classes)
   name=order-desk
   # optional: a manifest attribute the plugin's and the app's jars must share, so a plugin
   # never runs next to another build of the app

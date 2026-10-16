@@ -129,7 +129,8 @@ In the palette's **Steps** a domain step is one row with a diamond (◆) and its
 UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar --port 8770"
 $UI vocabulary '{"op":"list"}'
 $UI vocabulary '{"op":"describe","step":"addToCart"}'
-$UI do_action '{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}'
+$UI do_action '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'
+$UI batch '{"steps":[{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}]}'
 ```
 
 - `list` gives every step with its sentence, `about`, params and a one-line summary of what it folds. `describe` gives one step in full, with the values that fit right now. `match {from, to}` is a dry run of what a range of the recording would fold into.
@@ -184,7 +185,9 @@ A plugin with only a vocabulary adds no reset: the agent's own reset stays (poin
 
 ## Things to know
 
-- **A body without `match` runs at ready.** To learn its pattern the agent runs the body twice, with stand-in values (the first TEXT value is the param's name in braces, the second `" Ab1, c "`; an INT is a large number, then 1), each time on a thread of its own with a 5 second limit. The Client it gets reaches no app, but anything else the body does (plugin code, files, a database) really happens, twice. Keep a body to its `Client` calls, or give the step a `match`. A Java export of a recording may run it twice as well.
+- **A body without `match` runs at ready.** To learn its pattern the agent runs the body twice, with stand-in values (the first TEXT value is the param's name in braces, the second `" Ab1, c "`; an INT is a large number, then 1), each time on a thread of its own with a 5 second limit. The Client it gets reaches no app, but anything else the body does (plugin code, files, a database) really happens, twice. Keep a body to its `Client` calls, or give the step a `match`. A step without a `java(...)` call also runs twice whenever such a `do` step is recorded, listed or loaded (once per step and values), to learn the steps it makes for the Java export.
+- **A check needs `match` and `java`.** A check's Java body reads the app, which the trace cannot answer, so it yields no pattern and no steps. Without `match(...)` it never folds and never shows in the Check menu; without `java(...)` a Java export refuses it. Order Desk's `cartTotalIs` gives both. A check with declarative `steps(...)` needs neither.
+- **Set `name=` in `plugin.properties`.** Recorded tests store `<name>:<step>`, so a plugin with a vocabulary must name itself: without `name=` the agent does not load the vocabulary, and `session` says why in `vocabularyProblems` (a name taken from the jar or folder would change with it). A second plugin with the same name is refused.
 - **Secrets.** A body that reads a secret should use `Client.secret(alias, name)`. Plugin code that calls `UiUsers.secret` itself puts the secret into the steps the trace notes, and so into the pattern.
 - **Who runs it.** A `do` step runs plugin code inside the app, as `plugin_call` does. See [Security](/swing-ui-agent/agents/security/).
 - **Bad steps are dropped, not fatal.** A step with an id, a param, a pattern or a typed call that does not check out is left out when the plugin becomes ready, and `session` lists why. The plugin stays ready.
