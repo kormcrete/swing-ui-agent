@@ -18,14 +18,16 @@ MigLayout, Apache-2.0).
 
 ## Download and run it
 
-Order Desk is published ready to run, with Java (Zulu JRE 8) and the agent built in: it starts with the agent on port
-8770.
+Order Desk is published ready to run, with the agent built in: it starts with the agent on port 8770. The Mac and
+Windows downloads include Java (Zulu JRE 8); the Java zip runs on your own Java 8 or newer, on any computer (Linux
+too).
 
 | Your computer | Download |
 |---|---|
 | Mac with Apple Silicon (M1 and later) | [kormcrete-order-desk-macos-arm64.dmg](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-arm64.dmg) |
 | Mac with Intel | [kormcrete-order-desk-macos-x64.dmg](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-x64.dmg) |
 | Windows (x64) | [kormcrete-order-desk-windows-x64.zip](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-windows-x64.zip) |
+| Linux, or any computer with Java 8 or newer | [kormcrete-order-desk-java.zip](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-java.zip) |
 
 The downloads are not signed yet, so the first launch takes one extra step:
 
@@ -38,6 +40,8 @@ The downloads are not signed yet, so the first launch takes one extra step:
 
 - **Windows:** unzip, open the **Kormcrete Order Desk** folder and run **Kormcrete Order Desk.exe**. If SmartScreen
   stops it, click **More info → Run anyway**.
+- **Java zip:** unzip, then run `order-desk` in the **Kormcrete Order Desk** folder (`order-desk.cmd` on Windows). It
+  uses `JAVA_HOME` when set, else the `java` on your PATH, and prints the agent's lines in the terminal.
 
 Then connect your coding agent while the app runs:
 
@@ -47,7 +51,7 @@ claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
 
 Other clients: [MCP clients](/swing-ui-agent/agents/mcp-clients/). If your agent cannot connect, another app may be
 using port 8770; the agent's log says so: `~/Library/Logs/Kormcrete Order Desk/agent.log` (macOS),
-`%LOCALAPPDATA%\Kormcrete Order Desk\agent.log` (Windows). All releases:
+`%LOCALAPPDATA%\Kormcrete Order Desk\agent.log` (Windows), the terminal (Java zip). All releases:
 [swing-order-desk-demo releases](https://github.com/kormcrete/swing-order-desk-demo/releases).
 
 ## Build it from source
