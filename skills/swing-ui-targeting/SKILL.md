@@ -62,7 +62,8 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
   id, then record the id. A snapshot shows both.
 - Never match text with data baked in: a window titled `Order ORD-1640` is `dialog:Order *`, not the number.
 - A caption label is not a node of its own; it is its field's name. Ask for `{"role":"text","name":"Customer"}`,
-  not `{"role":"label",...}`. A label the app made clickable is `role:"clickable"`.
+  not `{"role":"label",...}`. A label the app made clickable is `role:"clickable"`. The exception is a value
+  shown next to a caption (a total): the value label is named by that caption, `{"role":"label","name":"Total"}`.
 - A field with no caption of its own may borrow the nearest label, even an unrelated one. If a `name` looks
   wrong for the field, check it with `read` before relying on it.
 - A table's caption (a `setLabelFor` label or titled border) is its `name`. Unnamed tables on one tab are told

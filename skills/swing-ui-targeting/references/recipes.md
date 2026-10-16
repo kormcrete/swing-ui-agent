@@ -29,6 +29,7 @@ the form `export_test` writes (the recorder may add a window or scope to the cha
 | check a field | `expect {"target":{"window":"dialog","role":"text","name":"Postal code"},"value":"10119"}` | `assertThat(ui.dialog().field("Postal code")).hasValue("10119");` |
 | check a cell | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"cell":{"row":{"Order":"ORD-1639"},"column":"Status","expected":"Placed"}}` | `assertThat(ui.tab("Orders").table()).hasCell(row("Order", "ORD-1639"), "Status", "Placed");` |
 | check a row count | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"rows":{"op":"gte","value":1}}` | `assertThat(ui.tab("Orders").table()).hasRowCount("gte", 1);` |
+| check a value next to a caption | `expect {"target":{"role":"label","name":"Total"},"text":"€31.32"}` | `assertThat(ui.label("Total")).hasText("€31.32");` |
 | check enabled | `expect {"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}` | `assertThat(ui.button("Checkout…")).isEnabled();` |
 | check the selection | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"selected":[0]}` | `assertThat(ui.tab("Orders").table()).hasSelectedRows(0);` |
 | close the active tab (plugin) | `do_action {"action":{"action":"close"}}` | `ui.closeActiveTab();` |

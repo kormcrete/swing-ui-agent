@@ -10,6 +10,16 @@ You drive the real app, swing-ui-agent records each step, and you save the steps
 what the test must prove and which checks matter; you choose the steps. Ask when that is unclear; never invent
 assertions. A human reviews and runs the test.
 
+## Which kind?
+
+- **Recorded test (the default)** when the person shows or describes behaviour that is visible on screen: exact
+  values, the way a tester or user would check them. It is for people showing the app, mostly not technical.
+- **Java `@UiTest`** when they ask for something dynamic (a computed or app-made value), or a technical check such
+  as a database. It is for engineers working with you.
+- The two do not mix; a recorded test is not a base for a Java test. Data is the user's job: the test creates the
+  data it checks or uses data the user knows exists. More: https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/
+  and https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/
+
 ## Setup
 
 The app runs with `-javaagent:swing-ui-agent-<version>-agent.jar`. Every tool is one shell call; the same tools are
@@ -66,6 +76,7 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
    $UI expect '{"target":{"role":"label","name":"Total"},"text":"€31.32"}'
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
    ```
+   Check a value shown next to a caption (a total, a status) by that caption: `label 'Total'` + `text`.
    A recorded test holds exact values: check data the test creates or data known to exist. Check a value the app
    makes up (a new order number, today's date) only when the start makes it predictable; otherwise check something
    else, or write a Java test.
@@ -95,6 +106,8 @@ $UI recording '{"op":"group","from":3,"to":5,"say":"Fill the cart","rev":16}'
   `{"op":"ungroup","n":4}` ends the group that holds step 4, its steps stay.
 - `"say":""` removes a step's or check's sentence; a group always has one. A check-only step 1 has no sentence of
   its own: name its checks.
+- Format and numbering: https://kormcrete.github.io/swing-ui-agent/reference/recorded-test-format/ and
+  https://kormcrete.github.io/swing-ui-agent/guides/sentences/
 - Sentences and groups are kept in the recorded test file and become comments in a Java test.
 
 ## When a person works with you
