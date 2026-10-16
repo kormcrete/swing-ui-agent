@@ -1,6 +1,6 @@
 ---
 name: swing-ui-driver
-description: Drives a live Swing app through swing-ui-agent the way a user would - walking screens, checking a fix by hand, running a recorded UI test, capturing screens - and reports PASS/FAIL/GAP per item. Use it to hand UI driving to a cheaper sub-agent instead of driving from the main session; the body also works as that sub-agent's definition.
+description: Drives a live Swing app through swing-ui-agent like a user (walk screens, check a fix, run a recorded UI test, screenshots) and reports PASS/FAIL/GAP. Use to hand UI driving to a cheaper sub-agent.
 ---
 
 # Drive the live app, cheaply

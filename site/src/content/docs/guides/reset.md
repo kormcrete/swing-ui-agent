@@ -2,7 +2,7 @@
 title: Reset and the starting screen
 description: How each test gets the app to where it begins.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 UI tests run against an app that is already running, and that keeps running between tests. So a test cannot assume a fresh app: the last test may have left a tab open, an order half entered, or a dialog showing. This page shows what a reset does before each test, why every test begins by getting to its own starting screen, and how recording follows the same rule.

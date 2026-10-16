@@ -101,7 +101,7 @@ mode until you press **◀ Back to recording** (the Record button while you chec
 
 Press **Steps** to open the list of what has been recorded so far, your steps and checks and any the agent ran.
 
-![The Steps panel: numbered steps and a check, each with its sentence, a group being named in place above steps 4 and 5, the replay speed and the replay buttons](../../../assets/inspector/steps.png)
+![The Steps list: numbered steps and a check, each with its sentence, a group being named in place above steps 4 and 5, the replay speed and the replay buttons](../../../assets/inspector/steps.png)
 
 - **▶ Replay all** and **▶ From selected** run the steps again in the app. Choose the **Replay speed** first:
   Fast, Normal, Slow or Step by step.
@@ -111,18 +111,18 @@ Press **Steps** to open the list of what has been recorded so far, your steps an
   from there.
 - **✕ Delete** removes one step with its checks, or one check. **↶ Undo** takes back the last edit, yours or the
   agent's.
-- **Double-click a row** (or select it and press F2 or Enter) to describe a step or a check in a sentence of your
-  own, right in the list: Enter saves, Esc cancels. Select several steps first to give them one sentence as a group;
-  double-click a group's header to rename it. **⋯** (or a right click on a row) offers the same as **Describe…**.
+- **Name** a step, a check or several steps: see [Name the steps](#name-the-steps) below.
 
 Results stay on the steps as ✓ and ✗ until the next replay. **Replay all** and a redo begin with a reset, as the test
 will; without a plugin that only closes dialogs, so the first step has to get to the starting screen.
 
 ### Name the steps
 
-Select a row in the Steps list and double click it, or press F2 or Enter, to give it a sentence; **⋯** or a right
-click opens the same as **Describe this step…**, **Describe this check…** or **Describe these steps…**. All the ways,
-groups and how a table row is kept are in [Sentences and groups](/swing-ui-agent/guides/sentences/).
+Double click a row in the Steps list (or select it and press F2 or Enter) to describe a step or a check in a
+sentence of your own, right in the list: Enter saves, Esc cancels. Select several steps first to give them one
+sentence as a group; double click a group's header to rename it. **⋯** or a right click on a row offers the same as
+**Describe this step…**, **Describe this check…** or **Describe these steps…**. All the ways, groups and how a table
+row is kept are in [Sentences and groups](/swing-ui-agent/guides/sentences/).
 
 <!-- TODO picture (Task 12): the Steps list with the row menu open: Describe this step…, Ungroup, Row: this value, Row: by position -->
 

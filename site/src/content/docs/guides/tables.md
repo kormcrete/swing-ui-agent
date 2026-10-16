@@ -2,7 +2,7 @@
 title: Tables
 description: Read a table, find rows by their values, click, edit and check cells.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Tables carry most of the data in a business app, and most of what a test checks. swing-ui-agent reads a table the way it is painted: rows in the order on screen, each cell as its renderer shows it. This page uses Order Desk's Orders table, its products table and its cart.

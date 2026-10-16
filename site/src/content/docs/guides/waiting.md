@@ -2,7 +2,7 @@
 title: Waiting
 description: "Why there are no sleeps: every step waits for its target and for the app to settle."
 sidebar:
-  order: 2
+  order: 3
 ---
 
 A UI test usually fails because it went too fast: it clicked before the button was enabled, or checked before the table was filled. swing-ui-agent waits for you, so neither the agent nor a test needs a `sleep`. This page shows what every step waits for, how long, and what to do about work the driver cannot see.

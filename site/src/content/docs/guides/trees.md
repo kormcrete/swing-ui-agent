@@ -2,7 +2,7 @@
 title: Trees
 description: Read a tree, click a row by its path, expand and check it.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 A tree is read and targeted by paths: the labels from the top down to the row you mean. Order Desk's New order tab has one, the product categories on the left. This page reads it, selects a category, and checks the result.

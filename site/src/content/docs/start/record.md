@@ -160,7 +160,7 @@ String order = eventually("the status bar naming the new order", Duration.ofMill
 assertThat(ui.tab(order)).isSelected();
 ```
 
-Add by hand only checks no tool expresses, as here with `UiAssertions.eventually`. To change a recorded step, record it again. The whole test, step by step with its screenshots, is in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
+Add by hand only checks no tool expresses, as here with `UiAssertions.eventually`. To change a recorded step, fix it in the recording before the export (`recording` delete or redo, as in [step 4](#4-act)), or record it again. The whole test, step by step with its screenshots, is in [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/).
 
 ## What's next
 

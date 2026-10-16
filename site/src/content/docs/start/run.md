@@ -133,23 +133,7 @@ DONE passed=1 failed=0 skipped=0 aborted=0
 
 ## Run recorded tests
 
-A [recorded test](/swing-ui-agent/start/recorded-tests/) needs no Java of its own: one class runs the whole folder.
-
-```java
-@UiTest
-class RecordedUiIT {
-
-    @TestFactory
-    Stream<DynamicTest> recorded(Client ui) {
-        return RecordedTests.of(ui);
-    }
-}
-```
-
-- It is named `*UiIT`, so the failsafe setup above runs it with the Java tests.
-- `-Drecorded=<name>` runs one; otherwise `uitest/gate.txt` chooses and orders them, else all run sorted by name. A run that selects nothing fails.
-
-More in [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
+A [recorded test](/swing-ui-agent/start/recorded-tests/) needs no Java of its own: one `@UiTest` class that returns `RecordedTests.of(ui)` runs the recorded tests in `uitest`. It is named `*UiIT`, so the failsafe setup above runs it with the Java tests. The class, which tests it picks and where failures go are in [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#in-maven-and-ci).
 
 ## What's next
 

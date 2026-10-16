@@ -64,7 +64,7 @@ Then it checks what you can see on screen, with `expect`: the cart total is the 
 $UI expect '{"target":{"role":"label","name":"Total"},"text":"€17.64"}'
 ```
 
-A step that fails is not recorded. Here the agent's first `expect` came before the quantity was set; the answer was `EXPECTATION: expected text '€17.64' but was '€5.88'` and the step left no trace. The agent checks only values you can see; they are exact and static, see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+A step that fails is not recorded. If an `expect` runs too early, before the quantity is set, the answer is `EXPECTATION: expected text '€17.64' but was '€5.88'` and nothing is recorded. The agent checks only values you can see; they are exact and static, see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 ```sh
 $UI recording '{"op":"stop"}'
@@ -99,7 +99,7 @@ Say you delete step 4 in the palette. The agent's next edit gets this refusal, w
 $UI recording '{"op":"undo"}'
 ```
 
-It answers with the list and `"did"`; the palette's Undo button says the same ("undid the group of steps 4-6 by the agent" after the agent grouped them).
+It answers with the list and `"did"`, such as `undid the group of steps 4-6 by the agent` after the agent grouped them. When you press **Undo** in the palette, its bar says the same: "undid: group of steps 4-6 by the agent".
 
 ## 4. Change a step in one request
 
@@ -116,14 +116,14 @@ $UI recording '{"op":"redo","from":6,"rev":15}'
 {"passed":true,"ran":5,"total":5,"reset":true,"recording":true,"rev":17,...}
 ```
 
-(I left out `list`, the recording's steps.) The agent then does step 6 again with 4 packs and checks the new total, 23.52:
+(Left out: `list`, the recording's steps.) The agent then does step 6 again with 4 packs and checks the new total, 23.52:
 
 ```sh
 $UI type '{"target":{"role":"table","row":{"Product":"A4 paper, 500 sheets"},"column":"Qty"},"text":"4","commit":true}'
 $UI expect '{"target":{"role":"label","name":"Total"},"text":"€23.52"}'
 ```
 
-This replaces "reset and start over" of the older way to record. Numbers close up after a delete, so the steps are 1 to 6 again.
+There is no need to reset and start over. Numbers close up after a delete, so the steps are 1 to 6 again.
 
 While a replay or a redo runs, an edit is refused, and so is yours in the palette:
 
@@ -145,7 +145,7 @@ $UI recording '{"op":"group","from":1,"to":3,"say":"Start an order for Ada","rev
 $UI recording '{"op":"group","from":4,"to":6,"say":"Put 4 packs of A4 paper in the cart","rev":46}'
 ```
 
-Each call answers with the new list and `"did"`, such as `set the sentence of step 2` and `grouped steps 1-3`. (I left out the calls for steps 3 to 6 that look like these.) You see the sentences in the Steps list at once, and you can change them: double click a row, press F2 or Enter. Undo takes one back. Sentences change only how the test reads, not what it does. [Sentences and groups](/swing-ui-agent/guides/sentences/) has more.
+Each call answers with the new list and `"did"`, such as `set the sentence of step 2` and `grouped steps 1-3`. (Left out: the calls for steps 3 to 6, which look like these.) You see the sentences in the Steps list at once, and you can change them: double click a row, press F2 or Enter. Undo takes one back. Sentences change only how the test reads, not what it does. [Sentences and groups](/swing-ui-agent/guides/sentences/) has more.
 
 ## 6. Save it and run it
 
@@ -153,7 +153,7 @@ Each call answers with the new list and `"did"`, such as `set the sentence of st
 $UI export_recorded_test '{"name":"four-packs-of-a4","description":"Starts an order for Ada, puts 4 packs of A4 paper in the cart; the cart total reads 23.52."}'
 ```
 
-It writes `uitest/four-packs-of-a4.json` (the `savedTo` in the answer) and says `"steps":6,"checks":1`. To keep the recording instead, the agent uses `recording {"op":"export","as":"recorded",…}`. To have a Java test, the agent exports it with `export_test`; both are described in [Record a test with the agent](/swing-ui-agent/start/record/) and [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+It writes `uitest/four-packs-of-a4.json` (the `savedTo` in the answer) and says `"steps":6,"checks":1`. To keep the recording instead, the agent uses `recording {"op":"export","as":"recorded",…}`; the file then becomes the one the recording came from, so a later export under the same name saves over it (any other existing file is refused: "already exists; choose another name"). To have a Java test, the agent exports it with `export_test`; both are described in [Record a test with the agent](/swing-ui-agent/start/record/) and [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 
 Then it runs it:
 
@@ -165,7 +165,7 @@ $UI run_recorded_test '{"name":"four-packs-of-a4"}'
 {"passed":true,"test":"four-packs-of-a4","ran":6,"total":6,"ms":311,"steps":[{"n":1,"say":"Open a new order","action":"menu([File, New order])","passed":true,"ms":158},...,{"n":"6.1","say":"The cart total is 23.52","action":"expect(label 'Total' text '€23.52')","passed":true,"ms":0}]}
 ```
 
-(I left out steps 2 to 6, the file path and the text report.) Where the file lives, how to run it from the palette, Maven or CI: [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+(Left out: steps 2 to 6, the file path and the text report.) Where the file lives, how to run it from the palette, Maven or CI: [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
 
 ## What's next
 

@@ -2,7 +2,7 @@
 title: Dialogs and file choosers
 description: Confirmations, wizards, option panes and file choosers.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 A modal dialog stops the app until someone answers it, and it stops a careless test the same way. swing-ui-agent never waits on an open dialog: the step that opened it returns, describes it, and leaves the answer to the next step. This page shows confirmations, a wizard dialog and a file chooser on Order Desk.

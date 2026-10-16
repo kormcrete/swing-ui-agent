@@ -2,7 +2,7 @@
 title: Screenshots
 description: Images of the app for people, painted by the app itself.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 A screenshot is for a person: to see what the agent sees, to review a layout, to keep a picture of each step of a test. It is not how a test checks anything; numbers and states are checks with `expect`. This page shows how screenshots are taken, from the command line, in a recorded step and in a test.

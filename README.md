@@ -22,7 +22,8 @@ or [llms-full.txt](https://kormcrete.github.io/swing-ui-agent/llms-full.txt) (al
 - **Drive:** a coding agent clicks, types and reads the live app, from a shell (`java -jar … <tool>`) or over MCP.
 - **Record:** you describe the test and the agent drives the app, or you show it with the palette in the app
   (● Record, Check, Done). Either way the steps are exported as a test.
-- **Run:** a JUnit 5 `@UiTest` class runs against the live app from Maven, your IDE or CI.
+- **Run:** against the live app, a recorded test from the palette, the agent, Maven or CI; a JUnit 5 `@UiTest`
+  class from Maven, your IDE or CI.
 - **Ask:** when the agent is not sure what you mean, it boxes the candidates in the app and you confirm one.
 
 Nobody writes the tests by hand: you review them like any other code, and run them.
@@ -31,8 +32,10 @@ Nobody writes the tests by hand: you review them like any other code, and run th
 
 A recording is kept as one of two kinds. They do not mix.
 
-- **Recorded test:** made by a person showing the app, often not technical. A JSON file in `uitest/` with nothing to
-  compile. It holds exact values and checks only what is visible, such as the cart total `€31.32`.
+- **Recorded test:** made by a person who shows the app or tells the agent in chat what to do, often not technical.
+  A JSON file in `uitest/` with nothing to compile. It holds exact values and checks only what is visible, such as
+  the cart total `€31.32`. Steps and checks are numbered the same in the palette, the reports and the file: step `7`,
+  its second check `7.2`.
 - **Java test:** written by an engineer with the agent. A JUnit 5 `@UiTest` class that can check anything, including
   a database, files or logs, from its own JVM.
 - **Data is yours:** a recorded test creates the data it checks or uses data you know exists. A value the app makes up
@@ -116,9 +119,11 @@ Add `io.github.kormcrete:swing-ui-agent:0.1.0-SNAPSHOT` as a test dependency and
 - [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/): three agent skills in [`skills/`](skills)
   that teach your coding agent the drive, target and record workflow.
 - [Record a test by showing it](https://kormcrete.github.io/swing-ui-agent/start/show/): the palette
-  (on by default; `palette=off` turns it off) for a person at the app.
+  (on by default; `palette=off` turns it off) for a person at the app: ● Record, Check, Done, a sentence per step,
+  Export…, and Load recorded test… to run it again, step by step, and save changes back.
 - [Record together with your agent](https://kormcrete.github.io/swing-ui-agent/start/record-together/): say the test
-  in chat, the agent records it, you watch in the palette and edit the same list.
+  in chat, the agent records it, you watch in the palette and edit the same list. Ask it to "name the steps" and it
+  writes a sentence per step, per check and per group, which you can change or undo.
 - [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/): where they live,
   the palette, the agent, Maven and CI.
 - [Plugins](https://kormcrete.github.io/swing-ui-agent/plugins/what-a-plugin-adds/) (optional): reset to a known

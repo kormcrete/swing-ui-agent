@@ -13,7 +13,7 @@ A sentence is only words. The values a test checks stay exact and static; see [R
 
 In the palette, **Steps** lists the recording, numbered, checks under their step.
 
-- **Name a step or a check:** select it and double click, or press **F2** or **Enter**. A field opens over the row. **Enter** saves, **Esc** cancels. Clearing it removes the sentence.
+- **Name a step or a check:** select it and double click, or press **F2** or **Enter**. A field opens over the row. **Enter** saves, **Esc** cancels. Clearing it removes the sentence (not a group's: a group always has one, and **Ungroup** ends it).
 - **From the menu:** the row's **⋯** button or a right click, then **Describe this step…** or **Describe this check…**. It opens the same field.
 - **Name several steps:** select them and use **Describe these steps…**. They become a group, with one header row for its sentence. Do it again on the same steps to rename it.
 - **Ungroup:** the row menu's **Ungroup** ends the group; its steps stay.

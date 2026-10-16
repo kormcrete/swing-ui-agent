@@ -36,7 +36,7 @@ The tool writes one field per line; short objects are joined here. With sentence
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Required. A whole number. This agent reads and writes `2`. |
+| `version` | Required. A whole number, 1 or more. This agent reads and writes `2`; an older or a newer one is refused (see below). |
 | `name` | Optional text. A file without one is named after the file. |
 | `description` | Optional text. Shown in the palette's **Load recorded test…** list. |
 | `start` | Required. `"reset"`: every run begins with the app reset. The only start there is. |
@@ -71,7 +71,7 @@ The palette, the agent's `recording` list, run reports and the refusals below us
 
 ## What is refused
 
-The reader is strict: a typo never silently drops what a step means. Every refusal is `BAD_INPUT` and starts with the file or the `test` argument it came from.
+The reader is strict: a typo never silently drops what a step means. Every refusal is `BAD_INPUT`. A file that cannot be read at all fails with `cannot read recorded test file <path>: …`; every other refusal starts with the file or the `test` argument it came from.
 
 - **A newer version** is refused with the reason: `is format version 3, written by a newer swing-ui-agent; this one reads version 2 - update the agent`.
 - **An older one** (version 1, one flat list) is refused too: export it again, or nest each check under the step before it.

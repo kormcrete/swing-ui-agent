@@ -40,7 +40,7 @@ The client then lists the tools (`snapshot`, `click`, `expect`, `recording`, `ex
 
 ## Recording and recorded tests over MCP
 
-- **Record:** call `recording` with `{"op":"start","reset":true}`, act with the usual tools, then `{"op":"stop"}` and `export_recorded_test`. The person at the app sees the steps in the palette and can change them. See [Record a test together with your agent](/swing-ui-agent/start/record-together/).
+- **Record:** call `recording` with `{"op":"start","reset":true}`, act with the usual tools, then `{"op":"stop"}` and `export_recorded_test`. The person at the app sees the steps in the palette and can change them. See [Record together with your agent](/swing-ui-agent/start/record-together/).
 - **Run:** `run_recorded_test` with a `name`, a `path`, or the file's JSON as `test`. The answer carries `passed`, `ran`, `total` and every step or check. A client has no exit code, so read `passed`.
 - **Images:** a failing step's picture is written to a file under `evidence`; the answer names it.
 

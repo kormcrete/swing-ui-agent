@@ -2,7 +2,7 @@
 title: Leases and several clients
 description: One owner drives the app at a time; how tests, the CLI and a person at the app share it.
 sidebar:
-  order: 9
+  order: 10
 ---
 
 One app has one mouse, one keyboard focus and one set of open dialogs. If a test run and an agent's CLI call acted at the same time, each would break the other. So the agent lets one owner drive at a time, through a lease. This page shows how the lease works, how tests and a person at the app take turns, and how one test drives several apps.
@@ -70,7 +70,7 @@ BUSY: a person is recording in the app (they end it with Done in its palette)
 - **While a test run holds the lease,** the palette leaves the window, so the person cannot start anything; it comes back when the lease ends.
 - **`session reset` is refused** while the person records: a reset starts a fresh recording and would wipe theirs.
 - **While the person runs or replays steps with the palette's Run or Replay,** every other call that acts is refused with `BUSY`, though no lease is taken: a held lease would hide the palette that is running the steps. Reads still work.
-- **An agent-started recording** (`recording start`) is shared with the person: the person's steps join it, and either side can edit it. While the agent replays the recording, the palette's edits are refused until it ends. See [Record a test together with your agent](/swing-ui-agent/start/record-together/).
+- **An agent-started recording** (`recording start`) is shared with the person: the person's steps join it, and either side can edit it. While the agent replays the recording, the palette's edits are refused until it ends. See [Record together with your agent](/swing-ui-agent/start/record-together/).
 - **While the agent runs a recorded test,** the palette stays in the window (a call without a lease holds none), but its buttons wait until the run ends.
 - **`run_recorded_test`** is refused with `BUSY` while the person records, answers or replays.
 

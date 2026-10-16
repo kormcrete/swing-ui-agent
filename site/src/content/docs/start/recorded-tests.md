@@ -11,7 +11,7 @@ A recorded test is a JSON file, one step per action, with its checks under the s
 
 - The folder is `uitest` in the app's working directory.
 - Change it with the agent option `recorded=<dir>` (the path cannot contain a comma), or `-Dswingui.recordedDir=<dir>`. The option wins.
-- In the palette, **Choose…** in the **Export…** and **Load recorded test…** panels picks another folder. A folder you loaded a test from is remembered for the next save.
+- In the palette, **Choose…** in the **Export…** and **Load recorded test…** panels picks another folder. The palette remembers the last folder you loaded from or saved to, per app working directory and across restarts (in your Java user preferences, not in the project), unless `recorded=` or `-Dswingui.recordedDir` sets the folder.
 - One test, one file: `uitest/<name>.json`. An optional `uitest/gate.txt` says which run in Maven and CI; see [In Maven and CI](#in-maven-and-ci).
 
 ## Save one
@@ -64,7 +64,7 @@ The agent cannot run or record while you replay: its calls are refused with BUSY
 
 In **Steps**, the same tools as when recording:
 
-- Name a step or a check: double click, **F2** or **Enter**, or **⋯** / right click → **Describe this step…**.
+- Name a step or a check: double click, **F2** or **Enter**, or **⋯** / right click → **Describe this step…**. See [Sentences and groups](/swing-ui-agent/guides/sentences/).
 - **Delete** a step, or **↺ Redo from selected**: go back to that step and record again from there.
 - Replay all, or from a step, to see the effect of a change.
 

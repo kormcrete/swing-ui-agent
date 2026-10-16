@@ -2,7 +2,7 @@
 title: Menus and popups
 description: The menu bar, key shortcuts, dropdown buttons and context menus.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 Menus are how a user starts most things in a desktop app, and how a test gets to its starting screen. swing-ui-agent has one step for each kind: `menu` for the menu bar, `press` for shortcuts, `pick` for the popup a button opens, and `context_menu` for a right-click. This page walks through each on Order Desk.

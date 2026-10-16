@@ -6,9 +6,9 @@ sidebar:
 ---
 
 With Claude Code, a coding agent drives the app and writes the test. You describe the test, or show it with the
-palette, and the agent exports the JUnit class, runs it from another screen and fixes what it flags. This works the same
-in the Claude Code terminal, the desktop app and the IntelliJ plugin: the agent calls the agent jar's command line in
-each of them.
+palette, and the agent exports it as a recorded test or a JUnit class, runs it from another screen and fixes what it
+flags. This works the same in the Claude Code terminal, the desktop app and the IntelliJ plugin: the agent calls the
+agent jar's command line in each of them.
 
 You will learn how to:
 
@@ -64,7 +64,11 @@ Start **Order Desk** (the palette is on by default), then tell Claude Code what 
 
 > Record a test: open a new order for Ada, add 3 packs of A4 paper, check the cart total.
 
-The agent calls `recording {"op":"start","reset":true}`, does the steps and the checks, and calls `recording {"op":"stop"}`. Each step shows in the palette's Steps list at once, marked as the agent's. You can delete a step, redo from it or undo, and ask the agent to change or name steps: you both edit one list. When it is right, the agent saves it with `export_recorded_test` (or `export_test` for a Java class) and runs it with `run_recorded_test`. See [Record together with your agent](/swing-ui-agent/start/record-together/).
+The agent calls `recording {"op":"start","reset":true}`, does the steps and the checks, and calls
+`recording {"op":"stop"}`. Each step shows in the palette's Steps list at once, marked as the agent's. You can delete
+a step, redo from it or undo, and ask the agent to change or name steps: you both edit one list. When it is right,
+the agent saves it with `export_recorded_test` (or `export_test` for a Java class) and runs it with
+`run_recorded_test`. See [Record together with your agent](/swing-ui-agent/start/record-together/).
 
 ## 4. Record it yourself and let it export
 
@@ -90,9 +94,10 @@ several, and you click the ✓ on the one you mean. See
 
 > Run the UI tests and tell me what failed.
 
-For a recorded test the agent calls `run_recorded_test {"name":…}`. For a Java test it runs `mvn -B -Pui verify` against the running app and reads the results. For a failure it reads the evidence
-in `target/ui-failures/` (what the step expected, the element tree, a screenshot) and can drive the app to see for
-itself. To have each run write a one-line-per-test summary the agent can read, register the run report: see
+For a recorded test the agent calls `run_recorded_test {"name":…}`. For a Java test it runs `mvn -B -Pui verify`
+against the running app and reads the results. For a failure it reads the evidence in `target/ui-failures/` (what the
+step expected, the element tree, a screenshot) and can drive the app to see for itself. To have each run write a
+one-line-per-test summary the agent can read, register the run report: see
 [A run report for scripts](/swing-ui-agent/start/run/#a-run-report-for-scripts).
 
 ## Over MCP instead
@@ -103,6 +108,7 @@ Claude Code can also reach the agent as an MCP server: the same tools, without a
 ## What's next
 
 - [Let your agent drive the app](/swing-ui-agent/start/drive/): what the agent's calls and answers look like.
-- [Record together with your agent](/swing-ui-agent/start/record-together/) and [Record a test with the agent](/swing-ui-agent/start/record/): the recording rules in detail.
+- [Record together with your agent](/swing-ui-agent/start/record-together/) and
+  [Record a test with the agent](/swing-ui-agent/start/record/): the recording rules in detail.
 - [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
 - [Run in CI](/swing-ui-agent/start/ci/).

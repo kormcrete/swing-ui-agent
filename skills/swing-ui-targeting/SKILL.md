@@ -1,6 +1,6 @@
 ---
 name: swing-ui-targeting
-description: Turns a human phrase ("open order ORD-1640", "the Customer field", "Add to cart", "the Items tab") into a concrete swing-ui-agent target, says which route reaches it, and says what to report when it cannot be reached. Use whenever a live Swing app is driven through swing-ui-agent (CLI or MCP) and a word has to become a locator, alongside the swing-ui-record-test and swing-ui-driver skills.
+description: Turns a phrase about a Swing UI ("the Customer field", "Add to cart", "order ORD-1640") into a swing-ui-agent locator and its route. Use whenever a word must become a target to click, type or check.
 ---
 
 # Targeting the live UI from words
@@ -62,8 +62,8 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
   id, then record the id. A snapshot shows both.
 - Never match text with data baked in: a window titled `Order ORD-1640` is `dialog:Order *`, not the number.
 - A caption label is not a node of its own; it is its field's name. Ask for `{"role":"text","name":"Customer"}`,
-  not `{"role":"label",...}`. A label the app made clickable is `role:"clickable"`. The exception is a value
-  shown next to a caption (a total): the value label is named by that caption, `{"role":"label","name":"Total"}`.
+  not `{"role":"label",...}`. A label the app made clickable is `role:"clickable"`. One exception: a value label
+  is named by its caption. The cart's total, shown next to the caption Total, is `{"role":"label","name":"Total"}`.
 - A field with no caption of its own may borrow the nearest label, even an unrelated one. If a `name` looks
   wrong for the field, check it with `read` before relying on it.
 - A table's caption (a `setLabelFor` label or titled border) is its `name`. Unnamed tables on one tab are told
