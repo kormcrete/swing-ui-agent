@@ -348,6 +348,11 @@ public final class Inspector {
     Supplier<List<JRootPane>> roots = Inspector::appRoots;
     /** The person's drag in each window the palette left (null: none there); outlives the window's overlay. */
     private final Map<JRootPane, Point> spots = new WeakHashMap<JRootPane, Point>();
+    /**
+     * The palette's default spot in each window it showed in ({@link Overlay#spot}), picked once there and kept while
+     * the app runs, also after the window's overlay went; never saved, so the next start picks again.
+     */
+    private final Map<JRootPane, double[]> homes = new WeakHashMap<JRootPane, double[]>();
     private Recording recording;
     /** While the agent replays: its bar, without buttons, in place of the palette's. EDT. */
     private Bar agentBar;
@@ -659,14 +664,15 @@ public final class Inspector {
         o.hidePalette(testRun);
         // a replay shows its own bar until it ends
         if (recording == null || !recording.replaying) o.bar(want);
-        // the window's controls changed under a bar on its default spot (a dialog's next page, a resize): it moves off
+        // the window's controls changed (a dialog's next page): the agent's question avoids them; the palette keeps its spot
         o.recheck();
     }
 
     /**
      * Moves the palette from its window to {@code to}, with the person's recording - its panel and a running replay's
      * bar too. The bar takes the spot the person dragged it to in {@code to} before ({@link #spotIn}), else its default
-     * spot there, off the window's buttons, fields and labels. A test run's palette moves in hidden. EDT.
+     * spot there: picked off the window's buttons, fields and labels the first time the palette shows there, the same
+     * one every time after ({@link #homes}). A test run's palette moves in hidden. EDT.
      */
     private void movePalette(Overlay to, Bar want) {
         Overlay from = paletteHome;
@@ -692,8 +698,8 @@ public final class Inspector {
 
     /**
      * Where the palette's bar goes in {@code o}'s window: where the person dragged it there before it last left the
-     * window - their spot wins, even over the window's controls; null (no drag there): its default spot, which covers
-     * none of the window's small components ({@link Overlay#smallIn}).
+     * window - their spot wins, even over the window's controls; null (no drag there): its default spot, picked once
+     * clear of the window's small components ({@link Overlay#smallIn}, {@link #homes}).
      */
     private Point spotIn(Overlay o) {
         return spots.get(o.root);
@@ -1175,6 +1181,8 @@ public final class Inspector {
         if (o == null) {
             Overlay made = new Overlay(root);
             made.spotFor = b -> spotIn(made);
+            made.spot = homes.get(root);
+            made.picked = spot -> homes.put(made.root, spot);
             overlays.put(root, made);
             o = made;
         }

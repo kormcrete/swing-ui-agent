@@ -6,6 +6,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenu;
@@ -256,7 +257,7 @@ class OverlayTest {
     }
 
     @Test
-    void aRecheckMovesADefaultBarOnlyWhenItNowCoversASmallComponentAndRepaintsNothingOtherwise() throws Exception {
+    void theDefaultSpotIsPickedOnceAndARecheckNeverMovesIt() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             JPanel content = new JPanel(null);
             JRootPane root = rootWith(content);
@@ -269,25 +270,86 @@ class OverlayTest {
             assertThat(repaintedDuring(o::recheck)).isEmpty();
             assertThat(bar.getBounds()).isEqualTo(home);
 
-            // a label appears elsewhere: the bar stays
-            JLabel far = new JLabel("Ada Shop Ltd");
-            far.setBounds(10, 10, 100, 20);
-            content.add(far);
-            o.recheck();
-            assertThat(bar.getBounds()).isEqualTo(home);
-
-            // a button appears under it: it moves off
+            // a button appears under it later (the window's next page): the bar keeps its spot
             JButton next = new JButton("Next");
             next.setBounds(SwingUtilities.convertRectangle(root.getLayeredPane(), home, content));
             content.add(next);
             o.recheck();
-            assertThat(bar.getBounds().intersects(in(next, root))).isFalse();
+            o.relayout();
+            assertThat(bar.getBounds()).isEqualTo(home);
 
-            // the button goes again: the bar keeps its new spot
-            Rectangle moved = bar.getBounds();
-            content.remove(next);
-            o.recheck();
-            assertThat(bar.getBounds()).isEqualTo(moved);
+            // a new bar in the same window takes the same spot, without picking again
+            Bar recording = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
+            o.bar(recording);
+            assertThat(recording.getBounds()).isEqualTo(home);
+            o.dispose();
+        });
+    }
+
+    /** {@code body} on the EDT with an undecorated 800 x 600 frame on screen (a box shows only on a showing component). */
+    private static void onScreen(java.util.function.Consumer<JFrame> body) throws Exception {
+        JFrame frame = new JFrame();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                frame.setUndecorated(true);
+                frame.setContentPane(new JPanel(null));
+                frame.setBounds(60, 60, 800, 600);
+                frame.setVisible(true);
+                layOut(frame.getRootPane());
+            });
+            SwingUtilities.invokeAndWait(() -> body.accept(frame));
+        } finally {
+            SwingUtilities.invokeAndWait(frame::dispose);
+        }
+    }
+
+    @Test
+    void boxesUnderTheBarSendItAsideUntilTheyAreCleared() throws Exception {
+        onScreen(frame -> {
+            JRootPane root = frame.getRootPane();
+            Container content = frame.getContentPane();
+            Overlay o = new Overlay(root);
+            Bar bar = new Bar("swing-ui-agent", "").button("● Record", Overlay.NO, () -> { });
+            o.bar(bar);
+            Rectangle home = bar.getBounds();
+            JButton place = new JButton("Place order");
+            place.setBounds(SwingUtilities.convertRectangle(root.getLayeredPane(), home, content));
+            content.add(place);
+
+            o.mark(new Overlay.Mark(place, null, -1, -1, "Place order", Overlay.ASK, false), null);
+            assertThat(bar.getBounds().intersects(in(place, root))).isFalse();
+
+            o.clearMarks();
+            assertThat(bar.getBounds()).isEqualTo(home);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void openingAPanelDoesNotMoveTheBar() throws Exception {
+        onScreen(frame -> {
+            JRootPane root = frame.getRootPane();
+            Container content = frame.getContentPane();
+            Overlay o = new Overlay(root);
+            Bar bar = new Bar("Recording", "").button("Steps", Overlay.HOVER, () -> { });
+            o.bar(bar);
+            Rectangle home = bar.getBounds();
+            JPanel steps = new JPanel();
+            steps.setPreferredSize(new Dimension(300, 200));
+            // a box where the panel opens, clear of the bar itself (a check's result, a replayed step)
+            Rectangle beside = Overlay.panelBeside(home, steps.getPreferredSize(), 800, 600);
+            JLabel total = new JLabel("Total 42.00");
+            total.setBounds(SwingUtilities.convertRectangle(root.getLayeredPane(),
+                    new Rectangle(beside.x + 20, beside.y + 20, 100, 20), content));
+            content.add(total);
+            o.mark(new Overlay.Mark(total, null, -1, -1, "check recorded", Overlay.YES, false), null);
+            assertThat(bar.getBounds()).isEqualTo(home);
+
+            o.panel(steps);
+            assertThat(bar.getBounds()).isEqualTo(home);
+            assertThat(steps.getBounds()).isEqualTo(beside);
+            o.panel(null);
+            assertThat(bar.getBounds()).isEqualTo(home);
             o.dispose();
         });
     }

@@ -35,9 +35,17 @@ You will learn how to:
 ## 1. Start the app with the agent
 
 Start the app as in [Installation](/swing-ui-agent/start/install/). The palette is on by default, so there is nothing
-to add. It appears at the bottom right of the main window about a second after the window shows. Drag it by its grip
-if it covers something you need. It is part of the window, not a separate one, so it also works when the app is full
+to add. It appears about a second after the main window shows, usually along the bottom edge, where it covers none of the
+window's buttons, fields or labels. It is part of the window, not a separate one, so it also works when the app is full
 screen.
+
+- **It keeps its spot.** Each window it shows in gets its spot once, the first time; after that the palette stays
+  there or where you drag it by its grip, even when the window's buttons change.
+- **It steps aside only for a moment:** while the agent acts on something under it, or while the agent's boxes lie
+  under it. Then it comes back to its spot.
+- **Not remembered between starts:** start the app again and it picks its spot again.
+
+Turning it off:
 
 - `palette=off` turns it off, for agent-only runs, CI and shared machines: no palette, and nothing listens to input.
 - `mode=background` turns it off too, and `palette=on` with it is refused: the palette needs the app in front of you.

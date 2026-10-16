@@ -441,6 +441,70 @@ class InspectorTest {
     }
 
     @Test
+    void afterTheAgentsStepTheBarIsBackAtItsSpot() throws Exception {
+        onEdt(() -> {
+            JRootPane root = window(800, 600);
+            Overlay o = scene.inspector.overlay(root);
+            Bar bar = idleBar();
+            o.bar(bar);
+            Rectangle home = bar.getBounds();
+            archive.setBounds(home);
+            root.getContentPane().add(archive);
+
+            assertThat(scene.inspector.stepOff(bar, archive, inside(archive))).isTrue();
+            assertThat(bar.getBounds().intersects(archive.getBounds())).isFalse();
+
+            // the step ended: back without waiting for the agent's next step or a drag
+            scene.inspector.agentDone();
+            assertThat(bar.getBounds()).isEqualTo(home);
+            o.relayout();
+            assertThat(bar.getBounds()).isEqualTo(home);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void aDraggedSpotSurvivesAnAgentStepThatPushedItAside() throws Exception {
+        onEdt(() -> {
+            JRootPane root = window(800, 600);
+            Overlay o = scene.inspector.overlay(root);
+            Bar bar = idleBar();
+            o.bar(bar);
+            Point theirs = new Point(200, 150);
+            bar.dragTo(theirs);
+            o.relayout();
+            archive.setBounds(bar.getBounds());
+            root.getContentPane().add(archive);
+
+            assertThat(scene.inspector.stepOff(bar, archive, inside(archive))).isTrue();
+            assertThat(bar.getBounds().intersects(archive.getBounds())).isFalse();
+
+            scene.inspector.agentDone();
+            assertThat(bar.getLocation()).isEqualTo(theirs);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void afterHighlightBoxesUnderItAreClearedItIsBack() throws Exception {
+        onEdt(() -> {
+            // on screen: a box shows only on a showing component
+            frame.setUndecorated(true);
+            frame.setContentPane(scene.content);
+            Bar bar = paletteInFrame();
+            frame.setVisible(true);
+            Rectangle home = bar.getBounds();
+            scene.save.setBounds(SwingUtilities.convertRectangle(frame.getLayeredPane(), home, scene.content));
+
+            scene.inspector.highlight(Collections.singletonList(scene.inspector.component(scene.save)), null, 0);
+            assertThat(bar.getBounds().intersects(inLayers(scene.save))).isFalse();
+
+            scene.inspector.clear();
+            assertThat(bar.getBounds()).isEqualTo(home);
+        });
+    }
+
+    @Test
     void aDragsTwoEndsStayClearTogetherAndTheNextStepStartsAfresh() throws Exception {
         onEdt(() -> {
             JRootPane root = window(800, 600);
@@ -467,10 +531,11 @@ class InspectorTest {
             assertThat(bar.getBounds().intersects(to.getBounds())).isFalse();
             assertThat(bar.getBounds()).isEqualTo(next.getBounds());
 
+            // the step ended: back on its spot, over both ends again
             scene.inspector.agentDone();
-            o.relayout();
-            assertThat(bar.getBounds()).isEqualTo(next.getBounds());
+            assertThat(bar.getBounds()).isEqualTo(home);
 
+            // the next step avoids only what it acts on
             scene.inspector.stepOff(bar, next, inside(next));
             assertThat(bar.getBounds()).isEqualTo(home);
             o.dispose();
@@ -725,7 +790,7 @@ class InspectorTest {
     }
 
     @Test
-    void aDialogPageChangeRePlacesADefaultBarButNotADraggedOne() throws Exception {
+    void aDialogPageChangeLeavesTheBarOnItsSpot() throws Exception {
         onEdt(() -> {
             Bar bar = paletteInFrame();
             Container content = dialog.getContentPane();
@@ -743,17 +808,44 @@ class InspectorTest {
             place.setBounds(SwingUtilities.convertRectangle(dialog.getLayeredPane(), home, content));
             content.add(place);
             scene.inspector.attachPalette();
-            assertThat(bar.getBounds().intersects(inLayers(place))).isFalse();
-
-            // the person drags it back over the button: the next page change leaves it there
-            bar.dragTo(home.getLocation());
             scene.inspector.overlay(dialog.getRootPane()).relayout();
-            content.remove(place);
-            JButton confirm = new JButton("Confirm");
-            confirm.setBounds(place.getBounds());
-            content.add(confirm);
-            scene.inspector.attachPalette();
             assertThat(bar.getBounds()).isEqualTo(home);
+        });
+    }
+
+    @Test
+    void aDialogsSpotAndTheMainWindowsSpotAreIndependent() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            Point inFrame = bar.getLocation();
+            JLayeredPane dialogLayers = dialog.getLayeredPane();
+            Dimension size = bar.getPreferredSize();
+            Point inDialog = Overlay.placeBar(size.width, size.height, dialogLayers.getWidth(), dialogLayers.getHeight(),
+                    null, Collections.<Rectangle>emptyList()).getLocation();
+
+            showIn(dialog);
+            assertThat(bar.getLocation()).isEqualTo(inDialog);
+
+            // while the palette is in the dialog, the main window's next screen puts a button where the bar was
+            Container content = frame.getContentPane();
+            content.setLayout(null);
+            JButton archiveOrder = new JButton("Archive");
+            archiveOrder.setBounds(SwingUtilities.convertRectangle(frame.getLayeredPane(),
+                    new Rectangle(inFrame, size), content));
+            content.add(archiveOrder);
+
+            // back in the main window: its spot was picked once, it is not picked again
+            showIn(frame);
+            assertThat(bar.getLocation()).isEqualTo(inFrame);
+
+            // a drag in the main window stays there; the dialog keeps its own spot
+            Point dragged = new Point(100, 120);
+            bar.dragTo(dragged);
+            scene.inspector.overlay(frame.getRootPane()).relayout();
+            showIn(dialog);
+            assertThat(bar.getLocation()).isEqualTo(inDialog);
+            showIn(frame);
+            assertThat(bar.getLocation()).isEqualTo(dragged);
         });
     }
 

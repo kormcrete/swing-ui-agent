@@ -117,12 +117,10 @@ final class Overlay extends JComponent {
     private boolean yielding;
     /**
      * What the agent acts on in its current step (layered-pane coordinates; a drag has two targets): the bar and its
-     * panel stay off all of it until the person drags. Kept after the step, so the bar stays where it went; the agent's
-     * next step starts a list of its own.
+     * panel stay off all of it while the step runs, unless the person drags meanwhile. Emptied when the step ends
+     * ({@link #endYield}), so the bar goes back to its spot.
      */
     private final List<Rectangle> avoid = new ArrayList<Rectangle>();
-    /** The agent's step that filled {@link #avoid} ended: the next {@link #makeRoom} starts afresh. */
-    private boolean avoidDone;
     /** The bar's {@link Bar#moved} when {@link #avoid} was filled: a drag replaces it. */
     private Point movedAtAvoid;
     private Catcher catcher;
@@ -131,17 +129,20 @@ final class Overlay extends JComponent {
     /** Where a bar goes in this window before the person drags one here (null: where it goes by itself); set by the inspector. */
     Function<Bar, Point> spotFor;
     /**
-     * The app's small components in this window as last looked at ({@link #smallIn}): the bar's default spot covers
-     * none of them. Looked at again when a bar comes in, when the agent acts, and on the palette's timer
-     * ({@link #recheck}); null until then.
+     * The app's small components in this window as last looked at ({@link #smallIn}): the bar's default spot is picked
+     * clear of them, and a bar stepping aside or the agent's question avoids them where it can. Looked at again when a
+     * bar comes in, when the agent acts, and on the palette's timer ({@link #recheck}); null until then.
      */
     private List<Rectangle> small;
     /**
      * The bar's default spot here, as shares of the room it can move in across and down (0 left or top, 1 right or
-     * bottom), so it follows the window's corners as it is resized; null until placed. Kept until it covers a small
-     * component; a drag by the person wins over it.
+     * bottom), so it follows the window's corners as it is resized; null until picked. Picked once, the first time a
+     * bar shows here, and never again while the app runs (the inspector keeps it when this overlay goes,
+     * {@link #picked}); a drag by the person wins over it. Never saved: the next start picks again.
      */
-    private double[] spot;
+    double[] spot;
+    /** Told the default spot when it is picked (the inspector keeps it for this window); null: nobody. */
+    Consumer<double[]> picked;
     /** Follows layout changes, scrolling and resizes while anything shows; stopped while nothing does. */
     private final Timer follow = new Timer(120, e -> relayout());
     /** What the boxes looked like when last painted: a tick repaints the window only when that changed. */
@@ -231,13 +232,11 @@ final class Overlay extends JComponent {
 
     /**
      * The agent is about to act on {@code area} (layered-pane coordinates) and the palette covers it: the bar (with its
-     * panel) and the question move to the first spot clear of it - and of what the agent acts on earlier in the same
-     * step - and stay there until the person drags the bar. With no such spot they leave the window until the agent's
-     * step ends ({@link #endYield}). True: nothing of the palette covers any of the step's areas any more.
+     * panel) and the question step aside to the first spot clear of it - and of what the agent acts on earlier in the
+     * same step - until the step ends ({@link #endYield}) or the person drags the bar. With no such spot they leave the
+     * window until then. True: nothing of the palette covers any of the step's areas any more.
      */
     boolean makeRoom(Rectangle area) {
-        if (avoidDone) avoid.clear();
-        avoidDone = false;
         avoid.add(new Rectangle(area));
         movedAtAvoid = bar == null ? null : bar.moved;
         small = smallIn(layers);
@@ -260,12 +259,14 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * The agent's step ended: a palette that left the window for it comes back, and the agent's next step avoids only
-     * what that step acts on (the palette keeps its spot until then).
+     * The agent's step ended: a bar that stepped aside for it goes back to its spot (where the person dragged it, else
+     * its default one), a palette that left the window for it comes back, and the agent's next step avoids only what
+     * that step acts on.
      */
     void endYield() {
-        avoidDone = true;
-        if (!yielding) return;
+        boolean back = !avoid.isEmpty() || yielding;
+        avoid.clear();
+        if (!back) return;
         yielding = false;
         sync();
         relayout();
@@ -273,9 +274,9 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * The palette's timer: looks at the window's small components again. When they changed, a bar on its default spot
-     * that now covers one moves to a spot that covers none (a dialog's next page, a resized window); a bar the person
-     * dragged stays. Nothing changed, nothing happens: no repaint.
+     * The palette's timer: looks at the window's small components again (the agent's question and a bar stepping
+     * aside avoid them). The palette's spot stays as it is: picked once, it never moves because the window's controls
+     * changed. Nothing changed, nothing happens: no repaint.
      */
     void recheck() {
         List<Rectangle> now = smallIn(layers);
@@ -447,12 +448,10 @@ final class Overlay extends JComponent {
         }
         // a drag by the person wins again: the bar forgets what the agent acted on
         if (bar != null && bar.moved != movedAtAvoid) avoid.clear();
-        taken.addAll(avoid);
         boolean withPanel = panel != null && panelIn();
-        if (bar != null && barIn()) {
-            placePalette(taken, withPanel ? panel.getPreferredSize() : null);
-            taken.add(bar.getBounds());
-        }
+        if (bar != null && barIn()) placePalette(taken, withPanel ? panel.getPreferredSize() : null);
+        taken.addAll(avoid);
+        if (bar != null && barIn()) taken.add(bar.getBounds());
         if (ask != null && !yielding) place(ask, taken, null);
         if (withPanel && bar != null) {
             Rectangle want = panelBeside(bar.getBounds(), panel.getPreferredSize(), layers.getWidth(), layers.getHeight());
@@ -504,21 +503,36 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * The person's palette: where they dragged it; else its default spot ({@link #spot}), chosen again only when it
-     * covers a small component (so it never jumps about as the window's controls come and go); either one only while
-     * it covers none of the boxes and of what the agent acts on, else the best spot clear of them.
+     * The person's palette: on its spot - where they dragged it, else its default spot ({@link #spot}, picked once,
+     * clear of the window's small components) - and it moves on its own for nothing else: not for the window's
+     * controls coming and going, not for its own {@code panel} (that opens on whichever side has room). It steps aside
+     * only while a box ({@code boxes}) lies under the bar, or while the agent's step acts on something under the bar
+     * or its panel ({@link #avoid}); then it takes the best spot clear of them, and comes back when they are gone.
      */
-    private void placePalette(List<Rectangle> taken, Dimension panel) {
+    private void placePalette(List<Rectangle> boxes, Dimension panel) {
         Dimension size = bar.getPreferredSize();
         int areaW = layers.getWidth();
         int areaH = layers.getHeight();
         List<Rectangle> small = small();
-        Rectangle home = spot == null ? null : at(spot, size.width, size.height, areaW, areaH);
-        if (home == null || covered(home, small) > 0) {
-            home = placeBar(size.width, size.height, areaW, areaH, null, NONE, panel, small, null);
-            spot = share(home, areaW, areaH);
+        Rectangle home;
+        if (spot != null) {
+            home = at(spot, size.width, size.height, areaW, areaH);
+        } else {
+            home = placeBar(size.width, size.height, areaW, areaH, null, NONE, null, small, null);
+            // a window not laid out to a size yet has nothing to pick from: it picks once it has one
+            if (areaW > 0 && areaH > 0) {
+                spot = share(home, areaW, areaH);
+                if (picked != null) picked.accept(spot);
+            }
         }
-        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, bar.moved, taken, panel, small, home.getLocation()));
+        Rectangle mine = placeBar(size.width, size.height, areaW, areaH, bar.moved != null ? bar.moved : home.getLocation(), NONE);
+        List<Rectangle> taken = new ArrayList<Rectangle>(boxes);
+        taken.addAll(avoid);
+        if (free(mine, taken) && (panel == null || free(panelBeside(mine, panel, areaW, areaH), avoid))) {
+            bar.setBounds(mine);
+            return;
+        }
+        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, null, taken, avoid.isEmpty() ? null : panel, small, null));
     }
 
     /** The bar's width in a {@code areaW} wide window. */
