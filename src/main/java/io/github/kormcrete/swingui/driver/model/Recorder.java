@@ -88,8 +88,9 @@ public final class Recorder {
                     cells.put(headers.get(c), text == null ? "" : text);
                 }
                 l.row = cells;
-            } catch (DriverException gone) {
-                // the row moved or went: keep it as the locator named it
+            } catch (RuntimeException gone) {
+                // the row moved or went, or the app's renderer or model failed on a cell: keep the row as the locator
+                // named it (how a step was seen only helps folding; the step itself records as before)
             }
         }
         return l;

@@ -225,7 +225,7 @@ class MatcherTest {
                 + "more ways than a match tries");
         assertThat(keys(undecided.span)).containsExactly(1, 2, 3, 4);
         // asked for by name, the run says so too
-        assertThat(catchThrowableOfType(() -> Matcher.matches(steps, vocabulary(notes)), Pattern.TooAmbiguous.class))
+        assertThat(catchThrowableOfType(() -> Matcher.matches(steps, vocabulary(notes), later()), Pattern.TooAmbiguous.class))
                 .isNotNull();
     }
 
@@ -237,6 +237,16 @@ class MatcherTest {
         assertThat(r.folds).isEmpty();
         assertThat(r.notes.get(0).why).isEqualTo("folding ran out of time before it looked at this step");
         assertThat(keys(r.notes.get(0).span)).containsExactly(1);
+    }
+
+    @Test
+    void aFoldByNamePastItsDeadlineSaysSo() {
+        List<Matcher.Item> steps = fixture("add-gel-pen").subList(0, 2);
+
+        Matcher.OutOfTime e = catchThrowableOfType(() -> Matcher.matches(steps, ORDER_DESK, System.nanoTime() - 1),
+                Matcher.OutOfTime.class);
+
+        assertThat(e).hasMessage("folding ran out of time before it could tell what the steps are");
     }
 
     @Test
@@ -257,11 +267,11 @@ class MatcherTest {
     void aStepFoldedByNameMatchesItsWholeSpan() {
         List<Matcher.Item> steps = fixture("add-gel-pen");
 
-        assertThat(Matcher.matches(steps.subList(0, 2), ORDER_DESK)).extracting(c -> c.step + c.params)
+        assertThat(Matcher.matches(steps.subList(0, 2), ORDER_DESK, later())).extracting(c -> c.step + c.params)
                 .containsExactly("order-desk:addToCart{product=Gel pen, black}");
-        assertThat(Matcher.matches(steps, ORDER_DESK)).extracting(c -> c.step)
+        assertThat(Matcher.matches(steps, ORDER_DESK, later())).extracting(c -> c.step)
                 .containsExactly("order-desk:addQtyToCart");
-        assertThat(Matcher.matches(steps.subList(1, 3), ORDER_DESK)).isEmpty();
+        assertThat(Matcher.matches(steps.subList(1, 3), ORDER_DESK, later())).isEmpty();
     }
 
     // ---- the form a recorded step is matched in
@@ -311,6 +321,10 @@ class MatcherTest {
     }
 
     // ---- helpers
+
+    private static long later() {
+        return System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    }
 
     private static Matcher.Result fold(List<Matcher.Item> items, List<Matcher.Candidate> vocabulary) {
         return Matcher.fold(items, vocabulary, System.nanoTime() + TimeUnit.SECONDS.toNanos(10));

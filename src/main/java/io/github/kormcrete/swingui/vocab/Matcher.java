@@ -249,24 +249,43 @@ public final class Matcher {
         return new Result(list, folds, notes, false);
     }
 
+    /** A fold by name that could not be told within its deadline. */
+    public static final class OutOfTime extends RuntimeException {
+        OutOfTime() {
+            super("folding ran out of time before it could tell what the steps are", null, false, false);
+        }
+    }
+
     /**
      * Every domain step with its values that matches all of {@code span} (whole items, in order), the most specific
      * first; empty when none does. Barriers and authors are the caller's to check: this is a fold asked for by name.
+     * {@code deadline} is a {@link System#nanoTime} value, looked at before each pattern.
      *
      * @throws Pattern.TooAmbiguous when a pattern could not decide the run (its message says which)
+     * @throws OutOfTime when the deadline passed before every pattern was tried
      */
-    public static List<Choice> matches(List<Item> span, List<Candidate> vocabulary) {
+    public static List<Choice> matches(List<Item> span, List<Candidate> vocabulary, long deadline) {
         List<JsonNode> steps = steps(span);
         List<Choice> out = new ArrayList<Choice>();
         for (Candidate c : vocabulary) {
             for (Pattern p : c.patterns) {
                 if (steps.size() < p.shortest() || steps.size() > p.longest()) continue;
-                Pattern.Match m = p.match(steps);
+                if (System.nanoTime() - deadline > 0) throw new OutOfTime();
+                Pattern.Match m = match(p, steps);
                 if (m != null) add(out, new Choice(c.name, m.params(), p.literals(), c.autoFold));
             }
         }
         Collections.sort(out, (a, b) -> b.literals - a.literals);
         return out;
+    }
+
+    /** {@code p.match(steps)}; a match nested deeper than the thread's stack could not be decided either. */
+    private static Pattern.Match match(Pattern p, List<JsonNode> steps) {
+        try {
+            return p.match(steps);
+        } catch (StackOverflowError e) {
+            throw new Pattern.TooAmbiguous(p.stepId());
+        }
     }
 
     /**
@@ -342,7 +361,7 @@ public final class Matcher {
                     }
                     Pattern.Match m;
                     try {
-                        m = p.match(steps);
+                        m = match(p, steps);
                     } catch (Pattern.TooAmbiguous e) {
                         if (length > undecidedLength) {
                             undecidedLength = length;

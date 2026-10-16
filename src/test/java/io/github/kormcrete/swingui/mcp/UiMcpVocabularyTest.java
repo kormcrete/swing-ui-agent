@@ -169,6 +169,10 @@ class UiMcpVocabularyTest {
         assertThat(r.path("notes")).isEmpty();
         // a dry run: the recording is as it was
         assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}")))).isEqualTo(before);
+        // a named range: a replay's start, which live folding does not fold across, is no barrier here
+        assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"replay\",\"from\":2,\"to\":3}")))
+                .path("passed").asBoolean()).isTrue();
+        assertThat(call(s, "{\"op\":\"match\",\"from\":1,\"to\":3}").path("folds")).hasSize(1);
         // a range that is no steps is refused
         DriverException e = catchThrowableOfType(() -> call(s, "{\"op\":\"match\",\"from\":2,\"to\":9}"),
                 DriverException.class);

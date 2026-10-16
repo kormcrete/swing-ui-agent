@@ -1555,8 +1555,14 @@ public class UiMcpSession {
      * export can be retried with other names. {@code clear} empties the recording after a write; the next one
      * needs a reset first, and is refused while a recording someone started runs ({@link #refuseClearWhileRecording}).
      */
-    public synchronized String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
-        folding.settle(FOLD_WAIT_MS, true);   // the last steps' folds are in
+    public String exportTest(String className, String method, String pkg, boolean clear) throws Exception {
+        // the last steps' folds are in: waited for without the lock, which the matcher thread needs to apply them
+        folding.settle(FOLD_WAIT_MS);
+        return exportTestLocked(className, method, pkg, clear);
+    }
+
+    private synchronized String exportTestLocked(String className, String method, String pkg, boolean clear)
+            throws Exception {
         if (clear) refuseClearWhileRecording();
         requireResetStart();
         String methodName = method == null || method.isEmpty() ? "recorded" : method;
@@ -1644,8 +1650,14 @@ public class UiMcpSession {
      * leaves the recording as it was. {@code clear} empties the recording; otherwise the written file becomes the one
      * a further export saves over; a clearing one is refused while a recording someone started runs.
      */
-    public synchronized String exportRecordedTest(String name, String dir, String description, boolean clear) throws Exception {
-        folding.settle(FOLD_WAIT_MS, true);   // the last steps' folds are in
+    public String exportRecordedTest(String name, String dir, String description, boolean clear) throws Exception {
+        // the last steps' folds are in: waited for without the lock, which the matcher thread needs to apply them
+        folding.settle(FOLD_WAIT_MS);
+        return exportRecordedTestLocked(name, dir, description, clear);
+    }
+
+    private synchronized String exportRecordedTestLocked(String name, String dir, String description, boolean clear)
+            throws Exception {
         if (clear) refuseClearWhileRecording();
         requireResetStart();
         List<String> problems = new ArrayList<String>();
@@ -1938,6 +1950,8 @@ public class UiMcpSession {
         model.load(flow, RecordedStep.Author.LOADED);
         model.loaded();
         foldNotes.clear();
+        // a loaded test is as it was saved: its steps never fold among themselves (vocabulary match shows what would)
+        for (RecordedStep r : model.records()) foldedUpTo = Math.max(foldedUpTo, r.id);
         recordingFromReset = true;
         freshStart = true;
         definedStart = appReset.defined();
@@ -2023,7 +2037,10 @@ public class UiMcpSession {
     public String recording(JsonNode args) throws Exception {
         String op = text(args, "op");
         if (op == null) throw new DriverException(Reason.BAD_INPUT, "recording needs 'op': " + OPS);
-        if (EDIT_OPS.contains(op)) refuseWhileReplaying();
+        if (EDIT_OPS.contains(op)) {
+            refuseWhileReplaying();
+            folding.settle(FOLD_WAIT_MS);   // an edit sees the folds of the steps recorded so far, as list does
+        }
         switch (op) {
             case "start": {
                 String busy = recordingReason();
@@ -2060,7 +2077,7 @@ public class UiMcpSession {
                 return published.json;
             }
             case "list": {
-                folding.settle(FOLD_WAIT_MS, false);   // folds of the steps recorded so far are in the list
+                folding.settle(FOLD_WAIT_MS);   // folds of the steps recorded so far are in the list
                 Integer wait = integer(args, "wait");
                 long waitMs = wait == null ? 0L : Math.max(0L, Math.min(wait.longValue(), MAX_RECORDING_WAIT_MS));
                 long deadline = System.currentTimeMillis() + waitMs;
@@ -2673,7 +2690,7 @@ public class UiMcpSession {
         List<Matcher.Candidate> vocabulary = foldingVocabulary();
         if (vocabulary.isEmpty()) return;
         List<RecordedStep> records = model.records();
-        List<Matcher.Item> items = foldItems(records, foldedUpTo);
+        List<Matcher.Item> items = foldItems(records, foldedUpTo, true);
         int newest = foldedUpTo;
         boolean fresh = false;
         for (Matcher.Item i : items) {
@@ -2688,13 +2705,20 @@ public class UiMcpSession {
 
     /**
      * {@code records} as folding sees them, each keyed by its id: a raw step is fresh when its id is above {@code freshAfter}.
-     * A step kept raw, there before the last replay started, in a group or with a sentence of its own is a barrier.
+     * A step kept raw, in a group or with a sentence of its own is a barrier, and with {@code replayFloor} one recorded
+     * before the last replay started (a fold: all its raw steps were).
      */
-    private List<Matcher.Item> foldItems(List<RecordedStep> records, int freshAfter) {
+    private List<Matcher.Item> foldItems(List<RecordedStep> records, int freshAfter, boolean replayFloor) {
         List<Matcher.Item> items = new ArrayList<Matcher.Item>(records.size());
+        int floor = replayFloor ? model.replayFloor() : 0;
         for (RecordedStep r : records) {
             String author = r.author.json;
-            boolean barrier = r.keepRaw || r.id <= model.replayFloor() || r.group != null;
+            int newest = r.id;
+            if (r.folded()) {
+                newest = 0;
+                for (RecordedStep x : r.raw) newest = Math.max(newest, x.id);
+            }
+            boolean barrier = r.keepRaw || newest <= floor || r.group != null;
             if (StepNumbers.isCheck(r.action)) {
                 items.add(Matcher.Item.check(r.id, author));
             } else if (r.folded()) {
@@ -2757,20 +2781,24 @@ public class UiMcpSession {
         if (result == null) return;
         Map<Matcher.Fold, Integer> made = new HashMap<Matcher.Fold, Integer>();
         boolean changed = false;
-        for (Matcher.Fold f : result.folds) {
-            DoAction action = foldAction(f.choice);
-            if (action == null) break;   // its plugin went: a later fold may build on this one, so none is made
-            RecordedStep.Author by = author(f.item.author);
-            made.put(f, model.fold(ids(f.span, made), action, by, by).step.id);
-            changed = true;
+        try {
+            for (Matcher.Fold f : result.folds) {
+                DoAction action = foldAction(f.choice);
+                if (action == null) break;   // its plugin went: a later fold may build on this one, so none is made
+                RecordedStep.Author by = author(f.item.author);
+                made.put(f, model.fold(ids(f.span, made), action, by, by).step.id);
+                changed = true;
+            }
+            for (Matcher.Note n : result.notes) {
+                Object last = n.span.get(n.span.size() - 1).key;
+                if (!(last instanceof Integer)) continue;
+                foldNotes.put((Integer) last, new FoldNote(n.kind, ids(n.span, made), n.choices, n.why));
+                changed = true;
+            }
+        } finally {
+            // the folds made stay made, also when a later one could not be: the list and the palette show them
+            if (changed) publish();
         }
-        for (Matcher.Note n : result.notes) {
-            Object last = n.span.get(n.span.size() - 1).key;
-            if (!(last instanceof Integer)) continue;
-            foldNotes.put((Integer) last, new FoldNote(n.kind, ids(n.span, made), n.choices, n.why));
-            changed = true;
-        }
-        if (changed) publish();
     }
 
     /** The record ids of {@code span}: a fold made in the same look by the id it got ({@code made}). */
@@ -2827,10 +2855,14 @@ public class UiMcpSession {
         }
         String what = from == to ? "step " + from : "steps " + from + "-" + to;
         List<Matcher.Choice> choices;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Folding.BUDGET_MS);
         try {
-            choices = Matcher.matches(span, vocabulary);
+            // on a stack as deep as the matcher thread's, with the time live folding has
+            choices = Folding.onMatcherStack(() -> Matcher.matches(span, vocabulary, deadline));
         } catch (Pattern.TooAmbiguous e) {
             throw new DriverException(Reason.BAD_INPUT, what + ": " + Matcher.couldNotDecide(e.stepId()));
+        } catch (Matcher.OutOfTime e) {
+            throw new DriverException(Reason.BAD_INPUT, what + ": " + e.getMessage() + "; fold fewer steps");
         }
         Matcher.Choice chosen = choose(choices, step, what, from == to);
         DoAction action = foldAction(chosen);
@@ -2915,8 +2947,8 @@ public class UiMcpSession {
 
     /**
      * The {@code vocabulary} tool's {@code match {from, to}}: what folding would make of steps {@code from} to
-     * {@code to}, every raw step looked at as if just recorded (barriers as folding has them), without changing the
-     * recording. {@code folds: [{from, to, step, params, say}]} in step numbers, {@code notes} for runs that did not fold.
+     * {@code to}, every raw step looked at as if just recorded (barriers as folding has them, but a replay's start is
+     * none: the range is named), without changing the recording. {@code folds: [{from, to, step, params, say}]} in step numbers, {@code notes} for runs that did not fold.
      */
     String vocabularyMatch(Integer from, Integer to) {
         if (from == null || to == null) throw new DriverException(Reason.BAD_INPUT, "match needs 'from' and 'to' (step numbers)");
@@ -2937,11 +2969,14 @@ public class UiMcpSession {
             }
             int[] flat = model.flatRange(from, to);
             List<RecordedStep> records = model.records().subList(flat[0], flat[1] + 1);
-            items = foldItems(records, Integer.MIN_VALUE);
+            items = foldItems(records, Integer.MIN_VALUE, false);
             for (RecordedStep x : records) numbers.put(x.id, model.addressOf(x.id).step);
         }
-        Matcher.Result result = Matcher.fold(items, vocabulary,
-                System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Folding.BUDGET_MS));
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Folding.BUDGET_MS);
+        List<Matcher.Item> look = items;
+        List<Matcher.Candidate> with = vocabulary;
+        // on a stack as deep as the matcher thread's, with the time live folding has
+        Matcher.Result result = Folding.onMatcherStack(() -> Matcher.fold(look, with, deadline));
         for (Matcher.Item i : result.items) {
             if (!(i.key instanceof Matcher.Fold)) continue;
             Matcher.Fold f = (Matcher.Fold) i.key;

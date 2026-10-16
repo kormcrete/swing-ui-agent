@@ -2278,6 +2278,83 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void anExportRightAfterTheLastStepsHoldsTheirFoldAndDoesNotWait() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+            addGelPen(s.humanSink());
+            // the recording changes again at once: a match that started on the two steps is dropped and looks again
+            recording(s, "{\"op\":\"stop\"}");
+            long start = System.nanoTime();
+
+            JsonNode file = mapper.readTree(s.exportRecordedTest("add-pen-" + i, quoted(dir), null, false)).path("test");
+
+            assertThat(System.nanoTime() - start).isLessThan(java.util.concurrent.TimeUnit.SECONDS.toNanos(2));
+            assertThat(file.path("steps")).hasSize(1);
+            assertThat(file.path("steps").get(0).path("step").asText()).isEqualTo("order-desk:addToCart");
+            assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+        }
+    }
+
+    @Test
+    void aLoadedTestsStepsNeverFoldAmongThemselves() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        Flow flow = new Flow();
+        flow.version = RecordedTestFiles.VERSION;
+        flow.name = "add a pen";
+        flow.start = RecordedTestFiles.START_RESET;
+        ClickVerb row = new ClickVerb();
+        row.target = new Locator();
+        row.target.role = "table";
+        row.target.row = row("Product", "Gel pen, black");
+        row.target.column = "Product";
+        ClickVerb add = new ClickVerb();
+        add.target = Locator.of("button", "Add to cart");
+        flow.steps.add(row);
+        flow.steps.add(add);
+        Path file = dir.resolve("add-pen.json");
+        Files.write(file, RecordedTestFiles.write(flow).getBytes(StandardCharsets.UTF_8));
+        s.loadRecordedTest(file);
+        Inspector.Sink person = s.humanSink();
+
+        // the person records on after the loaded steps
+        person.resume();
+        assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(3).noneMatch(n -> n.has("folded"));
+        // asked, the dry run still says what they would fold into
+        JsonNode match = mapper.readTree(s.vocabulary(mapper.readTree("{\"op\":\"match\",\"from\":1,\"to\":3}")));
+        assertThat(match.path("folds")).hasSize(1);
+        assertThat(match.path("folds").get(0).path("step").asText()).isEqualTo("order-desk:addToCart");
+    }
+
+    @Test
+    void aFoldMadeAfterAReplayOfItsStepsDoesNotGrowWithALaterStep() throws Exception {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("extras", Paths.get("extras")).ready(new PluginParts(() -> Arrays.asList(
+                DomainStep.act("addAndCheckOut", "Add {product} and check out")
+                        .param("product", ParamType.TEXT)
+                        .steps("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"row\":{\"Product\":\"{product}\"}}}",
+                                "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}",
+                                "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Checkout…\"}}")
+                        .build())), "ok");
+        UiMcpSession s = orderDesk(plugins);
+        Inspector.Sink person = s.humanSink();
+        addGelPen(person);
+        recording(s, "{\"op\":\"unfold\",\"n\":1}");
+        assertThat(recording(s, "{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        // folded again after the replay: the fold is new, its steps are from before the replay
+        recording(s, "{\"op\":\"fold\",\"from\":1,\"to\":2,\"step\":\"addToCart\"}");
+
+        assertThat(person.done(step("click", Locator.of("button", "Checkout…"))).ok).isTrue();
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("step").path("step").asText()).isEqualTo("order-desk:addToCart");
+        assertThat(steps.get(1).has("folded")).isFalse();
+    }
+
+    @Test
     void withoutAVocabularyNothingFolds() throws Exception {
         addGelPen(sink);
 

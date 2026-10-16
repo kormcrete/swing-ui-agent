@@ -137,6 +137,24 @@ class RecorderTest {
     }
 
     @Test
+    void aRowWhoseCellsCannotBeReadIsSeenAsTheLocatorNamesIt() {
+        scene.table.setValueAt("ORD-1", 0, 0);
+        String ref = snapshot.build(null, null, 400, 20).find("table", "Orders").ref;
+        Locator l = Locator.ofRef(ref);
+        l.row = Collections.<String, Object>singletonMap("index", 0);
+        Resolved cell = scene.resolver.resolve(l);
+        scene.table.setDefaultRenderer(Object.class, (table, value, selected, focus, row, column) -> {
+            throw new IllegalStateException("the app's renderer failed");
+        });
+
+        Recorder.Recorded r = recorder.record(cell);
+
+        assertThat(r.locator.row).containsEntry("index", 0);
+        assertThat(r.seen.row).isEqualTo(Collections.<String, Object>singletonMap("index", 0));
+        assertThat(r.seen.role).isEqualTo("table");
+    }
+
+    @Test
     void rowChoiceHasThePositionAndTheValue() {
         for (int r = 0; r < 3; r++) {
             scene.table.setValueAt("ORD-" + (r + 1), r, 0);
