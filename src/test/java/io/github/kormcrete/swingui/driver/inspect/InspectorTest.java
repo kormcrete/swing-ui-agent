@@ -522,6 +522,52 @@ class InspectorTest {
         });
     }
 
+    /** In a run the bar keeps the spot it stepped aside to while that stays clear: a spot that comes free never pulls it. */
+    @Test
+    void inARunTheAsideSpotStaysWhileItIsClear() throws Exception {
+        Bar[] bar = new Bar[1];
+        Rectangle[] aside = new Rectangle[1];
+        JPanel under = new JPanel();
+        // a list: a box can be drawn on it, and it is no small component the bar keeps off anyway
+        javax.swing.JList<String> right = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        onEdt(() -> {
+            frame.setUndecorated(true);
+            JPanel content = scene.content;
+            frame.setContentPane(content);
+            bar[0] = paletteInFrame();
+            frame.setVisible(true);
+            Rectangle home = bar[0].getBounds();
+            // the middle of the bar's spot (bottom middle), and the first spot it would step aside to (bottom right)
+            Rectangle middle = new Rectangle(home.x + home.width / 2 - 20, home.y, 40, home.height);
+            under.setBounds(SwingUtilities.convertRectangle(frame.getLayeredPane(), middle, content));
+            Rectangle br = new Rectangle(frame.getLayeredPane().getWidth() - 8 - home.width, home.y, home.width, home.height);
+            right.setBounds(SwingUtilities.convertRectangle(frame.getLayeredPane(), br, content));
+            content.add(under);
+            content.add(right);
+        });
+        Inspector.agentRun(true);
+        try {
+            onEdt(() -> {
+                // a box on the bottom right, then a step on what lies under the bar: it steps aside past the box
+                scene.inspector.highlight(Collections.singletonList(scene.inspector.component(right)), null, 0);
+                assertThat(scene.inspector.stepOff(bar[0], under, inside(under))).isTrue();
+                aside[0] = bar[0].getBounds();
+                assertThat(aside[0].intersects(inLayers(right))).isFalse();
+                assertThat(aside[0].intersects(inLayers(under))).isFalse();
+                scene.inspector.agentDone();
+
+                // the box goes: the bottom right is free again, but the bar stays where it is
+                scene.inspector.clear();
+                assertThat(bar[0].getBounds()).isEqualTo(aside[0]);
+                scene.inspector.overlay(frame.getRootPane()).relayout();
+                assertThat(bar[0].getBounds()).isEqualTo(aside[0]);
+            });
+        } finally {
+            Inspector.agentRun(false);
+        }
+        onEdt(() -> scene.inspector.runDone());
+    }
+
     @Test
     void afterHighlightBoxesUnderItAreClearedItIsBack() throws Exception {
         onEdt(() -> {

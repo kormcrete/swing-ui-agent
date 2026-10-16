@@ -856,9 +856,6 @@ final class Recording {
         // no sentence is typed while the steps run: one being typed is saved, on the sink thread ahead of the replay
         if (panel != null) panel.commitNaming();
         replaying = true;
-        // one run: a bar that steps aside for one of its steps stays aside until it ends
-        running = true;
-        Inspector.agentRun(true);
         boolean wasChecking = state == State.CHECKING;
         int speed = panel == null ? 1 : panel.speed();
         final long delay = speed == 0 ? 0 : speed == 1 ? 700 : 1500;
@@ -879,6 +876,22 @@ final class Recording {
                 .button("Stop", Overlay.NO, () -> { stopped = true; next.release(); });
         if (paused) replayBar.active("Pause");
         home.bar(replayBar);
+        // one run: a bar that steps aside for one of its steps stays aside until it ends. Raised only now, just before the
+        // task that ends it is handed over, so a setup that throws never leaves the count up.
+        running = true;
+        Inspector.agentRun(true);
+        try {
+            submitReplay(reset, from, to, delay, wasChecking, after, why);
+        } catch (RuntimeException e) {
+            // never handed over (a sink thread that refuses work): ended() lowers the count and gives the app back
+            System.err.println("swing-ui-agent inspector: replay not started");
+            e.printStackTrace();
+            ended("✗ replay failed: " + why(e), -1, false, wasChecking, after);
+        }
+    }
+
+    /** {@link #replay}'s work, on the sink thread: the reset (from the first step), then the steps. EDT. */
+    private void submitReplay(boolean reset, int from, int to, long delay, boolean wasChecking, Runnable after, String why) {
         // the flushed steps reach the recording before it is read
         sinkThread.submit(() -> {
             try {
@@ -1030,13 +1043,14 @@ final class Recording {
      */
     private void ended(String text, int stop, boolean passed, boolean wasChecking, Runnable after) {
         SwingUtilities.invokeLater(() -> {
-            for (Overlay o : inspector.overlays()) o.clearMarks();
-            home.controlsAway(false);
-            replaying = false;
+            // first: whatever below throws, the run's count never stays raised
             if (running) {
                 running = false;
                 Inspector.agentRun(false);
             }
+            for (Overlay o : inspector.overlays()) o.clearMarks();
+            home.controlsAway(false);
+            replaying = false;
             inspector.driving(null);
             if (!passed && after != null && active()) {
                 stop(true, text + " - recording stopped");

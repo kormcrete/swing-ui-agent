@@ -229,6 +229,25 @@ class HumanStepsTest {
         assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
     }
 
+    /** The release is decided later: when the recorder stopped listening (Done) in between, it adds nothing. */
+    @Test
+    void aClickDecidedAfterTheRecorderStoppedIsNoStep() throws Exception {
+        javax.swing.JTree categories = categories();
+        java.awt.Rectangle pens = categories.getRowBounds(2);
+        SwingUtilities.invokeAndWait(() -> human.active(true));
+        try {
+            releaseHandledAfter(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> {
+                human.active(false);
+                categories.setSelectionRow(2);
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(() -> human.active(false));
+        }
+        human.flush();
+        assertThat(steps).isEmpty();
+        assertThat(notRecorded).isEmpty();
+    }
+
     @Test
     void aDoubleClickInARowsIndentIsADoubleClickOnTheRow() throws Exception {
         javax.swing.JTree categories = categories();

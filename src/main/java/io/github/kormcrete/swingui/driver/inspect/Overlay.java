@@ -121,6 +121,8 @@ final class Overlay extends JComponent {
      * ({@link #endYield}), so the bar goes back to its spot.
      */
     private final List<Rectangle> avoid = new ArrayList<Rectangle>();
+    /** Where the bar stepped aside to ({@link #placePalette}), null while it is on its spot. */
+    private Rectangle aside;
     /** The bar's {@link Bar#moved} when {@link #avoid} was filled: a drag replaces it. */
     private Point movedAtAvoid;
     private Catcher catcher;
@@ -530,11 +532,20 @@ final class Overlay extends JComponent {
         List<Rectangle> taken = new ArrayList<Rectangle>(boxes);
         taken.addAll(avoid);
         if (free(mine, taken) && (panel == null || free(panelBeside(mine, panel, areaW, areaH), avoid))) {
+            aside = null;
             bar.setBounds(mine);
             return;
         }
-        bar.setBounds(placeBar(size.width, size.height, areaW, areaH, null, taken, avoid.isEmpty() ? null : panel, small, null,
-                true));
+        // already aside: it stays there while that stays clear, so a spot earlier in the order that comes free (a box
+        // of an earlier step gone) never pulls it from spot to spot within a run
+        Rectangle now = bar.getBounds();
+        if (now.equals(aside) && now.width == width(size.width, areaW) && now.height == size.height
+                && now.x >= 0 && now.y >= 0 && now.x + now.width <= areaW && now.y + now.height <= areaH && free(now, taken)
+                && (panel == null || avoid.isEmpty() || free(panelBeside(now, panel, areaW, areaH), taken))) {
+            return;
+        }
+        aside = placeBar(size.width, size.height, areaW, areaH, null, taken, avoid.isEmpty() ? null : panel, small, null, true);
+        bar.setBounds(aside);
     }
 
     /**

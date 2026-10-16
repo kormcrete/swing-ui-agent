@@ -634,7 +634,7 @@ public final class LiveVerbs implements Verbs {
     @Override
     public VerbOutcome expect(final Locator target, final Expectation expectation, Long timeout) {
         if (target == null) throw bad("expect needs a 'target'");
-        if (expectation == null) throw bad("expect needs one of state, text, value, tooltip, rows, cell, selected, absent");
+        if (expectation == null) throw bad("expect needs one of state, text, value, tooltip, rows, cell, selected, shown, absent");
         expectation.validate();
         if (expectation.absent != null && target.ref != null) {
             throw bad("absent needs a locator, not a ref: a ref names an element that is there");
@@ -654,7 +654,10 @@ public final class LiveVerbs implements Verbs {
                             if (gone.reason() != Reason.AMBIGUOUS) throw gone;
                             return "expected " + target + " to be absent but several of it are still there";
                         }
-                        return Expectations.check(found[0], expectation, null);
+                        // The element may stay while its row or item has gone: Expectations looks that up.
+                        String still = Expectations.check(found[0], expectation, null);
+                        if (still == null) found[0] = null;
+                        return still;
                     }
                     found[0] = driver.resolver().resolve(target);
                     // A section's state is asked fresh from its source, by component identity, not role:

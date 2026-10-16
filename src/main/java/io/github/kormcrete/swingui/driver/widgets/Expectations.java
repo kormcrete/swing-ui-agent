@@ -41,8 +41,10 @@ public final class Expectations {
         if (r.component instanceof JPasswordField && (e.text != null || e.value != null)) {
             throw new DriverException(Reason.BAD_INPUT, "a password field's content is never read");
         }
+        if (e.absent != null) return absent(r);
+        // A list entry is looked up first: the checks below read the list as a whole.
+        if (r.component instanceof JList && r.item() != null) entry((JList<?>) r.component, r.item());
         if (e.state != null) return state(r, e.state, liveSection);
-        if (e.absent != null) return "expected " + r.describe() + " to be absent but it is still there";
         if (e.text != null) return compare("text", e.text, text(r));
         if (e.value != null) return compare("value", e.value, value(r));
         if (e.tooltip != null) {
@@ -66,6 +68,37 @@ public final class Expectations {
         int row = TableWidget.row(table, RowSpec.of(e.cell.row));
         String actual = Cells.table(table, row, TableWidget.column(table, e.cell.column)).text;
         return compare("cell [" + e.cell.column + "]", e.cell.expected, actual);
+    }
+
+    /**
+     * An element with a {@code row} (table) or {@code item} (tree, list) is there only while that row or
+     * entry is: the table, tree or list itself staying does not make it present.
+     */
+    private static String absent(Resolved r) {
+        Component c = r.component;
+        String what = r.describe();
+        try {
+            if (c instanceof JTable && r.row() != null) {
+                what = r.row() + " of " + what;
+                TableWidget.row((JTable) c, r.row());
+            } else if (c instanceof JTree && r.item() != null) {
+                what = "item " + r.item() + " of " + what;
+                TreeWidget.row((JTree) c, r.item());
+            } else if (c instanceof JList && r.item() != null) {
+                what = "item " + r.item() + " of " + what;
+                entry((JList<?>) c, r.item());
+            }
+        } catch (DriverException gone) {
+            if (gone.reason() == Reason.NOT_FOUND) return null;
+            if (gone.reason() != Reason.AMBIGUOUS) throw gone;
+            return "expected " + what + " to be absent but several of it are still there";
+        }
+        return "expected " + what + " to be absent but it is still there";
+    }
+
+    private static int entry(JList<?> list, List<String> item) {
+        if (item.size() != 1) throw new DriverException(Reason.BAD_INPUT, "a list 'item' names one entry");
+        return ListWidget.index(list, item.get(0));
     }
 
     private static String state(Resolved r, List<String> wanted, Section liveSection) {

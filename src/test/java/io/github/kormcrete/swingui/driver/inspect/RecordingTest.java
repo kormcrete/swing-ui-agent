@@ -874,6 +874,27 @@ class RecordingTest {
         assertThat(Inspector.agentIsRunning()).isFalse();
     }
 
+    /** A replay whose work never reaches the sink thread ends at once and leaves no run counted. */
+    @Test
+    void aReplayThatCannotStartLeavesNoRunCounted() throws Exception {
+        sink.person("click(#a)", "click(#b)");
+        withSteps();
+        sinkThread.shutdownNow();
+        java.io.PrintStream err = System.err;
+        System.setErr(new java.io.PrintStream(new java.io.ByteArrayOutputStream(), true));
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                recording.panel.speed(0);
+                recording.panel.press("▶ Replay all");
+            });
+            eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        } finally {
+            System.setErr(err);
+        }
+        assertThat(Inspector.agentIsRunning()).isFalse();
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).startsWith("✗ replay failed"));
+    }
+
     @Test
     void replayAllShowsTheResetOnTheBarAndStepByStepWaitsAfterIt() throws Exception {
         sink.person("click(#a)", "click(#b)");

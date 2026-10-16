@@ -310,7 +310,17 @@ final class HumanSteps implements AWTEventListener {
         TreePath[] selection = pressedSelection;
         String arrow = "the expand arrow of '" + pressedPath + "': double-click the row instead";
         if (besideRow(e, tree, entry, expanded, selection, target, refusal, arrow)) return;
-        SwingUtilities.invokeLater(() -> besideRow(e, tree, entry, expanded, selection, target, refusal, arrow));
+        boolean listening = installed;
+        SwingUtilities.invokeLater(() -> {
+            // later, outside eventDispatched: the same guards - nothing once it stopped listening (Done) or during the
+            // agent's step, and a throw never reaches the app's EDT handler
+            if (installed != listening || Inspector.agentIsActing()) return;
+            try {
+                besideRow(e, tree, entry, expanded, selection, target, refusal, arrow);
+            } catch (RuntimeException failed) {
+                System.err.println("swing-ui-agent inspector: " + failed);
+            }
+        });
     }
 
     /**

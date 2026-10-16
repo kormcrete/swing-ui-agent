@@ -136,13 +136,14 @@ class LiveVerbsArgumentsTest {
     }
 
     @Test
-    void aStableAmbiguousFailsWithinTwoSeconds() {
+    void aStableAmbiguousFailsLongBeforeTheDeadline() {
         long start = System.currentTimeMillis();
         DriverException e = catchThrowableOfType(() -> LiveVerbs.<Object>retryUntil(10_000, () -> {
             throw new DriverException(Reason.AMBIGUOUS, "2 elements match", java.util.Arrays.asList("a", "b"));
         }), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.AMBIGUOUS);
-        assertThat(System.currentTimeMillis() - start).isLessThan(2_000);
+        // about 1 s; far from the 10 s deadline it would otherwise wait out, on any machine
+        assertThat(System.currentTimeMillis() - start).isLessThan(5_000);
     }
 
     @Test

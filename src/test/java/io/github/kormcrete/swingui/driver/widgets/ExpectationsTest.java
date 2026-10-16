@@ -209,4 +209,109 @@ class ExpectationsTest {
         tree.expandRow(0);
         assertThat(Expectations.check(r, expanded)).isNull();
     }
+
+    private static Expectation absent() {
+        Expectation e = new Expectation();
+        e.absent = true;
+        return e;
+    }
+
+    private static javax.swing.table.DefaultTableModel cart() {
+        return new javax.swing.table.DefaultTableModel(new Object[][] {
+                {"A4 paper, 500 sheets", "3"}, {"Gel pen, black", "2"}}, new Object[] {"Product", "Qty"});
+    }
+
+    private static Resolved cartLine(JTable table, String product, String column) {
+        Locator l = Locator.of("table", "Cart");
+        l.row = Collections.<String, Object>singletonMap("Product", product);
+        l.column = column;
+        return new Resolved(table, null, "table", "Cart", "main", Collections.<String>emptyList(), l);
+    }
+
+    /** A row is absent once the table no longer has it, though the table is still there. */
+    @Test
+    void aRemovedRowIsAbsent() {
+        javax.swing.table.DefaultTableModel model = cart();
+        JTable table = new JTable(model);
+        Resolved line = cartLine(table, "Gel pen, black", null);
+        assertThat(Expectations.check(line, absent())).contains("still there");
+        model.removeRow(1);
+        assertThat(Expectations.check(line, absent())).isNull();
+    }
+
+    @Test
+    void aCellOfARemovedRowIsAbsent() {
+        javax.swing.table.DefaultTableModel model = cart();
+        JTable table = new JTable(model);
+        Resolved qty = cartLine(table, "Gel pen, black", "Qty");
+        assertThat(Expectations.check(qty, absent())).contains("still there");
+        model.removeRow(1);
+        assertThat(Expectations.check(qty, absent())).isNull();
+    }
+
+    @Test
+    void twoRowsThatMatchAreNotAbsent() {
+        javax.swing.table.DefaultTableModel model = cart();
+        model.addRow(new Object[] {"Gel pen, black", "5"});
+        Resolved line = cartLine(new JTable(model), "Gel pen, black", null);
+        assertThat(Expectations.check(line, absent())).contains("several");
+    }
+
+    @Test
+    void aRemovedTreeItemIsAbsent() {
+        javax.swing.tree.DefaultMutableTreeNode root = new javax.swing.tree.DefaultMutableTreeNode("Products");
+        javax.swing.tree.DefaultMutableTreeNode pens = new javax.swing.tree.DefaultMutableTreeNode("Pens");
+        root.add(new javax.swing.tree.DefaultMutableTreeNode("Paper"));
+        root.add(pens);
+        javax.swing.tree.DefaultTreeModel model = new javax.swing.tree.DefaultTreeModel(root);
+        javax.swing.JTree tree = new javax.swing.JTree(model);
+        tree.setRootVisible(false);
+        Locator l = Locator.of("tree", "Categories");
+        l.item = Collections.singletonList("Pens");
+        Resolved r = new Resolved(tree, null, "tree", "Categories", "main", Collections.<String>emptyList(), l);
+        assertThat(Expectations.check(r, absent())).contains("still there");
+        model.removeNodeFromParent(pens);
+        assertThat(Expectations.check(r, absent())).isNull();
+    }
+
+    private static Resolved entry(javax.swing.JList<String> list, String text) {
+        Locator l = Locator.of("list", "Customers");
+        l.item = Collections.singletonList(text);
+        return new Resolved(list, null, "list", "Customers", "main", Collections.<String>emptyList(), l);
+    }
+
+    @Test
+    void aRemovedListEntryIsAbsent() {
+        javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<String>();
+        model.addElement("Ada Shop Ltd");
+        model.addElement("Birch & Co");
+        Resolved birch = entry(new javax.swing.JList<String>(model), "Birch & Co");
+        assertThat(Expectations.check(birch, absent())).contains("still there");
+        model.removeElement("Birch & Co");
+        assertThat(Expectations.check(birch, absent())).isNull();
+    }
+
+    /** {@code shown} is {@code state ["!hidden"]}: on a list entry it needs the entry, not only the list. */
+    @Test
+    void aRemovedListEntryIsNotShown() {
+        javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<String>();
+        model.addElement("Ada Shop Ltd");
+        model.addElement("Birch & Co");
+        Resolved birch = entry(new javax.swing.JList<String>(model), "Birch & Co");
+        assertThat(Expectations.check(birch, state("!hidden"))).isNull();
+        model.removeElement("Birch & Co");
+        DriverException gone = catchThrowableOfType(() -> Expectations.check(birch, state("!hidden")), DriverException.class);
+        assertThat(gone.reason()).isEqualTo(Reason.NOT_FOUND);
+    }
+
+    @Test
+    void aRemovedRowIsNotShown() {
+        javax.swing.table.DefaultTableModel model = cart();
+        JTable table = new JTable(model);
+        Resolved line = cartLine(table, "Gel pen, black", null);
+        assertThat(Expectations.check(line, state("!hidden"))).isNull();
+        model.removeRow(1);
+        DriverException gone = catchThrowableOfType(() -> Expectations.check(line, state("!hidden")), DriverException.class);
+        assertThat(gone.reason()).isEqualTo(Reason.NOT_FOUND);
+    }
 }
