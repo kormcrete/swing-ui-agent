@@ -216,6 +216,34 @@ public final class TableWidget {
     }
 
     /**
+     * True when the table has every key column of {@code spec} - itself or in its row-header table, as
+     * {@link #row} looks them up. An index row needs no column. A key several columns share counts as present.
+     */
+    public static boolean hasKeyColumns(JTable table, RowSpec spec) {
+        if (spec.index != null) return true;
+        for (String key : spec.keys.keySet()) {
+            try {
+                column(table, key);
+            } catch (DriverException e) {
+                if (e.reason() == Reason.AMBIGUOUS) continue;
+                JTable header = rowHeaderOf(table);
+                if (header == null || !headers(header).contains(key)) return false;
+            }
+        }
+        return true;
+    }
+
+    /** True when {@link #row} finds at least one row for {@code spec}: found, or several rows match. */
+    public static boolean holdsRow(JTable table, RowSpec spec) {
+        try {
+            row(table, spec);
+            return true;
+        } catch (DriverException e) {
+            return e.reason() == Reason.AMBIGUOUS;
+        }
+    }
+
+    /**
      * The table in {@code table}'s enclosing scroll pane's row-header viewport, when it shows the same
      * rows: the same row count, and the same selection model or table model. Null otherwise.
      */

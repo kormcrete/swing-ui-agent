@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTable;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -21,6 +22,26 @@ class RecorderTest {
     private Resolved viaRef(String role, String name) {
         String ref = snapshot.build(null, null, 400, 20).find(role, name).ref;
         return scene.resolver.resolve(Locator.ofRef(ref));
+    }
+
+    @Test
+    void aRowStepNeedsNoColumnToBeUniqueAnyMore() {
+        JPanel pane = new JPanel(null);
+        JTable products = new JTable(new Object[][] {{"PEN-GEL-BLK", "Gel pen, black"}}, new Object[] {"SKU", "Product"});
+        JTable cart = new JTable(new Object[][] {{"A4 paper, 500 sheets", "1"}}, new Object[] {"Product", "Qty"});
+        pane.add(cart);
+        pane.add(products);
+        scene.mainContent.add(pane);
+        try {
+            Locator l = Locator.of("table", null);
+            l.row = Collections.<String, Object>singletonMap("SKU", "PEN-GEL-BLK");
+            Recorder.Recorded r = recorder.record(scene.resolver.resolve(l));
+            assertThat(r.fragile).isFalse();
+            assertThat(r.locator.nth).isNull();
+            assertThat(scene.resolver.resolve(r.locator).component).isSameAs(products);
+        } finally {
+            scene.mainContent.remove(pane);
+        }
     }
 
     @Test

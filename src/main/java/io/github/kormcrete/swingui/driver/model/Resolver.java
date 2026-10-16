@@ -77,7 +77,7 @@ public final class Resolver {
             Sections.Lookup lookup = sections.forWindow(windowOf(root));
             children(root.content, root, labelRoot, new ArrayList<String>(), locator, out, lookup);
         }
-        return out;
+        return preferRowHolders(out, locator);
     }
 
     /**
@@ -210,7 +210,7 @@ public final class Resolver {
                     && (l.containsMatch() ? ownText.contains(l.name) : ownText.equals(l.name));
             if (!matchesName && !matchesOwnText) return false;
         }
-        if (!hasColumn(c, l)) return false;
+        if (!hasColumn(c, l) || !hasRowKeys(c, l)) return false;
         if (l.scope == null) return true;
         // An id step is not part of the trail (Trail never derives one): it is checked against c's
         // own ancestors instead, and the remaining tab/section steps keep their subsequence rule.
@@ -279,6 +279,31 @@ public final class Resolver {
         }
         // "<header>@<identifier>": one of several columns that share a header (TableWidget.column).
         return TableWidget.identifiesColumn((JTable) c, l.column);
+    }
+
+    /**
+     * A locator with a keyed {@code row} only matches a table that has every key column (its own or its row-header
+     * table's), so the product table is told from the cart by the SKU column. An {@code index} row needs no column.
+     * Like {@link #hasColumn}, this only narrows.
+     */
+    private static boolean hasRowKeys(Component c, Locator l) {
+        if (l.row == null || !(c instanceof JTable)) return true;
+        return TableWidget.hasKeyColumns((JTable) c, l.rowSpec());
+    }
+
+    /**
+     * Of several tables that have the row's key columns, keep those that hold a matching row - when that leaves at
+     * least one, so a tie-break never turns a match into NOT_FOUND.
+     */
+    private static List<Resolved> preferRowHolders(List<Resolved> found, Locator l) {
+        if (l.row == null || found.size() < 2) return found;
+        RowSpec spec = l.rowSpec();
+        if (spec.index != null) return found;
+        List<Resolved> holders = new ArrayList<Resolved>();
+        for (Resolved r : found) {
+            if (r.component instanceof JTable && TableWidget.holdsRow((JTable) r.component, spec)) holders.add(r);
+        }
+        return holders.isEmpty() ? found : holders;
     }
 
     private static boolean isSubsequence(List<String> wanted, List<String> trail) {

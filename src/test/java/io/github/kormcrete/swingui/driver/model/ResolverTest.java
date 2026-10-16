@@ -79,6 +79,89 @@ class ResolverTest {
         return l;
     }
 
+    // ---- a row locator picks the table that has the row's key columns -----------------------
+
+    private JTable products() {
+        return new JTable(new Object[][] {{"PEN-GEL-BLK", "Gel pen, black", "40"}, {"A4-500", "A4 paper, 500 sheets", "12"}},
+                new Object[] {"SKU", "Product", "Stock"});
+    }
+
+    private JTable cart(String... products) {
+        Object[][] rows = new Object[products.length][];
+        for (int i = 0; i < products.length; i++) rows[i] = new Object[] {products[i], "1"};
+        return new JTable(rows, new Object[] {"Product", "Qty"});
+    }
+
+    private static Locator rowOf(String key, String value) {
+        Locator l = Locator.of("table", null);
+        l.row = java.util.Collections.<String, Object>singletonMap(key, value);
+        return l;
+    }
+
+    @Test
+    void aRowKeyColumnTheCartLacksPicksTheProductsTable() {
+        JPanel pane = new JPanel(null);
+        JTable products = products();
+        JTable cart = cart("A4 paper, 500 sheets");
+        pane.add(cart);
+        pane.add(products);
+        mainContent.add(pane);
+        try {
+            assertThat(resolver.resolve(rowOf("SKU", "PEN-GEL-BLK")).component).isSameAs(products);
+            assertThat(resolver.matches(rowOf("SKU", "PEN-GEL-BLK"))).hasSize(1);
+        } finally {
+            mainContent.remove(pane);
+        }
+    }
+
+    @Test
+    void aKeyBothTablesHaveIsDecidedByWhichHoldsTheRow() {
+        JPanel pane = new JPanel(null);
+        JTable products = new JTable(new Object[][] {{"Gel pen, black", "40"}}, new Object[] {"Product", "Stock"});
+        JTable cart = cart("A4 paper, 500 sheets");
+        pane.add(cart);
+        pane.add(products);
+        mainContent.add(pane);
+        try {
+            assertThat(resolver.resolve(rowOf("Product", "Gel pen, black")).component).isSameAs(products);
+            // no table holds it: both stay, and the row lookup reports "no row" as before
+            assertThat(resolver.matches(rowOf("Product", "Binder"))).hasSize(2);
+        } finally {
+            mainContent.remove(pane);
+        }
+    }
+
+    @Test
+    void whenBothHoldTheRowItStaysAmbiguous() {
+        JPanel pane = new JPanel(null);
+        pane.add(cart("Gel pen, black"));
+        pane.add(new JTable(new Object[][] {{"Gel pen, black", "40"}}, new Object[] {"Product", "Stock"}));
+        mainContent.add(pane);
+        try {
+            DriverException e = catchThrowableOfType(() -> resolver.resolve(rowOf("Product", "Gel pen, black")),
+                    DriverException.class);
+            assertThat(e.reason()).isEqualTo(Reason.AMBIGUOUS);
+        } finally {
+            mainContent.remove(pane);
+        }
+    }
+
+    @Test
+    void anIndexRowMatchesEveryTableAsBefore() {
+        JPanel pane = new JPanel(null);
+        pane.add(products());
+        pane.add(cart("A4 paper, 500 sheets"));
+        mainContent.add(pane);
+        try {
+            Locator l = Locator.of("table", null);
+            l.row = java.util.Collections.<String, Object>singletonMap("index", 0);
+            // the scene's own Orders table too: 3 tables
+            assertThat(resolver.matches(l)).hasSize(3);
+        } finally {
+            mainContent.remove(pane);
+        }
+    }
+
     @Test
     void aNamedColumnPicksTheTableThatHasIt() {
         // A grid beside its row-header table, neither named: on role alone both match.
