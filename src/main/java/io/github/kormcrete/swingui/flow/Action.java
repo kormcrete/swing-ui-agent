@@ -8,7 +8,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 /**
  * Base type for all steps. The JSON discriminator is the {@code action} property: one of the driver
  * verbs ({@link io.github.kormcrete.swingui.flow.verb.VerbAction} subtypes, {@code contextMenu} included), or one
- * of the three app steps {@code navigate}, {@code close}, {@code loginAs}. Any other name is BAD_INPUT
+ * of the three app steps {@code navigate}, {@code close}, {@code loginAs}, or {@code do}, a plugin's domain step
+ * ({@link DoAction}). Any other name is BAD_INPUT
  * ({@link FlowJson#unknownStepType}).
  *
  * <p>{@code @JsonInclude} declared here is inherited by every subclass that does not declare its own.
@@ -39,7 +40,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = FocusFileChooserNameVerb.class, name = "focusFileChooserName"),
         @JsonSubTypes.Type(value = NavigateAction.class, name = "navigate"),
         @JsonSubTypes.Type(value = CloseAction.class, name = "close"),
-        @JsonSubTypes.Type(value = LoginAsAction.class, name = "loginAs")
+        @JsonSubTypes.Type(value = LoginAsAction.class, name = "loginAs"),
+        @JsonSubTypes.Type(value = DoAction.class, name = "do")
 })
 public abstract class Action {
     /** The step's or check's sentence: optional, one line, never run. */

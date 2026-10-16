@@ -13,11 +13,23 @@ class ActionJsonTest {
     private final ObjectMapper mapper = FlowJson.mapper();
 
     @Test
-    void theStepTypesAreTheVerbsAndTheThreeAppSteps() {
+    void theStepTypesAreTheVerbsTheThreeAppStepsAndDo() {
         assertThat(FlowJson.stepTypes()).containsExactly(
                 "click", "type", "press", "check", "select", "pick", "menu", "answer", "chooseFile", "drag", "drop",
                 "expect", "scroll", "setClipboard", "screenshot", "contextMenu", "hover", "resizeColumn", "resizeWindow", "closeWindow", "focusFileChooserName",
-                "navigate", "close", "loginAs");
+                "navigate", "close", "loginAs", "do");
+    }
+
+    @Test
+    void doRoundTrips() throws Exception {
+        String json = "{\"action\":\"do\",\"step\":\"addToCart\",\"params\":{\"product\":\"Gel pen, black\"},"
+                + "\"say\":\"Add the pen\"}";
+        Action a = mapper.readValue(json, Action.class);
+        assertThat(a).isInstanceOf(DoAction.class);
+        assertThat(((DoAction) a).step).isEqualTo("addToCart");
+        assertThat(((DoAction) a).params).containsEntry("product", "Gel pen, black");
+        assertThat(a.describe()).isEqualTo("do(addToCart)");
+        assertThat(mapper.readTree(mapper.writeValueAsString(a))).isEqualTo(mapper.readTree(json));
     }
 
     @Test

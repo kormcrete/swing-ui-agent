@@ -19,6 +19,7 @@ import io.github.kormcrete.swingui.driver.model.Recorder;
 import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
@@ -1075,8 +1076,13 @@ public class UiMcpSession {
         r.put("message", step != null ? step.message : "no step executed");
         if (step != null && step.details != null) r.set("details", mapper.valueToTree(step.details));
         r.put("ms", elapsed);
+        if (step != null && step.steps != null) r.set("steps", children(step.steps));
         if (passed && record) {
-            if (model.state() == RecordingModel.State.STOPPED) {
+            if (action instanceof DoAction) {
+                model.refused(step.action + " - " + DO_NOT_RECORDED);
+                r.put("notRecorded", DO_NOT_RECORDED);
+                publish();
+            } else if (model.state() == RecordingModel.State.STOPPED) {
                 r.put("notRecorded", "the recording is stopped (Done in the palette, or recording stop): recording redo "
                         + "continues it, recording start begins a new one");
             } else {
@@ -1104,6 +1110,26 @@ public class UiMcpSession {
         if (dialog != null) r.set("dialog", mapper.valueToTree(dialog));
         if (passed && !record) row = rowOf(action, step.outcome, given);
         return new StepRun(r, row);
+    }
+
+    /** Why a passing {@code do} step is not recorded: a recorded test cannot hold one in this version. */
+    static final String DO_NOT_RECORDED = "it ran, but a domain step (do) is not recorded yet: a recorded test cannot "
+            + "hold one in this version; to record what it did, run its steps (the result's steps) as steps of their own";
+
+    /** A {@code do} step's child results, numbered from 1, each with its step as do_action takes it. */
+    private ArrayNode children(List<StepResult> steps) {
+        ArrayNode out = mapper.createArrayNode();
+        for (StepResult c : steps) {
+            ObjectNode o = stepJson(c, String.valueOf(c.index + 1), null);
+            try {
+                if (c.json != null) o.set("step", mapper.readTree(c.json));
+            } catch (IOException e) {
+                o.put("step", c.json);
+            }
+            if (c.pending != null) o.set("pending", mapper.valueToTree(c.pending));
+            out.add(o);
+        }
+        return out;
     }
 
     /**
@@ -1653,7 +1679,7 @@ public class UiMcpSession {
         r.put("total", StepNumbers.of(flow.steps).size());
         r.put("ms", (System.nanoTime() - started) / 1_000_000L);
         ArrayNode steps = r.putArray("steps");
-        for (StepResult s : result.steps) steps.add(stepJson(s, labels.get(s.index), flow.steps.get(s.index)));
+        for (StepResult s : result.steps) steps.add(stepJson(s, labels.get(s.index), flow.steps.get(s.index).say));
         r.put("report", FlowReport.format(flow, result));
         return r.toString();
     }
@@ -1687,10 +1713,11 @@ public class UiMcpSession {
         else o.put("n", Integer.parseInt(n));
     }
 
-    private ObjectNode stepJson(StepResult s, String n, Action action) {
+    /** One step's report; {@code say}: its sentence, null when none. A {@code do} step's children come under steps. */
+    private ObjectNode stepJson(StepResult s, String n, String say) {
         ObjectNode o = mapper.createObjectNode();
         putLabel(o, n);
-        if (action.say != null && !action.say.isEmpty()) o.put("say", action.say);
+        if (say != null && !say.isEmpty()) o.put("say", say);
         o.put("action", s.action);
         o.put("passed", s.passed);
         o.put("ms", s.ms);
@@ -1722,6 +1749,7 @@ public class UiMcpSession {
             ArrayNode problems = dj.putArray("problems");
             for (String p : d.problems) problems.add(p);
         }
+        if (s.steps != null) o.set("steps", children(s.steps));
         return o;
     }
 

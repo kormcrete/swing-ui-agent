@@ -27,7 +27,7 @@
         "properties": {
           "action": {
             "type": "object",
-            "description": "A step named by its 'action' field: a verb, or navigate / close / loginAs. The verbs are also tools of their own, with full argument schemas.",
+            "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.",
             "properties": {
               "action": {
                 "type": "string",
@@ -55,7 +55,8 @@
                   "focusFileChooserName",
                   "navigate",
                   "close",
-                  "loginAs"
+                  "loginAs",
+                  "do"
                 ]
               }
             },
@@ -89,7 +90,7 @@
             "description": "Steps to run in order",
             "items": {
               "type": "object",
-              "description": "A step named by its 'action' field: a verb, or navigate / close / loginAs. The verbs are also tools of their own, with full argument schemas.",
+              "description": "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.",
               "properties": {
                 "action": {
                   "type": "string",
@@ -117,7 +118,8 @@
                     "focusFileChooserName",
                     "navigate",
                     "close",
-                    "loginAs"
+                    "loginAs",
+                    "do"
                   ]
                 }
               },

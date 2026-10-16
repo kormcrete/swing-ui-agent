@@ -373,7 +373,7 @@ class UiMcpToolsTest {
                 .path("properties").path("action").path("enum");
         List<String> types = new ArrayList<String>();
         for (JsonNode n : names) types.add(n.asText());
-        assertThat(types).hasSize(24).contains("hover", "resizeColumn", "resizeWindow", "closeWindow", "focusFileChooserName", "navigate", "close", "loginAs", "contextMenu", "click");
+        assertThat(types).hasSize(25).contains("hover", "resizeColumn", "resizeWindow", "closeWindow", "focusFileChooserName", "navigate", "close", "loginAs", "contextMenu", "click", "do");
     }
 
     // ---- do_actions: one round trip for a whole run of steps ----------------------------

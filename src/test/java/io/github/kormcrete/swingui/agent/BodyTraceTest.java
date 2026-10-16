@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.agent;
 
+import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.junit.Client;
 import io.github.kormcrete.swingui.junit.Target;
 import io.github.kormcrete.swingui.spi.DomainStep;
@@ -12,6 +13,7 @@ import java.util.Collections;
 
 import static io.github.kormcrete.swingui.junit.UiAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BodyTraceTest {
 
@@ -246,13 +248,46 @@ class BodyTraceTest {
     }
 
     @Test
+    void concreteValuesAreCheckedAsDoActionChecksThem() {
+        DomainStep step = DomainStep.act("setQuantity", "Set the quantity of {product} to {qty}")
+                .param("product", ParamType.TEXT)
+                .param("qty", ParamType.INT)
+                .code((ui, p) -> setQuantity(ui, p.text("product"), p.integer("qty")))
+                .build();
+
+        assertThatThrownBy(() -> BodyTrace.steps(step, Collections.singletonMap("product", "Gel pen, black")))
+                .isInstanceOf(DriverException.class)
+                .hasMessage("BAD_INPUT: setQuantity needs param 'qty'");
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<String, String>();
+        values.put("product", "Gel pen, black");
+        values.put("qty", "three");
+        assertThatThrownBy(() -> BodyTrace.steps(step, values))
+                .hasMessage("BAD_INPUT: param 'qty' of setQuantity is INT: a whole number in int range, not 'three'");
+        values.put("qty", "3");
+        values.put("colour", "black");
+        assertThatThrownBy(() -> BodyTrace.steps(step, values))
+                .hasMessage("BAD_INPUT: setQuantity has no param 'colour' (its params: product, qty)");
+    }
+
+    @Test
+    void aBodyReadingATextParamAsANumberSaysWhichParam() {
+        DomainStep step = DomainStep.act("setQuantity", "Set the quantity of {product}")
+                .param("product", ParamType.TEXT)
+                .code((ui, p) -> setQuantity(ui, "Gel pen, black", p.integer("product")))
+                .build();
+
+        assertThat(BodyTrace.of(step).why())
+                .isEqualTo("the body failed: param 'product' of setQuantity is TEXT, not INT: read it with text(\"product\")");
+    }
+
+    @Test
     void aFailingBodySaysWhy() {
         DomainStep step = DomainStep.act("addToCart", "Add {product} to the cart")
                 .param("product", ParamType.TEXT)
                 .code((ui, p) -> addToCart(ui, p.text("produkt")))
                 .build();
 
-        assertThat(BodyTrace.of(step).why()).isEqualTo("the body failed: the step has no param 'produkt'");
+        assertThat(BodyTrace.of(step).why()).isEqualTo("the body failed: addToCart has no param 'produkt'");
     }
 
     private static JsonNode steps(BodyTrace.Result trace) {

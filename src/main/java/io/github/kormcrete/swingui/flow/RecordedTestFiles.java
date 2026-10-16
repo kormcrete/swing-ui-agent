@@ -71,7 +71,7 @@ public final class RecordedTestFiles {
     static final Set<String> LATER_FIELDS = set("requires");
     /** Step fields of later formats. */
     static final Set<String> LATER_STEP_FIELDS = set("author");
-    /** Step types of later formats. */
+    /** Step types of later formats: a step type this agent runs live, which a recorded test cannot hold yet. */
     static final Set<String> LATER_STEP_TYPES = set("do");
     /** The longest sentence, in characters. */
     static final int MAX_SAY = 200;
@@ -252,6 +252,7 @@ public final class RecordedTestFiles {
 
     private static Action action(ObjectReader reader, JsonNode node, String label, String source) {
         String type = typeOf(node);
+        if (LATER_STEP_TYPES.contains(type)) throw bad(source, label + ": '" + type + "' " + NEWER);
         try {
             return reader.readValue(node);
         } catch (UnrecognizedPropertyException e) {
@@ -261,9 +262,8 @@ public final class RecordedTestFiles {
                     : "known: " + sorted(e.getKnownPropertyIds());
             throw bad(source, label + " (" + type + "): unknown field '" + field + "'; " + why);
         } catch (InvalidTypeIdException e) {
-            String hint = LATER_STEP_TYPES.contains(e.getTypeId()) ? "; '" + e.getTypeId() + "' " + NEWER : "";
             DriverException named = FlowJson.unknownStepType(e);
-            throw bad(source, label + ": " + DriverException.stripReason(named.getMessage(), named.reason()) + hint);
+            throw bad(source, label + ": " + DriverException.stripReason(named.getMessage(), named.reason()));
         } catch (JsonProcessingException e) {
             throw bad(source, label + ": " + e.getOriginalMessage());
         } catch (IOException e) {

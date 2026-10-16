@@ -30,6 +30,13 @@ public class StepResult {
     public long edtWaitMs;
     /** Why a replay step failed, beyond its message - set only when the executor diagnoses failures. */
     public StepDiagnostics diagnostics;
+    /**
+     * A {@code do} step's children: one result per step its body ran, in order ({@link #index} from 0 within the
+     * body), the failed one last when one failed; null for any other step.
+     */
+    public List<StepResult> steps;
+    /** A child's step as do_action takes it, as JSON text; null for a step of the run itself. */
+    public String json;
 
     public static StepResult pass(int index, String action) {
         StepResult r = new StepResult();

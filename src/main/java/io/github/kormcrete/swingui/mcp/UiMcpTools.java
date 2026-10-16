@@ -567,8 +567,9 @@ public final class UiMcpTools {
     private static ObjectNode actionSchema(ObjectMapper m) {
         ObjectNode s = m.createObjectNode();
         s.put("type", "object");
-        s.put("description", "A step named by its 'action' field: a verb, or navigate / close / loginAs. "
-                + "The verbs are also tools of their own, with full argument schemas.");
+        s.put("description", "A step named by its 'action' field: a verb, navigate / close / loginAs, or do (a plugin's "
+                + "domain step: {\"action\":\"do\",\"step\":<id>,\"params\":{<name>:<value as text>}}, which reports its "
+                + "filled sentence and the steps it ran). The verbs are also tools of their own, with full argument schemas.");
         ObjectNode action = s.putObject("properties").putObject("action");
         action.put("type", "string");
         ArrayNode names = action.putArray("enum");

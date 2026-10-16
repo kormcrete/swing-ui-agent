@@ -38,7 +38,8 @@ public final class DomainStep {
      * A Java body: does the step through {@code ui}, the same {@link Client} a UI test uses, with the step's values.
      * A failure throws (a failed action or check of {@code ui} already does). A value the step makes, such as a new
      * order number, belongs in a helper method that returns it (for Java tests, named by {@link Builder#java}); the
-     * body itself returns nothing.
+     * body itself returns nothing. A {@code do} step runs it on the agent's request thread, not on the EDT (as a UI
+     * test's Client runs off the EDT); so are {@link Builder#choices} suppliers asked.
      */
     public interface Body {
         void run(Client ui, Params params);

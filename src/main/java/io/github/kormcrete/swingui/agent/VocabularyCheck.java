@@ -81,7 +81,7 @@ final class VocabularyCheck {
             if (!PARAM.matcher(p.name()).matches()) {
                 why.add("param '" + p.name() + "': a name must start with a letter and hold only letters, digits and _");
             }
-            if (p.optional() && p.type() == ParamType.INT && !isInt(p.defaultValue())) {
+            if (p.optional() && p.type() == ParamType.INT && !MapParams.isInt(p.defaultValue())) {
                 why.add("the default of INT param '" + p.name() + "' is not a whole number in int range: '"
                         + p.defaultValue() + "'");
             }
@@ -112,16 +112,6 @@ final class VocabularyCheck {
             }
         }
         return why;
-    }
-
-    private static boolean isInt(String digits) {
-        if (!digits.matches("\\d+")) return false;
-        try {
-            Integer.parseInt(digits);
-            return true;
-        } catch (NumberFormatException tooBig) {
-            return false;
-        }
     }
 
     /** Adds a problem per {@code {name}} in {@code text} that is no declared param (each name once). */

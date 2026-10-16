@@ -26,7 +26,8 @@ import java.util.regex.Pattern;
  * values went, as a pattern: e.g. {@code addToCart(ui, product)} becomes a click on the table row whose Product is
  * {@code {product}} and a click on Add to cart. {@link #steps} gives them for concrete values. The body runs, in the
  * calling thread, on a {@link Client} over {@link TracingVerbs}: its Client calls reach no app. Anything else the
- * body does (plugin or app code, files, a database) runs for real, once per run, with the values below.
+ * body does (plugin or app code, files, a database) runs for real, once per run: with {@link #of}'s sentinel values
+ * (below), or with the values given to {@link #steps}.
  *
  * <p>{@link #of} runs the body twice. First with sentinels that are found again in the steps: a TEXT param holds
  * {@code {name}}, an INT param a large number of its own (970001, 970011, ...), mapped back to {@code {name}} wherever
@@ -109,15 +110,12 @@ public final class BodyTrace {
     /**
      * The steps {@code step}'s Java body makes for {@code values} (param name to value as text; an optional param
      * left out holds its default), e.g. for a Java test that writes them out. Run twice with two run ids: a body
-     * whose steps differ is not derivable ({@link #DEPENDS_ON_VALUES}).
+     * whose steps differ is not derivable ({@link #DEPENDS_ON_VALUES}). Values do_action would refuse (an unknown or
+     * missing param, an INT that is no whole number) are BAD_INPUT, before the body runs.
      */
     public static Result steps(DomainStep step, Map<String, String> values) {
         requireBody(step);
-        Map<String, String> all = new LinkedHashMap<String, String>();
-        for (DomainStep.Param p : step.params()) {
-            if (p.optional()) all.put(p.name(), p.defaultValue());
-        }
-        all.putAll(values);
+        Map<String, String> all = MapParams.of(step, values).values();
         Run a = run(step, all, "trace-1");
         if (a.why != null) return notDerivable(a.why);
         Run b = run(step, all, "trace-2");
@@ -151,8 +149,9 @@ public final class BodyTrace {
 
     private static Run run(DomainStep step, Map<String, String> values, String runId) {
         TracingVerbs verbs = new TracingVerbs();
+        MapParams params = MapParams.of(step, values);
         try {
-            step.body().run(new Client(verbs, verbs.app(), runId), new MapParams(values));
+            step.body().run(new Client(verbs, verbs.app(), runId), params);
         } catch (Exception | AssertionError | LinkageError | StackOverflowError e) {
             if (!verbs.derivable()) return new Run(null, verbs.notDerivable(), false);
             return new Run(null, "the body failed: " + (e.getMessage() != null ? e.getMessage() : e.toString()), true);

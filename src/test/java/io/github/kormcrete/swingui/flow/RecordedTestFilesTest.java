@@ -101,7 +101,9 @@ class RecordedTestFilesTest {
     @Test
     void everyStepTypeReadsBackStrictly() throws Exception {
         Map<String, String> samples = samples();
-        assertThat(samples.keySet()).containsExactlyInAnyOrderElementsOf(FlowJson.stepTypes());
+        List<String> fileTypes = new ArrayList<String>(FlowJson.stepTypes());
+        fileTypes.removeAll(RecordedTestFiles.LATER_STEP_TYPES); // runs live, not in a file yet
+        assertThat(samples.keySet()).containsExactlyInAnyOrderElementsOf(fileTypes);
         String before = samples.get("click");
         for (Map.Entry<String, String> e : samples.entrySet()) {
             // an expect is a check: it is written under the sample before it

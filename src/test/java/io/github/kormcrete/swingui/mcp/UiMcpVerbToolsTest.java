@@ -1,11 +1,15 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.FileChooserState;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Recorder;
+import io.github.kormcrete.swingui.spi.DomainStep;
+import io.github.kormcrete.swingui.spi.ParamType;
+import io.github.kormcrete.swingui.spi.PluginParts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 import javax.swing.JPanel;
 import java.awt.event.KeyEvent;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.CountDownLatch;
@@ -181,5 +186,85 @@ class UiMcpVerbToolsTest {
         b.join(5_000);
         assertThat(most.get()).isEqualTo(1);
         assertThat(backend.verbs.calls).hasSize(2);
+    }
+
+    // ---- the do step: a plugin's domain step ---------------------------------------------------
+
+    private static final String DO_ADD = "{\"action\":\"do\",\"step\":\"addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}";
+
+    /** A session over plugins whose order-desk plugin offers addToCart: a row click and an Add to cart click. */
+    private UiMcpSession withVocabulary() {
+        Plugins plugins = new Plugins(backend.verbs);
+        plugins.add("order-desk", Paths.get("order-desk")).ready(new PluginParts(() -> Collections.singletonList(
+                DomainStep.act("addToCart", "Add {product} to the cart")
+                        .param("product", ParamType.TEXT)
+                        .code((ui, p) -> {
+                            ui.tab("New order*").table().row("Product", p.text("product")).cell("Product").click();
+                            ui.tab("New order*").button("Add to cart").click();
+                        })
+                        .build())), "ok");
+        UiMcpSession s = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
+        s.startRecording(true);
+        return s;
+    }
+
+    @Test
+    void doActionReportsTheFilledSentenceAndChildSteps() throws Exception {
+        UiMcpSession s = withVocabulary();
+
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(DO_ADD)));
+
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
+        JsonNode steps = r.path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("n").asInt()).isEqualTo(1);
+        assertThat(steps.get(0).path("step")).isEqualTo(mapper.readTree("{\"action\":\"click\",\"target\":{"
+                + "\"scope\":[\"tab:New order*\"],\"role\":\"table\",\"row\":{\"Product\":\"Gel pen, black\"},"
+                + "\"column\":\"Product\"}}"));
+        assertThat(steps.get(1).path("n").asInt()).isEqualTo(2);
+        assertThat(steps.get(1).path("action").asText()).startsWith("click(");
+        assertThat(steps.get(1).path("passed").asBoolean()).isTrue();
+        assertThat(steps.get(1).has("ms")).isTrue();
+        assertThat(backend.verbs.calls).hasSize(2);
+        // not recorded yet: the recording stays as it was, and the result says why
+        assertThat(r.has("recorded")).isFalse();
+        assertThat(r.path("notRecorded").asText()).isEqualTo(UiMcpSession.DO_NOT_RECORDED);
+        assertThat(mapper.readTree(s.recording(mapper.readTree("{\"op\":\"list\"}"))).path("steps")).isEmpty();
+    }
+
+    @Test
+    void aBatchedDoStepReportsItsChildStepsAndAFailingOneByNumber() throws Exception {
+        UiMcpSession s = withVocabulary();
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 2
+                ? new DriverException(Reason.NOT_FOUND, "nothing matches button 'Add to cart'") : null;
+
+        JsonNode r = mapper.readTree(s.batch(mapper.readTree("{\"steps\":[{\"verb\":\"do\",\"step\":\"addToCart\","
+                + "\"params\":{\"product\":\"Gel pen, black\"}}]}")));
+
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        JsonNode step = r.path("steps").get(0);
+        assertThat(step.path("verb").asText()).isEqualTo("do");
+        assertThat(step.path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
+        assertThat(step.path("reason").asText()).isEqualTo("NOT_FOUND");
+        assertThat(step.path("message").asText()).startsWith("NOT_FOUND: Add Gel pen, black to the cart: step 2 (click(")
+                .endsWith(") failed: nothing matches button 'Add to cart'");
+        assertThat(step.path("steps")).hasSize(2);
+        assertThat(step.path("steps").get(0).path("passed").asBoolean()).isTrue();
+        JsonNode failed = step.path("steps").get(1);
+        assertThat(failed.path("passed").asBoolean()).isFalse();
+        assertThat(failed.path("reason").asText()).isEqualTo("NOT_FOUND");
+        assertThat(failed.path("message").asText()).isEqualTo("NOT_FOUND: nothing matches button 'Add to cart'");
+    }
+
+    @Test
+    void withoutAPluginADoStepIsACapabilityGap() throws Exception {
+        DriverException e = catchThrowableOfType(() -> session.doAction(mapper.readTree(DO_ADD)), DriverException.class);
+
+        assertThat(e).isNotNull();
+        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
+        assertThat(e.getMessage()).isEqualTo("CAPABILITY_GAP: the do step 'addToCart' needs a plugin with a vocabulary; "
+                + "none configured");
+        assertThat(backend.verbs.calls).isEmpty();
     }
 }

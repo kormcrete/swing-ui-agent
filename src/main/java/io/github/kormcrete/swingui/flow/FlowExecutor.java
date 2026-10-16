@@ -1,22 +1,31 @@
 package io.github.kormcrete.swingui.flow;
 
+import io.github.kormcrete.swingui.driver.DomainStepFailed;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.EdtClock;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.StepCall;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.StepHost;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Runs a Flow's steps against a {@link StepHost}, collecting a FlowResult. Stops at the first failed step.
- * A verb runs through the host's driver; {@code navigate}, {@code close} and {@code loginAs} through the host.
- * Every step is timed (wall time and its {@link EdtClock} split); with {@link #diagnoseFailures} a
- * failed step also carries {@link StepDiagnostics}.
+ * A verb runs through the host's driver; {@code navigate}, {@code close}, {@code loginAs} and {@code do} through the
+ * host. A {@code do} step's result is its filled sentence, with one child result per step its body ran
+ * ({@link StepResult#steps}). Every step is timed (wall time and its {@link EdtClock} split); with
+ * {@link #diagnoseFailures} a failed step also carries {@link StepDiagnostics}, a failed {@code do} step on its failed
+ * child.
  */
 public class FlowExecutor {
 
@@ -69,6 +78,7 @@ public class FlowExecutor {
                     step.via = outcome.via;
                     step.warning = outcome.warning;
                     if (outcome.note != null) step.message = outcome.note;
+                    domainStep(step, outcome);
                 }
             } catch (AssertionError | RuntimeException e) {
                 step = StepResult.fail(i, action.describe(), e.getMessage());
@@ -76,6 +86,7 @@ public class FlowExecutor {
                 if (e instanceof DriverException && !((DriverException) e).details().isEmpty()) {
                     step.details = ((DriverException) e).details();
                 }
+                if (e instanceof DomainStepFailed) domainStep(step, ((DomainStepFailed) e).outcome());
             }
             step.ms = (System.nanoTime() - started) / 1_000_000L;
             EdtClock.Reading edt = EdtClock.read().since(edtBefore);
@@ -86,17 +97,70 @@ public class FlowExecutor {
                 step.activations = orNull(verbs.watch().activationsSince(mark));
             }
             if (!step.passed && diagnostics != null) {
-                try {
-                    step.diagnostics = diagnostics.diagnose(action, verbs, flow.name, StepNumbers.label(flow.steps, i));
-                } catch (RuntimeException e) {
-                    step.diagnostics = new StepDiagnostics();
-                    step.diagnostics.problems.add("diagnosis failed: " + e);
+                StepResult child = failedChild(step);
+                String label = StepNumbers.label(flow.steps, i);
+                if (child == null) {
+                    step.diagnostics = diagnose(() -> diagnostics.diagnose(action, verbs, flow.name, label));
+                } else {
+                    String childLabel = label + "-" + (child.index + 1);
+                    child.diagnostics = diagnose(() -> diagnostics.diagnose(targetsOf(child), verbs, flow.name, childLabel));
                 }
             }
             result.steps.add(step);
             if (!step.passed) break; // stop at first failure
         }
         return result;
+    }
+
+    private static StepDiagnostics diagnose(Supplier<StepDiagnostics> diagnosis) {
+        try {
+            return diagnosis.get();
+        } catch (RuntimeException e) {
+            StepDiagnostics d = new StepDiagnostics();
+            d.problems.add("diagnosis failed: " + e);
+            return d;
+        }
+    }
+
+    /** A domain step's result: its filled sentence for its label, and a child result per step its body ran. */
+    private static void domainStep(StepResult step, VerbOutcome outcome) {
+        if (outcome.sentence != null) step.action = outcome.sentence;
+        if (outcome.calls == null) return;
+        step.steps = new ArrayList<StepResult>();
+        for (int k = 0; k < outcome.calls.size(); k++) {
+            StepCall c = outcome.calls.get(k);
+            StepResult r = c.passed ? StepResult.pass(k, c.action) : StepResult.fail(k, c.action, c.message);
+            r.json = c.json;
+            r.ms = c.ms;
+            if (c.reason != null) r.reason = c.reason.name();
+            if (c.details != null && !c.details.isEmpty()) r.details = c.details;
+            if (c.outcome != null) {
+                r.outcome = c.outcome;
+                r.pending = c.outcome.pending;
+                r.via = c.outcome.via;
+                r.warning = c.outcome.warning;
+                if (c.outcome.note != null) r.message = c.outcome.note;
+            }
+            step.steps.add(r);
+        }
+    }
+
+    /** The child of a failed {@code do} step that failed it (its last, when that one failed); else null. */
+    private static StepResult failedChild(StepResult step) {
+        if (step.steps == null || step.steps.isEmpty()) return null;
+        StepResult last = step.steps.get(step.steps.size() - 1);
+        return last.passed ? null : last;
+    }
+
+    /** A child's targets, read from its step JSON; none for an app step or a step that does not parse. */
+    private static Map<String, Locator> targetsOf(StepResult child) {
+        try {
+            Action a = FlowJson.mapper().readValue(child.json, Action.class);
+            if (a instanceof VerbAction) return ((VerbAction) a).targets();
+        } catch (java.io.IOException | RuntimeException unreadable) {
+            // nothing to diagnose by
+        }
+        return Collections.emptyMap();
     }
 
     /** The reason a failure is reported with. A host's refusal is a missing capability. */
@@ -142,6 +206,12 @@ public class FlowExecutor {
             host.closeActiveTab();
         } else if (action instanceof LoginAsAction) {
             host.loginAs(((LoginAsAction) action).as);
+        } else if (action instanceof DoAction) {
+            DoAction d = (DoAction) action;
+            if (d.step == null || d.step.trim().isEmpty()) {
+                throw new DriverException(Reason.BAD_INPUT, "a do step needs 'step': the id of a plugin's domain step");
+            }
+            return host.runStep(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
         } else {
             throw new DriverException(Reason.BAD_INPUT, "unknown step type: " + action.getClass().getName()
                     + "; the step types are " + FlowJson.stepTypes());
