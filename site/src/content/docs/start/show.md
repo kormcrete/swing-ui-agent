@@ -79,7 +79,7 @@ exactly `€31.32` (it shows in the list as, for example, `4.1`: step 4, check 1
 
 ![Check mode on the cart: the gel pen's Product cell is boxed and labelled Gel pen, black · Product, and a menu offers Product is "Gel pen, black" in this row, Has exactly 2 rows and Has at least 1 row](../../../assets/inspector/check-menu.png)
 
-Which checks you get depends on the element:
+Which checks you get depends on the element. For example:
 
 - **Labels and buttons:** Reads “…” (a button only when it has text), then Is enabled or Is disabled.
 - **Text fields:** Value is “…”, or Is empty; Is editable or Is read-only.
@@ -120,12 +120,9 @@ will; without a plugin that only closes dialogs, so the first step has to get to
 
 ### Name the steps
 
-A step shows the technical line until you give it a sentence. Select a row in the Steps list and double click it, or
-press F2 or Enter: a field opens over the row, Enter saves it and Esc cancels. The row's **⋯** button, or a right
-click, opens a menu with the same field as **Describe this step…**, **Describe this check…** or, for several selected
-steps, **Describe these steps…**, which makes them a group under one sentence. **Ungroup** in that menu undoes a group.
-For a table row the menu also offers **Row: this value (…)** and **Row: by position (…)**, how the test finds that
-row. More in [Sentences and groups](/swing-ui-agent/guides/sentences/).
+Select a row in the Steps list and double click it, or press F2 or Enter, to give it a sentence; **⋯** or a right
+click opens the same as **Describe this step…**, **Describe this check…** or **Describe these steps…**. All the ways,
+groups and how a table row is kept are in [Sentences and groups](/swing-ui-agent/guides/sentences/).
 
 <!-- TODO picture (Task 12): the Steps list with the row menu open: Describe this step…, Ungroup, Row: this value, Row: by position -->
 
@@ -161,22 +158,14 @@ Either way, run the new test once from another screen before you commit it. See
 
 ## 6. Load it again, run it, save back
 
-A recorded test is a file you can open any time, also in a new session. The idle palette and, after Done, the bar
-(as **Load…**) offer it.
+A recorded test is a file you can open again in a new session. Press **Load recorded test…** (or **Load…** after
+Done), choose the file, then **▶ Run**, with **Step by step** if you want to watch. The steps are the same Steps list
+as when recording, so you can name, delete or redo them. **Export…** reads **Save** under the test's own name and writes
+over it; under another name it reads **Export** and writes a new file. The full walk-through is in
+[Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/#open-one-in-the-palette).
 
-1. Press **Load recorded test…**. The panel lists the files in the folder, each with its description and step count.
-   **Choose…** picks another folder. A file that cannot be read is greyed with the reason.
-2. Choose one and press **Load** (or double click it). It replaces the current recording, and the panel says how many
-   steps that is. The bar is titled **Loaded** and the Steps list opens with **▶ Run** in place of Replay all.
-3. Pick the **Replay speed** and press **▶ Run**. The app is reset first, as when the test runs for real, then every
-   step runs. **Step by step** waits for **Next** at each step; an action and its checks are one step. ✓ and ✗ stay on
-   the steps until the next run.
-4. To fix it, use the Steps list as when recording: name, delete, redo from a step, undo.
-5. Press **Export…**. Under the test's own name the button reads **Save** and writes over the file; under another
-   name it reads **Export** and writes a new file, so the original stays.
-
-The agent is refused while you run: its calls come back busy until you finish. Where the files live and how the agent
-and CI run them is on [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/).
+While you run, the agent's calls are refused with BUSY and a message such as "a person is running gel-pen-total in
+the app" (or "a person is replaying their recording in the app").
 
 <!-- TODO picture (Task 12): the Loaded bar with the Steps panel showing ▶ Run and the Replay speed on Step by step -->
 
