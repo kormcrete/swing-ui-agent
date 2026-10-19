@@ -28,7 +28,7 @@ A `timeout` on the step (in milliseconds) replaces both defaults for that step:
 $UI click '{"target":{"role":"button","name":"New order"},"timeout":1000}'
 ```
 
-If the target never becomes actionable, the step fails with the reason (`NOT_FOUND`, `AMBIGUOUS` or `NOT_ACTIONABLE`). If the action ran but the app did not settle in time, the step still passes, with a `warning` that names what stayed busy; a test prints it as an `[ui-warning]` line.
+If the target never becomes actionable, the step fails with the reason (`NOT_FOUND`, `AMBIGUOUS` or `NOT_ACTIONABLE`). `AMBIGUOUS` comes sooner: when the same elements have matched for one second, waiting longer will not narrow them to one, so the step fails then rather than at its timeout. Make the target more specific (a `scope`, a `window` or `nth`, as the message suggests) instead of raising the timeout. If the action ran but the app did not settle in time, the step still passes, with a `warning` that names what stayed busy; a test prints it as an `[ui-warning]` line.
 
 ## Checks retry
 
