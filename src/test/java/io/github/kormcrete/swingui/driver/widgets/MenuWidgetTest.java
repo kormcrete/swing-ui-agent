@@ -6,7 +6,9 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
+import javax.swing.JFrame;
 import javax.swing.JMenuItem;
+import javax.swing.JPanel;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -88,5 +90,46 @@ class MenuWidgetTest {
         assertThatThrownBy(() -> MenuWidget.items(file, Collections.singletonList("Open")))
                 .isInstanceOf(DriverException.class)
                 .hasMessageContaining("has no submenu");
+    }
+
+    @Test
+    void leafPathsListEveryItemAMenuPathReaches() {
+        JMenu orders = new JMenu("Orders");
+        JMenuItem archive = new JMenuItem("Archive");
+        archive.setEnabled(false);
+        JMenu recent = new JMenu("Recent");
+        JMenuItem hidden = new JMenuItem("Hidden");
+        hidden.setVisible(false);
+        JMenu locked = new JMenu("Locked");
+        locked.setEnabled(false);
+        locked.add(new JMenuItem("Purge"));
+        orders.add(new JMenuItem("<html>New <b>order</b></html>"));
+        orders.addSeparator();
+        orders.add(archive);
+        orders.add(recent);
+        orders.add(hidden);
+        orders.add(locked);
+        orders.add(new JMenuItem(""));
+        bar.add(orders);
+        JFrame frame = new JFrame();
+        try {
+            frame.setJMenuBar(bar);
+            assertThat(MenuWidget.leafPaths(frame)).containsExactly("File > Open", "File > Export > PDF", "Orders > New order",
+                    "Orders > Archive [disabled]", "Orders > Recent", "Orders > Locked > Purge [disabled]");
+        } finally {
+            frame.dispose();
+        }
+    }
+
+    @Test
+    void noWindowOrNoMenuBarHasNoPaths() {
+        assertThat(MenuWidget.leafPaths(null)).isEmpty();
+        assertThat(MenuWidget.leafPaths(new JPanel())).isEmpty();
+        JFrame frame = new JFrame();
+        try {
+            assertThat(MenuWidget.leafPaths(frame)).isEmpty();
+        } finally {
+            frame.dispose();
+        }
     }
 }

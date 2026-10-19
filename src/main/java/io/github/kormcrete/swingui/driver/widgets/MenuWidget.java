@@ -7,6 +7,7 @@ import io.github.kormcrete.swingui.driver.model.Names;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.RootPaneContainer;
 import java.awt.Component;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +79,42 @@ public final class MenuWidget {
             if (c instanceof JMenuItem && c.isVisible()) out.add(Names.clean(((JMenuItem) c).getText()));
         }
         return out;
+    }
+
+    /**
+     * Every leaf path of {@code window}'s menu bar, depth first ("File > Export > Orders"), as the {@code menu} verb
+     * takes it. A leaf that cannot be chosen (disabled, or under a disabled menu) ends in " [disabled]"; a submenu with
+     * no items is listed as a leaf (an app may fill it as it opens). Hidden menus and items, and items without text,
+     * are left out. Empty without a window or a menu bar.
+     */
+    public static List<String> leafPaths(Component window) {
+        List<String> out = new ArrayList<String>();
+        if (!(window instanceof RootPaneContainer)) return out;
+        JMenuBar bar = ((RootPaneContainer) window).getRootPane().getJMenuBar();
+        if (bar == null) return out;
+        for (int i = 0; i < bar.getMenuCount(); i++) {
+            JMenu menu = bar.getMenu(i);
+            if (menu != null) addLeaves(menu, "", true, out);
+        }
+        return out;
+    }
+
+    private static void addLeaves(JMenuItem item, String parent, boolean parentEnabled, List<String> out) {
+        String text = Names.clean(item.getText());
+        if (!item.isVisible() || text == null) return;
+        String path = parent.isEmpty() ? text : parent + " > " + text;
+        boolean enabled = parentEnabled && item.isEnabled();
+        List<JMenuItem> children = new ArrayList<JMenuItem>();
+        if (item instanceof JMenu) {
+            for (Component c : ((JMenu) item).getMenuComponents()) {
+                if (c instanceof JMenuItem && c.isVisible()) children.add((JMenuItem) c);
+            }
+        }
+        if (children.isEmpty()) {
+            out.add(enabled ? path : path + " [disabled]");
+            return;
+        }
+        for (JMenuItem child : children) addLeaves(child, path, enabled, out);
     }
 
     private static JMenuItem child(JMenu menu, String label) {
