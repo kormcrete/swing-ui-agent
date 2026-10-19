@@ -117,6 +117,9 @@ class SessionToolTest {
                 new AgentInfo("2.0", "x"), AgentArgs.parse(null), () -> 1, STARTED);
         assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("recordedDir").asText())
                 .isEqualTo(tmp.toAbsolutePath().normalize().toString());
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("recordedReadOnly").asBoolean()).isFalse();
+        session.recordedReadOnly(true);
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{}"))).path("recordedReadOnly").asBoolean()).isTrue();
     }
 
     @Test

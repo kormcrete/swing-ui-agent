@@ -34,7 +34,17 @@ class AgentArgsTest {
         assertThatThrownBy(() -> AgentArgs.parse("plugin=/a.jar"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("plugin")
-                .hasMessageContaining("port, bind, mode, palette, recorded, plugins, log");
+                .hasMessageContaining("port, bind, mode, palette, recorded, recordedReadOnly, plugins, log");
+    }
+
+    @Test
+    void recordedReadOnlyIsOffUnlessAskedFor() {
+        assertThat(AgentArgs.parse("port=1").recordedReadOnly).isFalse();
+        assertThat(AgentArgs.parse("recorded=uitest,recordedReadOnly=on").recordedReadOnly).isTrue();
+        assertThat(AgentArgs.parse("recordedReadOnly=off").recordedReadOnly).isFalse();
+        assertThatThrownBy(() -> AgentArgs.parse("recordedReadOnly=yes"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("recordedReadOnly must be on or off, was 'yes'");
     }
 
     @Test

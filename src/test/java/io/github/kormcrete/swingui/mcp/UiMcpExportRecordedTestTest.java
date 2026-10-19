@@ -243,6 +243,23 @@ class UiMcpExportRecordedTestTest {
     }
 
     @Test
+    void aReadOnlyRecordedTestsFolderTakesNoExportAnotherFolderDoes(@TempDir Path mine) throws Exception {
+        session.recordedReadOnly(true);
+        clickSave();
+        // the app's own recorded tests: neither the default folder nor the same folder by name is written
+        RecordedTestFolderNotWritable refused = catchThrowableOfType(() -> session.exportRecordedTest("place-order", "", "", false),
+                RecordedTestFolderNotWritable.class);
+        assertThat(refused.getMessage()).contains("read-only");
+        assertThat(catchThrowableOfType(() -> session.exportRecordedTest("place-order", testsDir.toString(), "", false),
+                RecordedTestFolderNotWritable.class)).isNotNull();
+        assertThat(testsDir.resolve("place-order.json")).doesNotExist();
+
+        JsonNode out = mapper.readTree(session.exportRecordedTest("place-order", mine.toString(), "", false));
+        assertThat(java.nio.file.Paths.get(out.path("savedTo").asText())).isEqualTo(mine.resolve("place-order.json").toAbsolutePath());
+        assertThat(mine.resolve("place-order.json")).exists();
+    }
+
+    @Test
     void aRelativeFolderIsUnderTheAppsWorkingDirectory() throws Exception {
         clickSave();
         Path cwd = java.nio.file.Paths.get("").toAbsolutePath();

@@ -49,6 +49,7 @@ final class AgentAssembly {
         String property = System.getProperty(RecordedTestFiles.DIR_PROP);
         session.recordedDir(recordedDir(args, property, Paths.get("")),
                 args.recorded != null || (property != null && !property.trim().isEmpty()));
+        session.recordedReadOnly(args.recordedReadOnly);
         session.palette(paletteOn(args, GraphicsEnvironment.isHeadless()));
         ScreenshotVerb.moduleDir = () -> plugins.exportDefaults().moduleDir;
         List<McpToolDefinition> raw = new ArrayList<McpToolDefinition>(UiMcpTools.build(session, mapper));

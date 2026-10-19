@@ -17,6 +17,8 @@ import java.util.regex.Pattern;
  * <p>{@code plugins} is a list separated by {@link File#pathSeparator}; every entry gets its own {@link PluginSlot}.
  * <p>{@code recorded} names the folder of recorded tests ({@code export_recorded_test} writes there, {@code run_recorded_test} reads there); a
  * relative one is under the app's working directory. Without it {@code -Dswingui.recordedDir} decides, else {@code uitest}.
+ * <p>{@code recordedReadOnly=on} keeps that folder as it is: nothing is exported or saved into it (a person saves their
+ * own tests in another folder). For recorded tests that come with the app, e.g. inside a packaged app.
  * <p>{@code log} also writes the agent's own lines to that file (see AgentLog); the path cannot contain a comma.
  * <p>{@code palette} is on by default, for a person at the screen: a small bar in the app window lets them record
  * steps and checks and answer the agent's questions there. {@code palette=off} is for agent-only and CI runs, where
@@ -32,16 +34,19 @@ public final class AgentArgs {
     public final boolean palette;
     /** The recorded tests folder as given; null when absent. */
     public final String recorded;
+    /** Whether the recorded tests folder is read-only ({@code recordedReadOnly=on}). */
+    public final boolean recordedReadOnly;
     /** The file the agent's own lines also go to; null when absent. */
     public final Path log;
 
     private AgentArgs(int port, String bind, String mode, List<Path> plugins, boolean palette,
-                      String recorded, Path log) {
+                      String recorded, boolean recordedReadOnly, Path log) {
         this.port = port;
         this.bind = bind;
         this.mode = mode;
         this.palette = palette;
         this.recorded = recorded;
+        this.recordedReadOnly = recordedReadOnly;
         this.log = log;
         this.plugins = Collections.unmodifiableList(plugins);
     }
@@ -53,6 +58,7 @@ public final class AgentArgs {
         List<Path> plugins = new ArrayList<Path>();
         Boolean palette = null;
         String recorded = null;
+        boolean recordedReadOnly = false;
         Path log = null;
         if (raw != null && !raw.trim().isEmpty()) {
             for (String pair : raw.split(",")) {
@@ -90,11 +96,19 @@ public final class AgentArgs {
                 } else if ("recorded".equals(key)) {
                     if (value.isEmpty()) throw new IllegalArgumentException("recorded needs a folder, e.g. recorded=uitest");
                     recorded = value;
+                } else if ("recordedReadOnly".equals(key)) {
+                    if ("on".equals(value) || "true".equals(value)) {
+                        recordedReadOnly = true;
+                    } else if ("off".equals(value) || "false".equals(value)) {
+                        recordedReadOnly = false;
+                    } else {
+                        throw new IllegalArgumentException("recordedReadOnly must be on or off, was '" + value + "'");
+                    }
                 } else if ("log".equals(key)) {
                     if (value.isEmpty()) throw new IllegalArgumentException("log needs a file, for example log=agent.log");
                     log = Paths.get(value);
                 } else {
-                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, palette, recorded, plugins, log)");
+                    throw new IllegalArgumentException("unknown argument '" + key + "' (known: port, bind, mode, palette, recorded, recordedReadOnly, plugins, log)");
                 }
             }
         }
@@ -103,7 +117,8 @@ public final class AgentArgs {
         if (Boolean.TRUE.equals(palette) && background) {
             throw new IllegalArgumentException("palette=on needs a person at the screen; it cannot run with mode=background");
         }
-        return new AgentArgs(port, bind, mode, plugins, palette == null ? !background : palette.booleanValue(), recorded, log);
+        return new AgentArgs(port, bind, mode, plugins, palette == null ? !background : palette.booleanValue(), recorded,
+                recordedReadOnly, log);
     }
 
     /**

@@ -195,6 +195,7 @@ final class SessionTool implements McpToolDefinition {
         r.put("mode", args.mode);
         r.put("palette", session.paletteOn());
         r.put("recordedDir", session.recordedDir().toAbsolutePath().normalize().toString());
+        r.put("recordedReadOnly", session.recordedReadOnly());
         ObjectNode app = r.putObject("app");
         app.put("startedAtMillis", appStartedAt).put("startedAt", Instant.ofEpochMilli(appStartedAt).toString());
         ArrayNode classpath = app.putArray("classpath");

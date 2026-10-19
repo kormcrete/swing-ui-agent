@@ -133,6 +133,7 @@ public class UiMcpSession {
     private Path recordedDir = RecordedTestFiles.dir(null, System.getProperty(RecordedTestFiles.DIR_PROP), Paths.get(""));
     /** The folder was chosen (agent option or system property), not the default. */
     private boolean recordedDirExplicit;
+    private volatile boolean recordedReadOnly;
     /** The recorded test file the recording came from (loaded, or exported without clear): the one file a save may replace. */
     private Path loadedTest;
     /** The {@code name} and {@code description} written in {@link #loadedTest}: a save over it without them keeps them. */
@@ -277,6 +278,15 @@ public class UiMcpSession {
 
     public Path recordedDir() {
         return recordedDir;
+    }
+
+    /** The recorded tests folder is read-only: nothing is exported or saved into it ({@code recordedReadOnly=on}). */
+    public void recordedReadOnly(boolean readOnly) {
+        this.recordedReadOnly = readOnly;
+    }
+
+    public boolean recordedReadOnly() {
+        return recordedReadOnly;
     }
 
     public boolean recordedDirExplicit() {
@@ -1818,6 +1828,10 @@ public class UiMcpSession {
 
         Path folder = dir == null || dir.trim().isEmpty() ? recordedDir
                 : Paths.get("").toAbsolutePath().resolve(dir.trim()).normalize();
+        if (recordedReadOnly && folder.toAbsolutePath().normalize().equals(recordedDir.toAbsolutePath().normalize())) {
+            throw new RecordedTestFolderNotWritable(folder.toAbsolutePath(),
+                    "the recorded tests that came with the app are read-only; save yours in another folder", null);
+        }
         folder = RecordedTestFiles.writableDir(folder);
         Path file = RecordedTestFiles.file(folder, name).toAbsolutePath().normalize();
         boolean exists = Files.exists(file);
