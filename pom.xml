@@ -8,7 +8,7 @@
     <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>swing-ui-agent</name>
+    <name>Swing UI Agent</name>
     <description>Drive a Swing application from tests, the command line or MCP: a Java agent with a generic UI
         driver, a command-line client and a plugin SPI. No application code.</description>
     <url>https://github.com/kormcrete/swing-ui-agent</url>
