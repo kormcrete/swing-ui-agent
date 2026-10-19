@@ -6,6 +6,8 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.plaf.basic.BasicComboBoxUI;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -15,6 +17,9 @@ import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.event.ContainerAdapter;
+import java.awt.event.ContainerEvent;
+import java.awt.event.ContainerListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
@@ -87,13 +92,31 @@ final class Bar extends JComponent {
         };
         addMouseListener(a);
         addMouseMotionListener(a);
-        // a press on the bar is not a press in the app: the app's open popup stays open (the dropdown a replayed step
-        // opened, for the next step to pick from), as Swing keeps it for a press on a combo box
-        putClientProperty(KEEP_POPUPS, keepPopups());
+        keepPopupsOpen(this);
     }
 
     private static final String KEEP_POPUPS = "doNotCancelPopup";
     private static Object keepPopups;
+    /** Keeps {@link #keepPopupsOpen} true for the parts a palette panel gets later (a field to name a step in). */
+    private static final ContainerListener KEEP_FOR_NEW_PARTS = new ContainerAdapter() {
+        @Override public void componentAdded(ContainerEvent e) {
+            keepPopupsOpen(e.getChild());
+        }
+    };
+
+    /**
+     * A press on {@code c} or any part of it, now or added later, is not a press in the app: the app's open popup stays
+     * open (the dropdown a replayed step opened, for the next step to pick from; a menu the person checks), as Swing
+     * keeps it for a press on a combo box. For the palette's own components only. EDT.
+     */
+    static void keepPopupsOpen(Component c) {
+        if (c instanceof JComponent) ((JComponent) c).putClientProperty(KEEP_POPUPS, keepPopups());
+        if (!(c instanceof Container)) return;
+        Container parts = (Container) c;
+        parts.removeContainerListener(KEEP_FOR_NEW_PARTS);
+        parts.addContainerListener(KEEP_FOR_NEW_PARTS);
+        for (Component part : parts.getComponents()) keepPopupsOpen(part);
+    }
 
     /**
      * The value of {@link #KEEP_POPUPS} that makes Swing's popup grabber leave an open popup alone: a Basic combo box's

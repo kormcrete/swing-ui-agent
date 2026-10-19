@@ -109,8 +109,6 @@ final class Overlay extends JComponent {
     /** The agent's question, beside the palette. */
     private Bar ask;
     private JComponent panel;
-    /** The steps panel is out while a replay runs. */
-    private boolean away;
     /** The palette and panel are out while a test run holds the agent. */
     private boolean hidden;
     /** The palette, panel and question are out until the agent's step ends: no spot in the window clears its target. */
@@ -309,26 +307,10 @@ final class Overlay extends JComponent {
     void panel(JComponent p) {
         if (panel != null) layers.remove(panel);
         panel = p;
+        if (p != null) Bar.keepPopupsOpen(p);
         sync();
         relayout();
         layers.repaint();
-    }
-
-    /**
-     * While a replay runs the steps panel leaves the window, so it never covers a step's target, and comes back after
-     * (removed and re-added, never hidden). The bar stays: it is small, and it moves off any box.
-     */
-    void controlsAway(boolean on) {
-        if (on == away) return;
-        away = on;
-        sync();
-        relayout();
-        layers.repaint();
-    }
-
-    /** Whether the steps panel is out for a replay. */
-    boolean controlsAreAway() {
-        return away;
     }
 
     /** One transparent sheet over the window that takes the mouse, so no click reaches the app. */
@@ -388,7 +370,6 @@ final class Overlay extends JComponent {
 
     void dispose() {
         clearMarks();
-        away = false;
         hidden = false;
         yielding = false;
         panel(null);
@@ -418,7 +399,7 @@ final class Overlay extends JComponent {
     /** Puts the bar, the panel and the question into the layered pane or takes them out, as the flags say. */
     private void sync() {
         show(bar, barIn());
-        show(panel, panelIn());
+        show(panel, barIn());
         show(ask, !yielding);
     }
 
@@ -430,10 +411,6 @@ final class Overlay extends JComponent {
 
     private boolean barIn() {
         return !hidden && !yielding;
-    }
-
-    private boolean panelIn() {
-        return barIn() && !away;
     }
 
     void relayout() {
@@ -451,7 +428,7 @@ final class Overlay extends JComponent {
         }
         // a drag by the person wins again: the bar forgets what the agent acted on
         if (bar != null && bar.moved != movedAtAvoid) avoid.clear();
-        boolean withPanel = panel != null && panelIn();
+        boolean withPanel = panel != null && barIn();
         if (bar != null && barIn()) placePalette(taken, withPanel ? panel.getPreferredSize() : null);
         taken.addAll(avoid);
         if (bar != null && barIn()) taken.add(bar.getBounds());

@@ -371,6 +371,69 @@ class OverlayTest {
     }
 
     @Test
+    void aPressInThePanelLeavesTheAppsOpenPopupOpen() throws Exception {
+        onScreen(frame -> {
+            Overlay o = new Overlay(frame.getRootPane());
+            o.bar(new Bar("Replaying", "").button("Next", Overlay.HOVER, () -> { }));
+            JPanel steps = new JPanel(new BorderLayout());
+            JList<String> list = new JList<String>(new String[] {"1  ▶  click(#a)"});
+            steps.add(list, BorderLayout.CENTER);
+            steps.setPreferredSize(new Dimension(300, 120));
+            o.panel(steps);
+            // a part it gets later: the field a step is named in
+            JTextField name = new JTextField();
+            steps.add(name, BorderLayout.SOUTH);
+            steps.validate();
+            JButton recent = new JButton("New order for a recent customer");
+            recent.setBounds(10, 10, 220, 24);
+            frame.getContentPane().add(recent);
+            JPopupMenu customers = new JPopupMenu();
+            customers.add(new JMenuItem("Ada Shop Ltd"));
+            customers.show(recent, 0, 24);
+
+            press(list, 5, 5);
+            assertThat(customers.isVisible()).isTrue();
+            press(name, 5, 5);
+            assertThat(customers.isVisible()).isTrue();
+            customers.setVisible(false);
+            o.dispose();
+        });
+    }
+
+    @Test
+    void aBoxUnderTheOpenStepsPanelOnlyMovesNothing() throws Exception {
+        onScreen(frame -> {
+            JRootPane root = frame.getRootPane();
+            Container content = frame.getContentPane();
+            Overlay o = new Overlay(root);
+            Bar bar = new Bar("Replaying", "2/3  click “Add to cart”").button("Next", Overlay.HOVER, () -> { });
+            o.bar(bar);
+            JPanel steps = new JPanel();
+            steps.setPreferredSize(new Dimension(300, 200));
+            o.panel(steps);
+            Rectangle panelAt = steps.getBounds();
+            Rectangle barAt = bar.getBounds();
+            JButton add = new JButton("Add to cart");
+            add.setBounds(SwingUtilities.convertRectangle(root.getLayeredPane(),
+                    new Rectangle(panelAt.x + 20, panelAt.y + 20, 100, 24), content));
+            content.add(add);
+
+            // the person opened the list: what it covers is theirs to arrange; the palette keeps its spot
+            o.mark(new Overlay.Mark(add, null, -1, -1, "2  (up next)", Overlay.HOVER, false), null);
+            assertThat(bar.getBounds()).isEqualTo(barAt);
+            assertThat(steps.getBounds()).isEqualTo(panelAt);
+            o.dispose();
+        });
+    }
+
+    /** A left press and release at {@code x, y} in {@code c}, as the person's. EDT. */
+    private static void press(Component c, int x, int y) {
+        long now = System.currentTimeMillis();
+        c.dispatchEvent(new MouseEvent(c, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, x, y, 1, false, MouseEvent.BUTTON1));
+        c.dispatchEvent(new MouseEvent(c, MouseEvent.MOUSE_RELEASED, now, 0, x, y, 1, false, MouseEvent.BUTTON1));
+    }
+
+    @Test
     void boxesUnderTheBarSendItAsideUntilTheyAreCleared() throws Exception {
         onScreen(frame -> {
             JRootPane root = frame.getRootPane();

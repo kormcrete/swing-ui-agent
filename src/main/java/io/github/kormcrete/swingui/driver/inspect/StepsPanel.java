@@ -265,6 +265,8 @@ final class StepsPanel extends JPanel {
     };
     /** The row menu opened last (shown when the list is). */
     private StepMenu menu;
+    /** While a replay or run goes on the steps are only shown: nothing here changes them or starts another. */
+    private boolean running;
     /** Set while a header's selection is widened to its steps, so the widening does not widen again. */
     private boolean widening;
     /** The sentence being typed in place of a row; null when none. One at a time. */
@@ -443,7 +445,7 @@ final class StepsPanel extends JPanel {
     /** ✕ Delete deletes one step or one check: greyed, saying so, while the selection spans several steps. */
     private void deleteFits() {
         boolean one = oneStep();
-        delete.setEnabled(one);
+        delete.setEnabled(one && !running);
         delete.setToolTipText(one ? DELETE_TIP : "select one step or check");
     }
 
@@ -555,7 +557,7 @@ final class StepsPanel extends JPanel {
     }
 
     private void openMenu(int row, int x, int y) {
-        if (row < 0 || row >= rows.size()) return;
+        if (running || row < 0 || row >= rows.size()) return;
         if (!list.isSelectedIndex(row)) list.setSelectedIndex(row);
         List<Row> sel = selectedRows();
         if (sel.isEmpty()) return;
@@ -969,6 +971,31 @@ final class StepsPanel extends JPanel {
     }
 
     /**
+     * A replay or run starts ({@code on}) or ends: while it goes on the list shows where it is, its buttons and row menu
+     * rest, and Close still closes it.
+     */
+    void running(boolean on) {
+        running = on;
+        for (Component c : buttons.getComponents()) c.setEnabled(!on);
+        if (on) return;
+        deleteFits();
+        undo.setEnabled(lastUndo != null);
+    }
+
+    /** {@code marks} on the rows as last shown: a replay's ▶, ✓ and ✗ while the recording is not read again. */
+    void marks(Map<Integer, String> marks) {
+        show(lastSteps, marks, -1, null, lastUndo);
+    }
+
+    /** Whether the button labelled {@code label} can be pressed now. */
+    boolean enabled(String label) {
+        for (Component c : buttons.getComponents()) {
+            if (c instanceof JButton && label.equals(((JButton) c).getText())) return c.isEnabled();
+        }
+        throw new IllegalArgumentException("no button '" + label + "' in the steps panel");
+    }
+
+    /**
      * The rows it lists now, as the person reads them ("2  ✓  agent: click(…)", "      └ 2.1  ●  check: …",
      * "▾ Save the order"): the steps, then what is pending.
      */
@@ -1062,7 +1089,7 @@ final class StepsPanel extends JPanel {
             }
         }
         if (pendingSelected && pending != null && from < 0) from = to = shown.size() - 1;
-        undo.setEnabled(undoLabel != null);
+        undo.setEnabled(undoLabel != null && !running);
         undo.setToolTipText(undoLabel);
         title.setText("Steps (" + stepCount(steps) + ")");
         boolean same = texts.size() == model.size();

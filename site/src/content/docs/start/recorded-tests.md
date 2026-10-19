@@ -83,7 +83,7 @@ The file goes on the same way: 11 steps and 6 checks. The tool writes the file w
 2. Choose one and press **Load** (or double click it). It becomes the recording and the **Steps** list shows it: numbered sentences, checks under their step.
 3. Press **▶ Run** to run it from the first step, against the screen as it is after a reset.
 4. Pick the speed: **Fast**, **Normal**, **Slow** or **Step by step**. Step by step waits for you at each step; an action and the checks under it count as one.
-5. Every step shows a ✓ or ✗ when it ran. They stay until you press **Next**, so you can read them.
+5. Every step shows a ✓ or ✗ when it ran. They stay until you press **Next**, so you can read them. The Steps list stays open while it runs (▶ marks the step running); **Steps** on the bar opens or closes it.
 
 The agent cannot run or record while you replay: its calls are refused with BUSY until you finish.
 

@@ -92,7 +92,9 @@ final class Recording {
      * Re-reads the recording while the panel is open, so it never lags (typing shows as it happens); a backstop, as the
      * session tells of every change ({@link #changed}).
      */
-    final Timer live = new Timer(500, e -> refresh(-1));
+    final Timer live = new Timer(500, e -> { if (!replaying) refresh(-1); });
+    /** The records a replay of the person's runs, as it read them; null while none runs. EDT. */
+    private List<Inspector.StepLine> replayRecords;
 
     /** How long the agent's note stays on the bar before the text it covered comes back. */
     static final int NOTE_MS = 4000;
@@ -319,10 +321,6 @@ final class Recording {
         JComponent open = panel != null ? panel : exportPanel;
         from.bar(null);
         if (open != null) from.panel(null);
-        if (replaying || agentReplay != null) {
-            from.controlsAway(false);
-            to.controlsAway(true);
-        }
         home = to;
         to.bar(shown);
         if (open != null) to.panel(open);
@@ -370,8 +368,9 @@ final class Recording {
     }
 
     /**
-     * The agent replays: {@code agentBar} (no buttons) stands in for the palette's bar, the steps panel's controls go,
-     * the person's input is not recorded and Check mode's catcher goes; the marks of an earlier replay go too.
+     * The agent replays: {@code agentBar} (no buttons) stands in for the palette's bar, an open steps list stays with
+     * its buttons resting, the person's input is not recorded and Check mode's catcher goes; the marks of an earlier
+     * replay go too.
      */
     void agentReplay(Bar agentBar) {
         if (agentReplay != null) return;
@@ -382,16 +381,16 @@ final class Recording {
         steps.active(false);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         marks.clear();
-        home.controlsAway(true);
+        if (panel != null) panel.running(true);
         home.bar(agentBar);
         refresh(-1);
     }
 
-    /** The agent's replay ended: the palette's bar and controls come back, and the person records again if they did. */
+    /** The agent's replay ended: the palette's bar and the list's buttons come back, and the person records again if they did. */
     void agentReplayEnded() {
         if (agentReplay == null) return;
         agentReplay = null;
-        home.controlsAway(false);
+        if (panel != null) panel.running(false);
         home.bar(bar);
         if (active()) {
             // the bar keeps what it said (who started the recording), as before the replay
@@ -515,8 +514,16 @@ final class Recording {
             }
         });
         home.panel(panel);
-        refresh(-1);
+        if (replaying || agentReplay != null) panel.running(true);
+        // the sink thread is busy with the person's replay: the list shows the records it read, as far as it got
+        if (replaying && replayRecords != null) panel.show(replayRecords, marks, -1, null, null);
+        else refresh(-1);
         live.start();
+    }
+
+    /** The replay's ▶, ✓ and ✗ on the open steps list, at once. EDT. */
+    private void showMarks() {
+        if (panel != null) panel.marks(marks);
     }
 
     /**
@@ -681,6 +688,7 @@ final class Recording {
      * with its checks, or one check.
      */
     private void delete(int record) {
+        if (replaying || agentReplay != null) return;
         int id = panel == null ? -1 : panel.idOfRecord(record);
         if (id < 0) return;
         sinkThread.submit(() -> {
@@ -715,6 +723,9 @@ final class Recording {
      * turn of the EDT; completes with the result after both, so a field closing on it never shows the rows before it.
      */
     private CompletableFuture<Inspector.Result> edit(Supplier<Inspector.Result> call, String refused) {
+        if (replaying || agentReplay != null) {
+            return CompletableFuture.completedFuture(new Inspector.Result(false, "not while the steps replay"));
+        }
         CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
         sinkThread.submit(() -> {
             Inspector.Result r;
@@ -744,6 +755,7 @@ final class Recording {
 
     /** ↶ Undo: takes back the last edit, whoever made it, and says what. */
     private void undo() {
+        if (replaying || agentReplay != null) return;
         sinkThread.submit(() -> {
             Inspector.Result r = sink.undo();
             SwingUtilities.invokeLater(() -> {
@@ -786,6 +798,7 @@ final class Recording {
      * stopped - a live one too, as at Done: the screen is not where the steps before the cut leave it.
      */
     private void redoFrom(int record) {
+        if (replaying || agentReplay != null) return;
         int id = panel == null ? -1 : panel.idOfRecord(record);
         if (id < 0) return;
         // a sentence being typed is saved before the cut, which may take its records
@@ -829,10 +842,11 @@ final class Recording {
     /**
      * Replays steps {@code from} up to {@code to} (exclusive; -1 all) the way the exported test will: from the first
      * step the app is reset first (no step of its own: the bar says so), each step runs as the agent's would, nothing is
-     * recorded, the person's own input is not listened to, the catcher and the steps panel are out of the way. At the
-     * panel's speed each target is boxed for a moment BEFORE its step runs; an action and the checks after it are one
-     * step, and step by step waits for Next with the last results still in view. Pause, Next and Stop are on the bar,
-     * which moves off the box. The first failure, or the person's Stop, ends the replay.
+     * recorded, the person's own input is not listened to, the catcher is out of the way. An open steps list stays and
+     * shows where the replay is (▶, ✓, ✗), with its buttons resting; Steps on the bar closes or opens it. At the panel's
+     * speed each target is boxed for a moment BEFORE its step runs; an action and the checks after it are one step, and
+     * step by step waits for Next with the last results still in view. Pause, Next, Steps and Stop are on the bar, which
+     * moves off the box. The first failure, or the person's Stop, ends the replay.
      */
     private void replay(int from, int to, Runnable after) {
         replay(from, to, after, false);
@@ -873,9 +887,12 @@ final class Recording {
                 .button("Pause", Overlay.NAVY.brighter(), () -> { paused = true; replayBar.active("Pause"); })
                 .button("Resume", Overlay.YES, () -> { paused = false; replayBar.active(""); next.release(); })
                 .button("Next", Overlay.HOVER, next::release)
+                .button("Steps", STEPS, this::toggleSteps)
                 .button("Stop", Overlay.NO, () -> { stopped = true; next.release(); });
         if (paused) replayBar.active("Pause");
         home.bar(replayBar);
+        // an open steps list stays, and shows where the replay is; the person may close or open it meanwhile
+        if (panel != null) panel.running(true);
         // one run: a bar that steps aside for one of its steps stays aside until it ends. Raised only now, just before the
         // task that ends it is handed over, so a setup that throws never leaves the count up.
         running = true;
@@ -941,7 +958,8 @@ final class Recording {
         Inspector.onEdt(() -> {
             // marks from an earlier run must not mix with this one
             for (int i = from; i < n; i++) marks.remove(all.get(i).id);
-            home.controlsAway(true);
+            replayRecords = all;
+            showMarks();
         });
         for (int i = from; i < n; i++) {
             final int id = all.get(i).id;
@@ -959,6 +977,7 @@ final class Recording {
             final Overlay.Mark[] mine = new Overlay.Mark[1];
             Inspector.onEdt(() -> {
                 marks.put(id, "▶");
+                showMarks();
                 // while paused the last step's results stay in view beside this one, until Next
                 mine[0] = boxStep(target, box, check, starts && !paused);
                 if (mine[0] != null && starts && paused) mine[0].label = box + "   (up next)";
@@ -967,7 +986,10 @@ final class Recording {
             });
             if (starts) {
                 if (!waitTurn(delay)) {
-                    Inspector.onEdt(() -> marks.remove(id));
+                    Inspector.onEdt(() -> {
+                        marks.remove(id);
+                        showMarks();
+                    });
                     outcome = "■ stopped before step " + StepsPanel.stepOf(labels.get(i));
                     failed = i;
                     break;
@@ -984,6 +1006,7 @@ final class Recording {
             Inspector.Result r = sink.replay(i);
             Inspector.onEdt(() -> {
                 marks.put(id, r.ok ? "✓" : "✗");
+                showMarks();
                 Overlay.Mark m = mine[0];
                 if (m != null) {
                     m.result = r.ok;
@@ -1050,8 +1073,9 @@ final class Recording {
                 inspector.driving(null);
             }
             for (Overlay o : inspector.overlays()) o.clearMarks();
-            home.controlsAway(false);
             replaying = false;
+            replayRecords = null;
+            if (panel != null) panel.running(false);
             if (!passed && after != null && active()) {
                 stop(true, text + " - recording stopped");
                 bar.text(text + " - recording stopped");

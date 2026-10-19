@@ -118,6 +118,8 @@ Press **Steps** to open the list of what has been recorded so far, your steps an
   Fast, Normal, Slow or Step by step.
 - **Step by step** stops before each step: press **Next** to run it. An action and the checks that follow it run as
   one step. **Pause**, **Resume** and **Stop** work at every speed.
+- While the steps run, the Steps list stays open if it was, marking the step that runs ▶ and each one done ✓ or ✗;
+  **Steps** on the replay bar opens or closes it. Its buttons wait until the replay ends.
 - **↺ Redo from selected** drops that step and everything after it, replays the steps before it, and records again
   from there.
 - **✕ Delete** removes one step with its checks, or one check. **↶ Undo** takes back the last edit, yours or the

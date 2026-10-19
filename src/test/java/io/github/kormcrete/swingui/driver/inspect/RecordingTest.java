@@ -338,7 +338,6 @@ class RecordingTest {
             recording.toggleSteps();
             Bar replayBar = new Bar("Replaying", "").button("Stop", Overlay.NO, () -> { });
             inFrame.bar(replayBar);
-            inFrame.controlsAway(true);
             recording.replaying = true;
 
             recording.rehome(inDialog);
@@ -347,9 +346,9 @@ class RecordingTest {
             assertThat(inDialog.bar()).isSameAs(replayBar);
             assertThat(replayBar.getParent()).isSameAs(dialog.getLayeredPane());
             assertThat(inFrame.bar()).isNull();
-            // the steps panel stays out of the way until the replay ends
+            // the open steps list goes along
             assertThat(inDialog.holds(recording.panel)).isTrue();
-            assertThat(recording.panel.getParent()).isNull();
+            assertThat(recording.panel.getParent()).isSameAs(dialog.getLayeredPane());
             recording.replaying = false;
         });
     }
@@ -396,10 +395,9 @@ class RecordingTest {
         SwingUtilities.invokeAndWait(() -> {
             Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
             recording.toggleSteps();
-            // as a replay starts: its own bar, the steps panel out of the way
+            // as a replay starts: its own bar, the open steps list stays
             Bar replayBar = new Bar("Replaying", "").button("Stop", Overlay.NO, () -> { });
             inFrame.bar(replayBar);
-            inFrame.controlsAway(true);
             recording.replaying = true;
             // a box of the replay keeps the frame's overlay alive after the palette leaves
             inFrame.mark(new Overlay.Mark(frame.getContentPane(), null, -1, -1, "1/2", Overlay.HOVER, false), null);
@@ -409,11 +407,10 @@ class RecordingTest {
             assertThat(recording.home).isSameAs(inDialog);
             assertThat(inDialog.bar()).isSameAs(replayBar);
             assertThat(replayBar.getParent()).isSameAs(dialog.getLayeredPane());
-            assertThat(inDialog.controlsAreAway()).isTrue();
             assertThat(inDialog.holds(recording.panel)).isTrue();
-            assertThat(recording.panel.getParent()).isNull();
+            assertThat(recording.panel.getParent()).isSameAs(dialog.getLayeredPane());
             assertThat(inFrame.bar()).isNull();
-            assertThat(inFrame.controlsAreAway()).isFalse();
+            assertThat(inFrame.holds(recording.panel)).isFalse();
             recording.replaying = false;
         });
     }
@@ -957,6 +954,75 @@ class RecordingTest {
         assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
     }
 
+    @Test
+    void theStepsListStaysOpenThroughAStepByStepReplayAndShowsWhereItIs() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(3);
+            recording.panel.select(1);
+            recording.panel.press("▶ From selected");
+        });
+        Overlay o = scene.inspector.overlay(frame.getRootPane());
+        Bar replayBar = eventually(() -> o.bar() != recording.bar ? o.bar() : null);
+        eventually(() -> replayBar.text().startsWith("2/3") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.getParent()).isSameAs(frame.getLayeredPane());
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ▶  click(#b)", "3  ●  click(#c)");
+            // nothing in it changes the recording or starts another replay while the steps run
+            for (String b : Arrays.asList("▶ Replay all", "▶ From selected", "↺ Redo from selected", "✕ Delete", "↶ Undo", "⋯")) {
+                assertThat(recording.panel.enabled(b)).as(b).isFalse();
+            }
+        });
+        recording.next.release();
+        eventually(() -> recording.panel.rows().equals(Arrays.asList("1  ●  click(#a)", "2  ✓  click(#b)", "3  ▶  click(#c)"))
+                ? Boolean.TRUE : null);
+        recording.next.release();
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        settle();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.getParent()).isSameAs(frame.getLayeredPane());
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ✓  click(#b)", "3  ✓  click(#c)");
+            assertThat(recording.panel.enabled("▶ Replay all")).isTrue();
+            assertThat(recording.panel.enabled("✕ Delete")).isTrue();
+        });
+        assertThat(sink.log).containsExactly("replay 1", "replay 2");
+    }
+
+    @Test
+    void theReplayBarsStepsButtonClosesAndOpensTheListWhileItRuns() throws Exception {
+        sink.person("click(#a)", "click(#b)", "click(#c)");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(3);
+            recording.panel.select(1);
+            recording.panel.press("▶ From selected");
+        });
+        Overlay o = scene.inspector.overlay(frame.getRootPane());
+        Bar replayBar = eventually(() -> o.bar() != recording.bar ? o.bar() : null);
+        eventually(() -> replayBar.text().startsWith("2/3") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            replayBar.press("Steps");
+            assertThat(recording.panel).isNull();
+            replayBar.press("Steps");
+            // back at once, as far as the replay got (the sink thread is busy replaying)
+            assertThat(recording.panel.getParent()).isSameAs(frame.getLayeredPane());
+            assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ▶  click(#b)", "3  ●  click(#c)");
+            assertThat(recording.panel.enabled("✕ Delete")).isFalse();
+            // the row menu changes nothing either
+            recording.panel.select(0);
+            recording.panel.press("⋯");
+            assertThat(recording.panel.menu()).isNull();
+        });
+        recording.next.release();
+        recording.next.release();
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        settle();
+        SwingUtilities.invokeAndWait(() ->
+                assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ✓  click(#b)", "3  ✓  click(#c)"));
+        assertThat(sink.log).containsExactly("replay 1", "replay 2");
+    }
+
     /** A recording of {@code lines} the person ended with Done; the sink's log starts empty. */
     private void doneWith(String... lines) throws Exception {
         sink.person(lines);
@@ -1332,7 +1398,7 @@ class RecordingTest {
     }
 
     @Test
-    void whileTheAgentReplaysThePersonsInputIsNotRecordedAndTheButtonsAreAway() throws Exception {
+    void whileTheAgentReplaysThePersonsInputIsNotRecordedAndTheListsButtonsRest() throws Exception {
         asTheInspector(() -> {
             recordInFrame();
             sink.person("click(#a)", "click(#b)");
@@ -1351,7 +1417,9 @@ class RecordingTest {
             SwingUtilities.invokeAndWait(() -> {
                 assertThat(agent.text()).isEqualTo("resetting the app, then replaying steps 1-2");
                 assertThat(agent.labels()).isEmpty();
-                assertThat(o.controlsAreAway()).isTrue();
+                assertThat(recording.panel.getParent()).isSameAs(frame.getLayeredPane());
+                assertThat(recording.panel.enabled("▶ Replay all")).isFalse();
+                assertThat(recording.panel.enabled("✕ Delete")).isFalse();
                 assertThat(recording.listening()).isFalse();
             });
             // the agent's progress shows on the same bar
@@ -1364,7 +1432,7 @@ class RecordingTest {
             eventually(() -> recording.panel.rows().get(1).startsWith("2  ✗") ? Boolean.TRUE : null);
             SwingUtilities.invokeAndWait(() -> {
                 assertThat(recording.panel.rows()).containsExactly("1  ✓  click(#a)", "2  ✗  click(#b)");
-                assertThat(o.controlsAreAway()).isFalse();
+                assertThat(recording.panel.enabled("▶ Replay all")).isTrue();
                 assertThat(recording.listening()).isTrue();
                 assertThat(recording.state).isEqualTo(Recording.State.RECORDING);
             });
