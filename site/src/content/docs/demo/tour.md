@@ -43,6 +43,12 @@ The downloads are not signed yet, so the first launch takes one extra step:
 - **Java zip:** unzip, then run `order-desk` in the **Kormcrete Order Desk** folder (`order-desk.cmd` on Windows). It
   uses `JAVA_HOME` when set, else the `java` on your PATH, and prints the agent's lines in the terminal.
 
+**Run a recorded test right away:** in the bar at the bottom of the window (the palette), press **Load recorded
+test…**. Order Desk's three recorded tests are listed: `place-order`, `cart-totals` and `cart-with-steps`. Pick one and
+press **▶ Run**, with **Step by step** if you want to watch. They run one after another on the same app, each from
+the Orders list. They come with the app and stay as they are: a test you record or change goes into a folder of your
+own (Export… asks for one). More: [Recorded tests](/swing-ui-agent/start/recorded-tests/).
+
 Then connect your coding agent while the app runs:
 
 ```bash

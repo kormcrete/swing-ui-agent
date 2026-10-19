@@ -36,15 +36,17 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
    or [Linux and any Java 8+](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-java.zip),
    and open it. The first launch takes one extra step:
    [first launch](/swing-ui-agent/demo/tour/#download-and-run-it).
-2. **Connect your agent** while the app runs:
+2. **Run a recorded test:** in the bar at the bottom of the window, press **Load recorded test…**, pick `place-order`
+   and press **▶ Run**. Order Desk comes with three; the app takes the order by itself and checks every total.
+3. **Connect your agent** while the app runs:
 
    ```sh
    claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
    ```
 
-3. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
+4. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
    tell me the order number."* Ada Shop Ltd pays by invoice, so if it asks for a PO number, give it any.
-4. **Ask again**, for another customer or other products. The first time takes longer: the agent reads the screens
+5. **Ask again**, for another customer or other products. The first time takes longer: the agent reads the screens
    and learns the order form. Now it knows them and can send all the steps in one `batch` call: the whole order runs
    in about half a second.
 
