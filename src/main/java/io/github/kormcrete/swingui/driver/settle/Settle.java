@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * After posting input: drain the event queue, end at a modal dialog that appeared, then
- * wait until every busy signal is quiet, still watching for modals. Generic over the modal type so
+ * wait until every busy signal is quiet and still quiet after one more drain, still watching for modals. Generic over the modal type so
  * the rules are testable without windows.
  */
 public final class Settle<W> {
@@ -146,24 +146,33 @@ public final class Settle<W> {
         return settle(modalsBefore, timeoutMillis, null);
     }
 
-    /** Like {@link #settle(Collection, long)}, but busy signals are asked only for {@code scope} (null = every signal globally). */
+    /**
+     * Like {@link #settle(Collection, long)}, but busy signals are asked only for {@code scope} (null = every signal globally).
+     *
+     * <p>Quiet counts only when the signals are still quiet after one more drain: an app that ends one busy token on the
+     * event dispatch thread and queues its next load behind it is quiet for an instant between the two.
+     */
     public W settle(Collection<W> modalsBefore, long timeoutMillis, W scope) {
         long deadline = clock.now() + timeoutMillis;
         drain(deadline, timeoutMillis);
         W fresh = newModal(modalsBefore);
         if (fresh != null) return fresh;
-        List<String> busy = busyNames(scope);
-        while (!busy.isEmpty()) {
+        while (true) {
+            List<String> busy = busyNames(scope);
+            if (busy.isEmpty()) {
+                drain(deadline, timeoutMillis);
+                fresh = newModal(modalsBefore);
+                if (fresh != null) return fresh;
+                busy = busyNames(scope);
+                if (busy.isEmpty()) return null;
+            }
             if (clock.now() >= deadline) {
                 throw new DriverException(Reason.TIMEOUT, "still busy after " + timeoutMillis + " ms: " + busy, busy);
             }
             pause();
             fresh = newModal(modalsBefore);
             if (fresh != null) return fresh;
-            busy = busyNames(scope);
         }
-        drain(deadline, timeoutMillis);
-        return newModal(modalsBefore);
     }
 
     private W newModal(Collection<W> before) {

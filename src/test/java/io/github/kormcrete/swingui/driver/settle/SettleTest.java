@@ -24,10 +24,11 @@ class SettleTest {
     private long now = 0;
     private final List<Long> sleeps = new ArrayList<Long>();
     private Runnable onSleep = () -> {};
+    private Runnable onRoundTrip = () -> {};
 
     private final Settle<String> settle = new Settle<String>(
             new Settle.EventPump() {
-                @Override public boolean roundTrip(long timeoutMillis) { roundTrips++; return true; }
+                @Override public boolean roundTrip(long timeoutMillis) { roundTrips++; onRoundTrip.run(); return true; }
                 @Override public boolean idle() { return roundTrips >= idleAfter; }
             },
             () -> new ArrayList<String>(modals),
@@ -107,6 +108,53 @@ class SettleTest {
             }
         });
         assertThat(settle.settle(Collections.<String>emptyList(), 30_000)).isEqualTo("Done");
+    }
+
+    @Test
+    void quietForOnlyOneRoundTripIsNotQuiet() {
+        // A load closes its busy token on the EDT and queues the next load behind it: quiet when asked,
+        // busy again once the queue has run that next event.
+        final AtomicInteger stage = new AtomicInteger(0); // 0 first load, 1 between the loads, 2 second load
+        final AtomicInteger secondLoadAsked = new AtomicInteger();
+        final boolean[] nextLoadQueued = {false};
+        settle.register(new BusySignal() {
+            @Override public String name() { return "jobs"; }
+            @Override public boolean isBusy() {
+                if (stage.get() == 0) {
+                    stage.set(1);
+                    nextLoadQueued[0] = true;
+                    return true;
+                }
+                if (stage.get() == 2) return secondLoadAsked.incrementAndGet() <= 2;
+                return false;
+            }
+        });
+        onRoundTrip = () -> {
+            if (nextLoadQueued[0]) {
+                nextLoadQueued[0] = false;
+                stage.set(2);
+            }
+        };
+        assertThat(settle.settle(Collections.<String>emptyList(), 30_000)).isNull();
+        assertThat(secondLoadAsked.get()).as("asked until the second load was quiet").isGreaterThan(2);
+        assertThat(sleeps).containsExactly(100L, 100L, 100L);
+    }
+
+    @Test
+    void aSignalThatFlipsBackOnAfterEveryDrainTimesOut() {
+        final boolean[] busy = {true};
+        settle.register(new BusySignal() {
+            @Override public String name() { return "jobs"; }
+            @Override public boolean isBusy() {
+                boolean was = busy[0];
+                busy[0] = false;
+                return was;
+            }
+        });
+        onRoundTrip = () -> busy[0] = true;
+        DriverException e = catchThrowableOfType(
+                () -> settle.settle(Collections.<String>emptyList(), 250), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.TIMEOUT);
     }
 
     @Test
