@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.driver.model;
 
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
+import javax.swing.JViewport;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.Container;
@@ -216,7 +217,7 @@ public final class LabelProximity {
                 continue;
             }
             if (linked != null || out.contains(l)) continue;
-            Component input = sameRowRight(l, inputs);
+            Component input = sameRowRight(l, inSameScrollContext(l, inputs));
             if (input == null || captioned.contains(input)) continue;   // an error label under a captioned field is no caption
             double d = distance(l, input);
             Double b = best.get(input);
@@ -227,6 +228,27 @@ public final class LabelProximity {
         }
         out.addAll(winner.values());
         return out;
+    }
+
+    /**
+     * The inputs that scroll with {@code label}. Summed bounds compare only inside one scroll context: a field
+     * scrolled up out of a page's view can land, by its bounds, on the row of a header label above that page.
+     */
+    private static List<Component> inSameScrollContext(JLabel label, List<Component> inputs) {
+        Component context = scrollContext(label);
+        List<Component> out = new ArrayList<Component>();
+        for (Component in : inputs) {
+            if (scrollContext(in) == context) out.add(in);
+        }
+        return out;
+    }
+
+    /** The viewport {@code c} scrolls in, not counting its own (a text area is its scroll pane's view); null: none. */
+    private static Component scrollContext(Component c) {
+        for (Container p = c.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof JViewport && ((JViewport) p).getView() != c) return p;
+        }
+        return null;
     }
 
     /**

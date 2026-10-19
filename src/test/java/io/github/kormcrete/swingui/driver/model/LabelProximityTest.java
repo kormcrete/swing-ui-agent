@@ -6,9 +6,12 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
+import java.awt.Point;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -179,6 +182,44 @@ class LabelProximityTest {
         assertThat(index.get(belowValue)).as("the neighbour's value").isSameAs(below);
         assertThat(LabelProximity.findTextInputFor(grid, "n", Visibility.TREE)).isSameAs(nValue);
         assertThat(LabelProximity.captionLabels(grid, Visibility.TREE)).contains(n, below);
+    }
+
+    /**
+     * An order form's header line above a scrolled page: a field scrolled up out of the page's view sits, by summed
+     * bounds, on the header label's row. Positions in different scroll contexts are not comparable, so the header
+     * label is no caption of that field (it has no caption of its own) and stays a node of its own.
+     */
+    @Test
+    void aLabelIsNoCaptionOfAFieldScrolledUnderItInAnotherScrollPane() {
+        JPanel root = new JPanel(null);
+        root.setBounds(0, 0, 600, 400);
+        JLabel header = label("3 of 5 fields filled", 0, 100);
+        header.setSize(200, 20);
+        JPanel page = new JPanel(null);
+        page.setSize(600, 2000);
+        page.add(field("search", 300, 1000));
+        JScrollPane pane = new JScrollPane(page);
+        pane.setBounds(0, 150, 600, 250);
+        pane.getViewport().setBounds(0, 0, 600, 250);
+        pane.getViewport().setViewPosition(new Point(0, 1050));   // the field is now 50 px above the view
+        root.add(header); root.add(pane);
+
+        assertThat(LabelProximity.captionLabels(root, Visibility.TREE)).doesNotContain(header);
+    }
+
+    /** A text area is its scroll pane's own view: the label beside the pane still names it. */
+    @Test
+    void aLabelBesideATextAreaInItsOwnScrollPaneStillNamesIt() {
+        JPanel root = new JPanel(null);
+        JLabel l = label("Comment", 0, 0);
+        JTextArea area = new JTextArea();
+        area.setSize(200, 60);
+        JScrollPane pane = new JScrollPane(area);
+        pane.setBounds(90, 0, 200, 60);
+        pane.getViewport().setBounds(0, 0, 200, 60);
+        root.add(l); root.add(pane);
+
+        assertThat(LabelProximity.captionLabels(root, Visibility.TREE)).contains(l);
     }
 
     @Test

@@ -8,12 +8,14 @@ import io.github.kormcrete.swingui.driver.model.RowSpec;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JViewport;
 import javax.swing.SwingUtilities;
 import java.awt.Dimension;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -133,6 +135,41 @@ class ScrollsTest {
         Scrolls.scroll(table, null, null, RowSpec.of(Collections.<String, Object>singletonMap("index", 150)));
 
         assertThat(position().y).isGreaterThan(0);
+    }
+
+    /**
+     * A table in its own scroll pane inside a scrolling form (a checkout form's line items): the row is brought into
+     * view of the form's pane too. {@code scrollRectToVisible} stops at the first viewport, so the row stayed below
+     * the form's visible part and a click on it was refused as scrolled out of view.
+     */
+    @Test
+    void aRowOfATableInsideAScrollingFormIsBroughtIntoViewOfTheFormToo() throws Exception {
+        JTable rows = table(50);
+        JScrollPane rowsPane = new JScrollPane(rows);
+        JScrollPane formPane = new JScrollPane(new JPanel(null));
+        Rectangle[] seen = new Rectangle[1];
+        int[] own = new int[1];
+        SwingUtilities.invokeAndWait(() -> {
+            rows.setSize(300, 50 * rows.getRowHeight());
+            rowsPane.getViewport().setSize(300, 100);
+            rowsPane.getViewport().setExtentSize(new Dimension(300, 100));
+            rowsPane.setBounds(0, 1000, 300, 100);
+            JPanel form = (JPanel) formPane.getViewport().getView();
+            form.add(rowsPane);
+            form.setPreferredSize(new Dimension(300, 1200));
+            form.setSize(300, 1200);
+            formPane.getViewport().setSize(300, 400);
+            formPane.getViewport().setExtentSize(new Dimension(300, 400));
+            formPane.setSize(300, 400);
+
+            Scrolls.scroll(rows, null, null, RowSpec.of(Collections.<String, Object>singletonMap("index", 40)));
+
+            own[0] = rowsPane.getViewport().getViewPosition().y;
+            seen[0] = SwingUtilities.convertRectangle(rows, rows.getCellRect(40, 0, false), formPane.getViewport());
+        });
+        assertThat(own[0]).as("the table's own pane").isGreaterThan(0);
+        assertThat(new Rectangle(0, 0, 300, 400).contains(seen[0])).as("the row in the form's visible part: " + seen[0])
+                .isTrue();
     }
 
     @Test

@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.widgets.ListWidget;
+import io.github.kormcrete.swingui.driver.widgets.Scrolls;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 import io.github.kormcrete.swingui.driver.widgets.TreeWidget;
 
@@ -65,7 +66,7 @@ final class Targets {
             int row = TableWidget.row(table, r.row());
             int column = r.column() == null ? -1 : TableWidget.column(table, r.column());
             area = TableWidget.bounds(table, row, column);
-            table.scrollRectToVisible(area);
+            Scrolls.reveal(table, area);
         } else if (c instanceof JList && r.item() != null) {
             JList<?> list = (JList<?>) c;
             int index = ListWidget.index(list, single(r.item()));

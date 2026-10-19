@@ -7,7 +7,9 @@ import io.github.kormcrete.swingui.driver.model.RowSpec;
 
 import javax.swing.JTable;
 import javax.swing.JViewport;
+import javax.swing.SwingUtilities;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -64,7 +66,7 @@ public final class Scrolls {
             }
             JTable table = (JTable) c;
             Rectangle area = TableWidget.bounds(table, TableWidget.row(table, row), -1);
-            table.scrollRectToVisible(area);
+            reveal(table, area);
             return;
         }
         JViewport vp = viewportOf(c);
@@ -97,6 +99,21 @@ public final class Scrolls {
     public static JViewport viewportOf(Component c) {
         Component parent = c.getParent();
         return parent instanceof JViewport && ((JViewport) parent).getView() == c ? (JViewport) parent : null;
+    }
+
+    /**
+     * Brings {@code area} (in {@code c}'s coordinates) into view in every viewport around {@code c}, innermost first.
+     * {@link javax.swing.JComponent#scrollRectToVisible} stops at the first viewport, so a table in its own scroll
+     * pane inside a scrolling form would show the row in its pane while the pane itself stayed out of the form's
+     * visible part.
+     */
+    public static void reveal(Component c, Rectangle area) {
+        for (Container p = c.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof JViewport) {
+                JViewport vp = (JViewport) p;
+                vp.scrollRectToVisible(SwingUtilities.convertRectangle(c, area, vp));
+            }
+        }
     }
 
 
