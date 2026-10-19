@@ -742,11 +742,16 @@ final class Overlay extends JComponent {
         return true;
     }
 
-    /** The mark's box in layered-pane coordinates, or null when it is not showing. */
+    /**
+     * The mark's box in layered-pane coordinates, or null when it is not showing. A box shows what the person sees: only
+     * the part of its component (tab, cell, column) inside the scroll pane's view - a long table's rows scrolled out of
+     * view are no part of it - and none for a cell scrolled out entirely.
+     */
     Rectangle rectOf(Mark m) {
         Component c = m.component;
         if (c == null || !c.isShowing() || SwingUtilities.getRootPane(c) != root) return null;
         Rectangle r = new Rectangle(0, 0, c.getWidth(), c.getHeight());
+        Rectangle seen = c instanceof JComponent ? ((JComponent) c).getVisibleRect() : r;
         if (m.tab != null && c instanceof JTabbedPane && m.tab < ((JTabbedPane) c).getTabCount()) {
             Rectangle t = ((JTabbedPane) c).getBoundsAt(m.tab);
             if (t != null) r = t;
@@ -756,16 +761,21 @@ final class Overlay extends JComponent {
                 r = table.getCellRect(m.row, m.column, true);
             } else {
                 Rectangle cell = table.getCellRect(0, m.column, true);
-                Rectangle seen = table.getVisibleRect();
-                r = SwingUtilities.convertRectangle(table, new Rectangle(cell.x, seen.y, cell.width, seen.height), layers);
+                Rectangle column = new Rectangle(cell.x, seen.y, cell.width, seen.height).intersection(seen);
+                r = column.isEmpty() ? null : SwingUtilities.convertRectangle(table, column, layers);
                 JTableHeader header = table.getTableHeader();
                 if (header != null && header.isShowing() && SwingUtilities.getRootPane(header) == root) {
-                    r = r.union(SwingUtilities.convertRectangle(header, header.getHeaderRect(m.column), layers));
+                    Rectangle head = header.getHeaderRect(m.column).intersection(header.getVisibleRect());
+                    if (!head.isEmpty()) {
+                        head = SwingUtilities.convertRectangle(header, head, layers);
+                        r = r == null ? head : r.union(head);
+                    }
                 }
                 return r;
             }
         }
-        return SwingUtilities.convertRectangle(c, r, layers);
+        Rectangle shown = r.intersection(seen);
+        return shown.isEmpty() ? null : SwingUtilities.convertRectangle(c, shown, layers);
     }
 
     /** Not in a screenshot: a capture leaves the palette out. */

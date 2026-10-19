@@ -341,6 +341,48 @@ class OverlayTest {
     }
 
     @Test
+    void aBoxOnATableInAScrollPaneShowsOnlyWhatThePersonSees() throws Exception {
+        onScreen(frame -> {
+            Object[][] rows = new Object[22][];
+            for (int i = 0; i < rows.length; i++) rows[i] = new Object[] {"Product " + (i + 1), "€" + i};
+            JTable products = new JTable(rows, new Object[] {"Product", "Price"});
+            JScrollPane scroll = new JScrollPane(products);
+            scroll.setBounds(10, 10, 300, 120);
+            JButton add = new JButton("Add to cart");
+            add.setBounds(10, 140, 120, 24);
+            frame.getContentPane().add(scroll);
+            frame.getContentPane().add(add);
+            layOut(frame.getRootPane());
+            JComponent layers = frame.getLayeredPane();
+            Rectangle viewport = SwingUtilities.convertRectangle(scroll.getViewport().getParent(),
+                    scroll.getViewport().getBounds(), layers);
+            assertThat(products.getHeight()).isGreaterThan(viewport.height);
+            Overlay o = new Overlay(frame.getRootPane());
+
+            // the whole table: the rows scrolled out of view are no part of the box, nor is what lies under the table
+            Overlay.Mark whole = new Overlay.Mark(products, null, -1, -1, "1", Overlay.ASK, false);
+            o.mark(whole, () -> { });
+            Rectangle box = o.rectOf(whole);
+            assertThat(box).isEqualTo(viewport);
+            assertThat(box.intersects(SwingUtilities.convertRectangle(add.getParent(), add.getBounds(), layers))).isFalse();
+            // its ✓ badge sits on the corner the person sees
+            assertThat(whole.yes.isVisible()).isTrue();
+            assertThat(whole.yes.getY()).isEqualTo(Math.max(box.y - 11, 0));
+            assertThat(whole.yes.getX()).isEqualTo(Math.min(box.x + box.width - 11, layers.getWidth() - 23));
+
+            // a cell half scrolled out: its part in view; one out of view: no box
+            scroll.getViewport().setViewPosition(new Point(0, products.getRowHeight() * 3 + products.getRowHeight() / 2));
+            Rectangle cell = products.getCellRect(3, 0, true);
+            Overlay.Mark partly = new Overlay.Mark(products, null, 3, 0, "2", Overlay.ASK, false);
+            Rectangle shown = SwingUtilities.convertRectangle(products, cell.intersection(products.getVisibleRect()), layers);
+            assertThat(shown.height).isLessThan(cell.height);
+            assertThat(o.rectOf(partly)).isEqualTo(shown);
+            assertThat(o.rectOf(new Overlay.Mark(products, null, 21, 0, "3", Overlay.ASK, false))).isNull();
+            o.dispose();
+        });
+    }
+
+    @Test
     void aPressOnTheBarLeavesTheAppsOpenPopupOpenAndRunsTheButton() throws Exception {
         onScreen(frame -> {
             Overlay o = new Overlay(frame.getRootPane());
