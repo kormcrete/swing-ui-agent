@@ -630,6 +630,52 @@ class RecordingTest {
     }
 
     @Test
+    void stepByStepASmallConfirmationTheRunOpensGetsTheBarAndStepsBesideItAndNextAnswersIt() throws Exception {
+        Recording r = loadAddToCart();
+        // as small as "Discard this new order?" with Discard and Cancel
+        JDialog confirm = new JDialog(frame, true);
+        try {
+            run(r, 3);
+            Overlay inFrame = scene.inspector.overlay(frame.getRootPane());
+            Bar replayBar = eventually(() -> inFrame.bar() != r.bar ? inFrame.bar() : null);
+            eventually(() -> replayBar.text().startsWith("1/2") ? Boolean.TRUE : null);
+            r.next.release();
+            eventually(() -> replayBar.text().startsWith("2/2") ? Boolean.TRUE : null);
+            // step 1 opened the confirmation: the window events (or the end of the step) move the palette
+            SwingUtilities.invokeAndWait(() -> {
+                Scene.size(confirm, 286, 173);
+                scene.inspector.paletteRoot = confirm::getRootPane;
+                scene.inspector.attachPalette();
+
+                java.awt.Window beside = SwingUtilities.getWindowAncestor(replayBar);
+                assertThat(beside).isInstanceOf(PaletteWindow.class);
+                assertThat(beside.getOwner()).isSameAs(confirm);
+                assertThat(replayBar.text()).endsWith("paused: Next runs it");
+                // the open steps list goes along, above the bar
+                assertThat(SwingUtilities.getWindowAncestor(r.panel)).isSameAs(beside);
+                assertThat(r.panel.getY() + r.panel.getHeight()).isLessThanOrEqualTo(replayBar.getY());
+                assertThat(beside.getHeight()).isGreaterThanOrEqualTo(r.panel.getPreferredSize().height + replayBar.getHeight());
+                assertThat(inFrame.bar()).isNull();
+            });
+            // Next, pressed beside the dialog, runs the answer
+            SwingUtilities.invokeAndWait(() -> replayBar.press("Next"));
+            eventually(() -> !r.replaying ? Boolean.TRUE : null);
+            assertThat(sink.log).containsExactly("reset", "replay 0", "replay 1");
+            // the confirmation closed: everything is back in the frame
+            SwingUtilities.invokeAndWait(() -> {
+                java.awt.Window beside = SwingUtilities.getWindowAncestor(r.bar);
+                scene.inspector.paletteRoot = frame::getRootPane;
+                scene.inspector.attachPalette();
+                assertThat(r.bar.getParent()).isSameAs(frame.getLayeredPane());
+                assertThat(r.panel.getParent()).isSameAs(frame.getLayeredPane());
+                assertThat(((PaletteWindow) beside).gone()).isTrue();
+            });
+        } finally {
+            confirm.dispose();
+        }
+    }
+
+    @Test
     void aReplayThatBreaksEndsAndLetsEveryoneBackIn() throws Exception {
         Recording r = loadAddToCart();
         sink.replayThrows = new IllegalStateException("the session went away");

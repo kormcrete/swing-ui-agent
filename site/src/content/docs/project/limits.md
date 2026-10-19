@@ -31,7 +31,7 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 
 ## The palette and recording by showing it
 
-- **Narrow dialogs:** the palette follows an open modal dialog, but not into one narrower than its buttons. Then it stays in the main window and cannot be used until the dialog closes.
+- **Small dialogs:** the palette follows an open modal dialog. One too small to hold it (a short confirmation) gets it in a small window of its own just under the dialog. That window never takes the keyboard from the dialog, so a step's sentence cannot be typed in the Steps list while the palette is there.
 - **The agent's question bar:** it stays in the window of what the agent asks about, even when another window is in front.
 - **Column checks:** checks on a whole table column are shown greyed, because no `expect` kind exists for them yet.
 - **Not recorded as steps of their own yet:** clicks on spinner arrows, and drags. Re-do those with the agent, or write them by hand.

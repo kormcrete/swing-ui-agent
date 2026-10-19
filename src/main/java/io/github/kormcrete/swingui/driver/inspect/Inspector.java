@@ -432,6 +432,8 @@ public final class Inspector {
     private Sink sink;
     private Bar idle;
     private Overlay paletteHome;
+    /** The palette's own window beside a modal dialog too small for it, while the palette is there; else null. */
+    private PaletteWindow beside;
     /** The palette's window: the open modal dialog nothing blocks, else the main window ({@link #attachPalette}). */
     Supplier<JRootPane> paletteRoot = Inspector::liveRoot;
     /** The component that has the keyboard now: a sentence typed in the Steps list gives it back ({@link #giveFocus}). */
@@ -793,8 +795,14 @@ public final class Inspector {
         Bar want = agentBar != null ? agentBar : recording != null ? recording.bar : idle;
         JRootPane root = paletteRoot.get();
         if (root != null && !fits(root, want)) {
-            JRootPane main = mainRoot();
-            root = main != null ? main : paletteHome != null ? paletteHome.root : root;
+            Window w = SwingUtilities.getWindowAncestor(root);
+            if (w instanceof Dialog && ((Dialog) w).isModal()) {
+                // the dialog blocks the main window: the palette goes beside the dialog, where it can be pressed
+                root = besideOf(w).getRootPane();
+            } else {
+                JRootPane main = mainRoot();
+                root = main != null ? main : paletteHome != null ? paletteHome.root : root;
+            }
         }
         if (root == null) return;
         Overlay o = overlay(root);
@@ -804,6 +812,17 @@ public final class Inspector {
         if (recording == null || !recording.replaying) o.bar(want);
         // the window's controls changed (a dialog's next page): the agent's question avoids them; the palette keeps its spot
         o.recheck();
+        if (beside != null && o.root == beside.getRootPane()) beside.fit();
+    }
+
+    /** The palette's own window beside {@code dialog} ({@link PaletteWindow}): the one it is in, else a new one. */
+    private PaletteWindow besideOf(Window dialog) {
+        if (beside != null && beside.getOwner() == dialog && !beside.gone()) return beside;
+        PaletteWindow made = new PaletteWindow(dialog);
+        // its bar sits in its middle, wherever the window goes: never a spot picked or dragged in another window
+        homes.put(made.getRootPane(), new double[] {0.5, 1});
+        beside = made;
+        return made;
     }
 
     /**
@@ -828,9 +847,15 @@ public final class Inspector {
         from.bar(null);
         from.panel(null);
         from.endYield(false);
-        if (from.empty()) {
+        boolean wasBeside = beside != null && from.root == beside.getRootPane();
+        if (from.empty() || wasBeside) {
             from.dispose();
             if (overlays.get(from.root) == from) overlays.remove(from.root);
+        }
+        if (wasBeside) {
+            // the dialog closed (or has room now): the window beside it goes
+            beside.dispose();
+            beside = null;
         }
     }
 

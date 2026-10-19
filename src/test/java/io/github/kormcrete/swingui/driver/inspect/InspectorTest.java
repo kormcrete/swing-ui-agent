@@ -673,15 +673,64 @@ class InspectorTest {
     }
 
     @Test
-    void aDialogTooNarrowForItsButtonsKeepsThePaletteWhereItWas() throws Exception {
+    void aModalDialogTooSmallForThePaletteGetsItInAWindowOfItsOwnBesideIt() throws Exception {
         onEdt(() -> {
             Bar bar = paletteInFrame();
-            Scene.size(dialog, 120, 80);
+            // as small as a confirmation: "Discard this new order?" with Discard and Cancel
+            Scene.size(dialog, 286, 173);
+            dialog.setLocation(300, 200);
 
             showIn(dialog);
 
+            // not in the blocked main window, where nothing can be pressed while the dialog is open
+            assertThat(bar.getParent()).isNotSameAs(frame.getLayeredPane());
+            Window beside = SwingUtilities.getWindowAncestor(bar);
+            assertThat(beside).isInstanceOf(PaletteWindow.class);
+            assertThat(beside.getOwner()).isSameAs(dialog);
+            assertThat(Overlay.ours(beside)).isTrue();
+            assertThat(beside.getFocusableWindowState()).isFalse();
+            // as large as the bar with its margins, right under the dialog
+            assertThat(beside.getWidth()).isEqualTo(bar.getPreferredSize().width + 16);
+            assertThat(beside.getHeight()).isEqualTo(bar.getPreferredSize().height + 16);
+            assertThat(beside.getY()).isGreaterThanOrEqualTo(dialog.getY() + dialog.getHeight());
+            assertThat(bar.getBounds()).isEqualTo(new Rectangle(8, 8, bar.getPreferredSize().width, bar.getPreferredSize().height));
+
+            // the dialog closed: back in the frame, and the window beside it is gone
+            showIn(frame);
             assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+            assertThat(((PaletteWindow) beside).gone()).isTrue();
         });
+    }
+
+    @Test
+    void aWindowTooSmallThatIsNoModalDialogKeepsThePaletteWhereItWas() throws Exception {
+        onEdt(() -> {
+            Bar bar = paletteInFrame();
+            JDialog modeless = new JDialog(frame, false);
+            try {
+                Scene.size(modeless, 120, 80);
+
+                showIn(modeless);
+
+                assertThat(bar.getParent()).isSameAs(frame.getLayeredPane());
+            } finally {
+                modeless.dispose();
+            }
+        });
+    }
+
+    @Test
+    void underAScreensBottomEdgeThePaletteWindowGoesAboveTheDialog() {
+        Rectangle screen = new Rectangle(0, 0, 1440, 900);
+        Dimension size = new Dimension(400, 47);
+        // room below: centred under the dialog
+        assertThat(PaletteWindow.beside(new Rectangle(500, 300, 286, 173), size, screen))
+                .isEqualTo(new Rectangle(443, 477, 400, 47));
+        // none below: above it
+        assertThat(PaletteWindow.beside(new Rectangle(500, 800, 286, 90), size, screen))
+                .isEqualTo(new Rectangle(443, 749, 400, 47));
+        // at the screen's left edge: shifted in
+        assertThat(PaletteWindow.beside(new Rectangle(0, 300, 286, 173), size, screen).x).isEqualTo(0);
     }
 
     @Test
