@@ -27,7 +27,7 @@ The agent gives whoever can reach its port the same power over your app as a per
 - **Run commands or evaluate code.** No tool starts a process, loads a class or evaluates an expression.
 - **Read a password.** A password field's content is never put into a snapshot, never read and never checked. A person typing into one while recording with the palette is not recorded either.
 - **See your credentials.** Login aliases and secrets live in `.swing-ui-agent/ui-users.properties` on the machine that runs the tests. Error messages list alias names, never their passwords or secrets. Keep the file out of version control.
-- **Take your mouse.** Input is posted into the app's own event queue. The real pointer and keyboard stay yours, and the app can be driven while other windows are in front.
+- **Take your mouse or keyboard.** Input is posted into the app's own event queue. The real pointer and keyboard stay yours, and the app can be driven while other windows are in front.
 
 ## One owner at a time
 

@@ -1,0 +1,122 @@
+---
+// A numbered overview: one item = a small picture on the left, a bold heading and two or three sentences on the right.
+// On a phone the picture stacks above the text. Items are <OverviewItem>s in the default slot.
+---
+
+<ol class="kc-overview not-content">
+	<slot />
+</ol>
+
+<style is:global>
+	.kc-overview {
+		list-style: none;
+		padding: 0;
+		margin: 1.5rem 0 0;
+		counter-reset: kc-overview;
+	}
+	.kc-overview > li {
+		counter-increment: kc-overview;
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.75rem 1.5rem;
+		padding: 1.25rem 0;
+		border-top: 1px solid var(--sl-color-hairline, var(--sl-color-gray-5));
+		margin: 0;
+	}
+	.kc-overview > li:last-child {
+		border-bottom: 1px solid var(--sl-color-hairline, var(--sl-color-gray-5));
+	}
+	.kc-overview-pic {
+		margin: 0;
+	}
+	.kc-overview-zoom img {
+		display: block;
+		width: 100%;
+		max-width: 20rem;
+		height: auto;
+		border-radius: var(--kc-radius-md, 10px);
+		border: 1px solid var(--sl-color-hairline, var(--sl-color-gray-5));
+		background: var(--sl-color-black);
+	}
+	.kc-overview-zoom img[src$='.svg'] {
+		border: 0;
+	}
+	.kc-overview-zoom {
+		display: block;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: zoom-in;
+	}
+	.kc-overview-zoom:focus-visible {
+		outline: 2px solid var(--sl-color-accent);
+		outline-offset: 3px;
+		border-radius: var(--kc-radius-md, 10px);
+	}
+	.kc-overview-full {
+		margin: auto; /* Starlight's reset zeroes it; a modal dialog centres with auto margins */
+		max-width: min(96vw, 1800px);
+		max-height: 94vh;
+		padding: 0;
+		border: 0;
+		border-radius: var(--kc-radius-md, 10px);
+		background: var(--sl-color-black);
+		cursor: zoom-out;
+		overflow: visible;
+	}
+	.kc-overview-full::backdrop {
+		background: rgb(0 0 0 / 0.75);
+	}
+	.kc-overview-full img {
+		display: block;
+		max-width: min(96vw, 1800px);
+		max-height: 94vh;
+		width: auto;
+		height: auto;
+		border-radius: var(--kc-radius-md, 10px);
+	}
+	.kc-overview-full img[src$='.svg'] {
+		width: min(90vw, 1100px);
+	}
+	.kc-overview-close {
+		position: absolute;
+		top: -0.9rem;
+		right: -0.9rem;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		border: 1px solid var(--sl-color-hairline, var(--sl-color-gray-5));
+		background: var(--sl-color-black);
+		color: var(--sl-color-white);
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.kc-overview-text h3 {
+		font-size: var(--sl-text-lg);
+		margin: 0 0 0.4rem;
+		color: var(--sl-color-white);
+	}
+	.kc-overview-text h3::before {
+		content: counter(kc-overview) '. ';
+		color: var(--sl-color-accent);
+	}
+	.kc-overview-text p {
+		margin: 0;
+		color: var(--sl-color-gray-2);
+		line-height: 1.6;
+	}
+	.kc-overview-text p + p {
+		margin-top: 0.4rem;
+	}
+	@media (min-width: 40rem) {
+		.kc-overview > li {
+			grid-template-columns: 12.5rem 1fr;
+			align-items: start;
+		}
+		.kc-overview-zoom img {
+			max-width: none;
+		}
+	}
+</style>

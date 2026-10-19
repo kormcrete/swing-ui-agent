@@ -35,7 +35,7 @@ The tests are meant to be written by the agent, not by hand: a recorded test it 
 
 - **Not for JavaFX or SWT.** Swing only.
 - **No image matching.** It finds elements by what a user reads: labels, button text, column headers, cell text. Screenshots are for people.
-- **It does not take over your mouse.** Input is posted into the app's own event queue; it never uses `java.awt.Robot`. You can keep working while the agent drives the app, even with other windows in front.
+- **It does not take over your mouse or keyboard.** Input is posted into the app's own event queue; it never uses `java.awt.Robot`. You can keep working while the agent drives the app, even with other windows in front.
 - **Not a hosted service.** Everything runs on your machine or your CI runner, and the agent listens on the loopback address only.
 
 ## What it needs

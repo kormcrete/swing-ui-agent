@@ -6,7 +6,7 @@ heroFacts: 'Java 8 to 25 · macOS, Linux and Windows · Apache-2.0 (<a href="/sw
 heroDemo: true
 hero:
   title: Record Swing UI tests. A coding agent does the work
-  tagline: Show the test in the app, or tell the agent in words. You get a recorded test that replays from the app, the agent or CI. One jar, no changes to the app.
+  tagline: AI-assisted testing of existing Java Swing desktop applications. Show the test in the app, or tell the agent in words. You get a recorded test that replays from the app, the agent or CI. One jar, no changes to the app.
   actions:
     - text: Get started
       link: /swing-ui-agent/start/why/
@@ -23,7 +23,49 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Overview from '../../components/Overview.astro';
+import OverviewItem from '../../components/OverviewItem.astro';
+import RunDemo from '../../components/RunDemo.astro';
+import record from '../../assets/overview/record.png';
+import replay from '../../assets/overview/replay.png';
+import asks from '../../assets/overview/asks.png';
+import javaTest from '../../assets/overview/java-test.svg';
+import howItFits from '../../assets/overview/how-it-fits.svg';
+import recordFull from '../../assets/inspector/recording.png';
+import replayFull from '../../assets/inspector/steps.png';
+import asksFull from '../../assets/inspector/agent-asks.png';
+
+## What it does
+
+It connects three things that usually happen apart:
+
+- **A person shows** how the app should behave, in the app itself, or describes it in words.
+- **A coding agent turns that** into a named, repeatable test.
+- **Developers run the same test** locally and in CI, and move to an ordinary Java test when a check needs more.
+
+<Overview>
+	<OverviewItem image={record} full={recordFull} alt="The palette in Order Desk while recording: a red dot, the word Recording, and the Record, Check, Steps and Done buttons" title="Records UI tests, from what you show or what you say">
+		<p>Press <strong>● Record</strong> in the palette and use the app; <strong>Check</strong> adds a check of what you see. Or tell a coding agent the test in words and it drives the live app. Either way the agent names each step in plain words and saves a <strong>recorded test</strong>: a JSON file in <code>uitest/</code> with nothing to compile.</p>
+		<p><a href="/swing-ui-agent/start/show/">Record a test by showing it</a> · <a href="/swing-ui-agent/start/record-together/">Record together with your agent</a></p>
+	</OverviewItem>
+	<OverviewItem image={replay} full={replayFull} alt="The Steps list in the palette: numbered steps with a sentence each, a check under its step, and the Replay all and From selected buttons" title="Replays them, and lets you read and fix them">
+		<p>The steps are sentences you can read, rename, replay from any point or redo. Press <strong>▶ Run</strong> in the app, ask the agent, or run the whole <code>uitest/</code> folder from Maven and in CI under a virtual display. A failing step says what it found.</p>
+		<p><a href="/swing-ui-agent/start/recorded-tests/">Run and edit a recorded test</a> · <a href="/swing-ui-agent/start/ci/">Run in CI</a></p>
+	</OverviewItem>
+	<OverviewItem image={asks} full={asksFull} alt="The agent asks in the app which table holds the cart: an orange box around a candidate and a bar with the question and a None of these button" title="Asks in the app when it is not sure">
+		<p>When a step could mean two things, the agent boxes the candidates in the app, numbered, and you confirm one or say none of these. The answer goes into the recording, so the test is right the first time.</p>
+		<p><a href="/swing-ui-agent/start/record-together/">Record together with your agent</a></p>
+	</OverviewItem>
+	<OverviewItem image={javaTest} alt="A JUnit 5 UiTest class that reads the new order's number from the status bar and asserts its row in the Orders table" title="Writes a Java test when you need more">
+		<p>A recorded test holds exact values and checks what is on screen. When a test must read a value that changes from run to run, such as the new order's number, or check a database, files or logs, the agent writes a JUnit 5 <code>@UiTest</code> class instead, with the same driving API. The two kinds do not mix.</p>
+		<p><a href="/swing-ui-agent/start/choose-test-kind/">Recorded tests or Java tests</a> · <a href="/swing-ui-agent/demo/two-files/">One order, two files</a></p>
+	</OverviewItem>
+	<OverviewItem image={howItFits} alt="How it fits together: a person at the app or a coding agent, over the palette or the CLI and MCP on loopback, reach the agent jar inside the app's JVM; it writes recorded tests to uitest, which the palette, the agent, Maven and CI replay" title="Drives the real app, from a shell or over MCP">
+		<p>One jar attached with <code>-javaagent:</code> clicks, types and reads the live UI from inside the app's JVM: no changes to the app, and input goes into the app's own event queue, so your mouse and keyboard stay yours. A coding agent calls it one tool per step, from a shell (<code>java -jar … &lt;tool&gt;</code>) or over MCP on loopback. Skills teach it the workflow.</p>
+		<p><a href="/swing-ui-agent/start/drive/">Let your agent drive the app</a> · <a href="/swing-ui-agent/agents/cli-or-mcp/">CLI or MCP</a> · <a href="/swing-ui-agent/agents/skills/">Skills</a></p>
+	</OverviewItem>
+</Overview>
 
 ## Try it in two minutes
 
@@ -34,10 +76,9 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
    [Mac with Intel](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-macos-x64.dmg),
    [Windows](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-windows-x64.zip)
    or [Linux and any Java 8+](https://github.com/kormcrete/swing-order-desk-demo/releases/latest/download/kormcrete-order-desk-java.zip),
-   and open it. The first launch takes one extra step:
-   [first launch](/swing-ui-agent/demo/tour/#download-and-run-it).
-2. **Run a recorded test:** in the bar at the bottom of the window, press **Load recorded test…**, pick `place-order`
-   and press **▶ Run**. Order Desk comes with three; the app takes the order by itself and checks every total.
+   and open it ([first launch](/swing-ui-agent/demo/tour/#download-and-run-it)).
+2. **Run a recorded test:** press **Load recorded test…** in the bar at the bottom, pick `place-order`, press **▶ Run**.
+   Order Desk comes with three; the app takes the order by itself and checks every total.
 3. **Connect your agent** while the app runs:
 
    ```sh
@@ -45,116 +86,43 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
    ```
 
 4. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
-   tell me the order number."* Ada Shop Ltd pays by invoice, so if it asks for a PO number, give it any.
-5. **Ask again**, for another customer or other products. The first time takes longer: the agent reads the screens
-   and learns the order form. Now it knows them and can send all the steps in one `batch` call: the whole order runs
-   in about half a second.
+   tell me the order number."* If it asks for a PO number, give it any.
+5. **Ask again.** Now it knows the screens and sends the whole order in one `batch` call, in about half a second. Ask
+   it to [save the steps as a recorded test](/swing-ui-agent/start/record-together/), and what it learned to its
+   project notes.
 
-:::tip[Let it remember]
-What the agent learns lasts only for the conversation. Ask it to save what it learned about the app (the screens,
-the field names, that invoice customers need a PO number) to its memory or project notes, such as your
-`CLAUDE.md`, so the next session starts fast. To keep the steps themselves, ask it to
-[save them as a recorded test](/swing-ui-agent/start/record-together/).
-:::
+Then [take the tour](/swing-ui-agent/demo/tour/), or open Order Desk's source in IntelliJ and record into the project:
+[in IntelliJ](/swing-ui-agent/start/intellij/), [with Claude Code](/swing-ui-agent/start/claude-code/).
 
-Then [take the tour](/swing-ui-agent/demo/tour/), or see how the same steps
-[become a recorded test](/swing-ui-agent/start/record-together/).
+## Good to know
 
-## Two ways to record a test
-
-Either way the agent does the work, and the result is a **recorded test**: a JSON file in `uitest/` with a numbered
-sentence per step, nothing to compile.
-
-<CardGrid>
-	<Card title="Show it yourself" icon="pencil">
-		Start the app with the agent (the palette is on by default), press **● Record** in the palette and use the app.
-		**Check** adds checks of what you see, **Steps** replays, fixes and names them. After **Done**, **Export…** saves
-		the recorded test. **Load recorded test…** opens one again to run it step by step and save changes back.
-
-		Your agent can help: ask it to add steps while you record. When it is not sure what you mean, it boxes what it
-		found, and you confirm the one you mean.
-
-		[Record a test by showing it](/swing-ui-agent/start/show/)
-	</Card>
-	<Card title="Tell the agent" icon="seti:shell">
-		Say the test in words. The agent drives the live app, checks each step, names the steps in plain words and saves
-		the recorded test. You can watch the steps appear in the palette and undo what you do not like.
-
-		```sh wrap
-		$UI session '{"op":"reset"}'
-		$UI menu '{"path":["File","New order"]}'
-		$UI type '{"target":{"name":"Customer"},"text":"Ada"}'
-		$UI export_recorded_test '{"name":"place-order"}'
-		```
-
-		[Record together with your agent](/swing-ui-agent/start/record-together/)
-	</Card>
-</CardGrid>
-
-## A recorded test is a file you can read
-
-- **Exact values, what is on screen.** It checks what a person sees, such as the cart's **Total** reading `€31.32`.
-  The data is yours to arrange: the test creates what it checks, or uses data you know exists.
-- **One numbering.** Steps and checks are numbered the same in the palette, the reports and the file: step `7`, its
-  check `7.2`.
-- **Runs anywhere.** Load it in the palette and press **▶ Run**, let the agent run it, or run the whole folder from
-  Maven and CI. [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)
-
-When a test needs more, or more technical checks (values that change from run to run, a database, files, logs, anything
-the test's JVM can reach), the agent can write a JUnit 5 `@UiTest` class instead. The two kinds do not mix.
-[Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/)
-
-## Drive, record, run
-
-<CardGrid>
-	<Card title="Drive" icon="seti:shell">
-		A coding agent clicks, types and reads the live app, one tool call per step, from a shell (`java -jar … <tool>`)
-		or over MCP. [Let your agent drive the app](/swing-ui-agent/start/drive/)
-	</Card>
-	<Card title="Record" icon="pencil">
-		What you showed, or what the agent did, becomes a recorded test: numbered sentences you read and fix in the
-		palette. [Record together with your agent](/swing-ui-agent/start/record-together/)
-	</Card>
-	<Card title="Run" icon="rocket">
-		Replay it from the palette or the agent, or run the folder from Maven and in CI under a virtual display. A failing
-		step leaves what it found and a screenshot. [Run and edit a recorded test](/swing-ui-agent/start/recorded-tests/)
-	</Card>
-	<Card title="Your app, your vocabulary" icon="open-book">
-		Optional: a small plugin names your app's own steps, such as "Add Gel pen, black to the cart". The agent runs one
-		in a single call, and the clicks of a person who shows it fold into one sentence in the recorded test.
-		[Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)
-	</Card>
-</CardGrid>
-
-## Built for real Swing apps
-
-- **Waits for the app, not a timer.** Every action lets the app settle before it returns, and checks retry until they
-  hold. [Waiting](/swing-ui-agent/guides/waiting/)
-- **Finds what a user sees.** Labels, button text, column headers and cell text, not pixel positions.
-  [Targets and locators](/swing-ui-agent/guides/targets/)
-- **Leaves your mouse alone.** Input goes into the app's event queue, so it works with other windows in front.
-- **One long-running app, isolated tests.** Each test gets to its own starting screen, and a lease keeps two clients
-  out of each other's way. [Reset and the starting screen](/swing-ui-agent/guides/reset/)
-
-## Built for coding agents
-
-- **A tree, not a screenshot.** `snapshot` returns the windows as an element tree, scoped as narrowly as the agent
-  asks. `screenshot` is there when a picture helps.
-- **Errors that say what exists.** A locator that misses comes back with the near misses, so the next try is right.
-- **Records with you.** The agent can start a recording, add steps and checks, and name them in sentences, while you
-  watch the palette and undo what you do not like. [Record together](/swing-ui-agent/start/record-together/)
-- **Skills included.** Three agent skills teach the drive, target and record workflow.
-  [Skills](/swing-ui-agent/agents/skills/)
-- **Safe by default.** Loopback only, and no tool runs commands or evaluates code.
-  [Security](/swing-ui-agent/agents/security/)
+- **No changes to the app.** Add `-javaagent:`. Java 8 to 25, macOS, Linux and Windows.
+  [Install](/swing-ui-agent/start/install/)
+- **Your mouse and keyboard stay yours.** Input goes into the app's own event queue; other windows can be in front.
+- **Waits for the app, not a timer.** Every step lets the app settle; checks retry until they hold.
+  [Waiting](/swing-ui-agent/guides/waiting/)
+- **Finds what a person sees.** Labels, button text, column headers and cell text, not pixel positions.
+  [Targets](/swing-ui-agent/guides/targets/)
+- **Exact values, your data.** A recorded test checks what is on screen, such as the cart's **Total** `€31.32`. It
+  creates the data it checks or uses data you know exists.
+- **Built for agents.** An element tree instead of screenshots, errors that list the near misses, and three skills
+  that teach the workflow. [Skills](/swing-ui-agent/agents/skills/)
+- **Local only.** It listens on `127.0.0.1`, refuses any other address, and no tool runs commands, loads a class or
+  evaluates code. [Security](/swing-ui-agent/agents/security/)
+- **Your app's words (optional).** A small plugin adds reset, login and named steps such as "Add Gel pen, black to the
+  cart". [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)
+- **Early.** `0.1.0-SNAPSHOT`, not on Maven Central yet; expect changes before 1.0. A recorded test file carries its
+  format version, and the agent refuses one it cannot read instead of guessing.
+  [Limits](/swing-ui-agent/project/limits/) · [Roadmap](/swing-ui-agent/project/roadmap/) ·
+  [Recorded test format](/swing-ui-agent/reference/recorded-test-format/)
 
 ## See it run
 
-Order Desk is a small Swing order desk made to be driven: tabs, sortable tables, a tree, popup menus, a checkout
-wizard with rules, a background task and a file chooser. Its tests were recorded by an agent and run in CI. The one
-playing above is Order Desk's recorded test `uitest/cart-totals.json`: it fills Ada's cart and checks its totals.
-`uitest/place-order.json` takes an order through checkout, and `PlaceOrderUiIT`, a Java test, does the same and reads
-the new order's number.
+The demo playing above is Order Desk's recorded test `uitest/cart-totals.json`: it fills Ada's cart and checks its
+totals. Below, Order Desk's two Java tests run from IntelliJ against the same app. All of them were recorded by an
+agent and run in CI.
+
+<RunDemo />
 
 <CardGrid>
 	<LinkCard title="Tour of Order Desk" description="Start it with the agent and see every screen." href="/swing-ui-agent/demo/tour/" />

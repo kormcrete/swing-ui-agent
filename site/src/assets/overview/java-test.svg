@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="280" viewBox="0 0 560 280" role="img" aria-label="A JUnit 5 UiTest class: it reads the new order's number from the status bar and asserts its row in the Orders table">
+  <rect width="560" height="280" rx="16" fill="#1a4a6b"/>
+  <rect x="0" y="0" width="560" height="34" rx="16" fill="#17456a"/>
+  <rect x="0" y="18" width="560" height="16" fill="#17456a"/>
+  <text x="20" y="23" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#b2d8ff">PlaceOrderUiIT.java</text>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="14" fill="#f2f5f8">
+    <text x="20" y="64" fill="#76d8ff">@UiTest</text>
+    <text x="20" y="86">class PlaceOrderUiIT {</text>
+    <text x="40" y="108" fill="#76d8ff">@Test</text>
+    <text x="40" y="130">void placesAnOrderForAda(Client ui) {</text>
+    <text x="60" y="152">ui.menu("File", "New order");</text>
+    <text x="60" y="174" fill="#a9cfea">// … the cart, the checkout …</text>
+    <text x="60" y="196">String order = …;  <tspan fill="#a9cfea">// "ORD-1640", from the status bar</tspan></text>
+    <text x="60" y="218">assertThat(ui.tab("Orders").table().cell("Status"))</text>
+    <text x="80" y="240">.hasCell(row("Order", order), "Status", "Placed");</text>
+    <text x="40" y="262">}</text>
+  </g>
+</svg>
