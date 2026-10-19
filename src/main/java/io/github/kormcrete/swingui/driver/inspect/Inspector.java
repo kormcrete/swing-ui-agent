@@ -939,7 +939,7 @@ public final class Inspector {
         sinkThread.submit(() -> {
             Path folder = sink.recordedFolder();
             List<RecordedTestEntry> tests = listed(folder);
-            int current = sink.steps().size();
+            int current = StepsPanel.stepCount(sink.steps());
             SwingUtilities.invokeLater(() -> {
                 if (testsPanel != null || paletteHome == null || busyRecording()) return;
                 testsPanel = new RecordedTestsPanel(folder, tests, current, this::listTests, this::loadTest, this::closeLoad);
@@ -989,7 +989,7 @@ public final class Inspector {
         if (panel == null || busyRecording()) return;
         sinkThread.submit(() -> {
             Result r = sink.loadRecordedTest(file);
-            int n = r.ok ? sink.steps().size() : 0;
+            int n = r.ok ? StepsPanel.stepCount(sink.steps()) : 0;
             SwingUtilities.invokeLater(() -> {
                 if (!r.ok) {
                     if (testsPanel == panel) panel.refused(r.line);

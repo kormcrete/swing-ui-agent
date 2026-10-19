@@ -521,6 +521,28 @@ class RecordingTest {
     }
 
     @Test
+    void theLoadedBarCountsStepsNotChecks() throws Exception {
+        twoRecordedTests();
+        // two steps, the second with two checks: one numbering, and counts are steps
+        sink.loadedSteps = Arrays.asList("click(button 'Add to cart')", "click(button 'Checkout…')",
+                "expect(#total text '€7.32')", "expect(#vat text '€1.22')");
+        RecordedTestsPanel panel = openLoadPanel();
+        SwingUtilities.invokeAndWait(() -> {
+            panel.select(0);
+            panel.load();
+        });
+        recording = eventually(() -> scene.inspector.recording() != null && scene.inspector.recording().panel != null
+                && scene.inspector.recording().panel.rows().size() == 4 ? scene.inspector.recording() : null);
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("add-to-cart - 2 steps"));
+
+        // Load recorded test… again: what loading replaces is counted the same way
+        SwingUtilities.invokeAndWait(() -> recording.bar.press("Load…"));
+        RecordedTestsPanel again = eventually(() -> scene.inspector.testsPanel);
+        SwingUtilities.invokeAndWait(() ->
+                assertThat(again.notice()).isEqualTo("Loading replaces the current recording (2 steps)."));
+    }
+
+    @Test
     void loadingARecordedTestShowsItsStepsReadyToRun() throws Exception {
         Recording r = loadAddToCart();
         SwingUtilities.invokeAndWait(() -> {
