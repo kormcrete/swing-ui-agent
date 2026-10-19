@@ -1122,7 +1122,7 @@ public final class LiveVerbs implements Verbs {
             driver.poster().text(window, text);
             if (commit) {
                 driver.poster().chord(window, chord("Enter"));
-                if (stopEditingLeftOpen(table, cell, window)) via = API;
+                if (stopEditingLeftOpen(table, cell, window, a.resolved)) via = API;
             }
             return via;
         }
@@ -1163,7 +1163,7 @@ public final class LiveVerbs implements Verbs {
         driver.poster().text(window, text);
         if (commit) {
             driver.poster().chord(window, chord("Enter"));
-            if (stopEditingLeftOpen(table, cell, window)) via = API;
+            if (stopEditingLeftOpen(table, cell, window, a.resolved)) via = API;
         }
         return via;
     }
@@ -1176,12 +1176,14 @@ public final class LiveVerbs implements Verbs {
     /**
      * Enter ends the edit of a plain text cell; an editor that holds its text field (a spinner) can take the Enter
      * itself and stay open. Then the edit is stopped through the editor, as a click elsewhere would. An editor that
-     * refuses the text is cancelled, so the cell keeps its last valid value; a modal dialog the app raised for the
-     * value, now blocking the table's {@code window}, is left to the caller. True when the driver had to end the edit.
+     * refuses the text silently is cancelled, so the cell keeps its last valid value and the table is free for the
+     * next step, and the step fails: the typed value is lost. A modal dialog the app raised for the value, now
+     * blocking the table's {@code window}, is left to the caller. True when the driver had to end the edit.
      * Not run inside invokeAndWait: stopping runs app code (listeners, validation) that may open a modal dialog,
      * which settle must see as pending.
      */
-    private boolean stopEditingLeftOpen(final JTable table, final int[] cell, final Window window) {
+    private boolean stopEditingLeftOpen(final JTable table, final int[] cell, final Window window,
+                                        final Resolved target) {
         driver.settle().drain();
         // the app answered Enter with a dialog (a validating editor explaining a refusal): a second stop would
         // only raise it again
@@ -1201,6 +1203,10 @@ public final class LiveVerbs implements Verbs {
                 if (editor != null) editor.cancelCellEditing();
             });
             driver.settle().drain();
+            throw Edt.call(() -> notActionable("the editor of row " + cell[0] + " column '"
+                    + TableWidget.headers(table).get(cell[1]) + "' of " + target.describe()
+                    + " refused the value; the edit was cancelled and the cell keeps \""
+                    + table.getValueAt(cell[0], cell[1]) + "\""));
         }
         return true;
     }

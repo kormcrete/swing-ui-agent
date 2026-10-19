@@ -177,8 +177,10 @@ class FixtureAppDriveIT {
 
     @Test
     @Order(8)
-    void aRefusedEditIsCancelledAndTheCellKeepsItsValue() throws Exception {
-        step("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc','commit':true}");
+    void aRefusedEditFailsTheStepIsCancelledAndTheCellKeepsItsValue() throws Exception {
+        // the typed value is lost: the step must not pass, and it says what the cell kept
+        refused("type", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Code'},'text':'abc','commit':true}",
+                "refused the value; the edit was cancelled and the cell keeps \"10\"");
         step("expect", "{'target':{'name':'lines'},'cell':{'row':{'Product':'Paper'},'column':'Code','expected':'10'}}");
         step("expect", "{'target':{'name':'status'},'text':'code cancelled'}");
         // the editor is gone: a second type starts a fresh edit and this one is accepted

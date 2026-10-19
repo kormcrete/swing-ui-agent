@@ -99,7 +99,7 @@ ui.tab("New order · Ada Shop Ltd").table().row("Product", "Gel pen, black").cel
 ```
 
 - **A check box cell:** `check` with `"checked":true` or `false` clicks it only when it is not already in that state. In Java `.check()` and `.uncheck()`.
-- **A value the editor refuses:** the edit is cancelled and the cell keeps its last valid value, so check the cell after typing. If the app explains the refusal in a dialog, the dialog comes back as `pending`. When another cell's editor refuses to let go, typing into this cell fails `NOT_ACTIONABLE` and says which cell is still being edited.
+- **A value the editor refuses:** the step fails `NOT_ACTIONABLE`, the edit is cancelled and the cell keeps its last valid value; the message says which value it kept. If the app explains the refusal in a dialog, the dialog comes back as `pending`. When another cell's editor refuses to let go, typing into this cell fails `NOT_ACTIONABLE` and says which cell is still being edited.
 - **Paste a block:** `set_clipboard` with tab-separated cells and line-separated rows, click the anchor cell, then `press {"keys":"Mod+V"}`.
 
 ## Check
