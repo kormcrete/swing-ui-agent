@@ -7,6 +7,7 @@ import java.util.List;
 public final class PendingDialog {
 
     public String title;
+    /** What it says, one line per line it shows. */
     public String message;
     public List<String> buttons = new ArrayList<String>();
     public List<String> fields = new ArrayList<String>();
@@ -20,7 +21,8 @@ public final class PendingDialog {
         this.fields = fields;
     }
 
+    /** One line: the title, the message with its lines joined by spaces, and the buttons. */
     public String summary() {
-        return (title == null || title.isEmpty() ? "" : title + ": ") + message + " " + buttons;
+        return (title == null || title.isEmpty() ? "" : title + ": ") + String.valueOf(message).replace('\n', ' ') + " " + buttons;
     }
 }

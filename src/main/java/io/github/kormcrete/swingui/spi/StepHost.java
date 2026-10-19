@@ -1,10 +1,15 @@
 package io.github.kormcrete.swingui.spi;
 
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Edt;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.driver.model.Names;
+import io.github.kormcrete.swingui.driver.model.Visibility;
+import io.github.kormcrete.swingui.driver.widgets.Dialogs;
+import io.github.kormcrete.swingui.driver.window.Modality;
 
 import java.util.Map;
 
@@ -20,9 +25,12 @@ public interface StepHost {
     void loginAs(String alias);
     /**
      * The message or confirmation (an option pane) waiting for an answer now, or null. App steps refuse to run
-     * while one waits.
+     * while one waits. By default: the modal dialog a person answers next ({@link Modality#top()}) when it shows an
+     * option pane, read as a step's {@code pending} is ({@link Dialogs#describe}).
      */
-    PendingDialog openDialog();
+    default PendingDialog openDialog() {
+        return Edt.call(() -> Dialogs.optionPane(Modality.top(), new Names(Visibility.SHOWING)));
+    }
 
     /**
      * The {@code do} step: runs the domain step {@code id} (a {@link Vocabulary} step; {@code <plugin>:<id>} names the

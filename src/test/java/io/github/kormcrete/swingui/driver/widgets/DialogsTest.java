@@ -9,16 +9,21 @@ import io.github.kormcrete.swingui.driver.model.Visibility;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.LookAndFeel;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.plaf.metal.MetalLookAndFeel;
+import java.awt.Frame;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,6 +44,63 @@ class DialogsTest {
         assertThat(d.message).isEqualTo("Really delete?");
         assertThat(d.buttons).hasSize(2);
         assertThat(d.fields).isEmpty();
+    }
+
+    @Test
+    void eachLineOfTheMessageKeepsItsOwnLine() {
+        JPanel content = new JPanel();
+        content.add(new JOptionPane(new Object[] {"The order could not be placed.\nThe customer is on hold.",
+                new JLabel("<html>Call them first.<br>Then try again.</html>")}, JOptionPane.ERROR_MESSAGE));
+        PendingDialog d = Dialogs.describe("Place order", content, names);
+        assertThat(d.message).isEqualTo("The order could not be placed.\nThe customer is on hold.\nCall them first.\nThen try again.");
+        assertThat(d.summary()).isEqualTo("Place order: The order could not be placed. The customer is on hold. Call them first. "
+                + "Then try again. [OK]");
+    }
+
+    @Test
+    void aMessagePanelGivesItsLabelsAndReadOnlyTextsButNotItsFieldsOrButtons() {
+        JPanel message = new JPanel();
+        message.add(new JLabel("Import finished with 4 problems."));
+        JTextArea log = new JTextArea("Row 3: no customer\nRow 9: no product");
+        log.setEditable(false);
+        message.add(log);
+        message.add(new JLabel("Second"));
+        message.add(new JLabel("Third"));
+        message.add(new JLabel("Fourth"));
+        message.add(new JButton("Details…"));
+        JPanel content = new JPanel();
+        content.add(new JOptionPane(message, JOptionPane.WARNING_MESSAGE, JOptionPane.OK_CANCEL_OPTION));
+        PendingDialog d = Dialogs.describe("Import", content, names);
+        assertThat(d.message).isEqualTo("Import finished with 4 problems.\nRow 3: no customer\nRow 9: no product\nSecond\nThird"
+                + "\nFourth");
+        assertThat(d.buttons).hasSize(2).doesNotContain("Details…");
+    }
+
+    @Test
+    void anAnswerWinsOverAButtonOfTheSameLabelInTheMessage() {
+        JPanel message = new JPanel();
+        message.add(new JButton("OK"));
+        JOptionPane pane = new JOptionPane(message, JOptionPane.INFORMATION_MESSAGE);
+        JPanel content = new JPanel();
+        content.add(pane);
+        AbstractButton answer = Dialogs.button(content, "OK");
+        assertThat(SwingUtilities.isDescendingFrom(answer, pane)).isTrue();
+        assertThat(SwingUtilities.isDescendingFrom(answer, message)).isFalse();
+        assertThat(Dialogs.describe("Info", content, names).buttons).containsExactly("OK");
+    }
+
+    @Test
+    void anOptionPaneDialogIsAQuestionAndAnyOtherDialogIsNot() {
+        JDialog question = new JOptionPane("Really delete?", JOptionPane.QUESTION_MESSAGE, JOptionPane.YES_NO_OPTION)
+                .createDialog(null, "Delete");
+        PendingDialog d = Dialogs.optionPane(question, names);
+        assertThat(d.title).isEqualTo("Delete");
+        assertThat(d.message).isEqualTo("Really delete?");
+        assertThat(d.buttons).hasSize(2);
+        JDialog checkout = new JDialog((Frame) null, "Checkout");
+        checkout.getContentPane().add(new JButton("Next"));
+        assertThat(Dialogs.optionPane(checkout, names)).isNull();
+        assertThat(Dialogs.optionPane(null, names)).isNull();
     }
 
     @Test
