@@ -11,6 +11,8 @@ import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
 import javax.swing.JScrollPane;
@@ -29,6 +31,9 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -333,6 +338,36 @@ class OverlayTest {
         } finally {
             SwingUtilities.invokeAndWait(frame::dispose);
         }
+    }
+
+    @Test
+    void aPressOnTheBarLeavesTheAppsOpenPopupOpenAndRunsTheButton() throws Exception {
+        onScreen(frame -> {
+            Overlay o = new Overlay(frame.getRootPane());
+            int[] next = {0};
+            Bar bar = new Bar("Replaying", "1/8  click “New order for a recent customer”")
+                    .button("Next", Overlay.HOVER, () -> next[0]++);
+            o.bar(bar);
+            JButton recent = new JButton("New order for a recent customer");
+            recent.setBounds(10, 10, 220, 24);
+            frame.getContentPane().add(recent);
+            JPopupMenu customers = new JPopupMenu();
+            customers.add(new JMenuItem("Ada Shop Ltd"));
+            customers.show(recent, 0, 24);
+            // the button's place is known once the bar has been painted; Next is its last (only) button
+            bar.paint(new BufferedImage(bar.getWidth(), bar.getHeight(), BufferedImage.TYPE_INT_ARGB).createGraphics());
+            int x = bar.getWidth() - 20;
+            int y = bar.getHeight() / 2;
+            long now = System.currentTimeMillis();
+            bar.dispatchEvent(new MouseEvent(bar, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, x, y, 1, false, MouseEvent.BUTTON1));
+            bar.dispatchEvent(new MouseEvent(bar, MouseEvent.MOUSE_RELEASED, now, 0, x, y, 1, false, MouseEvent.BUTTON1));
+
+            // step by step: the next step picks from the popup the last one opened
+            assertThat(customers.isVisible()).isTrue();
+            assertThat(next[0]).isEqualTo(1);
+            customers.setVisible(false);
+            o.dispose();
+        });
     }
 
     @Test

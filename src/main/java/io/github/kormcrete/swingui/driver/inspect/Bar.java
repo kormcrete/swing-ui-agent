@@ -2,7 +2,9 @@ package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.plaf.basic.BasicComboBoxUI;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -85,6 +87,25 @@ final class Bar extends JComponent {
         };
         addMouseListener(a);
         addMouseMotionListener(a);
+        // a press on the bar is not a press in the app: the app's open popup stays open (the dropdown a replayed step
+        // opened, for the next step to pick from), as Swing keeps it for a press on a combo box
+        putClientProperty(KEEP_POPUPS, keepPopups());
+    }
+
+    private static final String KEEP_POPUPS = "doNotCancelPopup";
+    private static Object keepPopups;
+
+    /**
+     * The value of {@link #KEEP_POPUPS} that makes Swing's popup grabber leave an open popup alone: a Basic combo box's
+     * own, whatever the app's look and feel (theirs extend it, or have their own and never read it). EDT.
+     */
+    private static Object keepPopups() {
+        if (keepPopups == null) {
+            JComboBox<Object> combo = new JComboBox<Object>();
+            combo.setUI(new BasicComboBoxUI());
+            keepPopups = combo.getClientProperty(KEEP_POPUPS);
+        }
+        return keepPopups;
     }
 
     /** The person dragged it to {@code p} (layered-pane coordinates). */
