@@ -32,6 +32,8 @@ in, plus three recorded tests. Nothing to build.
    and open it ([first launch](https://kormcrete.github.io/swing-ui-agent/demo/tour/#download-and-run-it)).
 2. **Run a recorded test:** press **Load recorded test…** in the bar at the bottom, pick `place-order`, press **▶ Run**.
    The app takes the order by itself and checks every total.
+
+   <img src="site/src/assets/overview/launch.png" width="600" alt="Order Desk right after it starts: the Orders list, and at the bottom the palette's bar with Record and Load recorded test">
 3. **Connect your agent** while the app runs, and ask it to place an order:
 
    ```sh
@@ -54,7 +56,7 @@ It connects three things that usually happen apart:
 
 <table>
 <tr>
-<td width="200" valign="top"><a href="site/src/assets/inspector/recording.png"><img src="site/src/assets/overview/record.png" width="180" alt="The palette in Order Desk while recording: a red dot, the word Recording, and the Record, Check, Steps and Done buttons"></a></td>
+<td width="200" valign="top"><a href="site/src/assets/overview/record-full.png"><img src="site/src/assets/overview/record.png" width="180" alt="Recording in Order Desk, in Check mode: a click on a cart line opened the Check menu with the checks it offers, such as Product is Gel pen, black in this row"></a></td>
 <td valign="top">
 
 **1. Records UI tests, from what you show or what you say.** Press **● Record** in the palette and use the app;
@@ -66,7 +68,7 @@ compile. [Show it](https://kormcrete.github.io/swing-ui-agent/start/show/) ·
 </td>
 </tr>
 <tr>
-<td width="200" valign="top"><a href="site/src/assets/inspector/steps.png"><img src="site/src/assets/overview/replay.png" width="180" alt="The Steps list in the palette: numbered steps with a sentence each, a check under its step, and the Replay all and From selected buttons"></a></td>
+<td width="200" valign="top"><a href="site/public/overview/replay-full.webp"><img src="site/public/overview/replay.webp" width="180" alt="An animation: the recorded test cart-totals replays step by step in Order Desk; the Steps list ticks each step and the five total checks turn green"></a></td>
 <td valign="top">
 
 **2. Replays them, and lets you read and fix them.** The steps are sentences you can read, rename, replay from any
@@ -78,7 +80,7 @@ a virtual display. A failing step says what it found.
 </td>
 </tr>
 <tr>
-<td width="200" valign="top"><a href="site/src/assets/inspector/agent-asks.png"><img src="site/src/assets/overview/asks.png" width="180" alt="The agent asks in the app which table holds the cart: an orange box around a candidate and a bar with the question and a None of these button"></a></td>
+<td width="200" valign="top"><a href="site/src/assets/overview/asks-full.png"><img src="site/src/assets/overview/asks.png" width="180" alt="The agent asks in the app which table holds the cart: the products table and the cart are boxed and numbered, each with a check mark to confirm it, and a bar with the question and None of these"></a></td>
 <td valign="top">
 
 **3. Asks in the app when it is not sure.** When a step could mean two things, the agent boxes the candidates in the
@@ -131,6 +133,11 @@ One step of Order Desk's `uitest/place-order.json`, with its check:
   ]
 }
 ```
+
+Order Desk's CI runs its recorded tests on every change, on Linux under a virtual display
+([the run](https://github.com/kormcrete/swing-order-desk-demo/actions/runs/39214091688)):
+
+<img src="site/src/assets/overview/ci-run.svg" width="560" alt="Order Desk's CI log: cart-totals passed with 11 steps, cart-with-steps with 7, place-order with 17; Tests run: 3, Failures: 0">
 
 ## Good to know
 

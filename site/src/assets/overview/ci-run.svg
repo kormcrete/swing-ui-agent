@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="280" viewBox="0 0 560 280" role="img" aria-label="Order Desk's CI on Linux under a virtual display: the three recorded tests cart-totals, cart-with-steps and place-order pass, then Tests run: 3, Failures: 0">
+  <rect width="560" height="280" rx="16" fill="#1a4a6b"/>
+  <rect x="0" y="0" width="560" height="34" rx="16" fill="#17456a"/>
+  <rect x="0" y="18" width="560" height="16" fill="#17456a"/>
+  <text x="20" y="23" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#b2d8ff">CI · Linux / Java 8 · UI tests, on a virtual display</text>
+  <g font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="13" fill="#f2f5f8">
+    <text x="20" y="68" fill="#a9cfea">Order Desk is ready (2s)</text>
+    <text x="20" y="96" fill="#a9cfea">[INFO] Running io.github.kormcrete.orderdesk.RecordedUiIT</text>
+    <text x="20" y="128"><tspan fill="#76d8ff">[recorded-test]</tspan> cart-totals passed: 11 steps, 265 ms</text>
+    <text x="20" y="154"><tspan fill="#76d8ff">[recorded-test]</tspan> cart-with-steps passed: 7 steps, 369 ms</text>
+    <text x="20" y="180"><tspan fill="#76d8ff">[recorded-test]</tspan> place-order passed: 17 steps, 2409 ms</text>
+    <text x="20" y="214">[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, …</text>
+    <text x="20" y="254" fill="#a9cfea" font-style="italic">The recorded tests in uitest/, run by Maven</text>
+  </g>
+</svg>

@@ -28,13 +28,14 @@ import Overview from '../../components/Overview.astro';
 import OverviewItem from '../../components/OverviewItem.astro';
 import RunDemo from '../../components/RunDemo.astro';
 import record from '../../assets/overview/record.png';
-import replay from '../../assets/overview/replay.png';
 import asks from '../../assets/overview/asks.png';
 import javaTest from '../../assets/overview/java-test.svg';
 import howItFits from '../../assets/overview/how-it-fits.svg';
-import recordFull from '../../assets/inspector/recording.png';
-import replayFull from '../../assets/inspector/steps.png';
-import asksFull from '../../assets/inspector/agent-asks.png';
+import ciRun from '../../assets/overview/ci-run.svg';
+import launch from '../../assets/overview/launch.png';
+import recordFull from '../../assets/overview/record-full.png';
+import asksFull from '../../assets/overview/asks-full.png';
+import { Image } from 'astro:assets';
 
 ## What it does
 
@@ -45,15 +46,15 @@ It connects three things that usually happen apart:
 - **Developers run the same test** locally and in CI, and move to an ordinary Java test when a check needs more.
 
 <Overview>
-	<OverviewItem image={record} full={recordFull} alt="The palette in Order Desk while recording: a red dot, the word Recording, and the Record, Check, Steps and Done buttons" title="Records UI tests, from what you show or what you say">
+	<OverviewItem image={record} full={recordFull} alt="Recording in Order Desk, in Check mode: a click on a cart line opened the Check menu with the checks it offers, such as Product is Gel pen, black in this row" title="Records UI tests, from what you show or what you say">
 		<p>Press <strong>● Record</strong> in the palette and use the app; <strong>Check</strong> adds a check of what you see. Or tell a coding agent the test in words and it drives the live app. Either way the agent names each step in plain words and saves a <strong>recorded test</strong>: a JSON file in <code>uitest/</code> with nothing to compile.</p>
 		<p><a href="/swing-ui-agent/start/show/">Record a test by showing it</a> · <a href="/swing-ui-agent/start/record-together/">Record together with your agent</a></p>
 	</OverviewItem>
-	<OverviewItem image={replay} full={replayFull} alt="The Steps list in the palette: numbered steps with a sentence each, a check under its step, and the Replay all and From selected buttons" title="Replays them, and lets you read and fix them">
+	<OverviewItem image="/swing-ui-agent/overview/replay.webp" full="/swing-ui-agent/overview/replay-full.webp" alt="An animation: the recorded test cart-totals replays step by step in Order Desk; the Steps list ticks each step and the five total checks turn green" title="Replays them, and lets you read and fix them">
 		<p>The steps are sentences you can read, rename, replay from any point or redo. Press <strong>▶ Run</strong> in the app, ask the agent, or run the whole <code>uitest/</code> folder from Maven and in CI under a virtual display. A failing step says what it found.</p>
 		<p><a href="/swing-ui-agent/start/recorded-tests/">Run and edit a recorded test</a> · <a href="/swing-ui-agent/start/ci/">Run in CI</a></p>
 	</OverviewItem>
-	<OverviewItem image={asks} full={asksFull} alt="The agent asks in the app which table holds the cart: an orange box around a candidate and a bar with the question and a None of these button" title="Asks in the app when it is not sure">
+	<OverviewItem image={asks} full={asksFull} alt="The agent asks in the app which table holds the cart: the products table and the cart are boxed and numbered, each with a check mark to confirm it, and a bar with the question and None of these" title="Asks in the app when it is not sure">
 		<p>When a step could mean two things, the agent boxes the candidates in the app, numbered, and you confirm one or say none of these. The answer goes into the recording, so the test is right the first time.</p>
 		<p><a href="/swing-ui-agent/start/record-together/">Record together with your agent</a></p>
 	</OverviewItem>
@@ -79,6 +80,8 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
    and open it ([first launch](/swing-ui-agent/demo/tour/#download-and-run-it)).
 2. **Run a recorded test:** press **Load recorded test…** in the bar at the bottom, pick `place-order`, press **▶ Run**.
    Order Desk comes with three; the app takes the order by itself and checks every total.
+
+   <Image src={launch} alt="Order Desk right after it starts: the Orders list, and at the bottom the palette's bar with Record and Load recorded test" width={600} />
 3. **Connect your agent** while the app runs:
 
    ```sh
@@ -123,6 +126,11 @@ totals. Below, Order Desk's two Java tests run from IntelliJ against the same ap
 agent and run in CI.
 
 <RunDemo />
+
+Order Desk's CI runs its recorded tests on every change, on Linux under a virtual display
+([the run](https://github.com/kormcrete/swing-order-desk-demo/actions/runs/39214091688)):
+
+<Image src={ciRun} alt="Order Desk's CI log: cart-totals passed with 11 steps, cart-with-steps with 7, place-order with 17; Tests run: 3, Failures: 0" width={560} />
 
 <CardGrid>
 	<LinkCard title="Tour of Order Desk" description="Start it with the agent and see every screen." href="/swing-ui-agent/demo/tour/" />

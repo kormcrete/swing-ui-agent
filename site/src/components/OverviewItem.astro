@@ -1,12 +1,13 @@
 ---
 // One row of <Overview>: the picture (an imported asset), its alt text, a heading, and the text in the default slot.
 // A click on the picture opens `full` (the uncropped picture; the picture itself when not given) in a dialog.
+// A picture given as a path (a file in public/, such as an animated WebP) is shown as it is, without image processing.
 import type { ImageMetadata } from 'astro';
 import { Image } from 'astro:assets';
 
 interface Props {
-	image: ImageMetadata;
-	full?: ImageMetadata;
+	image: ImageMetadata | string;
+	full?: ImageMetadata | string;
 	alt: string;
 	title: string;
 }
@@ -16,13 +17,13 @@ const { image, full = image, alt, title } = Astro.props;
 <li>
 	<figure class="kc-overview-pic">
 		<button type="button" class="kc-overview-zoom" aria-label={`Show the full picture: ${alt}`}>
-			<Image src={image} alt={alt} width={560} loading="lazy" />
+			{typeof image === 'string' ? <img src={image} alt={alt} loading="lazy" /> : <Image src={image} alt={alt} width={560} loading="lazy" />}
 		</button>
 		<dialog class="kc-overview-full">
 			<form method="dialog">
 				<button class="kc-overview-close" aria-label="Close">✕</button>
 			</form>
-			<Image src={full} alt={alt} width={Math.min(full.width, 1800)} loading="lazy" />
+			{typeof full === 'string' ? <img src={full} alt={alt} loading="lazy" /> : <Image src={full} alt={alt} width={Math.min(full.width, 1800)} loading="lazy" />}
 		</dialog>
 	</figure>
 	<div class="kc-overview-text">
