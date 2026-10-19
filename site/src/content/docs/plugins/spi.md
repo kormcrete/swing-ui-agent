@@ -83,7 +83,7 @@ public interface StepHost {
 }
 ```
 
-App steps refuse to run while `openDialog()` reports a dialog that waits for an answer.
+App steps refuse to run while `openDialog()` reports a dialog that waits for an answer. `openDialog()` has a default: the modal dialog a person answers next, when it shows an option pane (`JOptionPane`), read the way a step's `pending` is: its title, its message one line per line, and the buttons that answer it (a button inside the message, such as "Details…", is not an answer). Override it only when your app asks its questions in dialogs of its own.
 
 ## AppHooks
 
@@ -99,6 +99,28 @@ Called on an HTTP thread, never on the event thread.
 ## UiInventory
 
 What `describe_ui` reports: `activeTabTitle()`, `navTargets()`, `entryPointIds()`, `toolbarActions()`, `menuPaths()`, `navEntryPoints()`, `viewTabs()`, `viewSections()` and `viewSectionProblems()`. Each one answers from the live app; return empty lists for what your app does not have.
+
+The generic parts have defaults, read off the main window (the first showing frame, or the one `driver.setMainWindow(…)` names):
+
+- `menuPaths()`: every leaf of the menu bar as a `menu` path (`"Orders > New order"`), one that cannot be chosen marked `[disabled]`.
+- `viewSections()` and `viewSectionProblems()`: the sections registered with `driver.registerSections(…)`, one row each (`id`, `name`, `created`, `state`, and `details` when there are any), and what went wrong reading them.
+
+Override them to report more or less; `UiInventory.super.menuPaths()` gives you the default to filter.
+
+## Teach the driver about your app
+
+`context.driver()` takes what only your app knows. Register it in `start`, before you return:
+
+```java
+Driver driver = context.driver();
+driver.setMainWindow(OrderDesk::mainWindow);           // the default is the first showing frame
+driver.registerBusySignal(new OrderDeskBusy());        // every step waits until it is quiet
+driver.registerSections(new OrderDeskSections());      // named areas: snapshot, targets, describe_ui
+driver.addErrorDialogClassifier(new OrderDeskCrash()); // its dialogs fail a step as APP_ERROR
+```
+
+- **Busy signals.** After acting, a step waits until every signal is quiet, and still quiet once the event queue has run again: an app that ends one job and queues the next has a quiet moment between the two.
+- **Error dialogs.** A step that leaves a modal dialog returns it as `pending`, for the next step to answer. A dialog an error classifier recognises fails the step as `APP_ERROR` instead. There is no rule by default: many apps use an error-type message for an input they refuse, which a test answers on purpose. Rules add up, so several plugins can each add theirs. If every error-type option pane in your app reports a failure, add the ready-made rule: `driver.addErrorDialogClassifier(ErrorDialogs.ERROR_OPTION_PANE)`.
 
 ## Hooks
 

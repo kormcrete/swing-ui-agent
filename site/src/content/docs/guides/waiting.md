@@ -18,7 +18,7 @@ Every step that acts (`click`, `type`, `press`, `select`, `menu`, `pick`, `answe
 3. **After acting**, it waits until the app has settled:
    - the event queue has drained, including everything the handlers queued in turn;
    - a modal dialog that appeared ends the wait at once (see [A dialog comes back as pending](#a-dialog-comes-back-as-pending));
-   - no busy signal is on. Built in: a visible glass pane that takes mouse input, the usual "please wait" blocker. A [plugin](/swing-ui-agent/plugins/what-a-plugin-adds/) can register more, such as the app's own busy spinner.
+   - no busy signal is on, and none comes on once the queue has run again (an app that ends one job and queues the next is quiet for a moment between them). Built in: a visible glass pane that takes mouse input, the usual "please wait" blocker. A [plugin](/swing-ui-agent/plugins/spi/#teach-the-driver-about-your-app) can register more, such as the app's own busy spinner.
 
    Default: 30 seconds; `menu`, `pick` and `context_menu` allow 120 seconds, since a menu item often starts a long job.
 
@@ -54,7 +54,7 @@ A step that opens a modal dialog does not hang on it. It returns at once with `p
 ## Errors stop the step
 
 - **An uncaught exception** on the event dispatch thread while the step runs fails it as `APP_ERROR`, with the stack.
-- **An error dialog** fails it as `APP_ERROR` too, when a plugin tells the driver which dialogs report errors. Without a plugin, an error dialog is a pending dialog like any other.
+- **An error dialog** fails it as `APP_ERROR` too, when a plugin tells the driver which dialogs report errors ([error dialogs](/swing-ui-agent/plugins/spi/#teach-the-driver-about-your-app)). Without one, an error dialog is a pending dialog like any other: the app may be refusing an input on purpose, and the test answers it.
 
 ## Work the driver cannot see
 
