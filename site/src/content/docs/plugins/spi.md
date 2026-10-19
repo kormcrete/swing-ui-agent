@@ -161,7 +161,7 @@ A `DomainStep` has an id, a sentence with `{param}` placeholders, its params and
 
 ## A sketch
 
-Order Desk's own plugin offers a reset (its `OrderDeskApp` is the `host` and the `app`: it closes every order tab and shows the Orders list) and a vocabulary ([Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)). This is the shape of a plugin with every app part, navigation and describe_ui too:
+Order Desk's own plugin offers a reset (its `OrderDeskApp` is the `host` and the `app`: it closes every order tab and shows the Orders list), an `inventory` for `describe_ui` (the selected tab, the toolbar buttons and an open order's own tabs; menu paths come from the default) and a vocabulary ([Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/)). This is the shape of a plugin with every app part, navigation and describe_ui too:
 
 ```java
 public final class OrderDeskPlugin implements UiPlugin {

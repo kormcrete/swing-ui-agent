@@ -17,7 +17,7 @@ Everything else on this site works on any Swing app as it is: no plugin, no chan
   CAPABILITY_GAP: login needs the app plugin; no plugin configured (agent argument plugins=…)
   ```
 
-Order Desk's tests need no plugin. Its plugin only adds a [vocabulary](/swing-ui-agent/plugins/vocabulary/), which makes some of them shorter.
+Order Desk's tests need no plugin. Its plugin adds a reset, app facts for `describe_ui` and a [vocabulary](/swing-ui-agent/plugins/vocabulary/), which makes some of the tests shorter.
 
 ## With a plugin
 

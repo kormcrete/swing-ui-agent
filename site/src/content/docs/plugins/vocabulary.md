@@ -16,15 +16,16 @@ Everything on this page is for the person who writes the plugin. The people who 
 
 ## Order Desk's vocabulary
 
-Order Desk ships a plugin of its own, in the standalone Maven project `order-desk-plugin/` beside the app. It drives the app through the agent's `Client` only and names the app class as a string in `plugin.properties`, so it needs no app classes. It offers a reset (`OrderDeskApp`: every order tab closed, the Orders list shown) and a vocabulary:
+Order Desk ships a plugin of its own, in the standalone Maven project `order-desk-plugin/` beside the app. It works through the agent's driver and plain Swing, and names the app class as a string in `plugin.properties`, so it needs no app classes. It offers a reset (`OrderDeskApp`: every order tab closed, the Orders list shown), what `describe_ui` reports (`OrderDeskInventory`) and a vocabulary:
 
-<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskPlugin.java#L17-L22 -->
+<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskPlugin.java#L18-L24 -->
 ```java
 @Override
 public PluginParts start(PluginContext context) {
     Client live = new Client(context.driver().verbs(), new ReadsOnly(), "order-desk-plugin");
     OrderDeskApp app = new OrderDeskApp(context.driver().verbs());
-    return new PluginParts(app, null, app, null, null, null, new OrderDeskVocabulary(live));
+    OrderDeskInventory inventory = new OrderDeskInventory(context.driver().windows()::main);
+    return new PluginParts(app, inventory, app, null, null, null, new OrderDeskVocabulary(live));
 }
 ```
 
