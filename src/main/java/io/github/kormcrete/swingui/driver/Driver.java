@@ -22,6 +22,7 @@ import io.github.kormcrete.swingui.driver.platform.Watch;
 import io.github.kormcrete.swingui.driver.settle.BusySignal;
 import io.github.kormcrete.swingui.driver.settle.EdtErrors;
 import io.github.kormcrete.swingui.driver.settle.ErrorDialogClassifier;
+import io.github.kormcrete.swingui.driver.settle.ErrorDialogs;
 import io.github.kormcrete.swingui.driver.settle.GlassPaneBusy;
 import io.github.kormcrete.swingui.driver.settle.Settle;
 import io.github.kormcrete.swingui.driver.verbs.LiveVerbs;
@@ -60,7 +61,7 @@ public final class Driver {
     private final Resolver resolver = new Resolver(Visibility.SHOWING, names, refs, windows, sections, parts);
     private final Recorder recorder = new Recorder(resolver, windows);
     private final LiveVerbs verbs = new LiveVerbs(this);
-    private volatile ErrorDialogClassifier errorDialogs = ErrorDialogClassifier.NONE;
+    private final ErrorDialogs errorDialogs = new ErrorDialogs();
 
     private Driver(DriverSettings settings, Seam seam, CapabilityReport capabilities) {
         this.settings = settings;
@@ -105,6 +106,7 @@ public final class Driver {
     public Watch watch() { return watch; }
     public EdtErrors edtErrors() { return edtErrors; }
     public AppWindows windows() { return windows; }
+    /** Every rule {@link #addErrorDialogClassifier} added, as one: a dialog is an error when any of them says so. */
     public ErrorDialogClassifier errorDialogs() { return errorDialogs; }
     public Names names() { return names; }
     public Refs refs() { return refs; }
@@ -127,8 +129,24 @@ public final class Driver {
         parts.register(source);
     }
 
+    /**
+     * Adds a rule for "this dialog reports an error": a step that leaves such a dialog fails as APP_ERROR instead of
+     * returning it as pending. Rules add up, so several plugins may each add theirs. None by default;
+     * {@link ErrorDialogs#ERROR_OPTION_PANE} is ready-made for an app whose error-type option panes only report errors.
+     */
+    public void addErrorDialogClassifier(ErrorDialogClassifier classifier) {
+        errorDialogs.add(classifier);
+    }
+
+    /**
+     * Adds {@code classifier} like {@link #addErrorDialogClassifier}; null is ignored. It no longer replaces the rules
+     * already added: the driver held one rule when this was its only setter.
+     *
+     * @deprecated use {@link #addErrorDialogClassifier}
+     */
+    @Deprecated
     public void setErrorDialogClassifier(ErrorDialogClassifier classifier) {
-        errorDialogs = classifier == null ? ErrorDialogClassifier.NONE : classifier;
+        addErrorDialogClassifier(classifier);
     }
 
     public void setMainWindow(Supplier<Window> main) {
