@@ -84,142 +84,154 @@ class HumanStepsTest {
     }
 
     @Test
-    void aSuggestionPickInAPopupListIsAClickOnItsItem() {
-        // a field's suggestions: a list in a popup the field opens as the person types (Order Desk's Customer field)
-        javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
-        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
-        popup.add(suggestions);
-        suggestions.setBounds(0, 0, 200, 40);
-        scene.popup(popup, scene.customer);
-        focus(scene.customer, FocusEvent.FOCUS_GAINED);
-        typeInto(scene.customer, "Ada");
+    void aSuggestionPickInAPopupListIsAClickOnItsItem() throws Exception {
+        onEdt(() -> {
+            // a field's suggestions: a list in a popup the field opens as the person types (Order Desk's Customer field)
+            javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+            javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+            popup.add(suggestions);
+            suggestions.setBounds(0, 0, 200, 40);
+            scene.popup(popup, scene.customer);
+            focus(scene.customer, FocusEvent.FOCUS_GAINED);
+            typeInto(scene.customer, "Ada");
 
-        java.awt.Rectangle ada = suggestions.getCellBounds(0, 0);
-        click(suggestions, ada.x + 4, ada.y + 2, 1);
-        scene.customer.setText("Ada Shop Ltd");   // the app takes the pick
-        human.flush();
+            java.awt.Rectangle ada = suggestions.getCellBounds(0, 0);
+            click(suggestions, ada.x + 4, ada.y + 2, 1);
+            scene.customer.setText("Ada Shop Ltd");   // the app takes the pick
+            human.flush();
 
-        assertThat(steps).hasSize(2);
-        assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada");
-        assertThat(steps.get(1)).containsEntry("action", "click").doesNotContainKey("count");
-        Locator target = (Locator) steps.get(1).get("target");
-        Locator expected = Locator.of("list", null);
-        expected.window = "popup";
-        expected.item = java.util.Collections.singletonList("Ada Shop Ltd");
-        assertThat(target).isEqualTo(expected);
-        assertThat(((Locator) steps.get(1).get(Inspector.SEEN)).item).containsExactly("Ada Shop Ltd");
+            assertThat(steps).hasSize(2);
+            assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada");
+            assertThat(steps.get(1)).containsEntry("action", "click").doesNotContainKey("count");
+            Locator target = (Locator) steps.get(1).get("target");
+            Locator expected = Locator.of("list", null);
+            expected.window = "popup";
+            expected.item = java.util.Collections.singletonList("Ada Shop Ltd");
+            assertThat(target).isEqualTo(expected);
+            assertThat(((Locator) steps.get(1).get(Inspector.SEEN)).item).containsExactly("Ada Shop Ltd");
+        });
     }
 
     @Test
-    void aSuggestionListThatHidesOnThePressStillRecordsThePick() {
-        javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
-        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
-        popup.add(suggestions);
-        suggestions.setBounds(0, 0, 200, 40);
-        scene.popup(popup, scene.customer);
-        java.awt.Rectangle birch = suggestions.getCellBounds(1, 1);
+    void aSuggestionListThatHidesOnThePressStillRecordsThePick() throws Exception {
+        onEdt(() -> {
+            javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+            javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+            popup.add(suggestions);
+            suggestions.setBounds(0, 0, 200, 40);
+            scene.popup(popup, scene.customer);
+            java.awt.Rectangle birch = suggestions.getCellBounds(1, 1);
 
-        // the field takes the pick from the selection, which the press changes, and hides its popup at once
-        click(suggestions, birch.x + 4, birch.y + 2, 1, () -> scene.roots.remove(scene.roots.size() - 1));
-        human.flush();
+            // the field takes the pick from the selection, which the press changes, and hides its popup at once
+            click(suggestions, birch.x + 4, birch.y + 2, 1, () -> scene.roots.remove(scene.roots.size() - 1));
+            human.flush();
 
-        assertThat(steps).hasSize(1);
-        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Birch & Co");
+            assertThat(steps).hasSize(1);
+            assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Birch & Co");
+        });
     }
 
     @Test
-    void aListEntryClickIsAClickOnItsItem() {
-        javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
-        customers.setBounds(320, 130, 150, 40);
-        scene.content.add(customers);
-        java.awt.Rectangle birch = customers.getCellBounds(1, 1);
+    void aListEntryClickIsAClickOnItsItem() throws Exception {
+        onEdt(() -> {
+            javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+            customers.setBounds(320, 130, 150, 40);
+            scene.content.add(customers);
+            java.awt.Rectangle birch = customers.getCellBounds(1, 1);
 
-        click(customers, birch.x + 4, birch.y + 2, 1);
-        human.flush();
-        click(customers, birch.x + 4, birch.y + 2, 1);
-        click(customers, birch.x + 4, birch.y + 2, 2);
-        human.flush();
-        // below the last entry: the list selects the last one, as the closest
-        click(customers, 4, customers.getHeight() - 1, 1);
-        human.flush();
+            click(customers, birch.x + 4, birch.y + 2, 1);
+            human.flush();
+            click(customers, birch.x + 4, birch.y + 2, 1);
+            click(customers, birch.x + 4, birch.y + 2, 2);
+            human.flush();
+            // below the last entry: the list selects the last one, as the closest
+            click(customers, 4, customers.getHeight() - 1, 1);
+            human.flush();
 
-        assertThat(steps).hasSize(3);
-        Locator target = (Locator) steps.get(0).get("target");
-        assertThat(target.role).isEqualTo("list");
-        assertThat(target.item).containsExactly("Birch & Co");
-        assertThat(steps.get(0)).doesNotContainKey("count").doesNotContainKey(Inspector.ROW_INDEX);
-        assertThat(steps.get(1)).containsEntry("count", 2);
-        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Birch & Co");
-        assertThat(((Locator) steps.get(2).get("target")).item).containsExactly("Birch & Co");
-        assertThat(steps.get(2)).doesNotContainKey("count");
+            assertThat(steps).hasSize(3);
+            Locator target = (Locator) steps.get(0).get("target");
+            assertThat(target.role).isEqualTo("list");
+            assertThat(target.item).containsExactly("Birch & Co");
+            assertThat(steps.get(0)).doesNotContainKey("count").doesNotContainKey(Inspector.ROW_INDEX);
+            assertThat(steps.get(1)).containsEntry("count", 2);
+            assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Birch & Co");
+            assertThat(((Locator) steps.get(2).get("target")).item).containsExactly("Birch & Co");
+            assertThat(steps.get(2)).doesNotContainKey("count");
 
-        // a file list selects only what is under the pointer
-        customers.putClientProperty("List.isFileList", Boolean.TRUE);
-        click(customers, 4, customers.getHeight() - 1, 1);
-        human.flush();
-        assertThat(steps).hasSize(3);
-        assertThat(notRecorded).isEmpty();
+            // a file list selects only what is under the pointer
+            customers.putClientProperty("List.isFileList", Boolean.TRUE);
+            click(customers, 4, customers.getHeight() - 1, 1);
+            human.flush();
+            assertThat(steps).hasSize(3);
+            assertThat(notRecorded).isEmpty();
+        });
     }
 
     @Test
-    void anEntryThatReadsLikeAnotherIsNotRecordedAndSaysWhy() {
-        javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Ada Shop Ltd"});
-        customers.setBounds(320, 130, 150, 40);
-        scene.content.add(customers);
-        java.awt.Rectangle second = customers.getCellBounds(1, 1);
+    void anEntryThatReadsLikeAnotherIsNotRecordedAndSaysWhy() throws Exception {
+        onEdt(() -> {
+            javax.swing.JList<String> customers = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Ada Shop Ltd"});
+            customers.setBounds(320, 130, 150, 40);
+            scene.content.add(customers);
+            java.awt.Rectangle second = customers.getCellBounds(1, 1);
 
-        click(customers, second.x + 4, second.y + 2, 1);
-        human.flush();
-        // a double click says it once
-        click(customers, second.x + 4, second.y + 2, 2);
-        human.flush();
+            click(customers, second.x + 4, second.y + 2, 1);
+            human.flush();
+            // a double click says it once
+            click(customers, second.x + 4, second.y + 2, 2);
+            human.flush();
 
-        assertThat(steps).isEmpty();
-        assertThat(notRecorded).containsExactly("a click on 'Ada Shop Ltd': more than one entry of the list reads so");
+            assertThat(steps).isEmpty();
+            assertThat(notRecorded).containsExactly("a click on 'Ada Shop Ltd': more than one entry of the list reads so");
+        });
     }
 
     @Test
-    void aTreeRowClickIsAClickOnItsPath() {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle pens = categories.getRowBounds(2);
+    void aTreeRowClickIsAClickOnItsPath() throws Exception {
+        onEdt(() -> {
+            javax.swing.JTree categories = categories();
+            java.awt.Rectangle pens = categories.getRowBounds(2);
 
-        click(categories, pens.x + 2, pens.y + 2, 1);
-        human.flush();
-        java.awt.Rectangle officeRow = categories.getRowBounds(0);
-        click(categories, officeRow.x + 2, officeRow.y + 2, 1);
-        click(categories, officeRow.x + 2, officeRow.y + 2, 2);
-        human.flush();
-        // left of a row, where nothing happened: no step
-        click(categories, 0, officeRow.y + 2, 1);
-        human.flush();
+            click(categories, pens.x + 2, pens.y + 2, 1);
+            human.flush();
+            java.awt.Rectangle officeRow = categories.getRowBounds(0);
+            click(categories, officeRow.x + 2, officeRow.y + 2, 1);
+            click(categories, officeRow.x + 2, officeRow.y + 2, 2);
+            human.flush();
+            // left of a row, where nothing happened: no step
+            click(categories, 0, officeRow.y + 2, 1);
+            human.flush();
 
-        assertThat(steps).hasSize(2);
-        assertThat(notRecorded).isEmpty();
-        Locator target = (Locator) steps.get(0).get("target");
-        assertThat(target.role).isEqualTo("tree");
-        assertThat(target.item).containsExactly("Office", "Pens");
-        assertThat(steps.get(0)).doesNotContainKey("count");
-        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office");
-        assertThat(steps.get(1)).containsEntry("count", 2);
+            assertThat(steps).hasSize(2);
+            assertThat(notRecorded).isEmpty();
+            Locator target = (Locator) steps.get(0).get("target");
+            assertThat(target.role).isEqualTo("tree");
+            assertThat(target.item).containsExactly("Office", "Pens");
+            assertThat(steps.get(0)).doesNotContainKey("count");
+            assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office");
+            assertThat(steps.get(1)).containsEntry("count", 2);
+        });
     }
 
     @Test
-    void aClickOnATreesExpandArrowIsNotRecordedAndSaysWhy() {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle office = categories.getRowBounds(0);
+    void aClickOnATreesExpandArrowIsNotRecordedAndSaysWhy() throws Exception {
+        onEdt(() -> {
+            javax.swing.JTree categories = categories();
+            java.awt.Rectangle office = categories.getRowBounds(0);
 
-        // most looks and feels collapse the row on the press on its arrow
-        click(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
-        human.flush();
+            // most looks and feels collapse the row on the press on its arrow
+            click(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
+            human.flush();
 
-        assertThat(steps).isEmpty();
-        assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
+            assertThat(steps).isEmpty();
+            assertThat(notRecorded).containsExactly("the expand arrow of 'Office': double-click the row instead");
+        });
     }
 
     @Test
     void anArrowThatActsOnTheReleaseIsNotRecordedEither() throws Exception {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle office = categories.getRowBounds(0);
+        javax.swing.JTree categories = onEdt(this::categories);
+        java.awt.Rectangle office = onEdt(() -> categories.getRowBounds(0));
 
         // Aqua's arrow expands or collapses in the tree's own release handler, after the recorder heard the release
         releaseHandledAfter(categories, 1, office.y + 2, 1, () -> categories.collapseRow(0));
@@ -232,8 +244,8 @@ class HumanStepsTest {
     /** The release is decided later: when the recorder stopped listening (Done) in between, it adds nothing. */
     @Test
     void aClickDecidedAfterTheRecorderStoppedIsNoStep() throws Exception {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle pens = categories.getRowBounds(2);
+        javax.swing.JTree categories = onEdt(this::categories);
+        java.awt.Rectangle pens = onEdt(() -> categories.getRowBounds(2));
         SwingUtilities.invokeAndWait(() -> human.active(true));
         try {
             releaseHandledAfter(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> {
@@ -250,25 +262,27 @@ class HumanStepsTest {
 
     @Test
     void aDoubleClickInARowsIndentIsADoubleClickOnTheRow() throws Exception {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle office = categories.getRowBounds(0);
+        onEdt(() -> {
+            javax.swing.JTree categories = categories();
+            java.awt.Rectangle office = categories.getRowBounds(0);
 
-        // a wide selection: the first press selects the row, the second (count 2) collapses it
-        click(categories, 1, office.y + 2, 1, () -> categories.setSelectionRow(0));
-        click(categories, 1, office.y + 2, 2, () -> categories.collapseRow(0));
-        human.flush();
+            // a wide selection: the first press selects the row, the second (count 2) collapses it
+            click(categories, 1, office.y + 2, 1, () -> categories.setSelectionRow(0));
+            click(categories, 1, office.y + 2, 2, () -> categories.collapseRow(0));
+            human.flush();
 
-        assertThat(steps).hasSize(1);
-        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office");
-        assertThat(steps.get(0)).containsEntry("count", 2);
-        assertThat(notRecorded).isEmpty();
+            assertThat(steps).hasSize(1);
+            assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office");
+            assertThat(steps.get(0)).containsEntry("count", 2);
+            assertThat(notRecorded).isEmpty();
+        });
     }
 
     @Test
     void aClickBesideARowThatWasSelectedAlreadyIsNoStep() throws Exception {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle pens = categories.getRowBounds(2);
-        categories.setSelectionRow(2);
+        javax.swing.JTree categories = onEdt(this::categories);
+        java.awt.Rectangle pens = onEdt(() -> categories.getRowBounds(2));
+        onEdt(() -> categories.setSelectionRow(2));
 
         // the tree did nothing with it: the row stays selected as it was
         releaseHandledAfter(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> { });
@@ -279,25 +293,27 @@ class HumanStepsTest {
     }
 
     @Test
-    void aClickBesideATreeRowIsAClickOnTheRowWhenItSelectsIt() {
-        javax.swing.JTree categories = categories();
-        java.awt.Rectangle pens = categories.getRowBounds(2);
+    void aClickBesideATreeRowIsAClickOnTheRowWhenItSelectsIt() throws Exception {
+        onEdt(() -> {
+            javax.swing.JTree categories = categories();
+            java.awt.Rectangle pens = categories.getRowBounds(2);
 
-        // a wide selection (FlatLaf) selects the row on a click in its indent, or right of its label
-        click(categories, 1, pens.y + 2, 1, () -> categories.setSelectionRow(2));
-        human.flush();
-        categories.clearSelection();
-        click(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> categories.setSelectionRow(2));
-        human.flush();
-        // one that selects nothing (Metal, Basic) did nothing: no step
-        categories.clearSelection();
-        click(categories, pens.x + pens.width + 5, pens.y + 2, 1);
-        human.flush();
+            // a wide selection (FlatLaf) selects the row on a click in its indent, or right of its label
+            click(categories, 1, pens.y + 2, 1, () -> categories.setSelectionRow(2));
+            human.flush();
+            categories.clearSelection();
+            click(categories, pens.x + pens.width + 5, pens.y + 2, 1, () -> categories.setSelectionRow(2));
+            human.flush();
+            // one that selects nothing (Metal, Basic) did nothing: no step
+            categories.clearSelection();
+            click(categories, pens.x + pens.width + 5, pens.y + 2, 1);
+            human.flush();
 
-        assertThat(steps).hasSize(2);
-        assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office", "Pens");
-        assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office", "Pens");
-        assertThat(notRecorded).isEmpty();
+            assertThat(steps).hasSize(2);
+            assertThat(((Locator) steps.get(0).get("target")).item).containsExactly("Office", "Pens");
+            assertThat(((Locator) steps.get(1).get("target")).item).containsExactly("Office", "Pens");
+            assertThat(notRecorded).isEmpty();
+        });
     }
 
     /** Order Desk's product categories: Office (Paper, Pens) expanded, Coffee; the root hidden. In the scene's window. */
@@ -318,21 +334,23 @@ class HumanStepsTest {
     }
 
     @Test
-    void aComboPopupStaysASelect() {
-        javax.swing.JComboBox<String> customer = new javax.swing.JComboBox<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
-        customer.setBounds(320, 130, 150, 24);
-        scene.content.add(customer);
-        javax.swing.plaf.basic.ComboPopup popup = (javax.swing.plaf.basic.ComboPopup) customer.getUI().getAccessibleChild(customer, 0);
-        ((javax.swing.JPopupMenu) popup).setInvoker(customer);   // as showing it does
-        javax.swing.JList<?> list = popup.getList();
-        list.setSize(150, 40);
-        java.awt.Rectangle birch = list.getCellBounds(1, 1);
+    void aComboPopupStaysASelect() throws Exception {
+        onEdt(() -> {
+            javax.swing.JComboBox<String> customer = new javax.swing.JComboBox<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+            customer.setBounds(320, 130, 150, 24);
+            scene.content.add(customer);
+            javax.swing.plaf.basic.ComboPopup popup = (javax.swing.plaf.basic.ComboPopup) customer.getUI().getAccessibleChild(customer, 0);
+            ((javax.swing.JPopupMenu) popup).setInvoker(customer);   // as showing it does
+            javax.swing.JList<?> list = popup.getList();
+            list.setSize(150, 40);
+            java.awt.Rectangle birch = list.getCellBounds(1, 1);
 
-        click(list, birch.x + 4, birch.y + 2, 1);
-        human.flush();
+            click(list, birch.x + 4, birch.y + 2, 1);
+            human.flush();
 
-        assertThat(steps).hasSize(1);
-        assertThat(steps.get(0)).containsEntry("action", "select").containsEntry("item", "Birch & Co");
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "select").containsEntry("item", "Birch & Co");
+        });
     }
 
     @Test
@@ -595,6 +613,45 @@ class HumanStepsTest {
         focus(scene.customer, FocusEvent.FOCUS_LOST);
         assertThat(steps).hasSize(1);
         assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada Shop Ltd");
+    }
+
+    /**
+     * Runs {@code body} on the event dispatch thread, where the recorder runs, and waits; its assertion errors fail the
+     * test as they are. A test that measures list or tree rows must: they cache their row heights, worked out lazily, and
+     * the event dispatch thread may rework them between the test's measuring and the recorder's (a click then lands on
+     * another row).
+     */
+    private static void onEdt(EdtBody body) throws Exception {
+        onEdt(() -> {
+            body.run();
+            return null;
+        });
+    }
+
+    private static <T> T onEdt(java.util.concurrent.Callable<T> read) throws Exception {
+        java.util.concurrent.atomic.AtomicReference<T> got = new java.util.concurrent.atomic.AtomicReference<T>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    got.set(read.call());
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new java.lang.reflect.UndeclaredThrowableException(e);
+                }
+            });
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof java.lang.reflect.UndeclaredThrowableException) cause = cause.getCause();
+            if (cause instanceof Error) throw (Error) cause;
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw e;
+        }
+        return got.get();
+    }
+
+    private interface EdtBody {
+        void run() throws Exception;
     }
 
     private void click(Component c, int count) {
