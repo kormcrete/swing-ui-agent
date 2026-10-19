@@ -781,9 +781,14 @@ class RecordingTest {
     }
 
     /** One round through the EDT, the sink thread and the EDT again: what a refresh of the panel takes. */
+    /**
+     * Waits until what the recording sent to its sink thread, and what that handed back to the event dispatch thread, has
+     * run. A recording started with ● Record uses the inspector's sink thread, not this test's.
+     */
     private void settle() throws Exception {
         SwingUtilities.invokeAndWait(() -> { });
-        sinkThread.submit(() -> { }).get(5, TimeUnit.SECONDS);
+        ExecutorService on = recording != null ? recording.sinkThread() : sinkThread;
+        on.submit(() -> { }).get(5, TimeUnit.SECONDS);
         SwingUtilities.invokeAndWait(() -> { });
     }
 

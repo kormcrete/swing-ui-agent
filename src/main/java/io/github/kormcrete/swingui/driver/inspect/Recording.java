@@ -191,6 +191,11 @@ final class Recording {
         activeBar.text("The agent started this recording: use the app, your steps join it.");
     }
 
+    /** The thread this recording reads and changes the sink on: the inspector's, or the one a test gave it. */
+    ExecutorService sinkThread() {
+        return sinkThread;
+    }
+
     /** Whether the person's input is recorded now. */
     boolean listening() {
         return steps.listening();
