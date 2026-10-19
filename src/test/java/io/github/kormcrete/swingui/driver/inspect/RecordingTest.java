@@ -1181,8 +1181,65 @@ class RecordingTest {
         assertThat(sink.lines()).containsExactly("click(#a)", "click(#b)");
         SwingUtilities.invokeAndWait(() -> {
             assertThat(recording.state).isEqualTo(Recording.State.STOPPED);
-            assertThat(recording.bar.text()).isEqualTo("✗ step 2 failed: no button 'b' - recording stopped");
+            assertThat(recording.bar.text()).isEqualTo("✗ 2 click #b: no button 'b' - recording stopped");
         });
+    }
+
+    @Test
+    void aFailedStepSaysOnTheBarWhatThePersonReadsInTheStepsListAndWhyInPlainWords() throws Exception {
+        sink.add("person", "1", "menu(File > Close tab)", "Close the order tab", 0, null, null);
+        sink.add("person", "2", "answer(Discard)", "Discard the order", 0, null, null);
+        sink.failStep = 1;
+        sink.failWith = Inspector.Result.failedStep("answer(Discard) - NOT_FOUND: no modal dialog is showing",
+                "NOT_FOUND", "NOT_FOUND: no modal dialog is showing");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        settle();
+        // the sentence and a reason a person reads; the technical line stays the agent's
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).startsWith("✗ 2 Discard the order: no dialog is open"));
+    }
+
+    @Test
+    void aFailedCheckSaysWhatItReadsInstead() throws Exception {
+        sink.add("person", "1", "click(button 'Add to cart')", "Add the A4 paper to the cart", 0, null, null);
+        sink.add("person", "1.1", "expect(#total text '€7.32')", "The total is €7.32", 0, null, null);
+        sink.failStep = 1;
+        sink.failWith = Inspector.Result.failedStep(
+                "expect(#total text '€7.32') - EXPECTATION: expected text '€7.32' but was '€7.30'",
+                "EXPECTATION", "EXPECTATION: expected text '€7.32' but was '€7.30'");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        settle();
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text())
+                .startsWith("✗ 1.1 The total is €7.32: it reads “€7.30”, not “€7.32”"));
+    }
+
+    @Test
+    void plainReasonsForThePersonsBar() {
+        assertThat(Recording.plain("NOT_FOUND", "NOT_FOUND: no modal dialog is showing")).isEqualTo("no dialog is open");
+        assertThat(Recording.plain("NOT_FOUND", "no popup is showing")).isEqualTo("no popup is open");
+        assertThat(Recording.plain("NOT_FOUND", "no file chooser is showing")).isEqualTo("no file chooser is open");
+        assertThat(Recording.plain("NOT_FOUND", "nothing matches button 'Save'")).isEqualTo("it is not on the screen");
+        assertThat(Recording.plain("AMBIGUOUS", "2 elements match button 'Save'")).isEqualTo("more than one element fits it");
+        assertThat(Recording.plain("NOT_ACTIONABLE", "disabled: menu item 'Close tab'")).isEqualTo("it is disabled");
+        assertThat(Recording.plain("NOT_ACTIONABLE", "covered by a popup")).isEqualTo("it cannot be used now");
+        assertThat(Recording.plain("TIMEOUT", "still busy after 10000 ms: SwingWorker")).isEqualTo("the app stayed busy");
+        assertThat(Recording.plain("APP_ERROR", "uncaught exception on the event dispatch thread: NPE"))
+                .isEqualTo("the app reported an error");
+        assertThat(Recording.plain("EXPECTATION", "expected cell [Total] '€7.32' but was '€7.30'"))
+                .isEqualTo("it reads “€7.30”, not “€7.32”");
+        // any other wording is shown as the driver says it, without its code
+        assertThat(Recording.plain("EXPECTATION", "EXPECTATION: expected rows == 2 but there are 3"))
+                .isEqualTo("expected rows == 2 but there are 3");
+        assertThat(Recording.plain(null, "no step 12")).isEqualTo("no step 12");
     }
 
     @Test

@@ -1017,7 +1017,9 @@ final class Recording {
             });
             if (!r.ok) {
                 failed = i;
-                outcome = "✗ " + (check ? "check " : "step ") + labels.get(i) + " failed: " + r.line;
+                // as the steps list says it, and why in plain words: the driver's line is the agent's
+                outcome = "✗ " + number + " " + sentence(all.get(i), number, target) + ": "
+                        + (r.reason != null ? plain(r.reason, r.message) : r.line);
                 break;
             }
             // a check's outcome stays in view long enough to be seen, at any speed; step by step keeps it until Next
@@ -1047,6 +1049,47 @@ final class Recording {
         }
         if (verb.equals("type")) verb = "type into";
         return what != null ? verb + " " + what : verb;
+    }
+
+    /** Record {@code s}'s sentence after its number on the bar: {@link #said}, a check without one only "check" and what it reads. */
+    private static String sentence(Inspector.StepLine s, String label, Locator target) {
+        if (s.say != null || !s.check()) return said(s, label, target);
+        String what = shownName(target);
+        return "check" + (what != null ? " " + what : "");
+    }
+
+    /** A check's "expected text '€7.32' but was '€7.30'", any kind of value. */
+    private static final java.util.regex.Pattern EXPECTED = java.util.regex.Pattern.compile("expected .*'(.*)' but was '(.*)'");
+
+    /**
+     * Why a replayed step failed, in words a person at the palette reads: from the driver's {@code reason} ({@code
+     * NOT_FOUND}, {@code EXPECTATION}, …) and {@code message}. A wording it does not know is the message without its
+     * code; the agent's tool results keep the driver's own words.
+     */
+    static String plain(String reason, String message) {
+        String m = message == null ? "" : message;
+        if (reason == null) return m;
+        if (m.startsWith(reason + ": ")) m = m.substring(reason.length() + 2);
+        switch (reason) {
+            case "NOT_FOUND":
+                if (m.startsWith("no modal dialog")) return "no dialog is open";
+                if (m.startsWith("no popup")) return "no popup is open";
+                if (m.startsWith("no file chooser")) return "no file chooser is open";
+                return "it is not on the screen";
+            case "AMBIGUOUS":
+                return "more than one element fits it";
+            case "NOT_ACTIONABLE":
+                return m.startsWith("disabled") ? "it is disabled" : "it cannot be used now";
+            case "TIMEOUT":
+                return "the app stayed busy";
+            case "APP_ERROR":
+                return "the app reported an error";
+            case "EXPECTATION":
+                java.util.regex.Matcher x = EXPECTED.matcher(m);
+                return x.matches() ? "it reads “" + x.group(2) + "”, not “" + x.group(1) + "”" : m;
+            default:
+                return m;
+        }
     }
 
     /** The element's name as the person reads it, quoted: a cell's column in its table, else its name, else its id. */

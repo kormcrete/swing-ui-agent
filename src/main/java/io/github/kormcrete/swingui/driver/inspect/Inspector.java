@@ -398,15 +398,32 @@ public final class Inspector {
         public final String line;
         /** Refused because of the folder: it cannot be created or written. */
         public final boolean folder;
+        /**
+         * A replayed step that failed: why, as the driver says it - its reason ({@code NOT_FOUND}, {@code EXPECTATION}, …)
+         * and message - which the palette's bar puts in plain words ({@link Recording#plain}); null when not known.
+         */
+        public final String reason;
+        public final String message;
 
         public Result(boolean ok, String line) {
             this(ok, line, false);
         }
 
         public Result(boolean ok, String line, boolean folder) {
+            this(ok, line, folder, null, null);
+        }
+
+        private Result(boolean ok, String line, boolean folder, String reason, String message) {
             this.ok = ok;
             this.line = line;
             this.folder = folder;
+            this.reason = reason;
+            this.message = message;
+        }
+
+        /** A replayed step that failed: {@code line} for the agent, {@code reason} and {@code message} for the person. */
+        public static Result failedStep(String line, String reason, String message) {
+            return new Result(false, line, false, reason, message);
         }
     }
 

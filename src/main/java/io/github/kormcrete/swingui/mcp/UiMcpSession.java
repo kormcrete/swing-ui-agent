@@ -570,16 +570,20 @@ public class UiMcpSession {
                     JsonNode result = run.result;
                     boolean passed = result.path("passed").asBoolean(false);
                     String line = result.path("action").asText(json.toString());
-                    if (!passed) line += " - " + result.path("message").asText("");
+                    if (!passed) {
+                        line += " - " + result.path("message").asText("");
+                        return Inspector.Result.failedStep(line, result.path("reason").asText(null),
+                                result.path("message").asText(null));
+                    }
                     // a step the agent inserted or edited is proven by passing a replay: its edit mark goes, and the
                     // table row it names is known both ways
-                    if (passed) {
-                        synchronized (UiMcpSession.this) {
-                            boolean learned = model.rowKnown(id, run.row);
-                            if (model.markReplayed(id) || learned) publish();
-                        }
+                    synchronized (UiMcpSession.this) {
+                        boolean learned = model.rowKnown(id, run.row);
+                        if (model.markReplayed(id) || learned) publish();
                     }
-                    return new Inspector.Result(passed, line);
+                    return new Inspector.Result(true, line);
+                } catch (DriverException e) {
+                    return Inspector.Result.failedStep(e.getMessage(), e.reason().name(), e.getMessage());
                 } catch (Exception e) {
                     return new Inspector.Result(false, e.getMessage());
                 }
