@@ -12,13 +12,18 @@ import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
+import javax.swing.JRootPane;
+import javax.swing.SwingUtilities;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JToggleButton;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -102,7 +107,56 @@ final class CheckMenu extends JPopupMenu {
         remove(at);   // and its separator
         waiting = null;
         addDomain(domain, at);
-        if (isVisible()) pack(); else revalidate();
+        if (!isVisible()) {
+            revalidate();
+            return;
+        }
+        pack();
+        // grown: still inside the window
+        if (invoker != null && invoker.isShowing()) {
+            Point p = inside(click, getPreferredSize(), windowIn(invoker));
+            SwingUtilities.convertPointToScreen(p, invoker);
+            setLocation(p.x, p.y);
+        }
+    }
+
+    /** The component clicked and where, while the menu shows ({@link #showInside}); null before. */
+    private Component invoker;
+    private Point click;
+
+    /**
+     * Shows the menu where the person clicked ({@code x}, {@code y} in {@code on}) when it fits in the window there;
+     * else to the left of the click and/or above it, shifted inside the window when neither side has room: like a
+     * well-behaved popup, it never opens outside the app's window.
+     */
+    void showInside(Component on, int x, int y) {
+        invoker = on;
+        click = new Point(x, y);
+        Point at = inside(click, getPreferredSize(), windowIn(on));
+        show(on, at.x, at.y);
+    }
+
+    /** The window's area (its root pane) in {@code c}'s coordinates. */
+    private static Rectangle windowIn(Component c) {
+        JRootPane root = SwingUtilities.getRootPane(c);
+        if (root == null) return new Rectangle(-c.getX(), -c.getY(), Integer.MAX_VALUE / 2, Integer.MAX_VALUE / 2);
+        return SwingUtilities.convertRectangle(root, new Rectangle(0, 0, root.getWidth(), root.getHeight()), c);
+    }
+
+    /**
+     * Where a {@code menu} sized popup clicked at {@code click} goes inside {@code window} (both in the clicked
+     * component's coordinates): at the click when it fits; else its right edge, or bottom edge, at the click; else as
+     * far in as it goes, never past the window's left or top edge.
+     */
+    static Point inside(Point click, Dimension menu, Rectangle window) {
+        return new Point(along(click.x, menu.width, window.x, window.x + window.width),
+                along(click.y, menu.height, window.y, window.y + window.height));
+    }
+
+    private static int along(int click, int size, int min, int max) {
+        if (click + size <= max) return click;
+        int flipped = click - size;
+        return flipped >= min ? flipped : Math.max(min, max - size);
     }
 
     /** Whether the plugin's checks are still on their way. */

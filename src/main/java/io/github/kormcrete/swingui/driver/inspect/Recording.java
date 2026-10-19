@@ -106,9 +106,12 @@ final class Recording {
     private Bar recognisedOn;
     /** Counts the Check menu's clicks: plugin checks that come back for an older click are dropped. */
     private int checkAsked;
-    /** Shows the Check menu where the person clicked (a seam for tests); not on a window that closed meanwhile. */
+    /**
+     * Shows the Check menu where the person clicked, inside the window (a seam for tests); not on a window that closed
+     * meanwhile.
+     */
     BiConsumer<CheckMenu, MouseEvent> showMenu = (m, e) -> {
-        if (e.getComponent().isShowing()) m.show(e.getComponent(), e.getX(), e.getY());
+        if (e.getComponent().isShowing()) m.showInside(e.getComponent(), e.getX(), e.getY());
     };
     /** How long a check's result stays on the bar in Check mode before the way out is shown again. */
     int hintBackMs = NOTE_MS;

@@ -3,7 +3,14 @@ package io.github.kormcrete.swingui.driver.inspect;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JComponent;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+import java.awt.Dimension;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -16,6 +23,51 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CheckMenuTest {
 
     private final Scene scene = new Scene();
+
+    @Test
+    void theMenuOpensAtTheClickWhenItFitsAndInsideTheWindowWhenNot() {
+        Rectangle window = new Rectangle(0, 0, 800, 600);
+        Dimension menu = new Dimension(200, 150);
+        // room right and below: at the click, as before
+        assertThat(CheckMenu.inside(new Point(100, 100), menu, window)).isEqualTo(new Point(100, 100));
+        // the cart's total in the bottom right corner: to the left of the click and above it
+        assertThat(CheckMenu.inside(new Point(750, 560), menu, window)).isEqualTo(new Point(550, 410));
+        assertThat(CheckMenu.inside(new Point(750, 100), menu, window)).isEqualTo(new Point(550, 100));
+        assertThat(CheckMenu.inside(new Point(100, 560), menu, window)).isEqualTo(new Point(100, 410));
+        // no room on either side: shifted as far in as it goes, never past the window's left or top edge
+        assertThat(CheckMenu.inside(new Point(150, 100), menu, new Rectangle(0, 0, 300, 600))).isEqualTo(new Point(100, 100));
+        assertThat(CheckMenu.inside(new Point(150, 100), new Dimension(400, 150), new Rectangle(0, 0, 300, 600)))
+                .isEqualTo(new Point(0, 100));
+        // the window's area need not start at 0, 0 (it is in the clicked component's coordinates)
+        assertThat(CheckMenu.inside(new Point(-20, 380), menu, new Rectangle(-300, -100, 400, 500)))
+                .isEqualTo(new Point(-220, 230));
+    }
+
+    @Test
+    void nearTheWindowsCornerTheMenuShowsInsideTheWindow() throws Exception {
+        JFrame frame = new JFrame();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                frame.setUndecorated(true);
+                frame.setContentPane(new JPanel(null));
+                frame.setBounds(60, 60, 800, 600);
+                frame.setVisible(true);
+                frame.validate();
+                CheckMenu menu = CheckMenu.of(scene.inspector.component(scene.save), (step, t) -> { });
+                JComponent content = (JComponent) frame.getContentPane();
+                menu.showInside(content, 790, 590);
+                Rectangle shown = new Rectangle(menu.getLocationOnScreen(), menu.getSize());
+                assertThat(frame.getBounds().contains(shown)).as(shown + " in " + frame.getBounds()).isTrue();
+                // its corner is at the click: it opened up and to the left
+                Point click = new Point(790, 590);
+                SwingUtilities.convertPointToScreen(click, content);
+                assertThat(new Point(shown.x + shown.width, shown.y + shown.height)).isEqualTo(click);
+                menu.setVisible(false);
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(frame::dispose);
+        }
+    }
 
     @Test
     void aFieldOffersItsValue() {
