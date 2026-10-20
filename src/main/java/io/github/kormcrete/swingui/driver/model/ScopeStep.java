@@ -4,9 +4,10 @@ package io.github.kormcrete.swingui.driver.model;
  * One step of a locator's {@code scope}: {@code tab:<title>}, {@code section:<caption>}, {@code id:<name>} or
  * {@code text:<name>}. An id step means "strictly inside a component whose {@code getName()} is
  * {@code <name>}" - never that component itself, and never a section id a source contributed. A text step means
- * "strictly inside the text field of that name", such as the clear X a field holds. Only a caller writes id and text
- * steps ({@code Target.byId(x)} or {@code Target.field(x)} used as a container, or an MCP target's scope);
- * {@code Trail} and the recorder never derive one. A tab or section title that ends in {@code *} matches every title
+ * "strictly inside the text field of that name", such as the clear X a field holds. Only a caller writes id steps
+ * ({@code Target.byId(x)} used as a container, or an MCP target's scope); a text step also comes from
+ * {@code Target.field(x)} used as a container, and from the recorder when a button a field holds is told apart by its
+ * field alone (every date field's calendar button); {@code Trail} never derives one. A tab or section title that ends in {@code *} matches every title
  * that starts with the rest ({@code tab:New order*}), for a title that ends with data such as the customer.
  */
 public final class ScopeStep {

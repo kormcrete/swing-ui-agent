@@ -117,6 +117,16 @@ public final class Recorder {
             List<String> innermost = new ArrayList<String>(target.trail.subList(target.trail.size() - k, target.trail.size()));
             tries.add(with(sub, window, innermost, target.role, target.name, null));
         }
+        // Something a text field holds (a button of its own, such as a calendar's) is told apart by its field before
+        // nth: every date field may hold one by the same name.
+        String field = resolver.fieldAround(target);
+        if (field != null) {
+            for (int k = 0; k <= target.trail.size(); k++) {
+                List<String> innermost = new ArrayList<String>(target.trail.subList(target.trail.size() - k, target.trail.size()));
+                innermost.add(field);
+                tries.add(with(sub, window, innermost, target.role, target.name, null));
+            }
+        }
         for (Locator l : tries) {
             List<Resolved> m = resolver.matches(l);
             if (m.size() == 1 && same(m.get(0), target)) return new Recorded(l, false);

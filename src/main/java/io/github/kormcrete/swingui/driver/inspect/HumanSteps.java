@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.driver.widgets.TreeWidget;
 import javax.swing.AbstractButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JFormattedTextField;
 import javax.swing.JFrame;
 import javax.swing.JList;
 import javax.swing.JMenu;
@@ -14,18 +15,22 @@ import javax.swing.JMenuItem;
 import javax.swing.JPasswordField;
 import javax.swing.JPopupMenu;
 import javax.swing.JRadioButton;
+import javax.swing.JRootPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
 import javax.swing.JTree;
 import javax.swing.MenuElement;
+import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.event.ChangeListener;
 import javax.swing.plaf.basic.ComboPopup;
 import javax.swing.tree.TreePath;
 import javax.swing.text.JTextComponent;
 import java.awt.AWTEvent;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Point;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -51,8 +56,9 @@ import java.util.function.Consumer;
  * a {@code menu} (from its action, so the macOS screen menu bar and accelerators count too), a context-menu item a
  * {@code context_menu}, a choice from a button's dropdown a {@code pick}, a combo choice a {@code select}, a text
  * field's new content a {@code type} when focus leaves it (with {@code commit} when Enter left it), a table cell edited
- * with a spinner or another composite editor one {@code type} of its new value when the edit ends, a command chord or
- * Escape a {@code press}. It listens and never consumes:
+ * with a spinner or another composite editor one {@code type} of its new value when the edit ends, a value a popup
+ * opened from a text field writes into it (a calendar's day) one {@code type} of the field's new text when it closes, a
+ * command chord or Escape a {@code press}. It listens and never consumes:
  * the app gets every event. EDT.
  */
 final class HumanSteps implements AWTEventListener {
@@ -101,6 +107,13 @@ final class HumanSteps implements AWTEventListener {
     private final List<JMenuItem> hooked = new ArrayList<JMenuItem>();
     private final ActionListener menuListener = this::menuAction;
 
+    /** The popup the app opened from a text field (a calendar), while it is open; null when none is. */
+    private FieldPopup fieldPopup;
+    /** The popup open as last heard, so each one is looked at once. */
+    private JPopupMenu openPopup;
+    /** Hears every popup menu open and close (Swing tells its menu selection manager). */
+    private final ChangeListener popups = e -> popupsChanged();
+
     HumanSteps(Inspector inspector, Consumer<Map<String, Object>> emit, Consumer<String> notRecorded) {
         this.inspector = inspector;
         this.emit = emit;
@@ -112,6 +125,7 @@ final class HumanSteps implements AWTEventListener {
             Toolkit.getDefaultToolkit().addAWTEventListener(this,
                     AWTEvent.MOUSE_EVENT_MASK | AWTEvent.KEY_EVENT_MASK | AWTEvent.FOCUS_EVENT_MASK);
             hookMenus();
+            MenuSelectionManager.defaultManager().addChangeListener(popups);
             installed = true;
             Component focused = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             if (focused instanceof JTextComponent && !Overlay.ours(focused)) startEditing((JTextComponent) focused);
@@ -120,6 +134,9 @@ final class HumanSteps implements AWTEventListener {
             if (cellEdit != null) cellEdit.stopWatching();
             cellEdit = null;
             Toolkit.getDefaultToolkit().removeAWTEventListener(this);
+            MenuSelectionManager.defaultManager().removeChangeListener(popups);
+            fieldPopup = null;
+            openPopup = null;
             for (JMenuItem item : hooked) item.removeActionListener(menuListener);
             hooked.clear();
             installed = false;
@@ -144,7 +161,7 @@ final class HumanSteps implements AWTEventListener {
         flushTyping(false);
         flushClick();
         if (pendingChord != null) {
-            emit.accept(pendingChord);
+            out(pendingChord);
             pendingChord = null;
         }
     }
@@ -255,6 +272,11 @@ final class HumanSteps implements AWTEventListener {
         if (e.getClickCount() >= 2 && pendingClick != null && t.same(pendingClickTarget)) {
             pendingClick.put("count", Math.min(3, e.getClickCount()));
             pendingTimer.restart();
+            return;
+        }
+        if (fieldPopup != null && fieldPopup.opener == null && !fieldPopup.stepped && fieldPopup.openedBy(t.component)) {
+            // the popup opened on the press: this click is what opened it
+            fieldPopup.opener = step("click", t);
             return;
         }
         flushClick();
@@ -401,6 +423,8 @@ final class HumanSteps implements AWTEventListener {
             return;
         }
         if (code == KeyEvent.VK_TAB && !command) return;
+        // Escape closing a field's popup: the popup is no step, so neither is what closes it
+        if (code == KeyEvent.VK_ESCAPE && !command && fieldPopup != null) return;
         if (inText && !command && code != KeyEvent.VK_ESCAPE) return;
         if (inText && command && editingKey(code)) return;
         String name = keyName(code);
@@ -417,7 +441,7 @@ final class HumanSteps implements AWTEventListener {
             SwingUtilities.invokeLater(() -> {
                 if (pendingChord == step) {
                     pendingChord = null;
-                    emit.accept(step);
+                    out(step);
                 }
             });
         } else {
@@ -493,11 +517,25 @@ final class HumanSteps implements AWTEventListener {
         Map<String, Object> step = pendingClick;
         pendingClick = null;
         pendingClickTarget = null;
-        emit.accept(step);
+        out(step);
     }
 
     private void emitStep(Map<String, Object> step) {
         flushClick();
+        out(step);
+    }
+
+    /**
+     * Hands {@code step} over. While a field's popup is open the step is the popup's doing (a suggestion picked, a
+     * menu item chosen): the click that opened the popup goes first, and the field's new text is no step of its own.
+     */
+    private void out(Map<String, Object> step) {
+        if (fieldPopup != null) {
+            fieldPopup.stepped = true;
+            Map<String, Object> opener = fieldPopup.opener;
+            fieldPopup.opener = null;
+            if (opener != null) emit.accept(opener);
+        }
         emit.accept(step);
     }
 
@@ -585,6 +623,145 @@ final class HumanSteps implements AWTEventListener {
         }
     }
 
+    /** A popup opened or closed, or what is selected in one changed. */
+    private void popupsChanged() {
+        MenuElement[] path = MenuSelectionManager.defaultManager().getSelectedPath();
+        JPopupMenu top = path.length > 0 && path[0] instanceof JPopupMenu ? (JPopupMenu) path[0] : null;
+        if (top == openPopup) return;
+        openPopup = top;
+        if (fieldPopup != null && fieldPopup.popup != top) fieldPopupClosed();
+        if (top != null && fieldPopup == null && !Inspector.agentIsActing()) fieldPopupOpened(top);
+    }
+
+    /**
+     * {@code popup} opened from a text field, or from a button it holds or that stands beside it alone (a calendar):
+     * its text now is what the popup may change. The click that opened it is held back - the field's new value will
+     * say what the popup did.
+     */
+    private void fieldPopupOpened(JPopupMenu popup) {
+        Component invoker = popup.getInvoker();
+        if (invoker == null || popup instanceof ComboPopup || Overlay.ours(popup) || inMenuBar(popup)) return;
+        Container picker = pickerOf(invoker);
+        if (picker == null) return;
+        JTextComponent field = picker instanceof JTextComponent ? (JTextComponent) picker : onlyField(picker);
+        Target target = inspector.component(field);
+        if (target == null) return;
+        FieldPopup fp = new FieldPopup(popup, invoker, picker, field, target);
+        if (pendingClick != null && fp.openedBy(pendingClickTarget.component)) {
+            if (pendingTimer != null) pendingTimer.stop();
+            fp.opener = pendingClick;
+            pendingClick = null;
+            pendingClickTarget = null;
+        }
+        fieldPopup = fp;
+    }
+
+    /**
+     * The field's popup closed. When the popup made no step of its own and the person typed nothing meanwhile, a field
+     * whose text changed gets it as one {@code type}, as if typed, and the click that opened the popup is no step: the
+     * replay types the value without opening the popup (whatever month a calendar would show then). When nothing
+     * changed, nothing is recorded. An app that sets the value after hiding its popup is looked at again once the event
+     * is handled.
+     */
+    private void fieldPopupClosed() {
+        FieldPopup fp = fieldPopup;
+        fieldPopup = null;
+        if (fp.stepped || (editing == fp.field && typed)) {
+            if (fp.opener != null) emit.accept(fp.opener);
+            return;
+        }
+        if (typedByPopup(fp)) return;
+        boolean listening = installed;
+        SwingUtilities.invokeLater(() -> {
+            // the same guards as later work elsewhere: nothing once it stopped listening, nothing during the agent's step
+            if (installed != listening || Inspector.agentIsActing()) return;
+            try {
+                typedByPopup(fp);
+            } catch (RuntimeException failed) {
+                System.err.println("swing-ui-agent inspector: " + failed);
+            }
+        });
+    }
+
+    /** True when {@code fp}'s field has new text, which then became its {@code type}. */
+    private boolean typedByPopup(FieldPopup fp) {
+        String now = fp.field.getText();
+        if (now.equals(fp.before)) return false;
+        Map<String, Object> step = step("type", fp.target);
+        step.put("text", now);
+        // a formatted field takes typed text as its value on Enter (which, the text being edited, presses no default
+        // button); a plain field's text is its value
+        if (fp.field instanceof JFormattedTextField) step.put("commit", true);
+        emitStep(step);
+        if (editing == fp.field) editingText = now;
+        return true;
+    }
+
+    /**
+     * What a popup opened from {@code invoker} belongs to: the text field the invoker is or lies in, else the nearest
+     * container around the invoker that holds exactly one field a person can type into (a picker: its field and its
+     * button); null when the nearest one holding any holds several (a form), or none does.
+     */
+    static Container pickerOf(Component invoker) {
+        for (Component c = invoker; c != null && !(c instanceof Window) && !(c instanceof JRootPane); c = c.getParent()) {
+            if (c instanceof JTextComponent) return typable((JTextComponent) c) ? (Container) c : null;
+            int fields = fieldsIn(c);
+            if (fields == 1) return (Container) c;
+            if (fields > 1) return null;
+        }
+        return null;
+    }
+
+    private static int fieldsIn(Component c) {
+        if (c instanceof JTextComponent) return typable((JTextComponent) c) ? 1 : 0;
+        if (!(c instanceof Container) || c instanceof JPopupMenu) return 0;
+        int n = 0;
+        for (Component k : ((Container) c).getComponents()) n += fieldsIn(k);
+        return n;
+    }
+
+    private static JTextComponent onlyField(Component c) {
+        if (c instanceof JTextComponent) return typable((JTextComponent) c) ? (JTextComponent) c : null;
+        if (!(c instanceof Container)) return null;
+        for (Component k : ((Container) c).getComponents()) {
+            JTextComponent f = onlyField(k);
+            if (f != null) return f;
+        }
+        return null;
+    }
+
+    private static boolean typable(JTextComponent c) {
+        return c.isEditable() && c.isEnabled() && c.isVisible() && !(c instanceof JPasswordField);
+    }
+
+    /** A popup the app opened from a text field (or its picker), and that field's text when it opened. */
+    private static final class FieldPopup {
+        final JPopupMenu popup;
+        final Component invoker;
+        final Container picker;
+        final JTextComponent field;
+        final Target target;
+        final String before;
+        /** The click that opened it, held back; null when none is (or it went out already). */
+        Map<String, Object> opener;
+        /** Something was recorded while it was open: that is what it did. */
+        boolean stepped;
+
+        FieldPopup(JPopupMenu popup, Component invoker, Container picker, JTextComponent field, Target target) {
+            this.popup = popup;
+            this.invoker = invoker;
+            this.picker = picker;
+            this.field = field;
+            this.target = target;
+            this.before = field.getText();
+        }
+
+        /** Whether a click on {@code c} is one that opens this popup: on its invoker or within its picker. */
+        boolean openedBy(Component c) {
+            return c != null && (SwingUtilities.isDescendingFrom(c, invoker) || SwingUtilities.isDescendingFrom(c, picker));
+        }
+    }
+
     private void menuAction(ActionEvent e) {
         if (Inspector.agentIsActing() || !(e.getSource() instanceof JMenuItem)) return;
         pendingChord = null;
@@ -610,7 +787,7 @@ final class HumanSteps implements AWTEventListener {
         for (MenuElement child : m.getSubElements()) hook(child);
     }
 
-    private static boolean inMenuBar(JMenuItem item) {
+    private static boolean inMenuBar(Component item) {
         Component c = item;
         while (c != null) {
             if (c instanceof JMenuBar) return true;

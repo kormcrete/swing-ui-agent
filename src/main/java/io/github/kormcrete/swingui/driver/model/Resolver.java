@@ -10,8 +10,10 @@ import io.github.kormcrete.swingui.driver.window.WindowSource;
 import javax.swing.JPopupMenu;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.SwingUtilities;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
+import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Window;
@@ -375,6 +377,21 @@ public final class Resolver {
         WindowRoot root = rootOf(c);
         if (root != null && root.content == c) return r.name;
         return names.seenName(c, root != null && root.content instanceof Container ? (Container) root.content : Snapshot.topOf(c));
+    }
+
+    /**
+     * The scope step of the text field {@code r} lies strictly inside - {@code text:<name>}, its name as the walk gives
+     * it - for something the field holds (a button of its own: a clear X, a calendar's); null when {@code r} lies in no
+     * field, or in one without a name. EDT.
+     */
+    public String fieldAround(Resolved r) {
+        Component f = SwingUtilities.getAncestorOfClass(JTextComponent.class, r.component);
+        if (f == null || !"text".equals(Roles.of(f))) return null;
+        names.reset();
+        WindowRoot root = rootOf(f);
+        Container labelRoot = root != null && root.content instanceof Container ? (Container) root.content : Snapshot.topOf(f);
+        String name = names.nameOf(f, labelRoot);
+        return name == null ? null : ScopeStep.text(name);
     }
 
     private Resolved fromRef(Locator l) {

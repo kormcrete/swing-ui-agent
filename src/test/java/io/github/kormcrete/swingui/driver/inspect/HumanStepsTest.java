@@ -615,6 +615,212 @@ class HumanStepsTest {
         assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "Ada Shop Ltd");
     }
 
+    // ---- a popup the app opens from a text field: its new text is the step -------------------------------------
+
+    @Test
+    void aDayPickedInAFieldsCalendarIsOneTypeOfTheFieldsNewTextAndTheCalendarButtonIsNoStep() throws Exception {
+        DateField received = dateField("Received", 10, 130);
+        dateField("Due", 10, 170);
+        listening(() -> {
+            click(received.calendar, 1);
+            opens(received.popup, received.calendar);
+            click(received.month, 40, 30, 1);           // a day in the month view: painted, no component of its own
+            received.field.setText("20.10.2026");       // the app takes the day and closes its popup
+            closes();
+            human.flush();
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "20.10.2026")
+                    .containsEntry("commit", true);
+            assertThat(((Locator) steps.get(0).get("target")).name).isEqualTo("Received");
+        });
+    }
+
+    @Test
+    void aCalendarClosedWithoutAPickRecordsNothingNotEvenItsEscape() throws Exception {
+        DateField received = dateField("Received", 10, 130);
+        listening(() -> {
+            click(received.calendar, 1);
+            opens(received.popup, received.calendar);
+            key(received.field, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_ESCAPE, '\u001b');
+            closes();
+        });
+        onEdt(() -> {
+            human.flush();
+            assertThat(steps).isEmpty();
+        });
+    }
+
+    @Test
+    void aValueTheAppSetsJustAfterHidingItsPopupIsStillTheStep() throws Exception {
+        DateField received = dateField("Received", 10, 130);
+        listening(() -> {
+            click(received.calendar, 1);
+            opens(received.popup, received.calendar);
+            closes();
+            received.field.setText("21.10.2026");
+        });
+        onEdt(() -> {
+            human.flush();
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "21.10.2026");
+        });
+    }
+
+    @Test
+    void aPickerWhoseButtonStandsBesideItsPlainFieldTypesIntoThatFieldWithoutEnter() throws Exception {
+        javax.swing.JPanel picker = new javax.swing.JPanel(null);
+        javax.swing.JTextField color = new javax.swing.JTextField();
+        javax.swing.JButton choose = new javax.swing.JButton("…");
+        javax.swing.JLabel caption = new javax.swing.JLabel("Color");
+        caption.setLabelFor(color);
+        caption.setBounds(10, 210, 60, 24);
+        color.setBounds(0, 0, 100, 24);
+        choose.setBounds(100, 0, 24, 24);
+        picker.add(color);
+        picker.add(choose);
+        picker.setBounds(80, 210, 130, 24);
+        scene.content.add(caption);
+        scene.content.add(picker);
+        javax.swing.JPopupMenu palette = new javax.swing.JPopupMenu();
+        palette.add(new javax.swing.JPanel());
+        listening(() -> {
+            click(choose, 1);
+            opens(palette, choose);
+            color.setText("#1F6FEB");
+            closes();
+            human.flush();
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "type").containsEntry("text", "#1F6FEB")
+                    .doesNotContainKey("commit");
+            assertThat(((Locator) steps.get(0).get("target")).name).isEqualTo("Color");
+        });
+    }
+
+    @Test
+    void aSuggestionPickedInAFieldsPopupIsItsClickNotATypeOfTheTextItLeaves() throws Exception {
+        javax.swing.JList<String> suggestions = new javax.swing.JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co"});
+        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+        popup.add(suggestions);
+        suggestions.setBounds(0, 0, 200, 40);
+        listening(() -> {
+            focus(scene.customer, FocusEvent.FOCUS_GAINED);
+            typeInto(scene.customer, "Ada");
+            opens(popup, scene.customer);
+            java.awt.Rectangle ada = suggestions.getCellBounds(0, 0);
+            click(suggestions, ada.x + 4, ada.y + 2, 1);
+            scene.customer.setText("Ada Shop Ltd");
+            closes();
+            human.flush();
+            assertThat(steps).extracting(step -> step.get("action")).containsExactly("type", "click");
+            assertThat(steps.get(0)).containsEntry("text", "Ada");
+        });
+    }
+
+    @Test
+    void aFieldsContextMenuChoiceIsItsContextMenuStepOnly() throws Exception {
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem paste = new javax.swing.JMenuItem("Paste");
+        menu.add(paste);
+        listening(() -> {
+            human.eventDispatched(new MouseEvent(scene.customer, MouseEvent.MOUSE_PRESSED, 1L, InputEvent.BUTTON3_DOWN_MASK,
+                    3, 3, 1, true, MouseEvent.BUTTON3));
+            opens(menu, scene.customer);
+            human.eventDispatched(new MouseEvent(paste, MouseEvent.MOUSE_PRESSED, 2L, InputEvent.BUTTON1_DOWN_MASK, 3, 3, 1,
+                    false, MouseEvent.BUTTON1));
+            human.eventDispatched(new MouseEvent(paste, MouseEvent.MOUSE_RELEASED, 3L, 0, 3, 3, 1, false, MouseEvent.BUTTON1));
+            scene.customer.setText("Ada Shop Ltd");
+            closes();
+            human.flush();
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "context_menu")
+                    .containsEntry("path", java.util.Collections.singletonList("Paste"));
+        });
+    }
+
+    @Test
+    void aPopupFromAButtonAmongSeveralFieldsKeepsItsClick() throws Exception {
+        dateField("Received", 10, 130);
+        javax.swing.JPopupMenu more = new javax.swing.JPopupMenu();
+        more.add(new javax.swing.JPanel());
+        listening(() -> {
+            click(scene.save, 1);
+            opens(more, scene.save);
+            scene.customer.setText("Ada Shop Ltd");
+            closes();
+            human.flush();
+            assertThat(steps).hasSize(1);
+            assertThat(steps.get(0)).containsEntry("action", "click");
+            assertThat(((Locator) steps.get(0).get("target")).name).isEqualTo("Save");
+        });
+    }
+
+    @Test
+    void aButtonEveryDateFieldHoldsIsNamedByItsFieldNotByPosition() throws Exception {
+        dateField("Received", 10, 130);
+        DateField due = dateField("Due", 10, 170);
+        onEdt(() -> {
+            click(due.calendar, 1);
+            human.flush();
+            assertThat(steps).hasSize(1);
+            Locator target = (Locator) steps.get(0).get("target");
+            assertThat(target.name).isEqualTo("Kalender");
+            assertThat(target.scope).containsExactly("text:Due");
+            assertThat(target.nth).isNull();
+        });
+    }
+
+    /** A date field as a lab app has it: a formatted field holding a calendar button that opens a month view. */
+    private static final class DateField {
+        final javax.swing.JFormattedTextField field = new javax.swing.JFormattedTextField();
+        final javax.swing.JButton calendar = new javax.swing.JButton("▦");
+        final javax.swing.JComponent month = new javax.swing.JPanel();
+        final javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+    }
+
+    /** A captioned date field in the scene, at {@code x, y}. */
+    private DateField dateField(String caption, int x, int y) {
+        DateField d = new DateField();
+        javax.swing.JLabel label = new javax.swing.JLabel(caption);
+        label.setLabelFor(d.field);
+        label.setBounds(x, y, 70, 24);
+        d.field.setLayout(null);
+        d.field.setBounds(x + 80, y, 140, 24);
+        d.calendar.setName("Kalender");
+        d.calendar.setFocusable(false);
+        d.calendar.setBounds(116, 0, 24, 24);
+        d.field.add(d.calendar);
+        d.month.setPreferredSize(new java.awt.Dimension(200, 150));
+        d.popup.add(d.month);
+        d.month.setBounds(0, 0, 200, 150);
+        scene.content.add(label);
+        scene.content.add(d.field);
+        return d;
+    }
+
+    /** {@code body} on the event dispatch thread while the recorder listens, as it does while the person records. */
+    private void listening(EdtBody body) throws Exception {
+        onEdt(() -> human.active(true));
+        try {
+            onEdt(body);
+        } finally {
+            // what the recorder left for later has run
+            onEdt(() -> { });
+            onEdt(() -> human.active(false));
+        }
+    }
+
+    /** The app shows {@code popup} from {@code invoker}: Swing selects it in its menu selection manager. EDT. */
+    private void opens(javax.swing.JPopupMenu popup, Component invoker) {
+        scene.popup(popup, invoker);
+        javax.swing.MenuSelectionManager.defaultManager().setSelectedPath(new javax.swing.MenuElement[] {popup});
+    }
+
+    /** The open popup closes. EDT. */
+    private void closes() {
+        javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath();
+        scene.roots.remove(scene.roots.size() - 1);
+    }
+
     /**
      * Runs {@code body} on the event dispatch thread, where the recorder runs, and waits; its assertion errors fail the
      * test as they are. A test that measures list or tree rows must: they cache their row heights, worked out lazily, and
