@@ -66,6 +66,18 @@ class UiUsersTest {
     }
 
     @Test
+    void aValueWithoutAColonIsRefusedWithoutEchoingIt() throws IOException {
+        // the user name was left out, so the value may well be the password: it must not reach a log or a report
+        users("clerk=s3cretOnly");
+
+        assertThatThrownBy(() -> UiUsers.lookup("clerk"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'clerk'")
+                .hasMessageContaining("user:password")
+                .hasMessageNotContaining("s3cretOnly");
+    }
+
+    @Test
     void onlyTheFirstColonSeparates() throws IOException {
         users("odd=user:pass:word");
 

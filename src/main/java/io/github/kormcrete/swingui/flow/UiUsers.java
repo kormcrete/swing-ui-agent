@@ -56,8 +56,9 @@ public final class UiUsers {
         }
         int colon = value.indexOf(':');
         if (colon < 0) {
+            // the value is not shown: with the user name left out, it is the password
             throw new IllegalArgumentException("Alias '" + wanted + "' in " + file()
-                    + " must read user:password, not '" + value + "'.");
+                    + " must read user:password; its value has no ':'.");
         }
         return new Credentials(value.substring(0, colon), value.substring(colon + 1));
     }
