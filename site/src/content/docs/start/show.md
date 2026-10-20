@@ -133,7 +133,7 @@ will; without a plugin that only closes dialogs, so the first step has to get to
 
 Double click a row in the Steps list (or select it and press F2 or Enter) to describe a step or a check in a
 sentence of your own, right in the list: Enter saves, Esc cancels. Select several steps first to give them one
-sentence as a group; double click a group's header to rename it. **⋯** or a right click on a row offers the same as
+sentence as a group; double click a group's header to rename it. A right click on a row (or **Shift+F10**) offers the same as
 **Describe this step…**, **Describe this check…** or **Describe these steps…**. All the ways, groups and how a table
 row is kept are in [Sentences and groups](/swing-ui-agent/guides/sentences/).
 

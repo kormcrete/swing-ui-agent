@@ -19,12 +19,16 @@ import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JToolTip;
 import javax.swing.JTree;
 import javax.swing.JViewport;
+import javax.swing.MenuElement;
+import javax.swing.MenuSelectionManager;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.JTableHeader;
 import javax.swing.text.JTextComponent;
+import java.awt.AWTEvent;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
@@ -39,6 +43,11 @@ import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Toolkit;
+import java.awt.event.AWTEventListener;
+import java.awt.event.ContainerAdapter;
+import java.awt.event.ContainerEvent;
+import java.awt.event.ContainerListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
@@ -52,8 +61,9 @@ import java.util.function.Function;
  * Everything the inspector shows in one window, all of it INSIDE that window's layered pane so it stays
  * visible when the app fills the screen: boxes (drag layer, never the glass pane, never a border on the app's own
  * component), check-mark badges, the bar (palette or question, draggable) and - while the person picks or checks - a
- * catcher just under the popup layer, so the app gets no click but a menu the inspector opens still does. The box layer
- * takes no mouse input; the rest is added and removed, never hidden. EDT only.
+ * catcher just under the popup layer, so the app gets no click but a menu the inspector opens still does. A popup the
+ * palette opens itself (a row menu, a dropdown's list, a tooltip) goes above the palette, where the app's own stay
+ * under it. The box layer takes no mouse input; the rest is added and removed, never hidden. EDT only.
  */
 final class Overlay extends JComponent {
 
@@ -61,6 +71,8 @@ final class Overlay extends JComponent {
     private static final Integer BOXES = JLayeredPane.DRAG_LAYER;
     private static final Integer CONTROLS = JLayeredPane.DRAG_LAYER + 1;
     private static final Integer CATCHER = JLayeredPane.POPUP_LAYER - 1;
+    /** The palette's own popups: above its controls, which lie above the popup layer Swing puts every popup on. */
+    private static final Integer POPUPS = CONTROLS + 1;
     private static final List<Rectangle> NONE = Collections.emptyList();
     /** How far apart the bar's spots along the window's edges are. */
     private static final int STEP = 24;
@@ -147,13 +159,63 @@ final class Overlay extends JComponent {
     private final Timer follow = new Timer(120, e -> relayout());
     /** What the boxes looked like when last painted: a tick repaints the window only when that changed. */
     private List<Object> drawn = new ArrayList<Object>();
+    /** Lifts each popup of the palette's that Swing adds to this window above the palette ({@link #lift}). */
+    private final ContainerListener popups = new ContainerAdapter() {
+        @Override public void componentAdded(ContainerEvent e) {
+            lift(e.getChild());
+        }
+    };
 
     Overlay(JRootPane root) {
         this.root = root;
         this.layers = root.getLayeredPane();
         setOpaque(false);
         layers.add(this, BOXES);
+        layers.addContainerListener(popups);
+        Toolkit.getDefaultToolkit().addAWTEventListener(closeOwnPopup, AWTEvent.MOUSE_EVENT_MASK);
         relayout();
+    }
+
+    /**
+     * A press on the palette here, outside the palette's own open popup (and a dropdown's own button), closes that popup, as a press
+     * anywhere else does: the palette's parts keep popups open ({@link Bar#keepPopupsOpen}), for the app's.
+     */
+    private final AWTEventListener closeOwnPopup = this::pressed;
+
+    private void pressed(AWTEvent e) {
+        if (e.getID() != MouseEvent.MOUSE_PRESSED || !(e.getSource() instanceof Component)) return;
+        Component c = (Component) e.getSource();
+        if (!SwingUtilities.isDescendingFrom(c, layers) || !ours(c)) return;
+        MenuElement[] path = MenuSelectionManager.defaultManager().getSelectedPath();
+        if (path.length == 0 || !(path[0] instanceof JPopupMenu) || !ours((JPopupMenu) path[0])) return;
+        Component opener = ((JPopupMenu) path[0]).getInvoker();
+        // a dropdown's own button opens and closes its list itself
+        if (opener instanceof JComboBox && SwingUtilities.isDescendingFrom(c, opener)) return;
+        for (MenuElement m : path) {
+            if (SwingUtilities.isDescendingFrom(c, m.getComponent())) return;
+        }
+        MenuSelectionManager.defaultManager().clearSelectedPath();
+    }
+
+    /**
+     * {@code c}, just added to the popup layer, as one of the palette's own popups - its row menu, a dropdown's list, a
+     * tooltip on one of its parts - goes above the palette: on the popup layer it would show under the palette's
+     * controls, and they would get its clicks. A popup that does not fit in the window is a window of its own, on top
+     * anyway; the app's own popups stay where Swing puts them. EDT.
+     */
+    private void lift(Component c) {
+        if (layers.getLayer(c) == JLayeredPane.POPUP_LAYER && palettePopup(c, 0)) layers.setLayer(c, POPUPS, 0);
+    }
+
+    /** Whether the popup {@code c} holds (Swing wraps it in a panel or two) is one of the palette's own. */
+    private static boolean palettePopup(Component c, int depth) {
+        if (c instanceof JPopupMenu) return ours(c);
+        if (c instanceof JToolTip) return ((JToolTip) c).getComponent() != null && ours(((JToolTip) c).getComponent());
+        if (!(c instanceof Container) || depth > 4) return false;
+        for (Component k : ((Container) c).getComponents()) {
+            if (palettePopup(k, depth + 1)) return true;
+        }
+        return false;
     }
 
     /** Whether the follow timer runs. */
@@ -377,6 +439,8 @@ final class Overlay extends JComponent {
         ask(null);
         removeCatcher();
         follow.stop();
+        layers.removeContainerListener(popups);
+        Toolkit.getDefaultToolkit().removeAWTEventListener(closeOwnPopup);
         layers.remove(this);
         layers.repaint();
     }

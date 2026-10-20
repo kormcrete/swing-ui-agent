@@ -54,7 +54,7 @@ import java.util.function.Predicate;
  * "agent: ", a sentence in place of the technical line (which shows on hover), and a group as a header row above its
  * indented steps. Below, the buttons to replay all from a reset, as the exported test runs (for a loaded recorded test:
  * run it), replay from a step, redo from a step (cut the recording there, replay up to it from a reset, record on),
- * delete a step or a check, or undo the last edit - the agent's or the person's; the row menu (right click, or ⋯)
+ * delete a step or a check, or undo the last edit - the agent's or the person's; the row menu (right click, or Shift+F10)
  * describes, ungroups and says how a table row is named. A step of the app plugin's vocabulary (a {@code do} step) is
  * one row, "◆" and its sentence with its values in bold; a fold - one folding made of recorded steps - has a ▸ that
  * shows those steps under it, greyed (▾ hides them), and its row menu renames it, unfolds it into those steps or deletes
@@ -252,7 +252,6 @@ final class StepsPanel extends JPanel {
     private final javax.swing.JComboBox<String> speed =
             new javax.swing.JComboBox<String>(new String[] {"Fast", "Normal", "Slow", "Step by step"});
     private final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-    private final JButton more;
     private final JButton delete;
     private Edits edits = new Edits() {
         @Override public BooleanSupplier naming() { return () -> false; }
@@ -394,6 +393,12 @@ final class StepsPanel extends JPanel {
         list.getActionMap().put("describe", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { describeSelection(); }
         });
+        // the row menu from the keyboard, as a right click opens it: Shift+F10 or the context-menu key
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_F10, InputEvent.SHIFT_DOWN_MASK), "rowMenu");
+        list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_CONTEXT_MENU, 0), "rowMenu");
+        list.getActionMap().put("rowMenu", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { openMenu(selected()); }
+        });
         // → shows a fold's steps, ← hides them, as on a tree
         list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "showRaw");
         list.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "hideRaw");
@@ -432,11 +437,6 @@ final class StepsPanel extends JPanel {
         this.undo = small("↶ Undo", undo);
         this.undo.setEnabled(false);
         buttons.add(this.undo);
-        more = small("⋯", () -> {
-            int row = selected();
-            if (row >= 0) openMenu(row, 0, 0);
-        }, "describe, ungroup, how a table row is named");
-        buttons.add(more);
         add(south, BorderLayout.SOUTH);
     }
 
@@ -562,10 +562,7 @@ final class StepsPanel extends JPanel {
         List<Row> sel = selectedRows();
         if (sel.isEmpty()) return;
         menu = menuFor(sel);
-        if (list.isShowing()) {
-            if (x == 0 && y == 0) menu.show(more, 0, more.getHeight());
-            else menu.show(list, x, y);
-        }
+        if (list.isShowing()) menu.show(list, x, y);
     }
 
     /** What the person can do with the records {@code sel} (in order, at least one). */
@@ -1012,6 +1009,11 @@ final class StepsPanel extends JPanel {
     /** 0 fast, 1 normal, 2 slow, 3 step by step. */
     int speed() {
         return speed.getSelectedIndex();
+    }
+
+    /** The replay speed's dropdown, as the person opens it. */
+    javax.swing.JComboBox<String> speedChoice() {
+        return speed;
     }
 
     /**

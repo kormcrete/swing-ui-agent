@@ -1043,7 +1043,7 @@ class RecordingTest {
             assertThat(recording.panel.getParent()).isSameAs(frame.getLayeredPane());
             assertThat(recording.panel.rows()).containsExactly("1  ●  click(#a)", "2  ▶  click(#b)", "3  ●  click(#c)");
             // nothing in it changes the recording or starts another replay while the steps run
-            for (String b : Arrays.asList("▶ Replay all", "▶ From selected", "↺ Redo from selected", "✕ Delete", "↶ Undo", "⋯")) {
+            for (String b : Arrays.asList("▶ Replay all", "▶ From selected", "↺ Redo from selected", "✕ Delete", "↶ Undo")) {
                 assertThat(recording.panel.enabled(b)).as(b).isFalse();
             }
         });
@@ -1084,7 +1084,7 @@ class RecordingTest {
             assertThat(recording.panel.enabled("✕ Delete")).isFalse();
             // the row menu changes nothing either
             recording.panel.select(0);
-            recording.panel.press("⋯");
+            recording.panel.openMenu(0);
             assertThat(recording.panel.menu()).isNull();
         });
         recording.next.release();

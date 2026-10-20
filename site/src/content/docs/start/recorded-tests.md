@@ -91,7 +91,7 @@ The agent cannot run or record while you replay: its calls are refused with BUSY
 
 In **Steps**, the same tools as when recording:
 
-- Name a step or a check: double click, **F2** or **Enter**, or **⋯** / right click → **Describe this step…**. See [Sentences and groups](/swing-ui-agent/guides/sentences/).
+- Name a step or a check: double click, **F2** or **Enter**, or right click (**Shift+F10** from the keyboard) → **Describe this step…**. See [Sentences and groups](/swing-ui-agent/guides/sentences/).
 - **Delete** a step, or **↺ Redo from selected**: go back to that step and record again from there.
 - Replay all, or from a step, to see the effect of a change.
 
