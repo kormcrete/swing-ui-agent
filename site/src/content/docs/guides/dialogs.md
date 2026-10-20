@@ -119,6 +119,10 @@ When the app asks before replacing an existing file, that question comes back as
 ```
 
 - **Cancel the chooser:** `choose_file {"approve":false}` presses Escape.
+- **The name field:** it belongs to the look and feel, which the element tree leaves out, and some look and feels
+  open the chooser with the focus elsewhere. `choose_file` handles that itself; the `focusFileChooserName` step (in
+  a `batch` or `do_action`) puts the focus there for a step of your own.
+- **Looking without waiting:** `read_file_chooser` waits up to 10 s for a chooser to show; `{"timeout":0}` looks once.
 - **In Java:** `ui.chooseFile("/tmp/ORD-1640.txt")`, `ui.chooseFile(path, false)` to cancel, and `ui.fileChooser()` for the folder, name and focus.
 
 Use a path the test owns, such as a temporary folder, so a run never writes over a real file.

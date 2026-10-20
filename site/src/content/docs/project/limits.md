@@ -21,12 +21,15 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **Screenshots** paint the app's own components into an image. Anything in a window of its own, such as an open popup menu, a combo dropdown or a tooltip, is not in a window's image; capture that window instead.
 - **Drag and drop:** `drag` posts a mouse gesture inside one window and never starts a native drag. To deliver files or text, use `drop`.
 - **The macOS screen menu bar** has no input path, so `menu` invokes its item directly. The step is marked `via:api`.
+- **Scrolling by `to` or `pages`** needs the element a scroll pane shows, such as the table itself; anything else is refused as "not inside a scroll pane". A `row` scrolls every pane around the table.
+- **Popup windows:** open popup menus, combo dropdowns included, are the `popup` window. A suggestion list the app shows in another kind of popup window is not seen; one drawn inside the main window is.
 - **Mouse input:** a component counts as taking mouse input when it has mouse listeners or a popup menu. One that only enables mouse events internally is seen as transparent, so a click on it lands on what is below.
 - **No tool of its own:** `focusFileChooserName` is a step without a tool. Run it through `batch` or `do_action`. (`hover`, `resize_column`, `resize_window` and `close_window` are tools now.)
 
 ## Recording and export
 
 - **Not exportable:** a `row` matched on more than two columns, a `loginAs` that is not the first step, and a `point` on anything but a plain left click (that one is exported as `clickAt`). The step runs and its result says `notRecorded`; pick another locator, or write that line by hand.
+- **Screenshots in a recording:** a recorded `screenshot` step, and `saveScreenshot` in Java, always take the whole window: no region.
 - **Starting screen:** without a plugin, a reset only closes modal dialogs, so the app may be on any screen. Each test reaches its own starting screen through the menu bar or a shortcut, and the exports warn when a recording starts any other way.
 
 ## The palette and recording by showing it

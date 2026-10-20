@@ -62,6 +62,9 @@ A titled border is a section: `{"role":"section","name":"Payment"}`, or `role:"s
 contributes on a plain panel without a caption is the other way round: it is reached by its bare `id` only, because
 `role:"section"` means a titled border. `describe_ui` lists a plugin's sections with their ids.
 
+A titled box that also takes clicks shows as `clickable`, and stays clickable by that role and its caption. It still
+scopes what lies inside it as `section:<caption>`.
+
 ### Reading in Java
 
 `Target` reads once, with no retry; to wait for a value, assert it.
@@ -69,7 +72,16 @@ contributes on a plain panel without a caption is the other way round: it is rea
 - `text()` is the element's name: a button's or plain label's own text, but a field's caption. For a field, and for
   a value label named by its caption (`label("Total")` next to the caption Total), `text()` is the caption and
   `value()` what it shows (`€31.32`). In assertions, `hasText(...)` checks what the element shows.
-- `bounds()` is where the element is, in its window's coordinates.
+- `count()` is how many elements match now (0 when none), `texts()` every match's name and `values()` every
+  match's value, in tree order: a popup's entries, the labels in a strip. They read every match, so they refuse an
+  `nth(...)`.
+- `presence()` says whether the target is there now and unique (`NONE`, `ONE`, `MANY`); `exists()` is "one or
+  more".
+- `items()` lists a list's, combo's or tree's items, `expandedItems()` a tree's expanded rows, and `selectedRows()` a
+  table's selection.
+- `bounds()` is where the element is, in its window's coordinates. It is not clipped: a row scrolled out of view
+  reports where it would be. For a table it also has `columnWidths()` and `headerTextWidths()` (what each header's
+  text needs), and for the view of a scroll pane `horizontalScrollBar()` and `viewportWidth()`, for layout checks.
 - `tree(maxNodes)` returns the element's subtree as text, for a look while writing a test.
 - `fill("")` empties a field: it selects the text, deletes it and commits.
 

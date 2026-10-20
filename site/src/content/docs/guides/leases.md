@@ -20,6 +20,11 @@ So a CLI call with no lease is its own one-call lease: it runs when the app is f
 {"errorType":"INPUT_ERROR","reason":"BUSY","message":"BUSY: leased by docs-walkthrough since 12:35:04"}
 ```
 
+It works the other way too: taking the lease is refused while a call without one is still running.
+
+One read waits: `read_file_chooser` waits for a chooser to show (10 s by default) and holds the session meanwhile,
+so steps from others queue behind it. Pass `{"timeout":0}` to look once.
+
 The CLI exits with code 1. `session` shows who holds the lease, under `lease`.
 
 ## Take a lease
@@ -95,9 +100,10 @@ class LastStaplerUiIT {
 ```
 
 - **Which apps:** the JUnit configuration parameter `swingui.agents` lists them as `host:port,host:port` (a system property, `junit-platform.properties`, or a suite's `@ConfigurationParameter`). The default is the one agent on `swingui.port`.
-- **Taking turns:** a test reserves all the apps it needs at once, lowest free ports first, and waits for other tests in its JVM to give them back (`-Dswingui.poolWaitMs`, default 10 minutes).
+- **Taking turns:** a test reserves all the apps it needs at once, lowest free ports first, and waits for other tests in its JVM to give them back (`-Dswingui.poolWaitMs`, default 10 minutes). A test that needs more clients than `swingui.agents` lists fails at once with `pool exhausted`; one that waited the whole time fails with `pool busy`.
+- **Each client on its own:** every `Client` has its own `ui.runId()` for the data it creates, and a failure writes one evidence folder per client (`client-1/`, `client-2/`).
 - **Logins:** with a plugin, `@As("alias")` on a parameter logs that client in as another user.
-- **`UiParallel.run`** releases one final action per client at the same moment, each on its own thread. Which one wins is not under the test's control, so assert what must hold either way: exactly one order gets the stapler, and the stock never goes below zero.
+- **`UiParallel.run`** releases one final action per client at the same moment, each on its own thread, and waits up to 120 s for them (`UiParallel.run(timeout, …)` for another limit); an action still running then is named in the failure. Give it one action per client: the agent runs one call at a time, so two actions for the same client only queue. Which one wins is not under the test's control, so assert what must hold either way: exactly one order gets the stapler, and the stock never goes below zero.
 
 Order Desk keeps its data in memory, so two Order Desk apps share nothing and this example is a sketch; the pattern is for apps whose clients share a server.
 

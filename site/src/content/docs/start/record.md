@@ -46,6 +46,10 @@ Each answer carries `recorded`, the step as it will be exported:
 {"passed":true,"action":"type(text 'Customer' [tab:New order] 'Ada')","message":"","ms":18,"recorded":{"action":"type","target":{"scope":["tab:New order"],"role":"text","name":"Customer"},"text":"Ada"}}
 ```
 
+The recorded `scope` lists the tabs and titled sections around the target. One kind of tab strip is left out: a strip
+of open documents, recognised by tabs that carry a component of their own (`setTabComponentAt`, such as a close
+button). Its titles are data, an order number say, that the next run will not have.
+
 A step that fails is not recorded. A step that ran but was wrong is: edit the recording rather than patching it with more steps. `recording {"op":"delete","n":<step>}` removes it, `recording {"op":"redo","from":<step>}` cuts that step and the ones after it, replays the earlier ones from a reset and records on. Resetting and starting over is no longer needed.
 
 ## 5. Check with `expect`

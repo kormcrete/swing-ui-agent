@@ -33,7 +33,7 @@ Order Desk's tests need no plugin. Its plugin adds a reset, app facts for `descr
   default.pin=4711
   ```
 
-  The plugin turns an alias into a user and password with `UiUsers.lookup(alias)` in the app's JVM; `ui.secret(…)` reads a secret in the test's JVM. Both look for `.swing-ui-agent/ui-users.properties` in the working directory, then in each folder above it, so one file at the repository root serves every module. `-Dswingui.users=<path>` points elsewhere. A key with a dot is a secret, never an alias, and never appears in an error message.
+  The plugin turns an alias into a user and password with `UiUsers.lookup(alias)` in the app's JVM; `ui.secret(…)` reads a secret in the test's JVM. Both look for `.swing-ui-agent/ui-users.properties` in the working directory, then in each folder above it, so one file at the repository root serves every module. `-Dswingui.users=<path>` points elsewhere. A key with a dot is a secret, never an alias, and never appears in an error message. Only the first colon separates user and password, so a password may contain colons. The file is a Java properties file: write a backslash in a password as `\\`.
 - **Navigation.** `ui.navigate("orders")` opens your app's own screens by name or entry-point id, and `ui.closeActiveTab()` closes the open one.
 - **App facts for the agent.** `describe_ui` answers with the active tab, the navigation targets, toolbar actions, menu paths, the open view's tabs and its sections. One call instead of several snapshots.
 - **Your own hooks.** An interface of your own that tests call as `ui.hooks(OrderDeskHooks.class).openTabTitles()`, and agents call with `plugin_call`. Use hooks for what a test needs to know or prepare, never to skip the UI it is testing.

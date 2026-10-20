@@ -130,6 +130,9 @@ assertThat(ui.tab("Orders").table().cell("Status")).hasCell(row("Order", order),
 
 `selected` holds row positions in view order, so it changes when the table is sorted. Check a row by its values where you can.
 
+A cell's tooltip comes from the component its renderer paints: the innermost one that has a tooltip, else the first
+inside it that does.
+
 ## Scroll
 
 `scroll` moves the viewport directly, the way the scroll bar does: exact, and it fires the same change continuous paging listens for. Give exactly one of:

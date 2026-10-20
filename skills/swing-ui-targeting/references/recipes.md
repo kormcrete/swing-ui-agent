@@ -33,10 +33,17 @@ the form `export_test` writes (the recorder may add a window or scope to the cha
 | check enabled | `expect {"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}` | `assertThat(ui.button("Checkout…")).isEnabled();` |
 | check the selection | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"selected":[0]}` | `assertThat(ui.tab("Orders").table()).hasSelectedRows(0);` |
 | close the active tab (plugin) | `do_action {"action":{"action":"close"}}` | `ui.closeActiveTab();` |
+| hover, then move off | `hover {"target":{"role":"button","name":"New order"}}`, `"inside":false` to move off | `ui.button("New order").hover();` / `.unhover();` |
+| widen a column | `resize_column {"target":{"role":"table","column":"Customer"},"delta":40}` | `ui.table().column("Customer").resizeColumn(40);` |
+| resize a window | `resize_window {"window":"main","width":1200,"height":800}` | `ui.main().resizeTo(1200, 800);` |
+| close a window (its title bar's X) | `close_window {"window":"dialog"}` | `ui.dialog().close();` |
+| empty a field with its clear X | `click {"target":{"scope":["text:Search"],"id":"clear"}}` | `ui.field("Search").clearValue();` |
 
 Read-only, never recorded: `snapshot`, `read`, `screenshot`, `describe_ui`, `read_clipboard`, `read_file_chooser`.
-In Java the same reads are `Target.value()`, `.rows()`, `.columns()`, `.rowCount()`, `.states()`, `ui.clipboardText()`,
-`ui.fileChooser()`, `ui.describeModal()`.
+In Java the same reads are `Target.value()`, `.text()` (the name: a field's caption, not its content), `.rows()`,
+`.columns()`, `.rowCount()`, `.states()`, `.count()`, `.texts()`, `.values()`, `.items()`, `.expandedItems()`,
+`.selectedRows()`, `.presence()`, `.exists()`, `.bounds()`, `ui.clipboardText()`, `ui.fileChooser()`,
+`ui.describeModal()`. They read once; to wait for a value, assert it or use `UiAssertions.eventually`.
 
 Not exportable (the step runs, the result says `notRecorded`): a target with `item` or `point`, a `row` with more than
 two columns, `loginAs` after the first step. A leading `loginAs` exports as `@LoginAs("<alias>")` (plugin).

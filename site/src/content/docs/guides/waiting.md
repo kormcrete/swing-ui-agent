@@ -94,6 +94,10 @@ String order = eventually("the status bar naming the new order", Duration.ofMill
 assertThat(ui.tab(order)).isSelected();
 ```
 
+`eventually` reads every 100 ms until the condition accepts the value or the time is up, then returns the value.
+`NOT_FOUND` and `AMBIGUOUS` mean "not yet" and it reads again; any other failure ends it at once. So put the read
+inside the supplier, as above, not before the call: a value read once outside never changes.
+
 If your app has a busy indicator that every long job shows, register it in a plugin as a busy signal: then every step waits for it, and no test needs to know.
 
 ## What's next

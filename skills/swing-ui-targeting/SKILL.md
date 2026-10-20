@@ -46,7 +46,8 @@ way passes even when the button is broken, which makes the test worthless.
   `point` (`{x,y}` fractions, for custom-painted content). A `row` key the table lacks is looked up in its
   row-header table (frozen first columns beside it). Several columns with one header: `"Quantity@<identifier>"`.
 - `nth`: which match when not unique. It makes the step `fragile`; treat it as a last resort.
-- `{"ref":"e12"}` from the last snapshot works for exploring; it is only valid until the next snapshot.
+- `{"ref":"e12"}` from the last snapshot works for exploring; it is only valid until the next snapshot that finds
+  something (a `{"window":"dialog"}` snapshot with no dialog open keeps them).
 
 ## Four levels, one question each
 
@@ -119,7 +120,9 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
 - A step that raises a message or confirmation returns at once with `pending` (title, message, buttons).
   `navigate`, `close` and `loginAs` refuse to run until it is answered; `answer {"button":"escape"}` dismisses it.
 - `expect {"selected":[0,1]}` asserts exactly which rows are selected. A table target with a `row` and no
-  `column` plus `state:["selected"]` is that row's selection; a cell's `state` is its editability.
+  `column` plus `state:["selected"]` is that row's selection; a cell's `state` is its editability. A ticked check box,
+  radio or check menu item has state `checked`; a toggle button and a ticked boolean cell have both `checked` and
+  `selected`.
 - `scroll` moves the viewport directly (`to`, `pages`, or a `row` on the target, exactly one); read the result from
   the element's `scroll` block or `expect {"state":["atBottom"]}`. Use it, not `press "Ctrl+End"`, for scrolling.
 - On the macOS screen menu bar, `menu` invokes the item directly (recorded `via:"api"`).
