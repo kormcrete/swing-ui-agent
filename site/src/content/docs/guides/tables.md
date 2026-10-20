@@ -52,6 +52,9 @@ In Java, `ui.tab("New order · Ada Shop Ltd").table().cell("Qty")`.
 - **A row by position:** `"row":{"index":0}`, the first row on screen whatever its data. In Java, `.rowAt(0)`.
 - **A cell:** a row plus a `column`. In Java, `.row(...).cell("Status")`.
 - **A header:** a `column` without a row, as a target to click.
+- **Frozen columns.** A table that keeps its first columns in a row header beside the scrolling part is two tables
+  to Swing. A `row` key column the main table lacks is looked up in the row header, so `"row":{"Line":"3"}` works
+  there too.
 
 A row named by more than two columns runs, but `export_test` has no Java form for it.
 
@@ -133,7 +136,9 @@ assertThat(ui.tab("Orders").table().cell("Status")).hasCell(row("Order", order),
 
 - `"to":"bottom"` (or `top`, `left`, `right`); in Java `.scrollTo("bottom")`;
 - `"pages":2` (negative goes back); in Java `.scrollBy(2)`;
-- a `row` on the target, to bring that row into view; in Java `.row(...).scrollIntoView()`.
+- a `row` on the target, to bring that row into view; in Java `.row(...).scrollIntoView()`. This, and any step on
+  a row, scrolls every scroll pane around the table, so a row inside a scrolling form comes into view too. Steps on
+  a list item, a tree row or any other element do the same.
 
 ```sh
 $UI scroll '{"target":{"scope":["tab:New order"],"role":"table","column":"Stock"},"to":"bottom"}'

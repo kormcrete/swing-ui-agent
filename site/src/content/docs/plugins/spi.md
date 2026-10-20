@@ -117,8 +117,16 @@ driver.setMainWindow(OrderDesk::mainWindow);           // the default is the fir
 driver.registerBusySignal(new OrderDeskBusy());        // every step waits until it is quiet
 driver.registerSections(new OrderDeskSections());      // named areas: snapshot, targets, describe_ui
 driver.addErrorDialogClassifier(new OrderDeskCrash()); // its dialogs fail a step as APP_ERROR
+driver.registerParts(new SegmentedSwitchParts());      // what a custom component paints inside itself
 ```
 
+- **Sections.** A `SectionSource` names areas of a screen. A titled panel keeps its caption and stays
+  `role:"section"`; a plain panel without a caption is reached by its section `id` only
+  ([Targets](/swing-ui-agent/guides/targets/#sections)).
+- **Painted parts.** A `PartSource` lists what one component paints and a user still picks on its own, such as the
+  segments of a switch: a `Part` per piece, with a role, the word it shows, its state and its area. The driver asks it
+  for every `clickable` component, so answer fast and return `null` for a component you do not know. A part is then
+  a target by role and name, like any other element.
 - **Busy signals.** After acting, a step waits until every signal is quiet, and still quiet once the event queue has run again: an app that ends one job and queues the next has a quiet moment between the two.
 - **Error dialogs.** A step that leaves a modal dialog returns it as `pending`, for the next step to answer. A dialog an error classifier recognises fails the step as `APP_ERROR` instead. There is no rule by default: many apps use an error-type message for an input they refuse, which a test answers on purpose. Rules add up, so several plugins can each add theirs. If every error-type option pane in your app reports a failure, add the ready-made rule: `driver.addErrorDialogClassifier(ErrorDialogs.ERROR_OPTION_PANE)`.
 

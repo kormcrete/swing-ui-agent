@@ -19,10 +19,10 @@ $UI context_menu '{"target":{"scope":["tab:Orders"],"role":"table","row":{"Order
 
 ```json
 {"passed":true,"action":"contextMenu(table [tab:Orders] row={Order=ORD-1637} > [Cancel orders…])","message":"","ms":39,
- "pending":{"title":"Cancel order","message":"Cancel order ORD-1637? Stock is restored and invoice totals are taken off what the customer owes.","buttons":["Cancel order","Keep"],"fields":[]}}
+ "pending":{"title":"Cancel order","message":"Cancel order ORD-1637?\nStock is restored and invoice totals are taken off what the customer owes.","buttons":["Cancel order","Keep"],"fields":[]}}
 ```
 
-(Trimmed.) `pending` names the title, the message, the buttons and the fields. While the dialog shows, a step aimed at the window behind it is refused:
+(Trimmed.) `pending` names the title, the message, the buttons and the fields. The message is the whole text, one line per line: an option pane's message, the lines of an HTML message, or the labels it shows (here the question and the grey line under it). A dialog that is no option pane gives its first three labels. While the dialog shows, a step aimed at the window behind it is refused:
 
 ```json
 {"passed":false,"action":"click(button 'New order')","reason":"NOT_ACTIONABLE","message":"NOT_ACTIONABLE: blocked by dialog Cancel order"}

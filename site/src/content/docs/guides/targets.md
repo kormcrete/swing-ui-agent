@@ -42,6 +42,24 @@ A test written by `export_test` uses the same locators through the `Client` API,
 
 `field` is the `text` role. A tab or a section in a chain becomes a `scope` step, and a bare `byId(...)` in a chain becomes an `id:` scope step.
 
+### Sections
+
+A titled border is a section: `{"role":"section","name":"Payment"}`, or `role:"section"` with its `id`. A bare
+`{"id":...}` does not match a titled border. A section a [plugin](/swing-ui-agent/plugins/spi/#teach-the-driver-about-your-app)
+contributes on a plain panel without a caption is the other way round: it is reached by its bare `id` only, because
+`role:"section"` means a titled border. `describe_ui` lists a plugin's sections with their ids.
+
+### Reading in Java
+
+`Target` reads once, with no retry; to wait for a value, assert it.
+
+- `text()` is the element's name: a button's or plain label's own text, but a field's caption. For a field, and for
+  a value label named by its caption (`label("Total")` next to the caption Total), `text()` is the caption and
+  `value()` what it shows (`€31.32`). In assertions, `hasText(...)` checks what the element shows.
+- `bounds()` is where the element is, in its window's coordinates.
+- `tree(maxNodes)` returns the element's subtree as text, for a look while writing a test.
+- `fill("")` empties a field: it selects the text, deletes it and commits.
+
 ## What counts as a name
 
 The driver reads names from the Swing components themselves, never through the accessibility API. The first of these wins:

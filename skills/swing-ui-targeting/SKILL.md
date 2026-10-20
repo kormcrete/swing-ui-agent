@@ -36,9 +36,13 @@ way passes even when the button is broken, which makes the test worthless.
   menuitem clickable label section`.
 - `name`: component name, own text, caption label, titled border, tooltip or action name. `match:"contains"`
   loosens it. `id`: the component's `getName()`.
+- A section: a titled border is `{"role":"section","name":"<caption>"}` (or `role:"section"` with its `id`); a bare
+  `{"id":...}` does not match it. A section a plugin contributes on a plain panel without a caption is the other
+  way round: bare `{"id":"<section id>"}` only (`describe_ui` `sections` lists the ids).
 - Parts inside the element: `row` (`{"Order":"ORD-1640"}` or `{"index":0}`), `column` (a header; with `row`, that
   cell; alone, it also narrows WHICH table: only one with that header), `item` (list/combo item, or a tree path),
-  `point` (`{x,y}` fractions, for custom-painted content).
+  `point` (`{x,y}` fractions, for custom-painted content). A `row` key the table lacks is looked up in its
+  row-header table (frozen first columns beside it). Several columns with one header: `"Quantity@<identifier>"`.
 - `nth`: which match when not unique. It makes the step `fragile`; treat it as a last resort.
 - `{"ref":"e12"}` from the last snapshot works for exploring; it is only valid until the next snapshot.
 
@@ -81,6 +85,9 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
 
 ## When a word does not resolve
 
+**Look before you call it a gap.** A scoped `snapshot` around where the target should be (depth 3-4) shows what is
+really there; most "missing" targets sit under another role, name, tab or window.
+
 **Ambiguity: refuse and say what to add.** A label that names two inputs fails asking for `setLabelFor(field)` in
 the app's source. That is the fix to report. Do not silently pick `nth`: a step that hits the wrong widget passes
 for the wrong reason, which is worse than a failure.
@@ -93,7 +100,8 @@ and a shortcut around a control tests nothing.
 
 **Know which failure is whose.** `"passed":false` with `NOT_ACTIONABLE` (disabled, hidden, covered, blocked by a
 modal), `TIMEOUT`, `EXPECTATION` or `APP_ERROR` is the app's answer: report what was on screen. A tool error is the
-harness.
+harness. Every call timing out while the app looks alive means its event thread is stuck (often a modal dialog
+opened inside `invokeAndWait`): take `jstack <pid>`, read the `AWT-EventQueue-0` thread, and report it.
 
 ## Needs an app plugin
 
@@ -116,8 +124,16 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
 - `drag` posts a mouse gesture and never starts a native drag; deliver files or text with `drop`.
 - `screenshot` paints the app's own components: open popups, combo dropdowns and tooltips (their own windows) are
   not in the image. Use it for alignment and layout calls only; numbers and booleans are `expect`.
-- `hover`, `resizeColumn`, `resizeWindow`, `closeWindow` and `focusFileChooserName` are steps with no tool of
-  their own: run them through `do_action` or `batch` (`{"verb":"hover","target":...}`).
+- `hover`, `resize_column`, `resize_window` and `close_window` are tools; in a `batch` they are steps like any
+  other (`{"verb":"hover","target":...}`). `focusFileChooserName` has no tool: run it through `do_action` or `batch`.
+- A step scrolls its target into view through every scroll pane around it: a table row, a list item, a tree row
+  or a plain component inside a scrolling form.
+- `context_menu` on a table row, list item or tree row selects it first, unless it is already part of the
+  selection (a multi-selection stays), as a right-click does in most apps; the menu then acts on it.
+- `pending` and `describe_ui`'s `dialog` carry an option pane's whole message, one line per line; for another
+  kind of dialog, its first three labels.
+- `realInput` in a step result means real mouse or key input reached the app while the step ran (a person at the
+  screen), `activations` that the app became the active one: the outcome may be theirs. Say so in your report.
 
 ## Keep a glossary
 

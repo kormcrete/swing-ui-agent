@@ -25,6 +25,8 @@ Hand the driver:
 - **The project's part**, when the driver cannot read the project's instructions: the agent command and port, how
   tests run, how to start the app, which data it may change, the glossary file.
 - **What it must not touch** (other windows, real data, a dialog that sends something).
+- **How many passes** over the checklist at most (e.g. 2). A driver without a limit can loop for a long time on
+  an item it cannot get through.
 
 Expect back at most a few lines: verdict, counts (passed / failed / gaps), the results file, any blocker.
 

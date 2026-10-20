@@ -50,6 +50,9 @@ Exit codes: 0 ok, 1 tool error (message on stderr), 2 usage, 3 no agent reachabl
 agent: start it the project's way if it says how, else stop and say so). A step that ran and failed exits 0 with
 `"passed":false`: always read `passed`.
 
+An answering `session` means the agent is up, not that the app is ready. With a plugin, wait for its `state`
+`ready`; without one, `expect` something the app enables once it is ready (a toolbar button `!disabled`) first.
+
 `BUSY: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
 agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner":"recorder"}'`, pass
 `--lease <token>` before the tool name on every call, and `session '{"op":"release","token":"<token>"}'` at the end.
@@ -189,6 +192,8 @@ the app sees a palette in its window:
 - Prefer steps and checks that hold on every run: a row by a value the test created or one known to exist, counts
   with `gte`, values the test typed.
 - Drive the controls a user would: the real button, the real menu item. Assert only what the user asked for.
+- A check that something is absent or disabled also passes on the wrong screen. Pair it with a positive check in
+  the same step: the New order tab is shown, then Checkout… is disabled.
 
 ## Export as a Java test
 

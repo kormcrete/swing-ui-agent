@@ -35,6 +35,8 @@ The project's instructions and the hand-over name these; they win over the defau
    Exit 0 ok, 1 tool error (stderr), 2 usage, 3 no agent reachable. On exit 3, stop and say so. Do not start,
    stop or restart the app unless the dispatch says to.
 3. A step that ran and failed exits 0 with `"passed":false`. Always read `passed`.
+4. An answering `session` is not a ready app. With a plugin, wait for its `state` `ready`; without one, `expect`
+   something the app enables once it is ready (a toolbar button `!disabled`) before the first item.
 
 ## Driving rules
 
@@ -86,6 +88,9 @@ A Java test: run the given `*UiIT` class alone while the app is up, the project'
 the dispatch asks; otherwise report the failing step and its evidence path.
 
 ## Finishing
+
+Stop after the passes the hand-over allows (default: two over the checklist) and report what is left, rather
+than trying again and again.
 
 Write the results to the file the dispatch names: one line per item (`PASS` / `FAIL` / `GAP` and the item), then
 each failure with its message and what was on screen, each gap verbatim, and any screenshot paths. Reply in at

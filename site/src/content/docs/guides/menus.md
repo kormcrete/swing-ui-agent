@@ -98,6 +98,11 @@ $UI context_menu '{"target":{"scope":["tab:Orders"],"role":"table","row":{"Order
 $UI read_clipboard
 ```
 
+A context menu usually acts on the selection, so the row is selected first, as a right-click does in most apps, and
+the menu's row items apply to it. A row that is already part of the selection keeps the whole selection, for an item
+that acts on several rows. A list item and a tree row work the same way. The recorded step keeps the row, so the test
+replays on the same one.
+
 ```json
 {"text":"ORD-1636"}
 ```

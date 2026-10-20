@@ -96,7 +96,8 @@ To run one class: `mvn -B -Pui verify -Dit.test=RecordedUiIT` (all recorded test
 
 ## When a test fails
 
-A failed Java test writes its evidence under `target/ui-failures/<Class>/<method>/`:
+A failed Java test writes its evidence under `target/ui-failures/<Class>/<method>/`, in the test's own module
+whether Maven or the IDE runs it (an IDE may start the test in the project root):
 
 - `evidence.txt`: the failure, what the locator matched, the element tree at that moment and the stack; on a timeout, also the app's event-thread stack.
 - a PNG of the window at the failure.
