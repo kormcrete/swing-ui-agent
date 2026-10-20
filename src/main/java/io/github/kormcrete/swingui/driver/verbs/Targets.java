@@ -70,15 +70,15 @@ final class Targets {
         } else if (c instanceof JList && r.item() != null) {
             JList<?> list = (JList<?>) c;
             int index = ListWidget.index(list, single(r.item()));
-            list.ensureIndexIsVisible(index);
             area = list.getCellBounds(index, index);
+            if (area != null) Scrolls.reveal(list, area);
         } else if (c instanceof JTree && r.item() != null) {
             JTree tree = (JTree) c;
             int row = TreeWidget.row(tree, r.item());
-            tree.scrollRowToVisible(row);
             area = tree.getRowBounds(row);
-        } else if (c instanceof JComponent) {
-            ((JComponent) c).scrollRectToVisible(new Rectangle(0, 0, c.getWidth(), c.getHeight()));
+            if (area != null) Scrolls.reveal(tree, area);
+        } else {
+            Scrolls.reveal(c, new Rectangle(0, 0, c.getWidth(), c.getHeight()));
         }
         Map<String, Double> point = r.point();
         if (point != null) {
@@ -86,6 +86,31 @@ final class Targets {
                     (int) Math.round(point.get("y") * Math.max(0, c.getHeight() - 1)));
         }
         return centre(area != null ? area : visible(c));
+    }
+
+    /**
+     * Selects the table row, list item or tree row a right-click is aimed at, unless it is already part of the
+     * selection, as a right-click does in most apps: their context menus act on the selection, and Swing's own
+     * components do not select on a right-click. The same call a left click makes, so the app's selection listeners
+     * see it. Any other target is left alone. EDT.
+     */
+    static void selectForContextMenu(Resolved r) {
+        Component c = r.component;
+        if (c instanceof JTable && r.row() != null) {
+            JTable table = (JTable) c;
+            int row = TableWidget.row(table, r.row());
+            if (table.isRowSelected(row)) return;
+            int column = r.column() == null ? -1 : TableWidget.column(table, r.column());
+            table.changeSelection(row, Math.max(column, 0), false, false);
+        } else if (c instanceof JList && r.item() != null) {
+            JList<?> list = (JList<?>) c;
+            int index = ListWidget.index(list, single(r.item()));
+            if (!list.isSelectedIndex(index)) list.setSelectedIndex(index);
+        } else if (c instanceof JTree && r.item() != null) {
+            JTree tree = (JTree) c;
+            int row = TreeWidget.row(tree, r.item());
+            if (!tree.isRowSelected(row)) tree.setSelectionRow(row);
+        }
     }
 
     /** The {row, column} a cell target names; both are required. */

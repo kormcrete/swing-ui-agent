@@ -1813,7 +1813,7 @@
     },
     {
       "name": "context_menu",
-      "description": "Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. A table row, list item or tree row is selected first unless it is already part of the selection, as a right-click does in most apps. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {

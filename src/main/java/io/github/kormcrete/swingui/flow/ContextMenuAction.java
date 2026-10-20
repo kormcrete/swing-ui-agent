@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /** The generic contextMenu verb: right-click {@code target}, then pick {@code path}. */
-@Doc("Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens.")
+@Doc("Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. A table row, list item or tree row is selected first unless it is already part of the selection, as a right-click does in most apps.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ContextMenuAction extends VerbAction {
     @Required @Doc("Labels from the context menu down to the item.")

@@ -19,6 +19,8 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellEditor;
 import java.awt.BorderLayout;
@@ -127,6 +129,19 @@ public final class FixtureApp {
                 JOptionPane.showMessageDialog(field, "Digits only", "Ref", JOptionPane.ERROR_MESSAGE);
             }));
             lines.addTableModelListener(e -> status.setText("qty " + lines.getValueAt(0, 1) + " code " + lines.getValueAt(0, 2)));
+            // its one item acts on the selected row, and is enabled only while there is one
+            JPopupMenu lineMenu = new JPopupMenu();
+            JMenuItem copyProduct = new JMenuItem("Copy product");
+            copyProduct.addActionListener(e -> status.setText("copied " + lines.getValueAt(linesTable.getSelectedRow(), 0)));
+            lineMenu.add(copyProduct);
+            lineMenu.addPopupMenuListener(new PopupMenuListener() {
+                @Override public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                    copyProduct.setEnabled(linesTable.getSelectedRow() >= 0);
+                }
+                @Override public void popupMenuWillBecomeInvisible(PopupMenuEvent e) { }
+                @Override public void popupMenuCanceled(PopupMenuEvent e) { }
+            });
+            linesTable.setComponentPopupMenu(lineMenu);
             JScrollPane linesPane = new JScrollPane(linesTable);
             linesPane.setPreferredSize(new Dimension(260, 60));
 

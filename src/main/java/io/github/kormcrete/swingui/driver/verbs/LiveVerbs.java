@@ -74,6 +74,7 @@ import java.awt.Dialog;
 import java.awt.EventQueue;
 import java.awt.KeyboardFocusManager;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.datatransfer.Transferable;
@@ -397,6 +398,7 @@ public final class LiveVerbs implements Verbs {
         return perform(targets, r -> Kind.POINTER, timeout, driver.settings().jobActionMillis, t -> {
             Aimed a = t.get("target");
             final List<JPopupMenu> before = Edt.call(() -> driver.windows().popups());
+            Edt.run(() -> Targets.selectForContextMenu(a.resolved));
             driver.poster().click(a.component(), a.point, Poster.Button.RIGHT, 1, 0);
             if (waitFor(wait, () -> newest(before)) == null) {
                 throw notActionable("no context menu opened on " + a.resolved.describe());
@@ -740,8 +742,9 @@ public final class LiveVerbs implements Verbs {
             final int index = retryUntil(wait, () -> ListWidget.index(list, item));
             wanted.add(index);
             Point p = Edt.call(() -> {
-                list.ensureIndexIsVisible(index);
-                return Targets.centre(list.getCellBounds(index, index));
+                Rectangle cell = list.getCellBounds(index, index);
+                Scrolls.reveal(list, cell);
+                return Targets.centre(cell);
             });
             clickAt(list, p, k == 0 ? 0 : mask);
         }

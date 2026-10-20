@@ -159,6 +159,11 @@ class FixtureAppDriveIT {
         step("expect", "{'target':{'name':'status'},'text':'attached ORD-1640.pdf'}");
         step("context_menu", "{'target':{'name':'attachments'},'path':['Clear attachments']}");
         step("expect", "{'target':{'name':'status'},'text':'attachments cleared'}");
+        // the row's item is enabled only while a row is selected: the right-click selects the row it is aimed at
+        step("expect", "{'target':{'name':'lines'},'selected':[]}");
+        step("context_menu", "{'target':{'name':'lines','row':{'Product':'Paper'}},'path':['Copy product']}");
+        step("expect", "{'target':{'name':'status'},'text':'copied Paper'}");
+        step("expect", "{'target':{'name':'lines'},'selected':[0]}");
     }
 
     @Test
