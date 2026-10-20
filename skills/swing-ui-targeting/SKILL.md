@@ -6,8 +6,16 @@ description: Turns a phrase about a Swing UI ("the Customer field", "Add to cart
 # Targeting the live UI from words
 
 The user names what they see. This skill turns that into a locator the driver can reach, and says what to do when
-it cannot. Examples use the CLI (`UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"`); the same tools exist
-over MCP at `http://127.0.0.1:8765/mcp`.
+it cannot. Examples use the CLI as `$UI <tool>`; the same tools exist over MCP at `http://127.0.0.1:<port>/mcp`.
+
+## Your project's part
+
+The project's instructions (its `CLAUDE.md`, `AGENTS.md` or the like) name these; they win over the defaults here.
+
+- **Agent command**: `$UI`, with the agent jar's path and the app's port. Default
+  `java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar` on port 8765 (`--port N` before the tool for another one).
+- **Glossary**: the file that holds the project's verified targets (below). Default: none; ask the user where
+  before you create one.
 
 ## The rule
 
@@ -114,5 +122,6 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
 ## Keep a glossary
 
 When a project is driven more than once, keep its verified targets (screens and their menu paths, table columns,
-button ids, dialog titles) in a file in that project, read off the running app, dated. Correct an entry in place
+button ids, dialog titles) in the project's glossary file, read off the running app, dated. Read it before you
+explore. Correct an entry in place
 when it turns out wrong; a glossary nobody corrects is worse than none.

@@ -9,12 +9,26 @@ model: sonnet
 You drive a Swing app that runs with swing-ui-agent, the way a user would, and report back. The dispatch tells you
 what to walk, the known targets, whether to record, where to write results and what not to touch.
 
+## Your project's part
+
+The project's instructions and the hand-over name these; they win over the defaults here.
+
+- **Agent command**: how to call the CLI, with the agent jar's path and the app's port. Default
+  `java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar` on port 8765.
+- **Running tests**: how to run one Java test and the recorded tests. Default `mvn -Dtest=<Class> verify`
+  (failsafe: `-Dit.test=<Class>`).
+- **Starting the app**: how to start or restart it, and where its log is. Use it only when the hand-over says to.
+- **Data**: what the driven app may change. Default: only what the hand-over's items need; never delete, send or
+  change data you did not create.
+- **Glossary**: the project's file of verified targets. Read it before you explore; do not write to it unless
+  the hand-over says so.
+
 ## First
 
 1. Load the swing-ui-targeting skill: it turns the dispatch's words into locators and lists what needs a plugin.
-2. Every tool is one shell call; the same tools exist over MCP at `http://127.0.0.1:8765/mcp`:
+2. Every tool is one shell call; the same tools exist over MCP at `http://127.0.0.1:<port>/mcp`:
    ```sh
-   UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"   # add --port N before the tool if not 8765
+   UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"   # or the project's agent command; --port N before the tool
    $UI session          # up? plugins ready?
    $UI tools            # list; `$UI tools batch` for one schema
    ```
@@ -65,7 +79,7 @@ A recorded test file: `$UI run_recorded_test '{"name":"place-order"}'`. It start
 `passed`, `ran`/`total` steps and every step and check by its number (`7`, `7.2`); the failing one carries what its
 locators match now and a picture under `evidence`. The CLI exits 4 when the test fails.
 
-A Java test: run the given `*UiIT` class alone while the app is up, with the project's test command (e.g.
+A Java test: run the given `*UiIT` class alone while the app is up, the project's way (default
 `mvn -Dtest=PlaceOrderUiIT verify`; failsafe uses `-Dit.test=`). On a failure read
 `target/ui-failures/<Class>/<method>/evidence.txt` and the PNG beside it; with the run report registered,
 `target/ui-runs/latest.txt` lists the run (`STARTED`, a `PASS`/`FAIL` line per test, `DONE`). Fix the Java only if

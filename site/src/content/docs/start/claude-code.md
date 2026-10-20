@@ -39,7 +39,8 @@ Then tell it once, in the project's `CLAUDE.md`, how to reach the app:
 - Save UI tests as recorded tests in `uitest/` (export_recorded_test) and replay them with run_recorded_test; `mvn -B -Pui verify` runs them all. Java tests (package io.github.kormcrete.orderdesk) only when I ask for one.
 ```
 
-[Skills](/swing-ui-agent/agents/skills/) says what each skill covers, and how to set the plugin up for a whole team.
+[Skills](/swing-ui-agent/agents/skills/) says what each skill covers, how to set the plugin up for a whole team, and
+[what else your project can tell it](/swing-ui-agent/agents/skills/#your-projects-part).
 
 ## 2. Let it record a test from your words
 

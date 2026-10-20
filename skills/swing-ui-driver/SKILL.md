@@ -21,7 +21,9 @@ Hand the driver:
   tab"; "Checkout… stays disabled while a cart line asks for more than is in stock").
 - **The known targets**, if any (locators, menu paths, ids), so it does not rediscover them.
 - **Whether to record and export**, and the class name. Default: no.
-- **Where to write results**, and the port if not 8765.
+- **Where to write results.**
+- **The project's part**, when the driver cannot read the project's instructions: the agent command and port, how
+  tests run, how to start the app, which data it may change, the glossary file.
 - **What it must not touch** (other windows, real data, a dialog that sends something).
 
 Expect back at most a few lines: verdict, counts (passed / failed / gaps), the results file, any blocker.

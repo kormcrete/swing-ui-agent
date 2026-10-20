@@ -88,10 +88,8 @@ plugin when someone opens the project and trusts the folder:
 `swing-ui-agent:swing-ui-driver`. Claude Code picks them by what you ask; you can also call a skill by name, for
 example `/swing-ui-agent:swing-ui-record-test`.
 
-**Tell it about your app.** The skills bring the workflow; your project's instructions (`CLAUDE.md`) bring your app's
-facts: where the agent jar is and which port the app listens on (the skills show
-`swing-ui-agent-0.1.0-SNAPSHOT-agent.jar` on 8765), how your tests run, and which kind of test you want by default.
-[Record and run a UI test with Claude Code](/swing-ui-agent/start/claude-code/) shows such a section.
+The skills bring the workflow; your project's instructions bring your app's facts: see
+[Your project's part](#your-projects-part).
 
 ## Update
 
@@ -126,8 +124,35 @@ The files are in the swing-ui-agent repository:
 3. If your agent reads no skill folders, put the text of `swing-ui-record-test` and `swing-ui-targeting` into its
    instruction file.
 
-Copied files do not update: copy them again after a release. As in Claude Code, say once in your project's
-instructions where the agent jar is and which port the app listens on.
+Copied files do not update: copy them again after a release.
+
+## Your project's part
+
+The skills know swing-ui-agent; they do not know your app. Each skill names the few facts it takes from your project's
+instructions (`CLAUDE.md` for Claude Code, `AGENTS.md` or the like elsewhere), and uses a default for each one you leave
+out. Write them there, and only there: a project note that repeats or contradicts what a skill says goes stale when the
+skill improves.
+
+| Fact | What to write | Default without it |
+|---|---|---|
+| Agent command | how to call the CLI: the agent jar's path and the app's port; with several apps, each one's port | `java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar`, port 8765 |
+| Test kind | which kind to write when nobody says: recorded or Java, maybe by who asks | a recorded test |
+| Running tests | how to run one Java test and the recorded tests: a run configuration, a build command, a script | `mvn -Dtest=<Class> verify` (failsafe: `-Dit.test=`) |
+| Starting the app | how to start or restart it, and where its log is | the agent does not start it; it asks |
+| Data | which app, database or environment it may change, and which data a test may rely on | a test creates what it checks; the agent asks before deleting, sending or changing other data |
+| Glossary | the file that keeps verified targets: screens, menu paths, columns, ids | none; the agent asks where before it creates one |
+
+The plugin's vocabulary of named steps needs no entry: the agent asks the agent jar for it (`vocabulary list`).
+
+For Order Desk the section reads:
+
+```markdown
+## UI tests
+- Order Desk runs with swing-ui-agent on port 8770 (run configuration "Order Desk", with the palette). Drive it with
+  `java -jar target/swing-ui-agent-agent.jar --port 8770 <tool> '<json>'`.
+- Save UI tests as recorded tests in `uitest/` (export_recorded_test); `mvn -B -Pui verify` runs them all. Java tests
+  (package io.github.kormcrete.orderdesk) only when I ask for one.
+- Start it with the "Order Desk" run configuration. It keeps its data in memory, so any change is fine.
 
 ## Use them
 

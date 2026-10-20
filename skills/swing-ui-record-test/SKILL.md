@@ -10,10 +10,25 @@ You drive the real app, swing-ui-agent records each step, and you save the steps
 what the test must prove and which checks matter; you choose the steps. Ask when that is unclear; never invent
 assertions. A human reviews and runs the test.
 
+## Your project's part
+
+The project's instructions (its `CLAUDE.md`, `AGENTS.md` or the like) name these; they win over the defaults here.
+
+- **Agent command**: how to call the CLI, with the agent jar's path and the app's port. Default
+  `java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar` on port 8765 (`--port N` before the tool for another one). With
+  several apps, the project names each one's port.
+- **Test kind**: which kind to write when the user does not say. Default: a recorded test (below).
+- **Running tests**: how to run one Java test and the recorded tests (a run configuration, a build command, a
+  script). Default `mvn -Dtest=<Class> verify` (failsafe: `-Dit.test=<Class>`).
+- **Starting the app**: how to start or restart it, and where its log is. Default: do not; ask the user.
+- **Data**: which app, database or environment the driven app may change, and which data a test may rely on.
+  Default: the test creates what it checks; ask before a step that deletes, sends or changes data it did not create.
+
 ## Which kind?
 
-- **Recorded test (the default)** when the person shows or describes behaviour that is visible on screen: exact
-  values, the way a tester or user would check them. It is for people showing the app, mostly not technical.
+- **Recorded test** (the default, unless the project's test kind says otherwise) when the person shows or
+  describes behaviour that is visible on screen: exact values, the way a tester or user would check them. It is for
+  people showing the app, mostly not technical.
 - **Java `@UiTest`** when they ask for something dynamic (a computed or app-made value), or a technical check such
   as a database. It is for engineers working with you.
 - The two do not mix; a recorded test is not a base for a Java test. Data is the user's job: the test creates the
@@ -23,16 +38,17 @@ assertions. A human reviews and runs the test.
 ## Setup
 
 The app runs with `-javaagent:swing-ui-agent-<version>-agent.jar`. Every tool is one shell call; the same tools are
-served over MCP at `http://127.0.0.1:8765/mcp`:
+served over MCP at `http://127.0.0.1:<port>/mcp`:
 
 ```sh
-UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"
+UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"   # or the project's agent command
 $UI session                 # agent up? which plugins, in which state
 $UI tools                   # every tool; `$UI tools expect` prints one tool's schema
 ```
 
 Exit codes: 0 ok, 1 tool error (message on stderr), 2 usage, 3 no agent reachable (the app is not running with the
-agent: stop and say so). A step that ran and failed exits 0 with `"passed":false`: always read `passed`.
+agent: start it the project's way if it says how, else stop and say so). A step that ran and failed exits 0 with
+`"passed":false`: always read `passed`.
 
 `BUSY: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
 agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner":"recorder"}'`, pass
@@ -196,7 +212,7 @@ rather than hand-editing recorded steps.
 1. Put the app on some other screen (another menu item, another tab).
 2. A recorded test: `$UI run_recorded_test '{"name":"place-order"}'` (the CLI exits 4 when it fails; the failing
    step carries what its locators match now and a picture under `evidence`). A Java test: run only the new class
-   while the app is up, `mvn -Dtest=PlaceOrderUiIT verify` or the project's equivalent (failsafe picks up `*IT`
+   while the app is up, the project's way; without one `mvn -Dtest=PlaceOrderUiIT verify` (failsafe picks up `*IT`
    classes and filters with `-Dit.test=PlaceOrderUiIT`).
 3. It must pass from there. On a Java failure read `target/ui-failures/<Class>/<method>/evidence.txt` and the PNG
    beside it; with the run report registered, `target/ui-runs/latest.txt` lists the run (`STARTED`, a
