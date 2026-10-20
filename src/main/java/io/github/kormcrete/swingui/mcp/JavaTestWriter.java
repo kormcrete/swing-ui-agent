@@ -787,7 +787,10 @@ public final class JavaTestWriter {
             if (step.startsWith("section:")) { sb.append(".section(").append(quote(step.substring(8))).append(")"); return; }
             // A bare byId(x) chained into is Target's id scope, so this reads back as the same step.
             if (step.startsWith("id:")) { sb.append(".byId(").append(quote(step.substring(3))).append(")"); return; }
-            throw new IllegalStateException("scope step must be tab:<title>, section:<caption> or id:<name>, was '" + step + "'");
+            // A field chained into is Target's text scope (what it holds, such as its clear X).
+            if (step.startsWith("text:")) { sb.append(".field(").append(quote(step.substring(5))).append(")"); return; }
+            throw new IllegalStateException("scope step must be tab:<title>, section:<caption>, id:<name> or text:<name>, was '"
+                    + step + "'");
         }
 
         /** {@code id != null} wins (a role alongside an id is dropped - the id is unique). */

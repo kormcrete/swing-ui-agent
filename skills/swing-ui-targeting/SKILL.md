@@ -29,7 +29,9 @@ way passes even when the button is broken, which makes the test worthless.
 
 - `window`: `main`, `popup`, `dialog`, `dialog:<title>`, `window:<title>`; a title ending in `*` matches a prefix.
 - `scope`: ordered steps the element sits in: `tab:<title>`, `section:<caption>` (a titled border),
-  `id:<name>` (strictly inside the component whose `getName()` is `<name>`). A `tab:` or `section:` step ending
+  `id:<name>` (strictly inside the component whose `getName()` is `<name>`), `text:<name>` (strictly inside that
+  text field). A field's clear X is `{"scope":[...,"text:Search"],"id":"clear"}`: FlatLaf's own X and an app's X
+  named `clear` both answer to it. A `tab:` or `section:` step ending
   in `*` matches a title prefix (`tab:New order*` for "New order · Ada Shop Ltd"); this works as a scope step only,
   not as the `name` of the target itself.
 - `role`: `window dialog button toggle checkbox radio text password combo list table tree tabs tab menubar menu

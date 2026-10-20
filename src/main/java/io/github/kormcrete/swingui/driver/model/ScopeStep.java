@@ -1,16 +1,17 @@
 package io.github.kormcrete.swingui.driver.model;
 
 /**
- * One step of a locator's {@code scope}: {@code tab:<title>}, {@code section:<caption>} or
- * {@code id:<name>}. An id step means "strictly inside a component whose {@code getName()} is
- * {@code <name>}" - never that component itself, and never a section id a source contributed. Only a
- * caller writes id steps ({@code Target.byId(x)} used as a container, or an MCP target's scope);
+ * One step of a locator's {@code scope}: {@code tab:<title>}, {@code section:<caption>}, {@code id:<name>} or
+ * {@code text:<name>}. An id step means "strictly inside a component whose {@code getName()} is
+ * {@code <name>}" - never that component itself, and never a section id a source contributed. A text step means
+ * "strictly inside the text field of that name", such as the clear X a field holds. Only a caller writes id and text
+ * steps ({@code Target.byId(x)} or {@code Target.field(x)} used as a container, or an MCP target's scope);
  * {@code Trail} and the recorder never derive one. A tab or section title that ends in {@code *} matches every title
  * that starts with the rest ({@code tab:New order*}), for a title that ends with data such as the customer.
  */
 public final class ScopeStep {
 
-    public enum Kind { TAB, SECTION, ID }
+    public enum Kind { TAB, SECTION, ID, TEXT }
 
     public final Kind kind;
     public final String title;
@@ -24,7 +25,8 @@ public final class ScopeStep {
         if (step != null && step.startsWith("tab:")) return new ScopeStep(Kind.TAB, step.substring(4));
         if (step != null && step.startsWith("section:")) return new ScopeStep(Kind.SECTION, step.substring(8));
         if (step != null && step.startsWith("id:")) return new ScopeStep(Kind.ID, step.substring(3));
-        throw Locator.bad("scope step must be tab:<title>, section:<caption> or id:<name>, was '" + step + "'");
+        if (step != null && step.startsWith("text:")) return new ScopeStep(Kind.TEXT, step.substring(5));
+        throw Locator.bad("scope step must be tab:<title>, section:<caption>, id:<name> or text:<name>, was '" + step + "'");
     }
 
     /** {@code title} must be resolved already: an untitled tab contributes no scope step at all. */
@@ -39,5 +41,13 @@ public final class ScopeStep {
 
     public static String id(String name) {
         return "id:" + name;
+    }
+
+    public static String text(String name) {
+        return "text:" + name;
+    }
+
+    static boolean isText(String step) {
+        return step.startsWith("text:");
     }
 }

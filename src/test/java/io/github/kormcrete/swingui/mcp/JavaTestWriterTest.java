@@ -246,6 +246,13 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void aTextScopeStepIsWrittenAsTheFieldItWasChainedFrom() {
+        Locator l = Locator.ofId("clear");
+        l.scope = Arrays.asList("tab:Orders", "text:Search");
+        assertThat(write(click(l))).contains("        ui.tab(\"Orders\").field(\"Search\").byId(\"clear\").click();");
+    }
+
+    @Test
     void literalsAreEscapedAndUnicodeKept() {
         TypeVerb t = new TypeVerb();
         t.target = Locator.of("text", "Note \"draft\"");

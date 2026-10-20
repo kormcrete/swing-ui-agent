@@ -134,11 +134,16 @@ public final class Resolver {
             }
             boolean descends = c instanceof JTabbedPane || Roles.descends(role);
             if (descends && caption != null) trail.add(ScopeStep.section(caption));
+            // What a text field holds (its clear X) lies inside it: a text:<name> scope step reaches it. The step
+            // is only walked through; found() leaves it out of what a match records.
+            boolean field = "text".equals(role) && name != null;
+            if (field) trail.add(ScopeStep.text(name));
             if (c instanceof JTabbedPane) {
                 tabs((JTabbedPane) c, root, labelRoot, trail, l, out, lookup);
             } else if (Roles.descends(role)) {
                 children(c, root, labelRoot, trail, l, out, lookup);
             }
+            if (field) trail.remove(trail.size() - 1);
             if (descends && caption != null) trail.remove(trail.size() - 1);
             return;
         }
@@ -203,7 +208,7 @@ public final class Resolver {
         if (l.role == null ? "section".equals(role) : !l.role.equals(role)) return false;
         if (l.id != null) {
             if ("tab".equals(role)) return false;
-            boolean matchesName = l.id.equals(c.getName());
+            boolean matchesName = l.id.equals(c.getName()) || isClearX(l.id, c);
             boolean matchesSection = sectionId != null && l.id.equals(sectionId);
             if (!matchesName && !matchesSection) return false;
         }
@@ -343,8 +348,19 @@ public final class Resolver {
 
     private Resolved found(Component c, Integer tab, String role, String name, WindowRoot root,
                            List<String> trail, Locator l) {
-        return new Resolved(c, tab, role, name, WindowRoots.token(root, windows.main()),
-                new ArrayList<String>(trail), l);
+        List<String> recorded = new ArrayList<String>();
+        for (String step : trail) {
+            if (!ScopeStep.isText(step)) recorded.add(step);
+        }
+        return new Resolved(c, tab, role, name, WindowRoots.token(root, windows.main()), recorded, l);
+    }
+
+    /** The id of a text field's clear X: an app's own X named so, and FlatLaf's built-in one. */
+    static final String CLEAR_ID = "clear";
+    private static final String FLATLAF_CLEAR_BUTTON = "TextField.clearButton";
+
+    private static boolean isClearX(String id, Component c) {
+        return CLEAR_ID.equals(id) && FLATLAF_CLEAR_BUTTON.equals(c.getName());
     }
 
     /**

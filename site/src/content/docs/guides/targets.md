@@ -25,7 +25,7 @@ On the command line and over MCP a target is a JSON object, the locator. Give at
 - **`name`:** the element's name, as described below. `"match":"contains"` matches a part of it.
 - **`id`:** the component's `getName()`, when the app sets one.
 - **`window`:** `main`, `dialog`, `popup`, `dialog:<title>` or `window:<title>`. A title ending in `*` matches a prefix.
-- **`scope`:** the containers the element sits in, outermost first: `tab:<title>`, `section:<caption>`, or `id:<name>` (strictly inside the component with that `getName()`).
+- **`scope`:** the containers the element sits in, outermost first: `tab:<title>`, `section:<caption>`, `id:<name>` (strictly inside the component with that `getName()`), or `text:<name>` (strictly inside the text field of that name, such as its clear X).
 - **Parts of an element:** `row`, `column`, `item` and `point`, covered in [Tables](/swing-ui-agent/guides/tables/) and [Trees](/swing-ui-agent/guides/trees/). In a recorded test, a row is kept by its value or by its position: see [Sentences and groups](/swing-ui-agent/guides/sentences/#how-a-table-row-is-kept).
 - **`nth`:** which match to take when several match. A last resort: see [Prefer a stable target](#prefer-a-stable-target).
 
@@ -40,7 +40,20 @@ A test written by `export_test` uses the same locators through the `Client` API,
 | `{"role":"label","name":"placed","match":"contains"}` | `ui.label("placed").contains()` |
 | `{"id":"customerField"}` | `ui.byId("customerField")` |
 
-`field` is the `text` role. A tab or a section in a chain becomes a `scope` step, and a bare `byId(...)` in a chain becomes an `id:` scope step.
+`field` is the `text` role. A tab, a section or a field in a chain becomes a `scope` step, and a bare `byId(...)` in a chain becomes an `id:` scope step.
+
+### A field's clear X
+
+A clear X inside a text field has the id `clear`: FlatLaf's built-in clear button answers to it, and so does an X of
+the app's own that it names `clear`. Name your own X so when the field holds other buttons too, a calendar icon say.
+
+```sh
+$UI click '{"target":{"scope":["tab:Orders","text:Search"],"id":"clear"}}'
+```
+
+In Java, `ui.tab("Orders").field("Search").clearValue()` clicks it, and `clearButton()` is the X itself, absent while
+it does not show. An X with neither name is not found, so before asserting that the X does not show, check once
+that it does.
 
 ### Sections
 
@@ -140,7 +153,7 @@ All three are the app's answer, so the call itself succeeds (exit code 0) and `p
 
 - **A message right under its field.** A label placed directly below a field and aligned with it can be taken for the field's caption and left out of the tree. Order Desk's "Postal code is required" is not found this way.
 - **The close button on a closable tab.** It has no node of its own. Close a tab through the app's menu or shortcut (in Order Desk, `File ▸ Close tab` or `Mod+W`).
-- **Names a look and feel sets.** A component the look and feel named shows that name: FlatLaf's search-field clear button is `TextField.clearButton`, and option-pane buttons are `OptionPane.button`, with their text in `value`. Answer option panes with `answer`, which uses the button text (see [Dialogs and file choosers](/swing-ui-agent/guides/dialogs/)).
+- **Names a look and feel sets.** A component the look and feel named shows that name: FlatLaf's search-field clear button is `TextField.clearButton` (reach it as `clear`, [above](#a-fields-clear-x)), and option-pane buttons are `OptionPane.button`, with their text in `value`. Answer option panes with `answer`, which uses the button text (see [Dialogs and file choosers](/swing-ui-agent/guides/dialogs/)).
 
 ## What's next
 

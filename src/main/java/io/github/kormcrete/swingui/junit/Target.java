@@ -13,8 +13,9 @@ import java.util.Map;
 
 /**
  * An immutable description of a UI element: every method returns a new Target. Chaining into a tab,
- * a section or a bare {@link #byId id} makes it a scope ("inside"); any other leaf can only be narrowed
- * by row, cell, column, item (a tree row), nth or contains.
+ * a section, a text field (what it holds, such as its {@link #clearButton clear X}) or a bare {@link #byId id}
+ * makes it a scope ("inside"); any other leaf can only be narrowed by row, cell, column, item (a tree row), nth or
+ * contains.
  */
 public final class Target {
 
@@ -61,7 +62,10 @@ public final class Target {
     public Target menuitem(String name) { return leaf("menuitem", name); }
     public Target role(String role, String name) { return leaf(role, name); }
 
-    /** The component name of a clearable text field's clear X. */
+    /**
+     * The id of a text field's clear X: an X the app names {@code clear}, and FlatLaf's built-in one, which answers to
+     * it too.
+     */
     private static final String CLEAR_BUTTON = "clear";
 
     /**
@@ -98,9 +102,10 @@ public final class Target {
             l.match = null;
             return l;
         }
-        if (l.row != null || l.column != null || l.nth != null || l.id != null
-                || !("tab".equals(l.role) || "section".equals(l.role))) {
-            throw new IllegalStateException(describeLeaf() + " cannot contain other elements; only a tab, a section or a bare id can");
+        if (l.row != null || l.column != null || l.nth != null || l.id != null || l.name == null
+                || !("tab".equals(l.role) || "section".equals(l.role) || "text".equals(l.role))) {
+            throw new IllegalStateException(describeLeaf()
+                    + " cannot contain other elements; only a tab, a section, a text field or a bare id can");
         }
         List<String> scope = l.scope == null ? new ArrayList<String>() : new ArrayList<String>(l.scope);
         scope.add(l.role + ":" + l.name);
@@ -173,8 +178,10 @@ public final class Target {
     }
 
     /**
-     * The clear X inside this text field: the component named {@code clear} strictly inside it. Absent while the X
-     * does not show — assert {@code isAbsent()} for "no X".
+     * The clear X inside this text field, found by its caption ({@code field("Search")}) or its id: FlatLaf's
+     * built-in clear button, or an X of the app's own that it names {@code clear} (name it so when the field holds
+     * other buttons too). Absent while the X does not show - assert {@code isAbsent()} for "no X". An X with neither
+     * name is not found, so check that the X shows before asserting it does not.
      */
     public Target clearButton() { return byId(CLEAR_BUTTON); }
 

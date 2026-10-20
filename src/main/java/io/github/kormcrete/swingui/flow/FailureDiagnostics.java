@@ -103,8 +103,8 @@ public final class FailureDiagnostics {
     }
 
     /**
-     * The locator of {@code l}'s innermost scope step - a tab, a section, or the component an id step
-     * names (an id locator, no role) - inside the steps before it.
+     * The locator of {@code l}'s innermost scope step - a tab, a section, a text field, or the component an id
+     * step names (an id locator, no role) - inside the steps before it.
      */
     static Locator scopeOf(Locator l) {
         ScopeStep last = ScopeStep.parse(l.scope.get(l.scope.size() - 1));
@@ -114,7 +114,7 @@ public final class FailureDiagnostics {
         if (last.kind == ScopeStep.Kind.ID) {
             s.id = last.title;
         } else {
-            s.role = last.kind == ScopeStep.Kind.TAB ? "tab" : "section";
+            s.role = last.kind == ScopeStep.Kind.TAB ? "tab" : last.kind == ScopeStep.Kind.TEXT ? "text" : "section";
             s.name = last.title;
         }
         return s;

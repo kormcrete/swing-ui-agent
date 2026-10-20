@@ -162,6 +162,22 @@ class TargetTest {
     }
 
     @Test
+    void aFieldFoundByItsCaptionHoldsItsClearX() {
+        ui.tab("Orders").field("Search").clearValue();
+        Locator expected = Locator.ofId("clear");
+        expected.scope = Arrays.asList("tab:Orders", "text:Search");
+        assertThat(verbs.calls).containsExactly("click " + expected + " null null null null");
+    }
+
+    @Test
+    void aFieldFoundByIdHoldsItsClearXAsBefore() {
+        ui.byId("rule.parameter").clearValue();
+        Locator expected = Locator.ofId("clear");
+        expected.scope = Arrays.asList("id:rule.parameter");
+        assertThat(verbs.calls).containsExactly("click " + expected + " null null null null");
+    }
+
+    @Test
     void anIdScopeFollowsTheScopesBeforeItAndKeepsTheWindow() {
         ui.main().tab("Summary").byId("summary.column.ORD-1610").button("Open").click();
         Locator expected = loc("button", "Open");

@@ -20,7 +20,8 @@ final class LocatorSchema {
         string(p, "window", "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix.");
         array(p, "scope", "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, "
                 + "even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means "
-                + "strictly inside the component whose getName() is <name> (not a contributed section id).");
+                + "strictly inside the component whose getName() is <name> (not a contributed section id); a text:<name> step strictly "
+                + "inside the text field of that name, such as its clear X (id clear: the app's own X named so, or FlatLaf's).");
         ArrayNode roles = string(p, "role", "The element's role.").putArray("enum");
         for (String r : Roles.ALL) roles.add(r);
         string(p, "name", "Its name: component name, own text, label, titled border, tooltip, or action name.");
