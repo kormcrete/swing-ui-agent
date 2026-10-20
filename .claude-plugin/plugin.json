@@ -1,0 +1,18 @@
+{
+  "name": "swing-ui-agent",
+  "description": "Skills and a driver sub-agent that let a coding agent drive a live Swing app through swing-ui-agent and record its UI tests.",
+  "author": {
+    "name": "kormcrete",
+    "url": "https://github.com/kormcrete"
+  },
+  "homepage": "https://kormcrete.github.io/swing-ui-agent/",
+  "repository": "https://github.com/kormcrete/swing-ui-agent",
+  "license": "Apache-2.0",
+  "keywords": [
+    "swing",
+    "java",
+    "ui-testing",
+    "desktop",
+    "test-recording"
+  ]
+}

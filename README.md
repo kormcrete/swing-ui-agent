@@ -40,6 +40,8 @@ in, plus three recorded tests. Nothing to build.
    claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
    ```
 
+   In Claude Code, also add the skills: `/plugin install swing-ui-agent --marketplace kormcrete/claude-plugins`.
+
    *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and tell me the
    order number."* Then ask it to save the steps as a recorded test.
 
@@ -97,7 +99,7 @@ instead, with the same driving API. The two kinds do not mix.
 
 One jar attached with `-javaagent:` clicks, types and reads the live UI from inside the app's JVM. Input goes into the
 app's own event queue, so your mouse and keyboard stay yours. A coding agent calls it one tool per step, from a shell
-(`java -jar … <tool>`) or over MCP on loopback; three skills in [`skills/`](skills) teach it the workflow.
+(`java -jar … <tool>`) or over MCP on loopback; three skills and a driver sub-agent teach it the workflow.
 [Let your agent drive the app](https://kormcrete.github.io/swing-ui-agent/start/drive/) ·
 [CLI or MCP](https://kormcrete.github.io/swing-ui-agent/agents/cli-or-mcp/) ·
 [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/)
@@ -151,6 +153,20 @@ java -javaagent:target/swing-ui-agent-0.1.0-SNAPSHOT-agent.jar -jar my-app.jar
 The palette appears in the app's main window and the agent listens on `127.0.0.1:8765`. Press **● Record**, or tell
 your coding agent what to test.
 
+**Skills for your coding agent.** Three skills (record a test, turn words into targets, hand off the driving) and a
+driver sub-agent teach it the workflow. The driver does the clicking on a cheaper model: Claude Code hands it "go and
+check" jobs, such as walking a screen, confirming a fix or running a test, and gets back pass, fail or gap per item.
+In Claude Code they come as one plugin from the kormcrete marketplace,
+[kormcrete/claude-plugins](https://github.com/kormcrete/claude-plugins):
+
+```text
+/plugin install swing-ui-agent --marketplace kormcrete/claude-plugins
+```
+
+Update with `/plugin marketplace update kormcrete`, then `/plugin update swing-ui-agent@kormcrete`. Other agents copy
+[`skills/`](skills) and [`agents/`](agents).
+[Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/)
+
 - [Installation](https://kormcrete.github.io/swing-ui-agent/start/install/),
   [in IntelliJ](https://kormcrete.github.io/swing-ui-agent/start/intellij/),
   [with Claude Code](https://kormcrete.github.io/swing-ui-agent/start/claude-code/)
@@ -158,7 +174,7 @@ your coding agent what to test.
   [record together with your agent](https://kormcrete.github.io/swing-ui-agent/start/record-together/)
 - [Recorded tests or Java tests](https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/),
   [run in CI](https://kormcrete.github.io/swing-ui-agent/start/ci/)
-- [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/) for your coding agent (in [`skills/`](skills)),
+- [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/) for your coding agent (a Claude Code plugin),
   the [tool reference](https://kormcrete.github.io/swing-ui-agent/reference/tools/)
 
 ## Status

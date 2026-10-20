@@ -28,7 +28,7 @@ The tests are meant to be written by the agent, not by hand: a recorded test it 
 
 - **The agent jar** (`swing-ui-agent-<version>-agent.jar`): the Java agent for `-javaagent:`, and a command line client for the same tools.
 - **The library** (`io.github.kormcrete:swing-ui-agent`): `@UiTest`, `Client` and the assertions, as a test dependency.
-- **The skills** ([`skills/`](https://github.com/kormcrete/swing-ui-agent/tree/main/skills)): three agent skills that teach a coding agent to drive, target and record. See [Skills](/swing-ui-agent/agents/skills/).
+- **The skills** ([`skills/`](https://github.com/kormcrete/swing-ui-agent/tree/main/skills), [`agents/`](https://github.com/kormcrete/swing-ui-agent/tree/main/agents)): three agent skills that teach a coding agent to drive, target and record, and a driver sub-agent that does the clicking on a cheaper model. A Claude Code plugin from the kormcrete marketplace. See [Skills](/swing-ui-agent/agents/skills/).
 - **A plugin** (optional): teaches the agent your app's own words, such as a reset to a defined state, a login or a screen by name. See [What a plugin adds](/swing-ui-agent/plugins/what-a-plugin-adds/).
 
 ## What it is not

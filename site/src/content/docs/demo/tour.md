@@ -55,6 +55,12 @@ Then connect your coding agent while the app runs:
 claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
 ```
 
+and, in Claude Code, give it the skills and the driver sub-agent ([Skills](/swing-ui-agent/agents/skills/)):
+
+```text
+/plugin install swing-ui-agent --marketplace kormcrete/claude-plugins
+```
+
 Other clients: [MCP clients](/swing-ui-agent/agents/mcp-clients/). If your agent cannot connect, another app may be
 using port 8770; the agent's log says so: `~/Library/Logs/Kormcrete Order Desk/agent.log` (macOS),
 `%LOCALAPPDATA%\Kormcrete Order Desk\agent.log` (Windows), the terminal (Java zip). All releases:

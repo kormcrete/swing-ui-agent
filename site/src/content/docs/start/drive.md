@@ -13,11 +13,14 @@ Start Order Desk as in [Installation](/swing-ui-agent/start/install/), on port 8
 
 ## 2. Give your agent the skills
 
-Copy the three skills into your agent's skills directory; for Claude Code that is `.claude/skills/` in your project. [Skills](/swing-ui-agent/agents/skills/) says what each one covers.
+In Claude Code, install the swing-ui-agent plugin from the kormcrete marketplace:
 
-```sh
-cp -r swing-ui-agent/skills/swing-ui-* your-project/.claude/skills/
+```text
+/plugin install swing-ui-agent --marketplace kormcrete/claude-plugins
 ```
+
+Other coding agents copy the skill folders. [Skills](/swing-ui-agent/agents/skills/) says what each one covers, what
+the driver sub-agent is for, and how to update.
 
 Then ask in plain words: "Open a new order for Ada Shop Ltd and tell me what the cart shows."
 

@@ -88,6 +88,8 @@ Download Order Desk, a small Swing order-entry app with the agent built in. Noth
    claude mcp add --transport http order-desk http://127.0.0.1:8770/mcp
    ```
 
+   In Claude Code, also add the skills: `/plugin install swing-ui-agent --marketplace kormcrete/claude-plugins`.
+
 4. **Ask it:** *"Create a new order for Ada Shop Ltd with 3 packs of A4 paper and 10 black gel pens, check out, and
    tell me the order number."* If it asks for a PO number, give it any.
 5. **Ask again.** Now it knows the screens and sends the whole order in one `batch` call, in about half a second. Ask
@@ -109,7 +111,7 @@ Then [take the tour](/swing-ui-agent/demo/tour/), or open Order Desk's source in
 - **Exact values, your data.** A recorded test checks what is on screen, such as the cart's **Total** `€31.32`. It
   creates the data it checks or uses data you know exists.
 - **Built for agents.** An element tree instead of screenshots, errors that list the near misses, and three skills
-  that teach the workflow. [Skills](/swing-ui-agent/agents/skills/)
+  and a driver sub-agent that teach the workflow. [Skills](/swing-ui-agent/agents/skills/)
 - **Local only.** It listens on `127.0.0.1`, refuses any other address, and no tool runs commands, loads a class or
   evaluates code. [Security](/swing-ui-agent/agents/security/)
 - **Your app's words (optional).** A small plugin adds reset, login and named steps such as "Add Gel pen, black to the
