@@ -54,68 +54,53 @@ It connects three things that usually happen apart:
 - **A coding agent turns that** into a named, repeatable test.
 - **Developers run the same test** locally and in CI, and move to an ordinary Java test when a check needs more.
 
-<table>
-<tr>
-<td width="200" valign="top"><a href="site/src/assets/overview/record-full.png"><img src="site/src/assets/overview/record.png" width="180" alt="Recording in Order Desk, in Check mode: a click on a cart line opened the Check menu with the checks it offers, such as Product is Gel pen, black in this row"></a></td>
-<td valign="top">
+### 1. Records UI tests, from what you show or what you say
 
-**1. Records UI tests, from what you show or what you say.** Press **● Record** in the palette and use the app;
-**Check** adds a check of what you see. Or tell a coding agent the test in words and it drives the live app. Either
-way the agent names each step in plain words and saves a **recorded test**: a JSON file in `uitest/` with nothing to
-compile. [Show it](https://kormcrete.github.io/swing-ui-agent/start/show/) ·
+<a href="site/src/assets/overview/record-full.png"><img src="site/src/assets/overview/record.png" width="560" alt="Recording in Order Desk, in Check mode: a click on a cart line opened the Check menu with the checks it offers, such as Product is Gel pen, black in this row"></a>
+
+Press **● Record** in the palette and use the app; **Check** adds a check of what you see. Or tell a coding agent the
+test in words and it drives the live app. Either way the agent names each step in plain words and saves a **recorded
+test**: a JSON file in `uitest/` with nothing to compile.
+[Show it](https://kormcrete.github.io/swing-ui-agent/start/show/) ·
 [Tell the agent](https://kormcrete.github.io/swing-ui-agent/start/record-together/)
 
-</td>
-</tr>
-<tr>
-<td width="200" valign="top"><a href="site/public/overview/replay-full.webp"><img src="site/public/overview/replay.webp" width="180" alt="An animation: the recorded test cart-totals replays step by step in Order Desk; the Steps list ticks each step and the five total checks turn green"></a></td>
-<td valign="top">
+### 2. Replays them, and lets you read and fix them
 
-**2. Replays them, and lets you read and fix them.** The steps are sentences you can read, rename, replay from any
-point or redo. Press **▶ Run** in the app, ask the agent, or run the whole `uitest/` folder from Maven and in CI under
-a virtual display. A failing step says what it found.
+<a href="site/public/overview/replay-full.webp"><img src="site/public/overview/replay.webp" width="560" alt="An animation: the recorded test cart-totals replays step by step in Order Desk; the Steps list ticks each step and the five total checks turn green"></a>
+
+The steps are sentences you can read, rename, replay from any point or redo. Press **▶ Run** in the app, ask the agent,
+or run the whole `uitest/` folder from Maven and in CI under a virtual display. A failing step says what it found.
 [Run and edit a recorded test](https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/) ·
 [Run in CI](https://kormcrete.github.io/swing-ui-agent/start/ci/)
 
-</td>
-</tr>
-<tr>
-<td width="200" valign="top"><a href="site/src/assets/overview/asks-full.png"><img src="site/src/assets/overview/asks.png" width="180" alt="The agent asks in the app which table holds the cart: the products table and the cart are boxed and numbered, each with a check mark to confirm it, and a bar with the question and None of these"></a></td>
-<td valign="top">
+### 3. Asks in the app when it is not sure
 
-**3. Asks in the app when it is not sure.** When a step could mean two things, the agent boxes the candidates in the
-app, numbered, and you confirm one or say none of these. The answer goes into the recording.
+<a href="site/src/assets/overview/asks-full.png"><img src="site/src/assets/overview/asks.png" width="560" alt="The agent asks in the app which table holds the cart: the products table and the cart are boxed and numbered, each with a check mark to confirm it, and a bar with the question and None of these"></a>
+
+When a step could mean two things, the agent boxes the candidates in the app, numbered, and you confirm one or say none
+of these. The answer goes into the recording.
 [Record together with your agent](https://kormcrete.github.io/swing-ui-agent/start/record-together/)
 
-</td>
-</tr>
-<tr>
-<td width="200" valign="top"><a href="site/src/assets/overview/java-test.svg"><img src="site/src/assets/overview/java-test.svg" width="180" alt="A JUnit 5 UiTest class that reads the new order's number from the status bar and asserts its row in the Orders table"></a></td>
-<td valign="top">
+### 4. Writes a Java test when you need more
 
-**4. Writes a Java test when you need more.** A recorded test holds exact values and checks what is on screen. When
-a test must read a value that changes from run to run, such as the new order's number, or check a database, files or
-logs, the agent writes a JUnit 5 `@UiTest` class instead, with the same driving API. The two kinds do not mix.
+<a href="site/src/assets/overview/java-test.svg"><img src="site/src/assets/overview/java-test.svg" width="560" alt="A JUnit 5 UiTest class that reads the new order's number from the status bar and asserts its row in the Orders table"></a>
+
+A recorded test holds exact values and checks what is on screen. When a test must read a value that changes from run to
+run, such as the new order's number, or check a database, files or logs, the agent writes a JUnit 5 `@UiTest` class
+instead, with the same driving API. The two kinds do not mix.
 [Recorded tests or Java tests](https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/) ·
 [One order, two files](https://kormcrete.github.io/swing-ui-agent/demo/two-files/)
 
-</td>
-</tr>
-<tr>
-<td width="200" valign="top"><a href="site/src/assets/overview/how-it-fits.svg"><img src="site/src/assets/overview/how-it-fits.svg" width="180" alt="How it fits together: a person at the app or a coding agent, over the palette or the CLI and MCP on loopback, reach the agent jar inside the app's JVM; it writes recorded tests to uitest, which the palette, the agent, Maven and CI replay"></a></td>
-<td valign="top">
+### 5. Drives the real app, from a shell or over MCP
 
-**5. Drives the real app, from a shell or over MCP.** One jar attached with `-javaagent:` clicks, types and reads the
-live UI from inside the app's JVM. Input goes into the app's own event queue, so your mouse and keyboard stay yours. A
-coding agent calls it one tool per step, from a shell (`java -jar … <tool>`) or over MCP on loopback; three skills in
-[`skills/`](skills) teach it the workflow.
+<a href="site/src/assets/overview/how-it-fits.svg"><img src="site/src/assets/overview/how-it-fits.svg" width="560" alt="How it fits together: a person at the app or a coding agent, over the palette or the CLI and MCP on loopback, reach the agent jar inside the app's JVM; it writes recorded tests to uitest, which the palette, the agent, Maven and CI replay"></a>
+
+One jar attached with `-javaagent:` clicks, types and reads the live UI from inside the app's JVM. Input goes into the
+app's own event queue, so your mouse and keyboard stay yours. A coding agent calls it one tool per step, from a shell
+(`java -jar … <tool>`) or over MCP on loopback; three skills in [`skills/`](skills) teach it the workflow.
 [Let your agent drive the app](https://kormcrete.github.io/swing-ui-agent/start/drive/) ·
 [CLI or MCP](https://kormcrete.github.io/swing-ui-agent/agents/cli-or-mcp/) ·
 [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/)
-
-</td>
-</tr>
-</table>
 
 One step of Order Desk's `uitest/place-order.json`, with its check:
 
