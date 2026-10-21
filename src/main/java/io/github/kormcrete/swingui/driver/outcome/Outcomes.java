@@ -47,19 +47,23 @@ public final class Outcomes {
         titles("tabs", before.tabs, after.tabs, opened, closed);
         putIfAny(out, "opened", opened);
         putIfAny(out, "closed", closed);
-        putIfAny(out, "fields", values(before.fields, after.fields));
-        putIfAny(out, "texts", values(before.texts, after.texts));
+        List<Map<String, String>> fields = Keys.settle(before.fields, after.fields);
+        putIfAny(out, "fields", values(fields.get(0), fields.get(1)));
+        List<Map<String, String>> texts = Keys.settle(before.texts, after.texts);
+        putIfAny(out, "texts", values(texts.get(0), texts.get(1)));
+        List<Map<String, UiReading.Rows>> tables = Keys.settle(before.tables, after.tables);
+        List<Map<String, UiReading.Rows>> lists = Keys.settle(before.items, after.items);
         Map<String, Object> rows = new LinkedHashMap<String, Object>();
         Map<String, Object> items = new LinkedHashMap<String, Object>();
         Map<String, Object> selected = new LinkedHashMap<String, Object>();
-        for (Map.Entry<String, UiReading.Rows> e : after.tables.entrySet()) {
-            UiReading.Rows was = before.tables.get(e.getKey());
+        for (Map.Entry<String, UiReading.Rows> e : tables.get(1).entrySet()) {
+            UiReading.Rows was = tables.get(0).get(e.getKey());
             Map<String, Object> change = rows(was, e.getValue(), true);
             if (change != null) rows.put(e.getKey(), change);
             selection(e.getKey(), was, e.getValue(), selected);
         }
-        for (Map.Entry<String, UiReading.Rows> e : after.items.entrySet()) {
-            UiReading.Rows was = before.items.get(e.getKey());
+        for (Map.Entry<String, UiReading.Rows> e : lists.get(1).entrySet()) {
+            UiReading.Rows was = lists.get(0).get(e.getKey());
             Map<String, Object> change = rows(was, e.getValue(), false);
             if (change != null) items.put(e.getKey(), change);
             selection(e.getKey(), was, e.getValue(), selected);
@@ -75,7 +79,8 @@ public final class Outcomes {
     /**
      * The texts in {@code outcome} that {@code before} showed nowhere, each with the path where it sits (no leading
      * {@code $}: {@code .rows.Orders.added[0].Order}). A value found in several places keeps the first in this order:
-     * fields, rows, items, texts, opened, then selected and message; the map's order is that order.
+     * fields, rows, items, texts, opened, then selected and message; the map's order is that order. A text keyed by
+     * itself is left out, and so is what is selected when the outcome is partial.
      */
     public static Map<String, String> newValues(UiReading before, Map<String, Object> outcome) {
         Set<String> seen = before.values();
@@ -98,13 +103,17 @@ public final class Outcomes {
             for (int i = 0; i < added.size(); i++) add(out, seen, added.get(i), ".items" + key(t.getKey()) + ".added[" + i + "]");
         }
         for (Map.Entry<String, Object> e : section(outcome, "texts").entrySet()) {
-            add(out, seen, e.getValue(), ".texts" + key(e.getKey()));
+            // a text keyed by itself has no path that still holds when it changes
+            if (!e.getKey().equals(e.getValue())) add(out, seen, e.getValue(), ".texts" + key(e.getKey()));
         }
         for (Map.Entry<String, Object> e : section(outcome, "opened").entrySet()) {
             List<?> titles = (List<?>) e.getValue();
             for (int i = 0; i < titles.size(); i++) add(out, seen, titles.get(i), ".opened" + key(e.getKey()) + "[" + i + "]");
         }
-        for (Map.Entry<String, Object> e : section(outcome, "selected").entrySet()) {
+        // a partial reading may not have read a selected row before: its values are not known to be new
+        Map<String, Object> selected = outcome.containsKey("partial") ? Collections.<String, Object>emptyMap()
+                : section(outcome, "selected");
+        for (Map.Entry<String, Object> e : selected.entrySet()) {
             List<?> chosen = (List<?>) e.getValue();
             for (int i = 0; i < chosen.size(); i++) cells(out, seen, chosen.get(i), ".selected" + key(e.getKey()) + "[" + i + "]");
         }
@@ -170,8 +179,8 @@ public final class Outcomes {
 
     /**
      * Rows or items added, removed and (same count, same position) changed; null when nothing did. Matched by their
-     * hash as multisets, so a row that only moved is no change. Where a reading was partial, only rows read on both
-     * sides (and the selected ones) are judged: a row read on one side only is not known to be new.
+     * hash as multisets, so a row that only moved is no change. Where a reading was partial, a row is judged only when
+     * nothing else could explain it ({@link #judged}): a partial outcome may miss a change, never invent one.
      */
     private static Map<String, Object> rows(UiReading.Rows was, UiReading.Rows now, boolean table) {
         UiReading.Rows before = was != null ? was : new UiReading.Rows(now.headers, Collections.<Integer>emptyList(),
@@ -212,21 +221,42 @@ public final class Outcomes {
             Integer n = left.get(h);
             left.put(h, n == null ? 1 : n + 1);
         }
-        Set<Integer> judged = new HashSet<Integer>(other.indices);
-        judged.addAll(side.selected);
+        Set<Integer> known = new HashSet<Integer>(other.hashes);
+        Set<Integer> read = new HashSet<Integer>(other.indices);
         TreeMap<Integer, Object> out = new TreeMap<Integer, Object>();
         for (int k = 0; k < side.indices.size(); k++) {
-            int index = side.indices.get(k);
-            if (!full && !judged.contains(index)) continue;
             Integer h = side.hashes.get(k);
             Integer n = left.get(h);
             if (n != null && n > 0) {
                 left.put(h, n - 1);
-            } else {
-                out.put(index, side.values.get(k));
+            } else if (full || judged(side, k, other, known, read)) {
+                out.put(side.indices.get(k), side.values.get(k));
             }
         }
         return out;
+    }
+
+    /**
+     * Whether a row of a partial reading that has no match on the other side is truly new (or gone), not one that slid
+     * into (or out of) the rows read: the other side read its index too, and in its run of rows read it has a row the
+     * other side also has above it and one below it - or the table's own top or end, read on both sides.
+     */
+    private static boolean judged(UiReading.Rows side, int k, UiReading.Rows other, Set<Integer> known, Set<Integer> read) {
+        if (!read.contains(side.indices.get(k))) return false;
+        boolean above = false;
+        int j = k;
+        while (!above && j > 0 && side.indices.get(j - 1) == side.indices.get(j) - 1) {
+            above = known.contains(side.hashes.get(--j));
+        }
+        if (!above) above = side.indices.get(j) == 0 && other.indices.contains(0);
+        boolean below = false;
+        j = k;
+        int last = side.indices.size() - 1;
+        while (!below && j < last && side.indices.get(j + 1) == side.indices.get(j) + 1) {
+            below = known.contains(side.hashes.get(++j));
+        }
+        if (!below) below = side.indices.get(j) == side.count - 1 && other.indices.contains(other.count - 1);
+        return above && below;
     }
 
     /** The rows now selected, when that is not what was selected before. */

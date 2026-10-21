@@ -9,6 +9,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.DefaultListSelectionModel;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -92,7 +93,7 @@ class UiReaderTest {
         });
 
         assertThat(reading.partial()).isTrue();
-        UiReading.Rows rows = reading.tables.values().iterator().next();
+        UiReading.Rows rows = reading.tables().values().iterator().next();
         assertThat(rows.full).isFalse();
         assertThat(rows.count).isEqualTo(40000);
         TreeSet<Integer> allowed = new TreeSet<Integer>();
@@ -130,7 +131,7 @@ class UiReaderTest {
             return null;
         });
 
-        assertThat(reading.texts).containsValue("3 orders");
+        assertThat(reading.texts()).containsValue("3 orders");
         assertThat(reading.values()).doesNotContain("● Record", "Done", "Replay speed", "swing-ui-agent");
         assertThat(reading.windows).containsExactly("Order Desk");
     }
@@ -174,6 +175,35 @@ class UiReaderTest {
             frame.dispose();
             return null;
         });
+    }
+
+    @Test
+    void anErrorDialogTheAppsRulesNameGivesItsMessage() throws Exception {
+        final JFrame frame = new JFrame("Order Desk");
+        final JDialog error = new JDialog(frame, "Problem");
+        List<UiReading> readings = onEdt(() -> {
+            JLabel says = new JLabel("Could not save ORD-1640");
+            says.setBounds(10, 10, 200, 20);
+            JPanel content = new JPanel(null);
+            content.add(says);
+            error.setContentPane(content);
+            List<java.awt.Window> windows = Arrays.<java.awt.Window>asList(frame, error);
+            // the app's rule, as the driver's error-dialog rules would answer it
+            UiReader withRules = new UiReader(STILL, 40, w -> w == error ? "Could not save ORD-1640" : null);
+            return Arrays.asList(withRules.read(windows), new UiReader(STILL, 40).read(windows));
+        });
+        onEdt(() -> {
+            error.dispose();
+            frame.dispose();
+            return null;
+        });
+
+        assertThat(readings.get(0).message).isEqualTo("Could not save ORD-1640");
+        assertThat(readings.get(0).texts()).isEmpty();
+        assertThat(readings.get(0).dialogs).containsExactly("Problem");
+        // without the rule it is a dialog like any other: its label is a text
+        assertThat(readings.get(1).message).isNull();
+        assertThat(readings.get(1).texts()).containsValue("Could not save ORD-1640");
     }
 
     @Test

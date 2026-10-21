@@ -274,7 +274,148 @@ class OutcomesTest {
         assertThat(Outcomes.diff(before, before)).isEmpty();
     }
 
+    @Test
+    void aSecondSameNamedFieldAppearsAndOnlyItIsInTheOutcome() throws Exception {
+        final JTabbedPane tabs = new JTabbedPane();
+        onEdt(() -> {
+            tabs.addTab("Billing", page(new JTextField("Ada Lovelace"), true));
+            place(tabs, 10, 260, 400, 120);
+            tabs.doLayout();
+            return null;
+        });
+
+        // alone, the billing field is "Name"; with a second one it is "Billing › Name" - on both sides alike
+        Map<String, Object> outcome = step(() -> tabs.addTab("Shipping", page(new JTextField("Grace Hopper"), true)));
+
+        assertThat(outcome.get("fields")).isEqualTo(map("Shipping › Name", "Grace Hopper"));
+    }
+
+    @Test
+    void aSecondOrderTabKeepsTheFirstOnesKeys() throws Exception {
+        final JTabbedPane documents = new JTabbedPane();
+        onEdt(() -> {
+            document(documents, "ORD-1640", "Ada");
+            place(documents, 10, 260, 400, 120);
+            return null;
+        });
+
+        // an order tab's title is run data: the Customer fields (the form's and each order's) are told apart by their
+        // order, the same on both sides, so the first two are no change
+        Map<String, Object> outcome = step(() -> document(documents, "ORD-1641", "Grace"));
+
+        assertThat(outcome.get("fields")).isEqualTo(map("Customer #3", "Grace"));
+    }
+
+    @Test
+    void aSelectionMovedToAnUnreadRegionGivesNoAddedOrRemovedRows() {
+        UiReading before = partial(40000, range(100, 110));
+        UiReading after = partial(40000, range(100, 110), range(29995, 30005), 30000);
+
+        Map<String, Object> outcome = Outcomes.diff(before, after);
+
+        assertThat(outcome).doesNotContainKey("rows");
+        assertThat(at(outcome, "selected", "Orders", 0, "Order")).isEqualTo("ORD-30000");
+        assertThat(outcome.get("partial")).isEqualTo(Boolean.TRUE);
+        assertThat(Outcomes.newValues(before, outcome)).isEmpty();
+    }
+
+    @Test
+    void anInsertionAboveTheViewGivesNoAddedOrRemovedRows() {
+        UiReading before = partial(40000, range(100, 110));
+        // one row inserted at the top: the view shows the rows that were at 99..109
+        UiReading after = shifted(40001, range(100, 110), -1);
+
+        Map<String, Object> outcome = Outcomes.diff(before, after);
+
+        assertThat(at(outcome, "rows", "Orders")).isEqualTo(map("added", new ArrayList<Object>(),
+                "removed", new ArrayList<Object>(), "changed", new ArrayList<Object>(), "count", 40001));
+        assertThat(Outcomes.newValues(before, outcome)).isEmpty();
+    }
+
+    @Test
+    void aRowAddedInTheViewOfAPartialTableIsAdded() {
+        UiReading before = partial(40000, range(100, 110));
+        List<Integer> read = range(100, 111);
+        List<List<String>> rows = new ArrayList<List<String>>();
+        for (int r : read) rows.add(order(r < 105 ? r : r == 105 ? 99999 : r - 1));
+        UiReading after = rows(40001, read, rows);
+
+        Map<String, Object> outcome = Outcomes.diff(before, after);
+
+        assertThat(at(outcome, "rows", "Orders", "added", 0, "Order")).isEqualTo("ORD-99999");
+        assertThat((List<?>) at(outcome, "rows", "Orders", "added")).hasSize(1);
+        assertThat((List<?>) at(outcome, "rows", "Orders", "removed")).isEmpty();
+        assertThat(Outcomes.newValues(before, outcome)).containsOnlyKeys("ORD-99999");
+    }
+
+    @Test
+    void aTextKeyedByItselfIsNoNewValue() {
+        UiReading before = UiReading.builder().text("Total", "€7.32").build();
+        UiReading after = UiReading.builder().text("Total", "€9.10").text("Saved ORD-1643", "Saved ORD-1643").build();
+
+        Map<String, String> values = Outcomes.newValues(before, Outcomes.diff(before, after));
+
+        assertThat(values).containsOnlyKeys("€9.10");
+        assertThat(values.get("€9.10")).isEqualTo(".texts.Total");
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /** An open order as a strip of documents shows it: its tab has a close button of its own. */
+    private static void document(JTabbedPane documents, String number, String customerName) {
+        JPanel order = new JPanel(null);
+        JTextField field = new JTextField(customerName);
+        JLabel caption = new JLabel("Customer:");
+        caption.setLabelFor(field);
+        order.add(caption);
+        order.add(field);
+        documents.addTab(number, order);
+        documents.setTabComponentAt(documents.getTabCount() - 1, new JLabel(number));
+    }
+
+    private static List<Integer> range(int first, int last) {
+        List<Integer> out = new ArrayList<Integer>();
+        for (int i = first; i <= last; i++) out.add(i);
+        return out;
+    }
+
+    private static List<String> order(int n) {
+        return Arrays.asList("ORD-" + n, "Open");
+    }
+
+    /** An Orders table of {@code count} rows (row r is ORD-r) read only at {@code read} and {@code more}. */
+    private static UiReading partial(int count, List<Integer> read, List<Integer> more, Integer... selected) {
+        List<Integer> all = new ArrayList<Integer>(read);
+        all.addAll(more);
+        List<List<String>> rows = new ArrayList<List<String>>();
+        for (int r : all) rows.add(order(r));
+        return rows(count, all, rows, selected);
+    }
+
+    private static UiReading partial(int count, List<Integer> read) {
+        return partial(count, read, new ArrayList<Integer>());
+    }
+
+    /** As {@link #partial}, the row at r showing what was at r + {@code by}. */
+    private static UiReading shifted(int count, List<Integer> read, int by) {
+        List<List<String>> rows = new ArrayList<List<String>>();
+        for (int r : read) rows.add(order(r + by));
+        return rows(count, read, rows);
+    }
+
+    private static UiReading rows(int count, List<Integer> read, List<List<String>> rows, Integer... selected) {
+        List<String> headers = Arrays.asList("Order", "Status");
+        List<Object> values = new ArrayList<Object>();
+        List<Integer> hashes = new ArrayList<Integer>();
+        for (List<String> row : rows) {
+            String[] cells = row.toArray(new String[0]);
+            values.add(UiReading.row(headers, cells));
+            hashes.add(Arrays.hashCode(cells));
+        }
+        UiReading.Rows table = new UiReading.Rows(headers, read, values, hashes, Arrays.asList(selected), count, false);
+        return UiReading.builder().rows(true, UiReading.Named.plain("Orders", table)).partial(true).build();
+    }
+
 
     /** The outcome of {@code change}, run on the EDT between a reading before and one after. */
     private Map<String, Object> step(Runnable change) throws Exception {

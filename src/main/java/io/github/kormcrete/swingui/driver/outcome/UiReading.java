@@ -11,10 +11,30 @@ import java.util.Set;
 
 /**
  * What the app's windows showed at one moment, as a person reads it: field values, label and button texts, table
- * rows, list and tree items, tab and window titles, a message dialog's text. Keys are the names a person reads
- * ({@link UiReader} says how a clash is told apart). Immutable; {@link Outcomes#diff} compares two of them.
+ * rows, list and tree items, tab and window titles, a message dialog's text. Each element keeps the name a person reads
+ * and where it sits; its key is settled when two readings are compared ({@link Keys}), so one element has one key on
+ * both sides. Immutable; {@link Outcomes#diff} compares two of them.
  */
 public final class UiReading {
+
+    /** One element as read: its name, the tabs and titled sections around it (outermost first), its window's title. */
+    static final class Named<T> {
+        final String name;
+        final List<String> scopes;
+        final String window;
+        final T value;
+
+        Named(String name, List<String> scopes, String window, T value) {
+            this.name = name;
+            this.scopes = Collections.unmodifiableList(new ArrayList<String>(scopes));
+            this.window = window == null ? "" : window;
+            this.value = value;
+        }
+
+        static <T> Named<T> plain(String name, T value) {
+            return new Named<T>(name, Collections.<String>emptyList(), "", value);
+        }
+    }
 
     /**
      * The rows of a table, or the items of a list or tree, as far as they were read: all of them ({@link #full}), or
@@ -63,11 +83,11 @@ public final class UiReading {
     }
 
     final boolean partial;
-    final Map<String, String> fields;
-    final Map<String, String> texts;
-    final Map<String, Rows> tables;
+    final List<Named<String>> fields;
+    final List<Named<String>> texts;
+    final List<Named<Rows>> tables;
     /** Lists and trees together, as the outcome's {@code items} holds them; a tree's items are "A > B" paths. */
-    final Map<String, Rows> items;
+    final List<Named<Rows>> items;
     final List<String> tabs;
     final List<String> windows;
     final List<String> dialogs;
@@ -76,10 +96,10 @@ public final class UiReading {
 
     private UiReading(Builder b) {
         this.partial = b.partial;
-        this.fields = Collections.unmodifiableMap(new LinkedHashMap<String, String>(b.fields));
-        this.texts = Collections.unmodifiableMap(new LinkedHashMap<String, String>(b.texts));
-        this.tables = Collections.unmodifiableMap(new LinkedHashMap<String, Rows>(b.tables));
-        this.items = Collections.unmodifiableMap(new LinkedHashMap<String, Rows>(b.items));
+        this.fields = Collections.unmodifiableList(new ArrayList<Named<String>>(b.fields));
+        this.texts = Collections.unmodifiableList(new ArrayList<Named<String>>(b.texts));
+        this.tables = Collections.unmodifiableList(new ArrayList<Named<Rows>>(b.tables));
+        this.items = Collections.unmodifiableList(new ArrayList<Named<Rows>>(b.items));
         this.tabs = Collections.unmodifiableList(new ArrayList<String>(b.tabs));
         this.windows = Collections.unmodifiableList(new ArrayList<String>(b.windows));
         this.dialogs = Collections.unmodifiableList(new ArrayList<String>(b.dialogs));
@@ -91,18 +111,35 @@ public final class UiReading {
         return partial;
     }
 
+    /** The field values keyed as this reading alone tells them apart. */
+    Map<String, String> fields() {
+        return Keys.of(fields);
+    }
+
+    Map<String, String> texts() {
+        return Keys.of(texts);
+    }
+
+    Map<String, Rows> tables() {
+        return Keys.of(tables);
+    }
+
+    Map<String, Rows> items() {
+        return Keys.of(items);
+    }
+
     /** Every text this reading holds as a value (not as a key): what was on screen already. */
     Set<String> values() {
         Set<String> out = new LinkedHashSet<String>();
-        out.addAll(fields.values());
-        out.addAll(texts.values());
-        for (Rows r : tables.values()) {
-            for (Object row : r.values) {
+        for (Named<String> f : fields) out.add(f.value);
+        for (Named<String> t : texts) out.add(t.value);
+        for (Named<Rows> r : tables) {
+            for (Object row : r.value.values) {
                 for (Object cell : ((Map<?, ?>) row).values()) out.add(String.valueOf(cell));
             }
         }
-        for (Rows r : items.values()) {
-            for (Object item : r.values) out.add(String.valueOf(item));
+        for (Named<Rows> r : items) {
+            for (Object item : r.value.values) out.add(String.valueOf(item));
         }
         out.addAll(tabs);
         out.addAll(windows);
@@ -118,10 +155,10 @@ public final class UiReading {
     /** Builds a reading: {@link UiReader} does, and a test double scripting what a step changed. */
     public static final class Builder {
         private boolean partial;
-        private final Map<String, String> fields = new LinkedHashMap<String, String>();
-        private final Map<String, String> texts = new LinkedHashMap<String, String>();
-        private final Map<String, Rows> tables = new LinkedHashMap<String, Rows>();
-        private final Map<String, Rows> items = new LinkedHashMap<String, Rows>();
+        private final List<Named<String>> fields = new ArrayList<Named<String>>();
+        private final List<Named<String>> texts = new ArrayList<Named<String>>();
+        private final List<Named<Rows>> tables = new ArrayList<Named<Rows>>();
+        private final List<Named<Rows>> items = new ArrayList<Named<Rows>>();
         private final List<String> tabs = new ArrayList<String>();
         private final List<String> windows = new ArrayList<String>();
         private final List<String> dialogs = new ArrayList<String>();
@@ -134,13 +171,23 @@ public final class UiReading {
             return this;
         }
 
+        /** A field by its name, in no tab or section. */
         public Builder field(String name, String value) {
-            fields.put(name, value);
+            return field(Named.plain(name, value));
+        }
+
+        Builder field(Named<String> field) {
+            fields.add(field);
             return this;
         }
 
+        /** A label's or button's text by its name, in no tab or section. */
         public Builder text(String name, String value) {
-            texts.put(name, value);
+            return text(Named.plain(name, value));
+        }
+
+        Builder text(Named<String> text) {
+            texts.add(text);
             return this;
         }
 
@@ -155,8 +202,8 @@ public final class UiReading {
                 values.add(row(headers, cells));
                 hashes.add(Arrays.hashCode(cells));
             }
-            return rows(name, true, new Rows(headers, indices, values, hashes, Collections.<Integer>emptyList(),
-                    rows.size(), true));
+            return rows(true, Named.plain(name, new Rows(headers, indices, values, hashes, Collections.<Integer>emptyList(),
+                    rows.size(), true)));
         }
 
         /** A list's items, or a tree's visible rows as "A > B" paths, read in full, nothing selected. */
@@ -167,12 +214,13 @@ public final class UiReading {
                 indices.add(i);
                 hashes.add(items.get(i).hashCode());
             }
-            return rows(name, false, new Rows(null, indices, new ArrayList<Object>(items), hashes,
-                    Collections.<Integer>emptyList(), items.size(), true));
+            return rows(false, Named.plain(name, new Rows(null, indices, new ArrayList<Object>(items), hashes,
+                    Collections.<Integer>emptyList(), items.size(), true)));
         }
 
-        Builder rows(String name, boolean table, Rows rows) {
-            (table ? tables : items).put(name, rows);
+        /** A table's rows ({@code table}), or a list's or tree's items. */
+        Builder rows(boolean table, Named<Rows> rows) {
+            (table ? tables : items).add(rows);
             return this;
         }
 

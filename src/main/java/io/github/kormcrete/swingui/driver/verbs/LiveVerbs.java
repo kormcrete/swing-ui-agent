@@ -312,7 +312,12 @@ public final class LiveVerbs implements Verbs {
     @Override
     public UiReading readUi() {
         driver.settle().drain();
-        return Edt.call(() -> UiReader.standard().read(appWindows()));
+        return Edt.call(() -> UiReader.standard(this::errorMessage).read(appWindows()));
+    }
+
+    /** What a dialog the app's error-dialog rules call an error says; null for any other window. EDT. */
+    private String errorMessage(Window dialog) {
+        return driver.errorDialogs().isError(dialog) ? Dialogs.describe(dialog, driver.names()).message : null;
     }
 
     /** The app's windows and dialogs, not its popups and never the palette's own. EDT. */
