@@ -323,6 +323,29 @@ class FlowExecutorTest {
     }
 
     @Test
+    void aValueThatComesLateIsWaitedForBeforeALaterStepAddsARowToTheSameTable() {
+        // Copy's row comes on the third reading; New order, the step after it, puts a row of its own at the top
+        host.verbs.reading = () -> {
+            List<String> numbers = new ArrayList<String>();
+            boolean newOrder = false;
+            for (String c : new ArrayList<String>(host.verbs.calls)) newOrder |= c.startsWith("click button 'New order'");
+            if (newOrder) numbers.add("ORD-1600");
+            numbers.add("ORD-1642");
+            if (host.verbs.readUiCalls >= 3) numbers.add("ORD-1643");
+            return orders(numbers.toArray(new String[0]));
+        };
+
+        FlowResult result = runLinked(linked(), COPY,
+                "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"New order\"}}", OPEN_COPY);
+
+        assertThat(result.passed()).as(result.steps.toString()).isTrue();
+        assertThat(clicksOnOrders()).hasSize(1);
+        assertThat(clicksOnOrders().get(0)).contains("row={Number=ORD-1643}");
+        // read again right after Copy, before New order ran: no reading after it
+        assertThat(host.verbs.readUiCalls).isEqualTo(3);
+    }
+
+    @Test
     void aDomainStepsOwnValuesStayWhenItsOutcomeIsReadAgain() {
         // the do step returns the order's customer; the row it adds comes late, and is read again
         host.verbs.readings.addAll(Arrays.asList(orders("ORD-1642"), orders("ORD-1642"), orders("ORD-1642", "ORD-1643")));

@@ -5,6 +5,7 @@ import io.github.kormcrete.swingui.flow.Action;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -121,10 +122,12 @@ final class RecordedStep {
 
     /**
      * The same step (id, author, group, row) with an action that may do something else: an edit of its target, text or
-     * whole step. It is no longer what was seen, nor a fold of the raw steps it was made of.
+     * whole step. It is no longer what was seen, nor a fold of the raw steps it was made of, and what it changed when
+     * it last ran is not what it changes now (a replay learns that again). The values its references stood for stay:
+     * they are what the earlier steps made.
      */
     RecordedStep changed(Action action) {
-        return new RecordedStep(id, author, action, true, group, row, null, null, keepRaw, outcome, newValues, linkSeen);
+        return new RecordedStep(id, author, action, true, group, row, null, null, keepRaw, null, null, linkSeen);
     }
 
     /** The same step in {@code group} (null = none). */
@@ -152,9 +155,19 @@ final class RecordedStep {
      * several added or changed rows or items is all that names it leaves the index: without the outcome no one can tell.
      */
     RecordedStep shrunk() {
-        return outcome == null ? this
-                : new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, null,
-                        Linker.singles(outcome, newValues), linkSeen);
+        if (outcome == null) return this;
+        List<RecordedStep> smaller = null;
+        if (raw != null) {
+            smaller = new ArrayList<RecordedStep>(raw.size());
+            for (RecordedStep r : raw) smaller.add(r.shrunk());
+        }
+        return new RecordedStep(id, author, action, edited, group, row, seen, smaller, keepRaw, null,
+                Linker.singles(outcome, newValues), linkSeen);
+    }
+
+    /** The same fold with {@code raw} as its raw steps (what one of them changed came late). */
+    RecordedStep withRaw(List<RecordedStep> raw) {
+        return new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, outcome, newValues, linkSeen);
     }
 
     /** The same step with the values its references stood for when it last ran. */

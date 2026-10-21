@@ -460,11 +460,14 @@ public final class UiMcpTools {
                         .add("value").add("position");
                 ObjectNode stepParam = p.putObject("step");
                 stepParam.putArray("type").add("object").add("string");
-                stepParam.put("description", "insert, edit: a step or check as do_action takes it (an object); fold: the id "
+                stepParam.put("description", "insert, edit: a step or check as a recorded test file holds it (an object): "
+                        + "${id.path} in it is a reference to an earlier step's id or a remembered name, $${ a literal ${; "
+                        + "checked as a file is (edit keeps the step's id when it names none); fold: the id "
                         + "of the domain step to fold into, when more than one fits (a string, from vocabulary list).");
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("text").put("type", "string").put("description",
-                        "edit: the new text of a type, expect, setClipboard or drop step or check.");
+                        "edit: the new text of a type, expect, setClipboard or drop step or check, taken as typed (a ${ "
+                        + "in it is text; so is one in an edit's target).");
                 p.putObject("ref").put("type", "string").put("description",
                         "link: the value to use - ${3.rows.Orders.added[0].Number} (step 3 and the path in what it changed, "
                         + "as list shows it under changed), ${copy.fields.Number} (a step's id) or a remembered name "
@@ -523,7 +526,9 @@ public final class UiMcpTools {
                         + "shows on each step or check changed (path: value, what it changed that a later step may use), uses "
                         + "[{from, value}], usedBy and unique, and on a remember entry remembered. link {n, ref, field?}: n uses "
                         + "the value ref names where it has that value, whole or whole inside typed text; the source gets an "
-                        + "id. Never type ${...} into a step yourself: a step's text is taken as typed. unlink {n}: its links "
+                        + "id. Never type ${...} into a step yourself: text and target (edit) and what do_action and batch run are "
+                        + "taken as typed; a whole step (insert, edit step) is in the file's form, where ${id.path} is a "
+                        + "reference, and an edit that leaves a reference without an EARLIER source or an id twice is refused. unlink {n}: its links "
                         + "become the values they stood for. remember {target, as, n?, selected?}: reads the text target shows "
                         + "now and keeps it under the name as, a check-like entry (n.k) under step n; missing or empty is refused, nothing "
                         + "recorded. unique {n, where}: step n's typed text gets the run's id at its end or start (off takes it "

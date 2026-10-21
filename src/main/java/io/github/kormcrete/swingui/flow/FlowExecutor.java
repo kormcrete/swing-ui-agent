@@ -1,7 +1,6 @@
 package io.github.kormcrete.swingui.flow;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.driver.DomainStepFailed;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
@@ -17,6 +16,7 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.outcome.Outcomes;
 import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.Watch;
+import io.github.kormcrete.swingui.flow.refs.JsonPaths;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.refs.Resolution;
 import io.github.kormcrete.swingui.flow.refs.RunValues;
@@ -26,10 +26,13 @@ import io.github.kormcrete.swingui.spi.StepHost;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -42,9 +45,9 @@ import java.util.function.Supplier;
  *
  * <p>With {@link #outcomes}, a run of a recorded test file, a step may use values of earlier steps ({@link Refs}): each
  * step that a later one refers to by its {@code id} is read before and after it ran, and what it changed is kept
- * ({@link Outcomes#diff}); a remember step keeps its value; every step's references are filled in just before it runs
- * ({@link Resolution#fill}), waiting for a value that comes late, and {@link StepResult#resolved} says what they stood
- * for. Without one (the live session's own steps, whose text is never escaped) the steps run as they are.
+ * ({@link Outcomes#diff}), waiting right after it for a value a later step uses that comes late ({@link #settled}); a
+ * remember step keeps its value; every step's references are filled in just before it runs ({@link Resolution#fill}),
+ * and {@link StepResult#resolved} says what they stood for. Without one (the live session's own steps, whose text is never escaped) the steps run as they are.
  */
 public class FlowExecutor {
 
@@ -190,9 +193,8 @@ public class FlowExecutor {
     private final class Links {
         final Flow flow;
         final RunValues values;
-        /** The ids some step refers to, each with the index of the last step that does. */
-        final Map<String, Integer> lastUse = new HashMap<String, Integer>();
-        final Map<String, UiReading> before = new HashMap<String, UiReading>();
+        /** The paths later steps use of each id some step refers to. */
+        final Map<String, Set<String>> paths = new HashMap<String, Set<String>>();
         /** The reading before the step running now, when a later step names it. */
         UiReading pending;
 
@@ -201,38 +203,49 @@ public class FlowExecutor {
             this.values = values;
             for (int i = 0; i < flow.steps.size(); i++) {
                 try {
-                    for (Refs.Ref r : Refs.of(flow.steps.get(i))) lastUse.put(r.id, i);
+                    for (Refs.Ref r : Refs.of(flow.steps.get(i))) {
+                        if (!paths.containsKey(r.id)) paths.put(r.id, new LinkedHashSet<String>());
+                        paths.get(r.id).add(r.path);
+                    }
                 } catch (IllegalArgumentException malformed) {
                     // the step fails on it when it fills its values
                 }
             }
         }
 
-        /** The step with its references filled in, waiting for a late value ({@link #fill(Action, RunValues, Map, OutcomeSource, long, Flow)}). */
+        /** The step with its references filled in; one without a value fails it ({@link #fill(Action, RunValues, Flow)}). */
         Action fill(Action a) {
             if (a instanceof RememberVerb && ((RememberVerb) a).as != null) {
                 String problem = RecordedTestFiles.idProblem(((RememberVerb) a).as);
                 if (problem != null) throw new DriverException(Reason.BAD_INPUT, "remember as '" + ((RememberVerb) a).as + "': " + problem);
             }
-            return FlowExecutor.fill(a, values, before, outcomes, linkWait(), flow);
+            return FlowExecutor.fill(a, values, flow);
         }
 
         /** Reads the app before a step that a later step names. */
         void before(Action a) {
-            pending = a.id != null && lastUse.containsKey(a.id) ? outcomes.read() : null;
+            pending = a.id != null && paths.containsKey(a.id) ? outcomes.read() : null;
+            // what the step makes this run is not known: no value of an earlier run stands in for it
+            if (pending == null && a.id != null) values.remove(a.id);
         }
 
-        /** Keeps what the step changed or remembered, and lets go of readings no later step needs. */
+        /**
+         * Keeps what the step changed - waiting, before the next step runs, for a value a later step uses that comes late
+         * ({@link #settled}) - or what it remembered.
+         */
         void after(int index, Action a, VerbOutcome out) {
             if (pending != null) {
-                before.put(a.id, pending);
-                values.put(a.id, outcome(pending, outcomes.read(), out));
+                UiReading now = outcomes.read();
+                if (now == null) {
+                    values.remove(a.id);
+                } else {
+                    Map<String, Object> diff = settled(pending, now, out == null ? null : out.made, paths.get(a.id),
+                            outcomes, linkWait());
+                    values.put(a.id, FlowJson.mapper().valueToTree(diff));
+                }
                 pending = null;
             }
             if (a instanceof RememberVerb && out != null && out.note != null) values.remember(((RememberVerb) a).as, out.note);
-            for (Map.Entry<String, Integer> e : lastUse.entrySet()) {
-                if (e.getValue() == index) before.remove(e.getKey());
-            }
         }
 
         void forget() {
@@ -241,52 +254,74 @@ public class FlowExecutor {
     }
 
     /**
-     * {@code a} with its references filled in from {@code values} ({@link Resolution#fill}). A reference to a step's
-     * outcome that has no value yet is read again every {@link #LINK_POLL_MS} - what changed since the reading taken
-     * before that step ({@code before}, by id; a step without one is not waited for) - until it has one or
-     * {@code waitMillis} is over; then the step fails (NOT_FOUND), saying in words what the earlier step of
-     * {@code steps} did not do. Never the value the recording saw.
+     * {@code a} with its references filled in from {@code values} ({@link Resolution#fill}). A reference without a value
+     * fails the step (NOT_FOUND), saying in words what the earlier step of {@code steps} did not do: a value that comes
+     * late was waited for right after its step ({@link #settled}). Never the value the recording saw.
      */
-    public static Action fill(Action a, RunValues values, Map<String, UiReading> before, OutcomeSource source,
-                              long waitMillis, Flow steps) {
-        Long deadline = null;
-        while (true) {
-            try {
-                return Resolution.fill(a, values);
-            } catch (RunValues.UnresolvedReference e) {
-                UiReading was = before.get(e.ref.id);
-                long now = System.nanoTime();
-                if (deadline == null) deadline = now + waitMillis * 1_000_000L;
-                if (was == null || now - deadline >= 0) {
-                    throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, steps));
-                }
-                try {
-                    Thread.sleep(LINK_POLL_MS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new DriverException(Reason.TIMEOUT, "interrupted while waiting for " + e.ref.source);
-                }
-                // read again, what the step's own body returned stays
-                JsonNode made = values.get(e.ref.id) == null ? null : values.get(e.ref.id).get(STEP);
-                ObjectNode again = outcome(was, source.read(), null);
-                if (made != null) again.set(STEP, made);
-                values.put(e.ref.id, again);
-            }
+    public static Action fill(Action a, RunValues values, Flow steps) {
+        try {
+            return Resolution.fill(a, values);
+        } catch (RunValues.UnresolvedReference e) {
+            throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, steps));
         }
+    }
+
+    /**
+     * What a step changed from {@code before} to {@code after} ({@link Outcomes#diff}, with a domain step's own values
+     * {@code made} under {@link #STEP}), once each of {@code paths} - the paths later steps use of it - holds one value:
+     * until then the app is read again from {@code source} every {@link #LINK_POLL_MS}, up to {@code waitMillis}, and
+     * the last reading counts. A value that comes late (an app that saves in the background) is waited for right after
+     * its step, before any later step runs: what a later step changes, such as a row it adds to the same table, is never
+     * taken for this step's. A source that cannot be read ends the wait.
+     */
+    public static Map<String, Object> settled(UiReading before, UiReading after, Object made, Collection<String> paths,
+                                              OutcomeSource source, long waitMillis) {
+        Map<String, Object> diff = diffOf(before, after, made);
+        if (paths == null || paths.isEmpty()) return diff;
+        long deadline = System.nanoTime() + waitMillis * 1_000_000L;
+        while (!holdsAll(diff, paths) && System.nanoTime() - deadline < 0) {
+            try {
+                Thread.sleep(LINK_POLL_MS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return diff;
+            }
+            UiReading now;
+            try {
+                now = source.read();
+            } catch (RuntimeException unreadable) {
+                return diff;
+            }
+            if (now == null) return diff;
+            diff = diffOf(before, now, made);
+        }
+        return diff;
+    }
+
+    private static Map<String, Object> diffOf(UiReading before, UiReading after, Object made) {
+        Map<String, Object> diff = Outcomes.diff(before, after);
+        if (made != null) diff.put(STEP, made);
+        return diff;
+    }
+
+    /** Whether each of {@code paths} names one value in {@code diff}; an empty path (the whole outcome) never waits. */
+    private static boolean holdsAll(Map<String, Object> diff, Collection<String> paths) {
+        JsonNode tree = FlowJson.mapper().valueToTree(diff);
+        for (String path : paths) {
+            if (path.isEmpty()) continue;
+            List<JsonNode> hits;
+            try {
+                hits = JsonPaths.select(tree, "$" + path);
+            } catch (IllegalArgumentException malformed) {
+                continue;
+            }
+            if (hits.size() != 1 || !hits.get(0).isValueNode() || hits.get(0).isNull()) return false;
+        }
+        return true;
     }
 
     /** Where a domain step's own values go in its outcome: {@code ${placeOrder.step.number}}. */
     public static final String STEP = "step";
-
-    /**
-     * What a step changed ({@link Outcomes#diff} of the readings {@code before} and {@code after} it) as JSON, with what a
-     * domain step's body returned ({@link VerbOutcome#made} of {@code out}, null for none) under {@link #STEP}.
-     */
-    public static ObjectNode outcome(UiReading before, UiReading after, VerbOutcome out) {
-        ObjectNode outcome = FlowJson.mapper().valueToTree(Outcomes.diff(before, after));
-        if (out != null && out.made != null) outcome.set(STEP, FlowJson.mapper().valueToTree(out.made));
-        return outcome;
-    }
 
     private static <K, V> Map<K, V> orNull(Map<K, V> m) {
         return m.isEmpty() ? null : m;

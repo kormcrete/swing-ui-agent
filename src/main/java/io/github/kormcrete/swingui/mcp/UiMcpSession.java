@@ -129,8 +129,6 @@ public class UiMcpSession {
     private Supplier<UiReading> reader = this::readHost;
     /** How long a replayed step waits for a value an earlier step makes late; null: the driver's expect timeout. */
     private Long linkWaitMs;
-    /** The app as read before each replayed step that has an id, while a replay runs: a value that comes late is read again. */
-    private final Map<String, UiReading> replayBefore = new HashMap<String, UiReading>();
 
     /**
      * The agent's last recorded action, which may still change the app after it settled (a timer, a save in the
@@ -536,7 +534,6 @@ public class UiMcpSession {
                 synchronized (UiMcpSession.this) {
                     if (model.state() != RecordingModel.State.RECORDING) return;
                     model.stop();
-                    replayBefore.clear();
                     publish();
                 }
             }
@@ -598,7 +595,6 @@ public class UiMcpSession {
                         startRun();
                         return new Inspector.Result(true, "");
                     }
-                    replayBefore.clear();
                     int last = Math.min(to, model.size()) - 1;
                     String why = from > last ? null : partialRefusal(from, last);
                     return new Inspector.Result(why == null, why == null ? "" : why);
@@ -819,7 +815,7 @@ public class UiMcpSession {
                     }
                     try {
                         checkLink(id, linked);
-                    } catch (DriverException e) {
+                    } catch (RuntimeException e) {
                         return new Inspector.Result(false, message(e));
                     }
                     String did = model.link(id, linked.action, linked.seen, linked.ids, RecordedStep.Author.PERSON);
@@ -1040,6 +1036,13 @@ public class UiMcpSession {
                 Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
                 Object viewIndex = plain.remove(Inspector.ROW_INDEX);
                 plain.remove(Inspector.SEEN);
+                // the words the person typed for Remember this become a name ("Order number": orderNumber, or the next
+                // free one); a name typed as one stays theirs, refused in words when taken
+                Object as = plain.get("as");
+                if ("remember".equals(plain.get("action")) && as instanceof String && !((String) as).trim().isEmpty()
+                        && !"run".equals(as) && RecordedTestFiles.idProblem((String) as) != null) {
+                    plain.put("as", freeName(Inspector.nameFor((String) as)));
+                }
                 JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
                     JsonNode result = runStepLocked(json, personRow(json, viewIndex));
@@ -1429,6 +1432,16 @@ public class UiMcpSession {
     }
 
     /**
+     * Lets go of every reading kept for {@code read} form {@code outcome}: at a session reset or a lease taken or given
+     * back, so that one test never reads another's. Handles keep counting: an old one names nothing.
+     */
+    public void forgetOutcomeHandles() {
+        synchronized (keptOutcomes) {
+            keptOutcomes.clear();
+        }
+    }
+
+    /**
      * What the step of {@code handle} changed so far: the app read now, against the reading kept before that step, with
      * what a domain step's body returned under {@code step}. BAD_INPUT for a handle not kept (any more).
      */
@@ -1482,8 +1495,7 @@ public class UiMcpSession {
         if (replayed != null) {
             Action recorded = action;
             try {
-                action = FlowExecutor.fill(recorded, model.runValues(), replayBefore, this::readOrFail,
-                        linkWaitMs != null ? linkWaitMs : FlowExecutor.defaultLinkWait(), model.flow());
+                action = FlowExecutor.fill(recorded, model.runValues(), model.flow());
             } catch (DriverException e) {
                 if (e.reason().isToolError()) throw e;
                 return unresolved(action, e, started);
@@ -1545,9 +1557,14 @@ public class UiMcpSession {
         ObjectNode changed = null;
         Map<String, String> newValues = null;
         if (before != null && after != null) {
-            Map<String, Object> diff = Outcomes.diff(before, after);
             // a domain step's own values join it, and its value index: later steps may be linked to them as to the UI's
-            if (step.outcome != null && step.outcome.made != null) diff.put(FlowExecutor.STEP, step.outcome.made);
+            Object made = step.outcome != null ? step.outcome.made : null;
+            // a replayed step a later one uses: a value of it that comes late is waited for now, before the next step runs
+            Map<String, Object> diff = replayed != null && action.id != null
+                    ? FlowExecutor.settled(before, after, made, usedPaths(action.id), this::read,
+                            linkWaitMs != null ? linkWaitMs : FlowExecutor.defaultLinkWait())
+                    : Outcomes.diff(before, after);
+            if (made != null) diff.put(FlowExecutor.STEP, made);
             newValues = Outcomes.newValues(before, diff);
             changed = FlowJson.mapper().valueToTree(diff);
         }
@@ -1608,8 +1625,12 @@ public class UiMcpSession {
         PendingDialog dialog = host.openDialog();
         if (dialog != null) r.set("dialog", mapper.valueToTree(dialog));
         if (passed && !record) row = rowOf(action, step.outcome, given);
+        // a replayed action that ran without a reading, or failed, made nothing this run that is known: a later step's
+        // reference to it fails, never taking what an earlier run made
+        if (replayed != null && !check && !(replayed.action instanceof RememberVerb) && (!passed || changed == null)) {
+            model.forgetOutcome(replayed.id);
+        }
         if (passed && replayed != null) {
-            if (action.id != null && before != null) replayBefore.put(action.id, before);
             keepOutcome(replayed, changed, newValues, step);
             if (resolved != null && !resolved.isEmpty()) model.linkSeen(replayed.id, resolved);
         }
@@ -1671,12 +1692,15 @@ public class UiMcpSession {
         for (int i = records.size() - 1; i >= 0 && last == null; i--) {
             if (!StepNumbers.isCheck(records.get(i).action)) last = records.get(i);
         }
-        if (last == null || last.id != l.id) return;
+        if (last == null) return;
+        // folding may have taken it into a fold since: then it is that fold's last raw step
+        RecordedStep raw = last.id == l.id ? last : last.folded() ? model.rawOrRecord(l.id, true) : null;
+        if (raw == null || (raw != last && last.raw.get(last.raw.size() - 1) != raw)) return;
         Map<String, Object> diff = Outcomes.diff(l.before, now);
         if (l.made != null) diff.put(FlowExecutor.STEP, l.made);
         Map<String, String> values = Outcomes.newValues(l.before, diff);
         // what it made stays where it was: a later step may use it by that path
-        if (values.equals(last.newValues) || !values.entrySet().containsAll(last.newValues.entrySet())) return;
+        if (values.equals(raw.newValues) || !values.entrySet().containsAll(raw.newValues.entrySet())) return;
         model.outcome(l.id, FlowJson.mapper().valueToTree(diff), values);
     }
 
@@ -1717,13 +1741,6 @@ public class UiMcpSession {
         return verbs == null ? null : verbs.readUi();
     }
 
-    /** {@link #read}, for a value that comes late; one that cannot be read fails the step. */
-    private UiReading readOrFail() {
-        UiReading now = read();
-        if (now == null) throw new DriverException(Reason.NOT_FOUND, "the app could not be read again for a value that comes late");
-        return now;
-    }
-
     /**
      * {@code a} with every {@code ${} in its value strings kept as text ({@link Refs#escape}): a step the agent or the
      * person ran is recorded as typed, never as a reference to an earlier step.
@@ -1739,10 +1756,22 @@ public class UiMcpSession {
         }
     }
 
-    /** A fresh run of the recording: new {@code run} values, no reading of an earlier replay waited on. */
+    /** The paths the steps of the recording use of what the step {@code id} changes. */
+    private Set<String> usedPaths(String id) {
+        Set<String> out = new LinkedHashSet<String>();
+        for (Action a : model.actions()) {
+            try {
+                for (Refs.Ref r : Refs.of(a)) if (r.id.equals(id)) out.add(r.path);
+            } catch (IllegalArgumentException malformed) {
+                // the step fails on it when it fills its values
+            }
+        }
+        return out;
+    }
+
+    /** A fresh run of the recording: new {@code run} values. */
     private void startRun() {
         model.runValues().startRun(RunValues.newRunId(), LocalDateTime.now());
-        replayBefore.clear();
     }
 
     /**
@@ -2295,7 +2324,6 @@ public class UiMcpSession {
         String startWarning = startWarning();
         if (clear) {
             model.clear();
-            replayBefore.clear();
             recordingFromReset = false;
             freshStart = false;
             forgetLoadedTest();
@@ -2424,7 +2452,6 @@ public class UiMcpSession {
         result.set("test", mapper.readTree(text));
         if (clear) {
             model.clear();
-            replayBefore.clear();
             recordingFromReset = false;
             freshStart = false;
             forgetLoadedTest();
@@ -2681,7 +2708,6 @@ public class UiMcpSession {
         }
         Path abs = file.toAbsolutePath().normalize();
         model.load(flow, RecordedStep.Author.LOADED);
-        replayBefore.clear();
         model.loaded();
         foldNotes.clear();
         foldHint = null;
@@ -2743,7 +2769,6 @@ public class UiMcpSession {
      */
     synchronized void startRecording(boolean fromReset, boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
-        replayBefore.clear();
         foldNotes.clear();
         foldHint = null;
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
@@ -2808,7 +2833,6 @@ public class UiMcpSession {
                     }
                     boolean shared = model.shared();
                     model.stop();
-                    replayBefore.clear();
                     publish();
                     if (shared) view.agentStopped();
                 }
@@ -3042,7 +3066,6 @@ public class UiMcpSession {
         if (reset) {
             startRun();
         } else {
-            replayBefore.clear();
             String why = partialRefusal(range[0], range[1]);
             if (why != null) throw new DriverException(Reason.BAD_INPUT, why);
         }
@@ -3168,7 +3191,6 @@ public class UiMcpSession {
     private void stopAfterFailedRedo() {
         boolean shared = model.shared();
         model.stop();
-        replayBefore.clear();
         publish();
         if (shared) view.agentStopped();
     }
@@ -3235,9 +3257,17 @@ public class UiMcpSession {
         }
     }
 
-    /** Refuses an edit that would leave a recording export_test could not write; an empty one is allowed. */
+    /**
+     * Refuses an edit that would leave a recording export_test could not write, or one a recorded test could not hold:
+     * a step id or remember name used twice or not valid, a reference to no EARLIER step ({@link
+     * RecordedTestFiles#linkProblems(List)}). An empty one is allowed.
+     */
     private void validateEdit(List<Action> after) {
         if (after.isEmpty()) return;
+        List<String> links = RecordedTestFiles.linkProblems(after);
+        if (!links.isEmpty()) {
+            throw new DriverException(Reason.BAD_INPUT, String.join("; ", links) + " (the recording is unchanged)");
+        }
         try {
             JavaTestWriter.write(after, CHECK_PACKAGE, CHECK_CLASS, CHECK_METHOD, keptForms);
         } catch (ExportRefused e) {
@@ -3346,20 +3376,23 @@ public class UiMcpSession {
             if (!step.isObject()) throw new DriverException(Reason.BAD_INPUT, "edit 'step' must be a step object");
             tree = (ObjectNode) step.deepCopy();
             if (sentence == null && !tree.has("say") && old.say != null) tree.put("say", old.say);   // its sentence stays
+            // and so does its id: later steps may use what it changed
+            if (!tree.has("id") && old.id != null && !(old instanceof RememberVerb)) tree.put("id", old.id);
         } else {
             tree = (ObjectNode) stripNulls(mapper.valueToTree(old));
             if (hasTarget) {
                 if (!(old instanceof VerbAction) || !((VerbAction) old).targets().containsKey("target")) {
                     throw new DriverException(Reason.BAD_INPUT, what + " (" + tree.path("action").asText() + ") has no target");
                 }
-                tree.set("target", target);
+                // taken as given, as a step the agent runs: a ${ in a name is text
+                tree.set("target", Refs.mapValues(target, Refs::escape));
                 if (!target.hasNonNull("nth")) tree.remove("fragile");
             }
             if (text != null) {
                 if (!tree.hasNonNull("text")) {
                     throw new DriverException(Reason.BAD_INPUT, what + " (" + tree.path("action").asText() + ") has no text");
                 }
-                tree.put("text", text);
+                tree.put("text", Refs.escape(text));
             }
         }
         if (sentence != null) {
@@ -3417,12 +3450,34 @@ public class UiMcpSession {
                     ? what + "'s row by " + by + " is not known yet: replay the step once"
                     : what + "'s row by " + by + " is not known: no column tells the rows of its table apart");
         }
-        holder.set("row", mapper.valueToTree(to));
+        holder.set("row", toPosition ? mapper.valueToTree(to) : byValue(to, old.linkSeen));
         Action rewritten = action(tree);
         RecordingModel scratch = model.copy();
         scratch.row(at, rewritten, author, toPosition);
         validateEdit(scratch.actions());
         return model.row(at, rewritten, author, toPosition);
+    }
+
+    /**
+     * A row by value as the recording keeps it: each value the app showed as text (escaped), or - when the step was linked
+     * to it ({@code seen}: each reference with the value it stood for) - that reference again: a row named by position
+     * for a while is the row the link names once it is by value again.
+     */
+    private ObjectNode byValue(Map<String, Object> row, Map<String, String> seen) {
+        ObjectNode out = mapper.createObjectNode();
+        for (Map.Entry<String, Object> e : row.entrySet()) {
+            if (!(e.getValue() instanceof String)) {
+                out.set(e.getKey(), mapper.valueToTree(e.getValue()));
+                continue;
+            }
+            String value = (String) e.getValue();
+            String linked = null;
+            for (Map.Entry<String, String> s : seen.entrySet()) {
+                if (s.getValue().equals(value) && Refs.scan(s.getKey()).size() == 1) linked = s.getKey();
+            }
+            out.put(e.getKey(), linked != null ? linked : Refs.escape(value));
+        }
+        return out;
     }
 
     // ---- links: the agent's side of the palette's 🔗 (the same model edits, made by the agent) ---------------------
@@ -3612,7 +3667,7 @@ public class UiMcpSession {
             List<RecordedStep> records = model.records();
             RecordedStep added = records.get(records.size() - 1);
             // keepOutcome kept the value it read as the entry's value index
-            String value = added.newValues.isEmpty() ? "" : added.newValues.keySet().iterator().next();
+            String value = added.newValues.isEmpty() ? "a value" : added.newValues.keySet().iterator().next();
             return edited("remembered " + value + " as " + as + " (check " + model.addressOf(added.id) + ")");
         }
         if (steps == 0) throw new DriverException(Reason.BAD_INPUT, "the recording has no step to remember a value under");
@@ -3750,6 +3805,15 @@ public class UiMcpSession {
             }
         }
         return items;
+    }
+
+    /** Whether {@code a} has a reference (one it cannot read counts). */
+    private static boolean usesValues(Action a) {
+        try {
+            return !Refs.of(a).isEmpty();
+        } catch (IllegalArgumentException malformed) {
+            return true;
+        }
     }
 
     /** Whether {@code a} is a link's end: a later step uses what it changed (its id), or it uses an earlier one's. */
@@ -3998,6 +4062,9 @@ public class UiMcpSession {
         if (action == null) throw new DriverException(Reason.CAPABILITY_GAP, "no ready plugin offers '" + chosen.step + "' now");
         synchronized (this) {
             checkRev(seenRev);
+            RecordingModel scratch = model.copy();
+            scratch.fold(ids, action, by, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
             return edited(model.fold(ids, action, by, RecordedStep.Author.AGENT).did);
         }
     }
@@ -4023,6 +4090,13 @@ public class UiMcpSession {
                 throw new DriverException(Reason.BAD_INPUT, "step " + n + " is a do step: it folds into nothing");
             }
             if (r.group != null) throw new DriverException(Reason.BAD_INPUT, "step " + n + " is in a group: ungroup it first");
+            List<String> users = model.usersOf(r.action.id);
+            if (!users.isEmpty() || usesValues(r.action)) {
+                throw new DriverException(Reason.BAD_INPUT, "step " + n + (!users.isEmpty()
+                        ? " made a value " + (users.size() == 1 ? "step " : "steps ") + String.join(", ", users)
+                        + (users.size() == 1 ? " uses" : " use") : " uses a value an earlier step made")
+                        + ", and a link breaks a fold: use the exact value first (the recording is unchanged)");
+            }
             if (by == null) by = r.author;
             if (r.author != by) {
                 throw new DriverException(Reason.BAD_INPUT, "steps " + from + "-" + to + " are not one author's: the "
@@ -4061,6 +4135,9 @@ public class UiMcpSession {
     /** Puts the raw steps of fold {@code n} back, kept raw (folding leaves them as they are). */
     synchronized String recordingUnfold(int n, Integer rev) {
         checkRev(rev);
+        RecordingModel scratch = model.copy();
+        scratch.unfold(n, RecordedStep.Author.AGENT);
+        validateEdit(scratch.actions());
         return edited(model.unfold(n, RecordedStep.Author.AGENT));
     }
 

@@ -86,6 +86,8 @@ final class SessionTool implements McpToolDefinition {
             case "info": return m.writeValueAsString(info());
             case "lease": {
                 Lease.Grant g = lease.acquire(text(a, "owner"), a.hasNonNull("ttlMs") ? Long.valueOf(a.get("ttlMs").asLong()) : null);
+                // a new owner reads no outcome another one asked for
+                if (session != null) session.forgetOutcomeHandles();
                 ObjectNode r = m.createObjectNode();
                 r.put("token", g.token).put("owner", g.owner).put("since", Instant.ofEpochMilli(g.since).toString())
                         .put("ttlMs", g.ttlMs);
@@ -94,6 +96,7 @@ final class SessionTool implements McpToolDefinition {
             case "release": {
                 ObjectNode r = m.createObjectNode();
                 r.put("released", lease.release(text(a, "token")));
+                if (session != null) session.forgetOutcomeHandles();
                 return m.writeValueAsString(r);
             }
             case "renew": {
@@ -116,6 +119,7 @@ final class SessionTool implements McpToolDefinition {
                     @Override public Object call() {
                         AgentReset.run(verbs, app, spec);
                         session.startRecording(app != null);
+                        session.forgetOutcomeHandles();
                         return null;
                     }
                 });

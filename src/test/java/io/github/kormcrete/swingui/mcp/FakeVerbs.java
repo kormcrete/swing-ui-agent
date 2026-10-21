@@ -138,8 +138,12 @@ public class FakeVerbs implements Verbs {
     /** How often {@link #readUi} was called. */
     public int readUiCalls;
 
+    /** When set, what {@link #readUi} answers instead of {@link #readings}: the app as it is now. */
+    public java.util.function.Supplier<UiReading> reading;
+
     @Override public UiReading readUi() {
         readUiCalls++;
+        if (reading != null) return reading.get();
         if (readings.isEmpty()) return UiReading.builder().build();
         return readings.get(Math.min(readUiCalls, readings.size()) - 1);
     }

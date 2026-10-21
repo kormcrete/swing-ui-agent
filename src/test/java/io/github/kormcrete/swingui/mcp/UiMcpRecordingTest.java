@@ -3956,4 +3956,251 @@ class UiMcpRecordingTest {
         assertThat(steps).extracting(st -> st.path("folded").asInt(0)).containsExactly(0, 0, 0, 0, 0, 2);
         assertThat(steps.get(5).path("step").path("params").path("product").asText()).isEqualTo("Ballpoint pen");
     }
+
+    // ---- a fold keeps what its raw steps changed: a later step links to it ----------------------------------------
+
+    /** Order Desk's Place order: the button, then the confirmation's answer; the answer makes the new order. */
+    private static final DomainStep PLACE_ORDER = DomainStep.act("placeOrder", "Place the order")
+            .code((ui, p) -> {
+                ui.button("Place order").click();
+                ui.answer("Place order");
+            })
+            .java(STEPS_CLASS, "placeOrder(ui)")
+            .build();
+
+    /** The Orders table with one more order for each Place order answered so far (ORD-1640, then ORD-1641, ...). */
+    private java.util.function.Supplier<io.github.kormcrete.swingui.driver.outcome.UiReading> ordersPlaced() {
+        return () -> {
+            int placed = 0;
+            for (String c : new java.util.ArrayList<String>(backend.verbs.calls)) if (c.equals("answer Place order")) placed++;
+            String[] numbers = new String[placed + 1];
+            for (int i = 0; i <= placed; i++) numbers[i] = "ORD-" + (1640 + i);
+            return orders(numbers);
+        };
+    }
+
+    /** The last text typed into #search. */
+    private String lastSearch() {
+        List<String> typed = typed();
+        return typed.isEmpty() ? null : typed.get(typed.size() - 1);
+    }
+
+    private static final String PLACED = "${placeOrder.rows.Orders.added[0].Number}";
+
+    @Test
+    void theAgentsFoldKeepsWhatItsStepsChangedAndALaterStepLinksToIt() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), PLACE_ORDER);
+        s.reader(ordersPlaced());
+        backend.verbs.reading = ordersPlaced();
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Place order\"}}"));
+        s.verb("answer", mapper.readTree("{\"button\":\"Place order\"}"));
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("folded").asInt()).isEqualTo(2);
+        // the fold holds what its answer made
+        assertThat(s.recordedSteps().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+
+        s.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1641\"}"));
+
+        steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps.get(0).path("step").path("id").asText()).isEqualTo("placeOrder");
+        assertThat(steps.get(1).path("step").path("text").asText()).isEqualTo(PLACED);
+        // saved as a recorded test, it places a new order on every run and searches for that one
+        JsonNode file = mapper.readTree(s.exportRecordedTest("place-order", quoted(dir), null, false)).path("test");
+        assertThat(file.path("version").asInt()).isEqualTo(4);
+        RecordedTestFiles.read(dir.resolve("place-order.json"));
+        JsonNode run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"name\":\"place-order\"}")));
+        assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
+        assertThat(lastSearch()).isEqualTo("type #search ORD-1642 null null");
+        run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"name\":\"place-order\"}")));
+        assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
+        assertThat(lastSearch()).isEqualTo("type #search ORD-1643 null null");
+    }
+
+    @Test
+    void thePersonsOutcomeThatComesAfterTheFoldGoesToTheFold() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), PLACE_ORDER);
+        Inspector.Sink person = s.humanSink();
+        Map<String, Object> place = step("click", Locator.of("button", "Place order"));
+        place.put(Inspector.SEQ, 1);
+        Map<String, Object> answer = new LinkedHashMap<String, Object>();
+        answer.put("action", "answer");
+        answer.put("button", "Place order");
+        answer.put(Inspector.SEQ, 2);
+        assertThat(person.done(place).ok).isTrue();
+        assertThat(person.done(answer).ok).isTrue();
+        // the person is slow: folding takes the two steps before the palette read what the answer made
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+        io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
+        Map<String, Object> outcome = io.github.kormcrete.swingui.driver.outcome.Outcomes.diff(before, orders("ORD-1640", "ORD-1641"));
+        person.outcome(2, outcome, io.github.kormcrete.swingui.driver.outcome.Outcomes.newValues(before, outcome));
+        assertThat(s.recordedSteps().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+
+        assertThat(person.done(typing("search", "ORD-1641", 3)).ok).isTrue();
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(1).path("step").path("text").asText()).isEqualTo(PLACED);
+        s.exportRecordedTest("place-order", quoted(dir), null, false);
+        RecordedTestFiles.read(dir.resolve("place-order.json"));
+        s.reader(ordersPlaced());
+        backend.verbs.reading = ordersPlaced();
+        JsonNode run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"name\":\"place-order\"}")));
+        assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
+        assertThat(lastSearch()).isEqualTo("type #search ORD-1641 null null");
+    }
+
+    // ---- no edit leaves a recording that cannot be saved as a recorded test ----------------------------------------
+
+    /** The agent copies an order (step 1, id copy) and types its number (step 2, linked). */
+    private void copyAndTypeItsNumber() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"Copy of ORD-1641\"}"));
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo("Copy of " + NUMBER);
+    }
+
+    private String refusal(String json) {
+        return catchThrowableOfType(() -> call(json), DriverException.class).getMessage();
+    }
+
+    @Test
+    void aMoveThatPutsAUseBeforeItsSourceIsRefused() throws Exception {
+        copyAndTypeItsNumber();
+        List<String> before = kept();
+
+        assertThat(refusal("{\"op\":\"move\",\"n\":1,\"to\":2}"))
+                .contains("refers to 'copy', but no earlier step is named 'copy'").endsWith("(the recording is unchanged)");
+        assertThat(refusal("{\"op\":\"move\",\"n\":2,\"to\":1}")).endsWith("(the recording is unchanged)");
+        assertThat(kept()).isEqualTo(before);
+    }
+
+    @Test
+    void aWholeStepEditKeepsTheStepsIdAndTheRecordingStillSaves() throws Exception {
+        copyAndTypeItsNumber();
+
+        call("{\"op\":\"edit\",\"n\":1,\"step\":{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Copy order\"}}}");
+
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy");
+        JsonNode file = mapper.readTree(session.exportRecordedTest("copy", quoted(dir), null, false)).path("test");
+        assertThat(file.path("steps").get(0).path("id").asText()).isEqualTo("copy");
+        // a whole step naming another id leaves the use without its source: refused
+        assertThat(refusal("{\"op\":\"edit\",\"n\":1,\"step\":{\"action\":\"click\",\"id\":\"dup\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}}")).endsWith("(the recording is unchanged)");
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy");
+    }
+
+    @Test
+    void anInsertWithAClashingIdOrAUseOfNoEarlierStepIsRefused() throws Exception {
+        copyAndTypeItsNumber();
+        List<String> before = kept();
+
+        assertThat(refusal("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"click\",\"id\":\"copy\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Save\"}}}"))
+                .contains("'copy' is already the name of step 1").endsWith("(the recording is unchanged)");
+        assertThat(refusal("{\"op\":\"insert\",\"at\":1,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"note\"},"
+                + "\"text\":\"" + NUMBER.replace("\"", "\\\"") + "\"}}")).endsWith("(the recording is unchanged)");
+        assertThat(kept()).isEqualTo(before);
+        // a whole step is the file's form: its reference to an earlier step is one
+        call("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"note\"},"
+                + "\"text\":\"" + NUMBER + "\"}}");
+        assertThat(text(session.recordedSteps().get(2))).isEqualTo(NUMBER);
+        session.exportRecordedTest("copy", quoted(dir), null, false);
+    }
+
+    @Test
+    void anEditsTextIsTakenAsTypedAndTheRecordingStillSaves() throws Exception {
+        copyAndTypeItsNumber();
+
+        call("{\"op\":\"edit\",\"n\":2,\"text\":\"Hello ${name\"}");
+
+        // a ${ in it is text, as in a step the agent runs
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo("Hello $${name");
+        JsonNode file = mapper.readTree(session.exportRecordedTest("hello", quoted(dir), null, false)).path("test");
+        assertThat(file.path("steps").get(1).path("text").asText()).isEqualTo("Hello $${name");
+        assertThat(RecordedTestFiles.read(dir.resolve("hello.json")).steps).hasSize(2);
+        // and so is a target's name
+        call("{\"op\":\"edit\",\"n\":2,\"target\":{\"role\":\"text\",\"name\":\"${note}\"}}");
+        assertThat(mapper.valueToTree(session.recordedSteps().get(1).action).at("/target/name").asText()).isEqualTo("$${note}");
+    }
+
+    @Test
+    void aFoldOrUnfoldThatWouldBreakALinkIsRefused() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), PLACE_ORDER);
+        s.reader(ordersPlaced());
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Place order\"}}"));
+        s.verb("answer", mapper.readTree("{\"button\":\"Place order\"}"));
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(1);
+        s.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1641\"}"));
+        assertThat(text(s.recordedSteps().get(1))).isEqualTo(PLACED);
+
+        DriverException unfold = catchThrowableOfType(() -> recording(s, "{\"op\":\"unfold\",\"n\":1}"), DriverException.class);
+        assertThat(unfold.getMessage()).contains("step 2 uses what step 1 changed, and a link breaks a fold")
+                .endsWith("(the recording is unchanged)");
+
+        // without the link it unfolds; linked again to the answer, the two steps no longer fold
+        recording(s, "{\"op\":\"undo\"}");
+        assertThat(recording(s, "{\"op\":\"unfold\",\"n\":1}").path("steps")).hasSize(3);
+        recording(s, "{\"op\":\"link\",\"n\":3,\"ref\":\"${2.rows.Orders.added[0].Number}\"}");
+        DriverException fold = catchThrowableOfType(() -> recording(s, "{\"op\":\"fold\",\"from\":1,\"to\":2}"),
+                DriverException.class);
+        assertThat(fold.getMessage()).contains("step 2 made a value step 3 uses, and a link breaks a fold")
+                .endsWith("(the recording is unchanged)");
+        assertThat(recording(s, "{\"op\":\"list\"}").path("steps")).hasSize(3);
+    }
+
+    @Test
+    void aNameThePersonTypesForRememberThisIsKeptAsANameAndShown() throws Exception {
+        backend.verbs.remembered = "ORD-1641";
+        assertThat(sink.done(step("click", Locator.of("button", "Copy"))).ok).isTrue();
+        Map<String, Object> remember = step("remember", Locator.of("label", "Number"));
+        remember.put("as", "Order number");
+
+        Inspector.Result kept = sink.check(remember);
+
+        assertThat(kept.ok).as(kept.line).isTrue();
+        assertThat(kept.line).contains("as orderNumber");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.RememberVerb) session.recordedSteps().get(1).action).as)
+                .isEqualTo("orderNumber");
+        // the same words again: the next free name
+        assertThat(sink.check(remember).line).contains("as orderNumber2");
+        // a name typed as a name stays the person's: taken twice it is refused in words
+        remember.put("as", "number");
+        assertThat(sink.check(remember).ok).isTrue();
+        Inspector.Result twice = sink.check(remember);
+        assertThat(twice.ok).isFalse();
+        assertThat(twice.line).contains("'number' is already the name of check 1.3");
+        session.exportRecordedTest("copy", quoted(dir), null, false);
+    }
+
+    @Test
+    void aLinkedRowByPositionAndBackByValueKeepsItsLink() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        backend.verbs.outcome.row = new RowChoice(1, java.util.Collections.<String, Object>singletonMap("Number", "ORD-1641"));
+        session.verb("click", mapper.readTree(
+                "{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":\"ORD-1641\"}}}"));
+        assertThat(call("{\"op\":\"list\"}").at("/steps/1/step/target/row/Number").asText()).isEqualTo(NUMBER);
+
+        assertThat(call("{\"op\":\"row\",\"n\":2,\"by\":\"position\"}").at("/steps/1/step/target/row").toString())
+                .isEqualTo("{\"index\":1}");
+        JsonNode back = call("{\"op\":\"row\",\"n\":2,\"by\":\"value\"}");
+
+        assertThat(back.at("/steps/1/step/target/row/Number").asText()).isEqualTo(NUMBER);
+    }
+
+    @Test
+    void aSourceTheReplayCannotReadGivesNoValueOfAnEarlierRun() throws Exception {
+        copyAndTypeItsNumber();
+        call("{\"op\":\"stop\"}");
+        noReset(session);
+        session.reader(() -> null);
+        backend.verbs.calls.clear();
+
+        JsonNode run = call("{\"op\":\"replay\"}");
+
+        assertThat(run.path("passed").asBoolean()).isFalse();
+        assertThat(run.at("/steps/1/message").asText()).contains("Step 1 (Copy) added no row to Orders");
+        assertThat(typed()).isEmpty();
+    }
 }

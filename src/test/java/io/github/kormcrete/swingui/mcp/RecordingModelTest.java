@@ -819,13 +819,66 @@ class RecordingModelTest {
         assertThat(model.runValues().fill("${copy.rows.Orders.added[0].Number}")).isEqualTo("ORD-1641");
     }
 
+    private static io.github.kormcrete.swingui.flow.DoAction placeOrder() {
+        io.github.kormcrete.swingui.flow.DoAction d = new io.github.kormcrete.swingui.flow.DoAction();
+        d.step = "order-desk:placeOrder";
+        return d;
+    }
+
     @Test
-    void anEditOfTheActionKeepsWhatTheStepChangedAndUndoToo() {
+    void aFoldHoldsWhatItsRawStepsChangedAndOneThatComesLate() {
+        RecordedStep place = model.append(click("Place order"), AGENT);
+        com.fasterxml.jackson.databind.node.ObjectNode note = io.github.kormcrete.swingui.flow.FlowJson.mapper().createObjectNode();
+        note.putObject("fields").put("Note", "Rush order");
+        model.outcome(place.id, note, Collections.singletonMap("Rush order", ".fields.Note"));
+        RecordedStep answer = model.append(click("Confirm"), AGENT);
+
+        RecordedStep fold = model.fold(java.util.Arrays.asList(place.id, answer.id), placeOrder(), AGENT, AGENT).step;
+        assertThat(model.records().get(0).newValues).containsOnlyKeys("Rush order");
+        assertThat(model.runValues().has("#" + fold.id)).isTrue();
+
+        // the answer's outcome comes after the fold took it: the fold holds it, under its key too
+        model.outcome(answer.id, added("ORD-1641"), index("ORD-1641"));
+        RecordedStep held = model.records().get(0);
+        assertThat(held.newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number")
+                .containsEntry("Rush order", ".fields.Note");
+        assertThat(model.runValues().get("#" + fold.id).at("/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
+    }
+
+    @Test
+    void twoRawStepsThatAddRowsToOneTableAddUpAndAValueChangedAgainIsTheLaterOne() {
+        RecordedStep first = model.append(click("Copy"), AGENT);
+        com.fasterxml.jackson.databind.node.ObjectNode a = added("ORD-1641");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) a).putObject("fields").put("Number", "ORD-1641");
+        java.util.Map<String, String> ai = new java.util.LinkedHashMap<String, String>();
+        ai.put("ORD-1641", ".rows.Orders.added[0].Number");
+        model.outcome(first.id, a, ai);
+        RecordedStep second = model.append(click("Copy"), AGENT);
+        com.fasterxml.jackson.databind.node.ObjectNode b = added("ORD-1642");
+        b.putObject("fields").put("Number", "ORD-1642");
+        java.util.Map<String, String> bi = new java.util.LinkedHashMap<String, String>();
+        bi.put("ORD-1642", ".fields.Number");
+        model.outcome(second.id, b, bi);
+
+        model.fold(java.util.Arrays.asList(first.id, second.id), placeOrder(), AGENT, AGENT);
+
+        RecordedStep fold = model.records().get(0);
+        assertThat(fold.outcome.at("/rows/Orders/added")).hasSize(2);
+        assertThat(fold.outcome.at("/fields/Number").asText()).isEqualTo("ORD-1642");
+        // the first row moved nowhere; the second step's own value keeps its field
+        assertThat(fold.newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number")
+                .containsEntry("ORD-1642", ".fields.Number");
+    }
+
+    @Test
+    void anEditOfTheActionForgetsWhatTheStepChangedAndUndoBringsItBack() {
         RecordedStep copy = model.append(click("Copy"), AGENT);
         model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
 
+        // the edited step may do something else: what the old one made feeds no link
         model.replace(at("1"), click("Copy order"), PERSON);
-        assertThat(model.records().get(0).outcome).isNotNull();
+        assertThat(model.records().get(0).outcome).isNull();
+        assertThat(model.records().get(0).newValues).isEmpty();
         model.undo(PERSON);
         assertThat(model.records().get(0).outcome).isNotNull();
         assertThat(model.records().get(0).newValues).containsKey("ORD-1641");

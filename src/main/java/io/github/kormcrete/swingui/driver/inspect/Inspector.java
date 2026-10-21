@@ -113,6 +113,14 @@ public final class Inspector {
      */
     public static final String SEQ = "seq";
 
+    /**
+     * The words a person typed for Remember this as a name a later step can use: "Order number" → {@code orderNumber}
+     * (words joined, the first in lower case, a letter first, at most 36 characters).
+     */
+    public static String nameFor(String words) {
+        return CheckMenu.name(words);
+    }
+
     /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     public interface Sink {
         /**

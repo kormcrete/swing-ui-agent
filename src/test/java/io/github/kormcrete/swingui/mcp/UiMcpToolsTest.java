@@ -531,6 +531,27 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void outcomeHandlesGoWithTheTestThatTookThem() throws Exception {
+        UiMcpSession s = session();
+        host.verbs.readings.add(orders("ORD-1640"));
+        host.verbs.readings.add(orders("ORD-1640", "ORD-1641"));
+        JsonNode r = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"click\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},\"record\":false,\"outcome\":true}")));
+        int handle = r.path("outcomeHandle").asInt();
+        assertThat(tool(s, "read").invoke(mapper.readTree("{\"form\":\"outcome\",\"handle\":" + handle + "}")))
+                .contains("ORD-1641");
+
+        // a session reset or another lease: the next test starts with none, and numbers keep counting
+        s.forgetOutcomeHandles();
+
+        assertThatThrownBy(() -> tool(s, "read").invoke(mapper.readTree("{\"form\":\"outcome\",\"handle\":" + handle + "}")))
+                .hasMessageContaining("no outcome handle " + handle);
+        JsonNode next = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"click\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},\"record\":false,\"outcome\":true}")));
+        assertThat(next.path("outcomeHandle").asInt()).isGreaterThan(handle);
+    }
+
+    @Test
     void aVerbToolDeclaresOutcomeAndReturnsIt() throws Exception {
         UiMcpSession s = session();
         io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition click = tool(s, "click");

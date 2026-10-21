@@ -92,6 +92,8 @@ final class RecordingModel {
     private int replayFloor;
     /** What the steps changed and remembered, by step id (or {@link #key}), and this run's {@code run} values. */
     private RunValues runValues = freshValues();
+    /** A {@link #copy}: edits are tried on it, and it changes no values it shares with the recording. */
+    private boolean trial;
     /** By record id: the paths links made to that step use (see {@link #link}). */
     private final Map<Integer, Set<String>> linkedPaths = new HashMap<Integer, Set<String>>();
 
@@ -315,6 +317,7 @@ final class RecordingModel {
      */
     RecordingModel copy() {
         RecordingModel copy = new RecordingModel();
+        copy.trial = true;
         copy.steps.addAll(steps);
         copy.nextId = nextId;
         copy.nextGroupId = nextGroupId;
@@ -814,15 +817,21 @@ final class RecordingModel {
             if (r.group == null ? group != null : !same(r.group, group)) {
                 throw bad("the steps are not in one group (nothing folded)");
             }
+            // each raw step keeps what it changed while the fold does: a value of it that comes late still finds it
             if (r.folded()) raw.addAll(r.raw);
-            else raw.add(r.keptRaw(false).shrunk());
+            else raw.add(r.keptRaw(false));
         }
         int a = addressOf(ids.get(0)).step;
         int b = addressOf(ids.get(ids.size() - 1)).step;
         List<RecordedStep> before = copyOfRecords();
-        RecordedStep made = RecordedStep.fold(nextId++, by, action, raw).inGroup(group);
+        RecordedStep made = merged(RecordedStep.fold(nextId++, by, action, raw).inGroup(group));
         for (int k = 0; k < ids.size(); k++) steps.remove(first);
         steps.add(first, made);
+        // a copy only tries the edit: the values it shares are the recording's
+        if (made.outcome != null && !trial) {
+            runValues.put(key(made), made.outcome);
+            shrinkOlderThan(FULL_OUTCOMES);
+        }
         String what = stepsText(a, b);
         String into = action.say == null ? action.describe() : action.say;
         String fold = "fold of " + what + " into \"" + into + "\"";
@@ -862,6 +871,12 @@ final class RecordingModel {
         if (fold == null || !fold.folded()) {
             throw bad("step " + n + " is no fold: only a do step a recording folded from raw steps unfolds");
         }
+        List<String> users = usersOf(fold.action.id);
+        if (!users.isEmpty()) {
+            boolean one = users.size() == 1;
+            throw bad((one ? "step " : "steps ") + and(users) + (one ? " uses" : " use") + " what step " + n + " changed, "
+                    + "and a link breaks a fold: use the exact value there first (the recording is unchanged)");
+        }
         List<RecordedStep> before = copyOfRecords();
         steps.remove(s.action);
         for (int k = fold.raw.size() - 1; k >= 0; k--) {
@@ -892,6 +907,57 @@ final class RecordingModel {
         for (int i : marked) steps.set(i, steps.get(i).keptRaw(true));
         String what = stepsText(from, to);
         return finish("keep raw of " + what, "kept " + what + " raw", author, before, false);
+    }
+
+    /** {@code fold} with what its raw steps changed, merged ({@link FoldOutcomes}); as it is when they changed nothing known. */
+    private static RecordedStep merged(RecordedStep fold) {
+        FoldOutcomes.Merged m = FoldOutcomes.of(fold.raw);
+        return m == null ? fold : fold.withOutcome(m.outcome, m.newValues);
+    }
+
+    /** The flat index of the fold that holds the raw step {@code id}, or -1. */
+    private int foldOf(int id) {
+        for (int i = 0; i < steps.size(); i++) {
+            RecordedStep s = steps.get(i);
+            if (!s.folded()) continue;
+            for (RecordedStep r : s.raw) if (r.id == id) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * The record {@code id} as the recording holds it: a step of its own, or a raw step of a fold (whose last raw step it
+     * then is when {@code last}); null when it is gone, or not the fold's last raw step.
+     */
+    RecordedStep rawOrRecord(int id, boolean last) {
+        int i = indexOf(id);
+        if (i >= 0) return steps.get(i);
+        int f = foldOf(id);
+        if (f < 0) return null;
+        List<RecordedStep> raw = steps.get(f).raw;
+        for (int k = 0; k < raw.size(); k++) {
+            if (raw.get(k).id == id) return !last || k == raw.size() - 1 ? raw.get(k) : null;
+        }
+        return null;
+    }
+
+    /** The numbers of the steps whose references use {@code name} (a step id or remember name); none for null. */
+    List<String> usersOf(String name) {
+        Set<Integer> out = new TreeSet<Integer>();
+        if (name == null) return new ArrayList<String>();
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        for (StepNumbers.Step n : st) {
+            for (int i = n.first(); i <= n.last(); i++) {
+                try {
+                    for (Refs.Ref r : Refs.of(steps.get(i).action)) if (name.equals(r.id)) out.add(n.number);
+                } catch (IllegalArgumentException malformed) {
+                    // a reference it cannot read names no one
+                }
+            }
+        }
+        List<String> numbers = new ArrayList<String>();
+        for (int k : out) numbers.add(String.valueOf(k));
+        return numbers;
     }
 
     /** The flat index of the record with {@code id}, or -1. */
@@ -929,10 +995,42 @@ final class RecordingModel {
      */
     void outcome(int id, ObjectNode outcome, Map<String, String> newValues) {
         int i = indexOf(id);
-        if (i < 0) return;
+        if (i < 0) {
+            lateRaw(id, outcome, newValues);
+            return;
+        }
         RecordedStep s = steps.get(i).withOutcome(outcome, newValues);
         steps.set(i, s);
         runValues.put(key(s), outcome);
+        shrinkOlderThan(FULL_OUTCOMES);
+    }
+
+    /**
+     * The record {@code id} ran again and what it changed is not known (the app could not be read, or it failed): it
+     * keeps nothing, and {@link #runValues} nothing under its key, so a reference to it fails rather than give what an
+     * earlier run made. Not an edit.
+     */
+    void forgetOutcome(int id) {
+        int i = indexOf(id);
+        if (i < 0) return;
+        RecordedStep s = steps.get(i);
+        steps.set(i, s.withOutcome(null, null));
+        runValues.remove(key(s));
+    }
+
+    /**
+     * What the raw step {@code id} of a fold changed, come after folding took it (a person's outcome is read at their
+     * next input): kept on the raw step, and the fold's merged outcome made again. Nothing when no fold holds it.
+     */
+    private void lateRaw(int id, ObjectNode outcome, Map<String, String> newValues) {
+        int f = foldOf(id);
+        if (f < 0) return;
+        RecordedStep fold = steps.get(f);
+        List<RecordedStep> raw = new ArrayList<RecordedStep>(fold.raw);
+        for (int k = 0; k < raw.size(); k++) if (raw.get(k).id == id) raw.set(k, raw.get(k).withOutcome(outcome, newValues));
+        RecordedStep made = merged(fold.withRaw(raw));
+        steps.set(f, made);
+        if (made.outcome != null) runValues.put(key(made), made.outcome);
         shrinkOlderThan(FULL_OUTCOMES);
     }
 
@@ -1392,15 +1490,7 @@ final class RecordingModel {
 
     /** An outcome holding only the values of a value index, each at its path. */
     private static ObjectNode indexTree(Map<String, String> newValues) {
-        ObjectNode root = FlowJson.mapper().createObjectNode();
-        for (Map.Entry<String, String> v : newValues.entrySet()) {
-            try {
-                JsonPaths.put(root, "$" + v.getValue(), v.getKey());
-            } catch (IllegalArgumentException clash) {
-                // two values on one path cannot both be kept: the first stays
-            }
-        }
-        return root;
+        return FoldOutcomes.indexTree(newValues);
     }
 
     // ------------------------------------------------------------------ undo
@@ -1411,11 +1501,17 @@ final class RecordingModel {
         if (e == null) return null;
         List<RecordedStep> out = new ArrayList<RecordedStep>(e.before.size());
         Map<Integer, RecordedStep> now = new HashMap<Integer, RecordedStep>();
-        for (RecordedStep s : steps) now.put(s.id, s);
+        for (RecordedStep s : steps) {
+            now.put(s.id, s);
+            // an undone fold's raw steps come back with what they changed since
+            if (s.folded()) for (RecordedStep r : s.raw) now.put(r.id, r);
+        }
         for (RecordedStep s : e.before) {
-            // what a step changed in the app is no edit: undo keeps what is known now
+            // what a step changed in the app is no edit: undo keeps what is known now (an edit forgot it: the old one's)
             RecordedStep current = now.get(s.id);
-            if (current != null) s = s.withOutcome(current.outcome, current.newValues);
+            if (current != null && (current.outcome != null || !current.newValues.isEmpty())) {
+                s = s.withOutcome(current.outcome, current.newValues);
+            }
             out.add(e.keepRawOnUndo.contains(s.id) ? s.keptRaw(true) : s);
         }
         if (!e.cut) {
