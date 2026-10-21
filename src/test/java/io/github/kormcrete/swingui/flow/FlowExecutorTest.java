@@ -459,7 +459,8 @@ class FlowExecutorTest {
 
         assertThat(step.passed).isFalse();
         assertThat(step.message).isEqualTo("NOT_FOUND: no earlier step is named orderNumber");
-        assertThat(step.ms).isLessThan(300); // nothing to read again: no wait
+        // nothing to read again: no wait (counted, not timed: a slow machine must not fail it)
+        assertThat(host.verbs.readUiCalls).isZero();
         assertThat(host.verbs.calls).isEmpty();
     }
 

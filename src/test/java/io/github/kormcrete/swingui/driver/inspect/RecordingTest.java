@@ -2699,7 +2699,8 @@ class RecordingTest {
             recording.panel.press("✕ Delete");
         });
         eventually(() -> sink.log.size() == 1 ? Boolean.TRUE : null);
-        settle();
+        // the list is read again after the delete (sink thread, then the EDT, twice): the person clicks what it shows then
+        eventually(() -> recording.panel.rows().size() == 2 ? Boolean.TRUE : null);
         SwingUtilities.invokeAndWait(() -> {
             recording.panel.select(1);
             recording.panel.press("✕ Delete");
