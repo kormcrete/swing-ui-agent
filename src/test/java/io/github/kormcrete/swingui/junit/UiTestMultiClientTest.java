@@ -159,6 +159,8 @@ class UiTestMultiClientTest {
             assertThat(EVENTS).contains("low reset user1", "high reset user2", "body");
             assertThat(EVENTS.indexOf("low reset user1")).isLessThan(EVENTS.indexOf("high reset user2"));
             assertThat(seenX.runId()).isNotEqualTo(seenY.runId());
+            // one test method: one set of run values for all its clients
+            assertThat(seenX.run()).isSameAs(seenY.run());
         } finally {
             stopTwo();
         }

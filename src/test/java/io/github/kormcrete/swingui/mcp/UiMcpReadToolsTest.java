@@ -140,7 +140,7 @@ class UiMcpReadToolsTest {
     @Test
     void anUnknownFormIsBadInput() {
         assertThatThrownBy(() -> recording.read(json("{\"target\":{\"role\":\"x\"},\"form\":\"pixels\"}")))
-                .hasMessage("BAD_INPUT: unknown read form 'pixels' (known: node, all, geometry, candidates, menuItems)");
+                .hasMessage("BAD_INPUT: unknown read form 'pixels' (known: node, all, geometry, candidates, menuItems, outcome)");
     }
 
     @Test

@@ -100,7 +100,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.github.kormcrete.swingui.junit.UiAssertions.assertThat;
 
-/** Recorded through swing-ui-agent. Replace literals the test creates with ui.runId(). */
+/** Recorded through swing-ui-agent. Replace literals the test creates with ui.run().id(). */
 @UiTest
 class NewOrderForAdaUiIT {
 

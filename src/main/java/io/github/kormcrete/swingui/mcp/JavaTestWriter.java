@@ -93,6 +93,8 @@ public final class JavaTestWriter {
     /** A path into what a domain step's body returned: {@code .step...}. */
     private static final Pattern STEP_PATH = Pattern.compile("(\\.step|\\['step'\\]|\\[\"step\"\\])([.\\[].*)?");
     private static final Set<String> RUN_VALUES = new HashSet<String>(Arrays.asList("id", "date", "time"));
+    /** One value of an outcome local, as {@link Writer#expression} writes it: {@code copy.text("$.fields.Qty")}. */
+    private static final Pattern OUTCOME_TEXT = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\.text\\((\"[^\"\\\\]*\")\\)");
     /** Names a local must not take: Java's own words, the test's {@code ui}, and packages a full class name may start with. */
     private static final Set<String> NOT_LOCALS = new HashSet<String>(Arrays.asList("abstract", "assert", "boolean", "break",
             "byte", "case", "catch", "char", "class", "const", "continue", "default", "do", "double", "else", "enum", "extends",
@@ -278,6 +280,8 @@ public final class JavaTestWriter {
         /** Why a source step's outcome has no Java form, by index. */
         private final Map<Integer, String> noOutcome = new HashMap<Integer, String>();
         private final Set<String> localNames = new HashSet<String>();
+        /** Every reference marker this export made: a do step's form must carry them unchanged ({@link #intact}). */
+        private final Set<String> markers = new HashSet<String>();
         /** The record labels, "step 3" or "check 3.1", by index. */
         private List<String> what;
         /** The local a remember statement being built declares. */
@@ -504,8 +508,9 @@ public final class JavaTestWriter {
                 // every reference is looked at: one problem each
                 String java = expression(r, at, what);
                 if (java == null) all = false;
-                out.append(Refs.unescape(text.substring(last, r.start)))
-                        .append(REF_OPEN).append(r.source).append(REF_SPLIT).append(java).append(REF_CLOSE);
+                String marker = REF_OPEN + r.source + REF_SPLIT + java + REF_CLOSE;
+                markers.add(marker);
+                out.append(Refs.unescape(text.substring(last, r.start))).append(marker);
                 last = r.end;
             }
             return all ? out.append(Refs.unescape(text.substring(last))).toString() : null;
@@ -628,6 +633,19 @@ public final class JavaTestWriter {
                 problems.add(what + ": " + f.refused);
                 return;
             }
+            if (!carried(f)) {
+                List<String> sources = new ArrayList<String>();
+                if (d.params != null) {
+                    for (String v : d.params.values()) {
+                        Matcher m = REF_MARK.matcher(v == null ? "" : v);
+                        while (m.find()) sources.add(m.group(1));
+                    }
+                }
+                problems.add(what + ": " + (f.sentence != null ? f.sentence : d.describe()) + " changes what it is given from "
+                        + "earlier steps (" + String.join(", ", sources) + ") in its body, which its Java form cannot carry: "
+                        + "give the step a java(...) call in the plugin, or export the recording as a recorded test");
+                return;
+            }
             boolean check = StepNumbers.isCheck(d);
             String say = d.say == null || d.say.trim().isEmpty() ? null : d.say.trim();
             if (f.javaClass != null) {
@@ -677,6 +695,56 @@ public final class JavaTestWriter {
             stepLines.set(i, String.join("\n", entries));
         }
 
+        /** True when every value of an earlier step in {@code f} is one this export made, unchanged ({@link #intact}). */
+        private boolean carried(DoForm f) {
+            if (f.values != null) {
+                for (String v : f.values.values()) if (v != null && !intact(v)) return false;
+            }
+            if (f.steps != null) {
+                for (Action a : f.steps) if (!intact(FlowJson.mapper().valueToTree(a))) return false;
+            }
+            return true;
+        }
+
+        private boolean intact(JsonNode n) {
+            if (n.isTextual()) return intact(n.textValue());
+            for (JsonNode c : n) if (!intact(c)) return false;
+            if (n.isObject()) {
+                for (java.util.Iterator<String> it = n.fieldNames(); it.hasNext(); ) if (!intact(it.next())) return false;
+            }
+            return true;
+        }
+
+        /**
+         * True when each reference marker in {@code s} is one {@link #markers} holds, whole: a plugin body that cut or
+         * changed a value it was given leaves a marker no Java expression stands for.
+         */
+        private boolean intact(String s) {
+            int i = 0;
+            while (i < s.length()) {
+                char c = s.charAt(i);
+                if (c == REF_OPEN) {
+                    int close = s.indexOf(REF_CLOSE, i);
+                    if (close < 0 || !markers.contains(s.substring(i, close + 1))) return false;
+                    i = close + 1;
+                } else if (c == REF_SPLIT || c == REF_CLOSE) {
+                    return false;
+                } else {
+                    i++;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * A number param that holds values of earlier steps: {@code copy.number("$.fields.Qty")} for one value of an
+         * outcome, else {@code ui.number(...)}; both fail in plain words on a text that is no whole number.
+         */
+        private String number(String value) {
+            Matcher m = OUTCOME_TEXT.matcher(quote(value));
+            return m.matches() ? m.group(1) + ".number(" + m.group(2) + ")" : "ui.number(" + quote(value) + ")";
+        }
+
         /** {@code f}'s call with its values as Java literals, on its class; null (a problem recorded) when it names no param. */
         private String typedCall(DoForm f, String what) {
             Matcher m = PLACEHOLDER.matcher(f.call);
@@ -691,7 +759,7 @@ public final class JavaTestWriter {
                 }
                 boolean reference = value.indexOf(REF_OPEN) >= 0;
                 String literal = !f.numbers.contains(name) ? quote(value)
-                        : reference ? "Integer.parseInt(" + quote(value) + ")" : String.valueOf(Integer.parseInt(value));
+                        : reference ? number(value) : String.valueOf(Integer.parseInt(value));
                 m.appendReplacement(out, Matcher.quoteReplacement(literal));
             }
             m.appendTail(out);
@@ -1207,7 +1275,7 @@ public final class JavaTestWriter {
             }
 
             sb.append("\n");
-            sb.append("/** Recorded through swing-ui-agent. Replace literals the test creates with ui.runId(). */\n");
+            sb.append("/** Recorded through swing-ui-agent. Replace literals the test creates with ui.run().id(). */\n");
             sb.append("@UiTest\n");
             sb.append("class ").append(className).append(" {\n\n");
             sb.append("    @Test\n");
@@ -1284,7 +1352,10 @@ public final class JavaTestWriter {
 
     /** {@code text} with each reference marked for the writer ({@link #REF_OPEN}) back as it was written: {@code ${...}}. */
     private static String readable(String text) {
-        return text.indexOf(REF_OPEN) < 0 ? text : REF_MARK.matcher(text).replaceAll("$1");
+        if (text.indexOf(REF_OPEN) < 0 && text.indexOf(REF_SPLIT) < 0 && text.indexOf(REF_CLOSE) < 0) return text;
+        // a damaged marker's leftovers go too
+        return REF_MARK.matcher(text).replaceAll("$1").replace(String.valueOf(REF_OPEN), "")
+                .replace(String.valueOf(REF_SPLIT), "").replace(String.valueOf(REF_CLOSE), "");
     }
 
     /**
@@ -1303,7 +1374,13 @@ public final class JavaTestWriter {
             }
             if (open > i) parts.add(literalOf(s.substring(i, open)));
             int close = s.indexOf(REF_CLOSE, open);
-            parts.add(s.substring(s.indexOf(REF_SPLIT, open) + 1, close));
+            int split = s.indexOf(REF_SPLIT, open);
+            if (close < 0 || split < 0 || split > close) {
+                // a damaged marker (the writer refuses those first): its text stays text
+                parts.add(literalOf(s.substring(open)));
+                break;
+            }
+            parts.add(s.substring(split + 1, close));
             i = close + 1;
         }
         return String.join(" + ", parts);

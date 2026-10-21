@@ -73,10 +73,11 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             store.put("pool", pool);
             store.put("reserved", reserved);
             List<Client> clients = new ArrayList<Client>();
+            RunInfo values = RunInfo.start();   // one ${run.id} for the test method, whichever client uses it
             for (int i = 0; i < reserved.size(); i++) {   // ascending port order
                 UiRun run = new UiRun(reserved.get(i).shared(), owner(c), screenshotRoot(c.getRequiredTestClass()));
                 runs.add(run);
-                clients.add(run.begin(aliases.get(i), runId()));   // its own runId
+                clients.add(run.begin(aliases.get(i), runId(), values));   // its own runId
             }
             store.put("clients", clients);
             return clients;

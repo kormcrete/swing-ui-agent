@@ -1099,9 +1099,17 @@ public class UiMcpSession {
     private ObjectNode readNode(JsonNode args) {
         String form = text(args, "form");
         if (form == null) form = "node";
-        if (!Arrays.asList("node", "all", "geometry", "candidates", "menuItems").contains(form)) {
+        if (!Arrays.asList("node", "all", "geometry", "candidates", "menuItems", "outcome").contains(form)) {
             throw new DriverException(Reason.BAD_INPUT, "unknown read form '" + form
-                    + "' (known: node, all, geometry, candidates, menuItems)");
+                    + "' (known: node, all, geometry, candidates, menuItems, outcome)");
+        }
+        if ("outcome".equals(form)) {
+            Integer handle = integer(args, "handle");
+            if (handle == null) throw new DriverException(Reason.BAD_INPUT, "read form outcome needs 'handle'");
+            ObjectNode r = mapper.createObjectNode();
+            r.put("found", true);
+            r.set("outcome", outcomeAgain(handle));
+            return r;
         }
         boolean menuItems = "menuItems".equals(form);
         Locator target = null;
@@ -1376,6 +1384,47 @@ public class UiMcpSession {
         }
     }
 
+    /** How many readings before a step the agent keeps for {@code read} form {@code outcome}; older ones are dropped. */
+    static final int KEPT_OUTCOMES = 20;
+    private int nextOutcomeHandle = 1;
+    /** The reading before each step whose outcome was asked for, by handle, with what a domain step's body returned. */
+    private final Map<Integer, Object[]> keptOutcomes = new LinkedHashMap<Integer, Object[]>() {
+        private static final long serialVersionUID = 1L;
+        @Override protected boolean removeEldestEntry(Map.Entry<Integer, Object[]> eldest) {
+            return size() > KEPT_OUTCOMES;
+        }
+    };
+
+    /** Keeps {@code before} (and {@code made}) for reading the step's outcome again; its handle. */
+    private int keepForRereading(UiReading before, Map<String, Object> made) {
+        synchronized (keptOutcomes) {
+            int handle = nextOutcomeHandle++;
+            keptOutcomes.put(handle, new Object[] {before, made});
+            return handle;
+        }
+    }
+
+    /**
+     * What the step of {@code handle} changed so far: the app read now, against the reading kept before that step, with
+     * what a domain step's body returned under {@code step}. BAD_INPUT for a handle not kept (any more).
+     */
+    @SuppressWarnings("unchecked")
+    private ObjectNode outcomeAgain(int handle) {
+        Object[] kept;
+        synchronized (keptOutcomes) {
+            kept = keptOutcomes.get(handle);
+        }
+        if (kept == null) {
+            throw new DriverException(Reason.BAD_INPUT, "no outcome handle " + handle + ": the agent keeps the readings of the "
+                    + "last " + KEPT_OUTCOMES + " steps whose outcome was asked for");
+        }
+        UiReading now = read();
+        if (now == null) throw new DriverException(Reason.CAPABILITY_GAP, "the app cannot be read");
+        Map<String, Object> diff = Outcomes.diff((UiReading) kept[0], now);
+        if (kept[1] != null) diff.put(FlowExecutor.STEP, kept[1]);
+        return FlowJson.mapper().valueToTree(diff);
+    }
+
     /** The request for a step's outcome in a step object ({@code "outcome": true}), taken out of it; false when none. */
     private static boolean takeOutcome(JsonNode step) {
         if (!(step instanceof ObjectNode) || !step.has("outcome")) return false;
@@ -1498,9 +1547,14 @@ public class UiMcpSession {
             }
         }
         if (wantOutcome && passed) {
-            if (StepNumbers.isCheck(action)) r.putObject("outcome");
-            else if (changed != null) r.set("outcome", changed.deepCopy());
-            else r.putNull("outcome");   // the app could not be read
+            if (StepNumbers.isCheck(action)) {
+                r.putObject("outcome");
+            } else if (changed != null) {
+                r.set("outcome", changed.deepCopy());
+                r.put("outcomeHandle", keepForRereading(before, step.outcome != null ? step.outcome.made : null));
+            } else {
+                r.putNull("outcome");   // the app could not be read
+            }
         }
         if (resolved != null && !resolved.isEmpty()) r.set("resolved", mapper.valueToTree(resolved));
         if (step != null && step.pending != null) r.set("pending", mapper.valueToTree(step.pending));

@@ -73,7 +73,7 @@
           "outcome": {
             "type": "boolean",
             "default": false,
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -163,7 +163,7 @@
                 },
                 "outcome": {
                   "type": "boolean",
-                  "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+                  "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
                 }
               },
               "required": [
@@ -414,7 +414,7 @@
     },
     {
       "name": "read",
-      "description": "Reads one element without acting: its node, or with row/column one table cell or row. 'target' is required for every form except menuItems. A node carries 'tooltip' when the element (or the rendered cell) shows one. A target that does not resolve returns found:false with candidates.",
+      "description": "Reads one element without acting: its node, or with row/column one table cell or row. 'target' is required for every form except menuItems and outcome. A node carries 'tooltip' when the element (or the rendered cell) shows one. A target that does not resolve returns found:false with candidates.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -518,14 +518,19 @@
           },
           "form": {
             "type": "string",
-            "description": "What to read: node (default; {found,node}), all (every match; {found,nodes}), geometry ({found,geometry}), candidates ({candidates}) or menuItems ({found,items}; needs 'path', takes no target)",
+            "description": "What to read: node (default; {found,node}), all (every match; {found,nodes}), geometry ({found,geometry}), candidates ({candidates}) or menuItems ({found,items}; needs 'path', takes no target) or outcome ({found,outcome}; needs 'handle', takes no target: what a step run with outcome:true changed so far, the app read again against the reading before that step)",
             "enum": [
               "node",
               "all",
               "geometry",
               "candidates",
-              "menuItems"
+              "menuItems",
+              "outcome"
             ]
+          },
+          "handle": {
+            "type": "integer",
+            "description": "outcome form: the 'outcomeHandle' a step's result gave"
           },
           "path": {
             "type": "array",
@@ -1268,7 +1273,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1402,7 +1407,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1529,7 +1534,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1655,7 +1660,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1789,7 +1794,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1824,7 +1829,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1859,7 +1864,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -1988,7 +1993,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2021,7 +2026,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2057,7 +2062,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2270,7 +2275,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2404,7 +2409,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2587,7 +2592,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2723,7 +2728,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2755,7 +2760,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -2881,7 +2886,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -3007,7 +3012,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -3048,7 +3053,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -3082,7 +3087,7 @@
           },
           "outcome": {
             "type": "boolean",
-            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last 20). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",

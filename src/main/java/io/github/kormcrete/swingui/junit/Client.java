@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.UiUsers;
 
 import java.io.IOException;
@@ -52,8 +53,13 @@ public final class Client {
 
     /** {@code screenshotDir}: where {@link #saveScreenshot} puts a relative path; null for {@link #SCREENSHOT_DIR}. */
     Client(Verbs verbs, ClientApp app, String runId, Path screenshotDir) {
+        this(verbs, app, runId, screenshotDir, RunInfo.start());
+    }
+
+    /** {@code run}: the run values of the test this client belongs to, shared by all its clients. */
+    Client(Verbs verbs, ClientApp app, String runId, Path screenshotDir, RunInfo run) {
         this(verbs, app, runId, null, new ArrayList<String>(), screenshotDir == null ? SCREENSHOT_DIR : screenshotDir,
-                RunInfo.start(), new AtomicReference<Capture>());
+                run, new AtomicReference<Capture>());
     }
 
     private Client(Verbs verbs, ClientApp app, String runId, Long timeoutMillis, List<String> warnings, Path screenshotDir,
@@ -73,14 +79,32 @@ public final class Client {
 
     /**
      * This test's run values - {@code ui.run().id()}, {@code date()}, {@code time()} - as a recorded test's
-     * {@code ${run.id}} gives them; the same for the whole test (every client {@link #timeout} makes from this one).
+     * {@code ${run.id}} gives them: one per {@code @UiTest} method, the same for all its clients (and every client
+     * {@link #timeout} makes from one). A Client built directly has its own.
      */
     public RunInfo run() { return run; }
 
     /**
+     * The whole number {@code text} holds, e.g. a remembered value given to a plugin call's number param; fails as a
+     * UiActionFailed (BAD_INPUT) when it is no whole number in int range, as a recorded test's step does.
+     */
+    public int number(String text) {
+        if (text != null && text.matches("\\d+")) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException tooBig) {
+                // said below
+            }
+        }
+        throw new UiActionFailed("number", null, new DriverException(Reason.BAD_INPUT,
+                "'" + text + "' is not a whole number in int range"), Collections.<String>emptyList());
+    }
+
+    /**
      * What the one action {@code oneAction} makes changed in the app ({@link Outcome}), read before and after it:
      * {@code Outcome copy = ui.outcomeOf(() -> ui.button("Copy").click());}, then
-     * {@code copy.text("$.rows.Orders.added[0].Number")}. Only actions inside it pay for the reading. Throws
+     * {@code copy.text("$.rows.Orders.added[0].Number")}, which reads the app again while the value is not there yet, up
+     * to this client's wait (as a recorded test's link waits). Only actions inside it pay for the reading. Throws
      * IllegalStateException("outcomeOf takes exactly one action") when it runs none, or at a second one (which does not
      * run); a UiActionFailed when this client cannot read the app.
      */
@@ -390,7 +414,9 @@ public final class Client {
                         "the action ran, but what it changed could not be read (an agent older than this client gives no "
                                 + "outcome)"), Collections.<String>emptyList());
             }
-            c.outcome = Outcome.of(out.changed);
+            final VerbOutcome done = out;
+            c.outcome = Outcome.of(out.changed, out.canReadAgain() ? done::changedAgain : null,
+                    timeoutMillis != null ? timeoutMillis : FlowExecutor.defaultLinkWait());
         }
     }
 

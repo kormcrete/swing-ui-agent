@@ -220,14 +220,17 @@ public interface Verbs {
     /**
      * Runs {@code action}, one verb call on these verbs, and gives its outcome with what it changed
      * ({@link VerbOutcome#changed}): by default the difference of a {@link #readUi} before it and one after it, so it
-     * fails as {@code readUi} does where the UI cannot be read. A Java test's {@code Client.outcomeOf} asks for it.
+     * fails as {@code readUi} does where the UI cannot be read. A Java test's {@code Client.outcomeOf} asks for it. The
+     * outcome can read its changes again ({@link VerbOutcome#changedAgain}), against the same reading before the action,
+     * for a change the app makes late.
      */
     default VerbOutcome withChanges(Supplier<VerbOutcome> action) {
-        UiReading before = readUi();
+        final UiReading before = readUi();
         VerbOutcome out = action.get();
         UiReading after = readUi();
         if (out == null) out = new VerbOutcome();
         out.changed = Outcomes.diff(before, after);
+        out.readAgainBy(() -> Outcomes.diff(before, readUi()));
         return out;
     }
 

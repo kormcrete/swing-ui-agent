@@ -558,7 +558,7 @@ class JavaTestWriterTest {
         String[] lines = bodyOf(f, forms);
         assertThat(lines).contains("        Outcome copied = ui.outcomeOf(() -> ui.button(\"Copy\").click());",
                 "        OrderDeskSteps.addQtyToCart(ui, copied.text(\"$.rows.Orders.added[0].Product\"), "
-                        + "Integer.parseInt(copied.text(\"$.fields.Qty\")));");
+                        + "copied.number(\"$.fields.Qty\"));");
     }
 
     @Test
@@ -575,6 +575,49 @@ class JavaTestWriterTest {
         assertThat(lines).containsSequence("        Outcome last = ui.outcomeOf(() -> ui.button(\"Last order\").click());", "",
                 "        // Set the quantity to ${last.fields.Qty}",
                 "        ui.role(\"spinner\", \"Qty\").type(last.text(\"$.fields.Qty\"));");
+    }
+
+    @Test
+    void aNumberParamFromARememberedTextOrMixedTextIsReadPlainly() {
+        JavaTestWriter.DoForms forms = step -> JavaTestWriter.DoForm.call("Add to the cart", "x.OrderDeskSteps",
+                "addQty(ui, {qty})", step.params, Collections.singleton("qty"));
+        Flow f = flow(click(Locator.of("button", "Copy")), remember(Locator.of("label", "Qty"), "qty", false),
+                doStep("a", null, "qty", "${qty}"), doStep("a", null, "qty", "1${qty}"));
+
+        assertThat(bodyOf(f, forms)).contains("        OrderDeskSteps.addQty(ui, ui.number(qty));",
+                "        OrderDeskSteps.addQty(ui, ui.number(\"1\" + qty));");
+    }
+
+    @Test
+    void aPluginBodyThatChangesAnEarlierValueItIsGivenIsAPlainProblem() {
+        // a traced body that cuts its param: the value no longer is the earlier step's whole value
+        JavaTestWriter.DoForms forms = step -> {
+            String note = step.params.get("note");
+            TypeVerb t = new TypeVerb();
+            t.target = Locator.of("text", "Note");
+            t.text = step.step.equals("cut") ? note.substring(0, note.length() - 3) : note.toUpperCase();
+            return JavaTestWriter.DoForm.steps("Write a note", Collections.<Action>singletonList(t));
+        };
+        ClickVerb copy = click(Locator.of("button", "Copy"));
+        copy.id = "copy";
+        Flow f = flow(copy, doStep("cut", null, "note", "Copy of ${copy.fields.Number}"),
+                doStep("upper", null, "note", "${copy.fields.Number}"));
+
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.write(f, "p", "SmokeUiIT", "walk", forms),
+                ExportRefused.class);
+
+        assertThat(e.problems()).containsExactly(
+                "step 2: Write a note changes what it is given from earlier steps (${copy.fields.Number}) in its body, which "
+                        + "its Java form cannot carry: give the step a java(...) call in the plugin, or export the recording as a "
+                        + "recorded test",
+                "step 3: Write a note changes what it is given from earlier steps (${copy.fields.Number}) in its body, which "
+                        + "its Java form cannot carry: give the step a java(...) call in the plugin, or export the recording as a "
+                        + "recorded test");
+    }
+
+    @Test
+    void theHeaderNamesTheRunId() {
+        assertThat(write(click(Locator.of("button", "Save")))).contains("Replace literals the test creates with ui.run().id().");
     }
 
     @Test

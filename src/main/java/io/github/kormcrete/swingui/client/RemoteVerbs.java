@@ -39,6 +39,8 @@ public final class RemoteVerbs implements Verbs {
     private static final class Asked {
         boolean sent;
         Map<String, Object> changed;
+        /** The agent's handle for reading it again; null when it gave none. */
+        Integer handle;
     }
 
     public RemoteVerbs(AgentClient agent) {
@@ -236,6 +238,10 @@ public final class RemoteVerbs implements Verbs {
         }
         if (out == null) out = new VerbOutcome();
         out.changed = a.changed;
+        if (a.handle != null) {
+            final int handle = a.handle;
+            out.readAgainBy(() -> outcomeAgain(handle));
+        }
         return out;
     }
 
@@ -257,8 +263,19 @@ public final class RemoteVerbs implements Verbs {
         if (asking && r.path("outcome").isObject()) {
             out.changed = json.convertValue(r.get("outcome"), new TypeReference<Map<String, Object>>() {});
             wanted.changed = out.changed;
+            if (r.path("outcomeHandle").isInt()) wanted.handle = r.get("outcomeHandle").asInt();
         }
         return out;
+    }
+
+    /** What the step of {@code handle} changed so far: the agent reads the app again (read form outcome). */
+    private Map<String, Object> outcomeAgain(int handle) {
+        ObjectNode a = agent.args();
+        a.put("form", "outcome");
+        a.put("handle", handle);
+        JsonNode r = agent.callJson("read", a);
+        if (!r.path("found").asBoolean(false)) throw failure(r, "candidates");
+        return json.convertValue(r.get("outcome"), new TypeReference<Map<String, Object>>() {});
     }
 
     /** The do_action result of {@code step}, run unrecorded; a failed step throws. */

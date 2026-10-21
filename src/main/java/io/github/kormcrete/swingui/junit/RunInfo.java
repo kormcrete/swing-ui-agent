@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter;
 
 /**
  * The values of one test's run, as a recorded test's {@code ${run.id}}, {@code ${run.date}} and {@code ${run.time}} give
- * them: one per {@link Client}, so one per {@code @UiTest} method. Name what a test creates with {@link #id} to find
+ * them: one per {@code @UiTest} method, shared by all its clients. Name what a test creates with {@link #id} to find
  * it again, and to tell it from what other runs made.
  */
 public final class RunInfo {

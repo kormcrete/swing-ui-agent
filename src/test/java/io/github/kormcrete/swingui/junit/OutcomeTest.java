@@ -160,6 +160,61 @@ class OutcomeTest {
         assertThat(e.getMessage()).contains("what it changed could not be read");
     }
 
+    /** The Orders table that gets ORD-1641 only from read {@code from} on (counting every readUi). */
+    private static Supplier<UiReading> rowFrom(RecordingVerbs verbs, int from) {
+        return () -> verbs.calls.stream().filter("readUi"::equals).count() >= from ? after() : before();
+    }
+
+    @Test
+    void aRowTheAppAddsLateIsReadAgainUntilItIsThere() {
+        RecordingVerbs verbs = new RecordingVerbs();
+        verbs.readings = rowFrom(verbs, 4);   // not in the reading right after the click (read 2), nor in read 3
+        Client ui = new Client(verbs, new RecordingApp(verbs.calls), "t");
+
+        Outcome o = ui.outcomeOf(() -> ui.button("Copy").click());
+        assertThat(o.json().path("rows").isMissingNode()).isTrue();
+
+        assertThat(o.text("$.rows.Orders.added[0].Number")).isEqualTo("ORD-1641");
+        assertThat(verbs.calls.stream().filter("readUi"::equals).count()).isEqualTo(4);
+        // json() is now the latest reading, and a path already there reads nothing more
+        assertThat(o.json().path("rows").path("Orders").path("count").asInt()).isEqualTo(2);
+        assertThat(o.number("$.rows.Orders.count")).isEqualTo(2);
+        assertThat(verbs.calls.stream().filter("readUi"::equals).count()).isEqualTo(4);
+    }
+
+    @Test
+    void aValueThatNeverComesFailsPlainlyAfterTheWait() {
+        RecordingVerbs verbs = new RecordingVerbs();
+        verbs.readings = OutcomeTest::before;
+        Client ui = new Client(verbs, new RecordingApp(verbs.calls), "t").timeout(java.time.Duration.ofMillis(300));
+
+        Outcome o = ui.outcomeOf(() -> ui.button("Copy").click());
+        UiActionFailed e = catchThrowableOfType(() -> o.text("$.rows.Orders.added[0].Number"), UiActionFailed.class);
+
+        assertThat(e.getMessage()).contains("what the action changed holds no value at $.rows.Orders.added[0].Number");
+        // it read again while it waited, and stopped: the wait is bounded by the client's timeout
+        long reads = verbs.calls.stream().filter("readUi"::equals).count();
+        assertThat(reads).isBetween(3L, 2L + 300 / io.github.kormcrete.swingui.flow.FlowExecutor.LINK_POLL_MS + 1);
+        assertThat(o.read("$.rows")).isEmpty();
+    }
+
+    @Test
+    void readGivesCopiesAndNumberSaysWhatIsNoNumber() throws Exception {
+        Outcome o = copy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) o.read("$.fields").get(0)).put("Number", "changed");
+        assertThat(o.text("$.fields.Number")).isEqualTo("ORD-1641");
+
+        assertThat(o.number("$.rows.Orders.count")).isEqualTo(1641);
+        UiActionFailed e = catchThrowableOfType(() -> o.number("$.fields.Number"), UiActionFailed.class);
+        assertThat(e.getMessage()).contains("'ORD-1641' at $.fields.Number, not a whole number");
+        assertThat(e.reason()).isEqualTo(io.github.kormcrete.swingui.driver.Reason.BAD_INPUT);
+
+        Client ui = new Client(new RecordingVerbs(), new RecordingApp(), "t");
+        assertThat(ui.number("12")).isEqualTo(12);
+        UiActionFailed notOne = catchThrowableOfType(() -> ui.number("1 2"), UiActionFailed.class);
+        assertThat(notOne.getMessage()).contains("'1 2' is not a whole number");
+    }
+
     // ---- Client.run and Target.selectedText / shownText
 
     @Test

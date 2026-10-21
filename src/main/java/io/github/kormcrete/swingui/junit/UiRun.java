@@ -66,6 +66,11 @@ final class UiRun {
     }
 
     Client begin(String alias, String runId) {
+        return begin(alias, runId, RunInfo.start());
+    }
+
+    /** Leases, resets as {@code alias} and binds a Client; {@code run}: the run values of its test, shared by its clients. */
+    Client begin(String alias, String runId, RunInfo run) {
         final String token = lease().get("token").asText();
         leased = agent.withLease(token);
         hook = releaseOnExit(token);
@@ -78,7 +83,7 @@ final class UiRun {
         heartbeat.start();
         if (alias == null) leased.callJson("session", leased.args().put("op", "reset"));
         else leased.callJson("session", leased.args().put("op", "reset").put("alias", alias));
-        return new Client(new RemoteVerbs(leased), new RemoteApp(leased), runId, screenshotDir);
+        return new Client(new RemoteVerbs(leased), new RemoteApp(leased), runId, screenshotDir, run);
     }
 
     /**

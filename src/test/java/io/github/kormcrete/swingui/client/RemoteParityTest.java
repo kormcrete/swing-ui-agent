@@ -133,6 +133,42 @@ class RemoteParityTest {
     }
 
     @Test
+    void aRowTheAppAddsLateResolvesOverTheAgentToo() {
+        for (RecordingVerbs v : Arrays.asList(local, served)) {
+            final RecordingVerbs verbs = v;
+            // the field shows the copy's number only from the fourth reading on: after the click, then once more
+            verbs.readings = () -> UiReading.builder().field("Number",
+                    verbs.calls.stream().filter("readUi"::equals).count() >= 4 ? "ORD-1641" : "ORD-1640").build();
+        }
+        String[] seen = new String[2];
+        int[] at = {0};
+        both(ui -> seen[at[0]++] = ui.outcomeOf(() -> ui.button("Copy").click()).text("$.fields.Number"));
+
+        assertThat(seen).containsExactly("ORD-1641", "ORD-1641");
+        assertThat(served.calls).isEqualTo(local.calls);
+    }
+
+    @Test
+    void theAgentKeepsTheLastTwentyReadingsForReadingAgain() {
+        served.readings = () -> UiReading.builder().field("Number", "ORD-1640").build();
+        AgentClient ac = new AgentClient("127.0.0.1", agent.port());
+        int first = -1;
+        for (int i = 0; i < 21; i++) {
+            com.fasterxml.jackson.databind.node.ObjectNode a = ac.args();
+            a.putObject("action").put("action", "click").putObject("target").put("role", "button").put("name", "Copy");
+            a.put("record", false).put("outcome", true);
+            int handle = ac.callJson("do_action", a).path("outcomeHandle").asInt();
+            if (first < 0) first = handle;
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode again = ac.args().put("form", "outcome").put("handle", first + 20);
+        assertThat(ac.callJson("read", again).path("found").asBoolean()).isTrue();
+        final int dropped = first;
+        Throwable gone = catchThrowable(() -> ac.callJson("read", ac.args().put("form", "outcome").put("handle", dropped)));
+        assertThat(gone).isInstanceOf(DriverException.class).hasMessageContaining("no outcome handle " + dropped)
+                .hasMessageContaining("last 20");
+    }
+
+    @Test
     void everyReadAnswersTheSame() {
         Object[] a = reads(inProcess);
         Object[] b = reads(remote);

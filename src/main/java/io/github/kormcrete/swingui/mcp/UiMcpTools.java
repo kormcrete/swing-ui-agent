@@ -20,7 +20,9 @@ public final class UiMcpTools {
 
     /** The {@code outcome} argument of the step tools. */
     static final String OUTCOME_ARG = "true: the app is read before and after the step, and the result's 'outcome' says what "
-            + "it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app.";
+            + "it changed (a check's is {}; null when the app cannot be read), with 'outcomeHandle': read form outcome with "
+            + "that handle reads what it changed so far again, for a change the app makes late (the agent keeps the last "
+            + UiMcpSession.KEPT_OUTCOMES + "). Off by default: it costs a reading of the app.";
 
     /** What an outcome holds, for the step tools' descriptions. */
     static final String OUTCOME_SHAPE = "only what changed, keyed by the names the person sees: opened and closed {windows, "
@@ -310,14 +312,18 @@ public final class UiMcpTools {
                 ObjectNode form = p.putObject("form");
                 form.put("type", "string").put("description", "What to read: node (default; {found,node}), all "
                         + "(every match; {found,nodes}), geometry ({found,geometry}), candidates ({candidates}) or "
-                        + "menuItems ({found,items}; needs 'path', takes no target)");
+                        + "menuItems ({found,items}; needs 'path', takes no target) or outcome ({found,outcome}; needs "
+                        + "'handle', takes no target: what a step run with outcome:true changed so far, the app read again "
+                        + "against the reading before that step)");
                 ArrayNode forms = form.putArray("enum");
-                for (String f : new String[] {"node", "all", "geometry", "candidates", "menuItems"}) forms.add(f);
+                for (String f : new String[] {"node", "all", "geometry", "candidates", "menuItems", "outcome"}) forms.add(f);
+                p.putObject("handle").put("type", "integer").put("description",
+                        "outcome form: the 'outcomeHandle' a step's result gave");
                 p.putObject("path").put("type", "array").put("description", "menuItems form: the menu path to list the items under")
                         .putObject("items").put("type", "string");
                 return readOnly(tool(m, "read",
                         "Reads one element without acting: its node, or with row/column one table cell or row. "
-                        + "'target' is required for every form except menuItems. "
+                        + "'target' is required for every form except menuItems and outcome. "
                         + "A node carries 'tooltip' when the element (or the rendered cell) shows one. "
                         + "A target that does not resolve returns found:false with candidates.", schema));
             }

@@ -49,7 +49,7 @@ import java.util.function.Supplier;
 public class FlowExecutor {
 
     /** How often a reference without a value is tried again while it waits. */
-    static final long LINK_POLL_MS = 100;
+    public static final long LINK_POLL_MS = 100;
 
     /** What the app shows now, for the outcome of a step: the driver's {@code readUi}. */
     public interface OutcomeSource {

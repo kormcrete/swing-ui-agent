@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.driver.model.RowChoice;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * What a verb did: its input path, a modal it left waiting, and the locators to record. For a plugin's domain step
@@ -41,4 +42,25 @@ public final class VerbOutcome {
      * {@link Verbs#withChanges}; else null.
      */
     public Map<String, Object> changed;
+    /** How to read {@link #changed} again; null when it cannot be. A field, not a property: never written as JSON. */
+    private Supplier<Map<String, Object>> again;
+
+    /** {@code again} reads what the step changed so far, against the same reading before it as {@link #changed}. */
+    public void readAgainBy(Supplier<Map<String, Object>> again) {
+        this.again = again;
+    }
+
+    /** True when what the step changed can be read again ({@link #changedAgain}). */
+    public boolean canReadAgain() {
+        return again != null;
+    }
+
+    /**
+     * What the step changed so far, read again now against the reading before it: a change that came late shows here.
+     * Throws IllegalStateException when it cannot be read again ({@link #canReadAgain}).
+     */
+    public Map<String, Object> changedAgain() {
+        if (again == null) throw new IllegalStateException("what this step changed cannot be read again");
+        return again.get();
+    }
 }
