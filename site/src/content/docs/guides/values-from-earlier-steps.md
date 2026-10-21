@@ -38,10 +38,11 @@ A value is linked automatically only when the link is surely right:
 - It **appeared in that step**. It was nowhere on the screen before the step and is there after it.
 - It **stands out**. It has 4 characters or more, is not yes, no, true or false, and is not a whole number below 1000. A quantity of `3` is never linked.
 - It is **the whole value**, or a whole part of what you typed. `Copy of ORD-1640` is linked as the fixed `Copy of ` plus the number.
-- A row or an item is linked only when the step **added that one alone**. A search that filled a table with results is not, because the next run may list them in another order.
+- When one step made the same value in several places, a field comes first, then a row, an item, a plugin step's own value, and last a text or a title.
+- A row or an item is linked only when the step **added (or changed) that one alone**. A search that filled a table with results is not, because the next run may list them in another order.
 - When several earlier steps made the same value, the **most recent one** wins.
 
-The recorder keeps watching until your next step. So a value the app shows a moment late, like an order number that arrives after a short wait, still counts for the step that made it.
+The recorder keeps watching until your next step. So a value the app shows a moment late, like an order number that arrives after a short wait, still counts for the step that made it. A replay waits for it in the same place: right after that step, before the next one runs, so what a later step changes never counts for it.
 
 ### Link it yourself
 
@@ -51,12 +52,12 @@ It also offers short values, which are never linked automatically. It is greyed 
 
 ### Remember this
 
-Sometimes the value you need was already on the screen: the order you opened from the list, a customer's account number. In Check mode, click it and choose **Remember this as…** at the end of the menu. A name field opens in the Steps list (`└ remember as`) with a name suggested from what you clicked. Change it or keep it. **Enter** saves; **Esc** keeps nothing.
+Sometimes the value you need was already on the screen: the order you opened from the list, a customer's account number. In Check mode, click it and choose **Remember this as…** at the end of the menu. A name field opens in the Steps list (`└ remember as`) with a name suggested from what you clicked. Change it or keep it; words are fine: `Order number` is kept as `orderNumber` (or `orderNumber2` when that name is taken), and the bar shows the name kept. **Enter** saves; **Esc** keeps nothing.
 
 - It goes under the step before it, like a check (`5.1`), and it runs with that step.
 - Later steps that use the value are linked to it, automatically or by hand. Their 🔗 reads `orderNumber (remembered)`.
 - You can remember fields, labels, buttons, drop-downs, table cells, list entries, tree rows and tabs. You cannot remember check boxes, toggles, password fields, or a whole table or column.
-- A table cell is found again by the other values in its row. If they do not tell the rows apart, it is found as the selected row, and otherwise by its place. A list entry, a tree row or a tab must be the selected one. If it is not, the menu line is greyed: "select the row first, or remember a field".
+- A table cell is found again by the other values in its row. If they do not tell the rows apart, it is found as the selected row, and otherwise by its place. A list entry, a tree row or a tab must be the selected one. If it is not, the menu line is greyed with what to do: "select the row first, or remember a field" for a list entry, "select the item first, …" for a tree row, "select the tab first, …" for a tab.
 - It is greyed with "it is empty" when there is nothing to remember. It is greyed with "it is found by its own text" when the element is only found by the value you want to keep, such as a button or a label with no caption of its own. Remember a field or a cell that shows the value instead.
 - On a replay it fails when what it reads is missing or empty.
 
@@ -103,9 +104,9 @@ $UI recording '{"op":"unique","n":5,"where":"end"}'
 - `link` makes step or check `n` use a value: a remembered name, or a step and a path into what it changed, such as `${16.rows['Orders › table'].added[0].Order}` (a path from `changed` in `recording list`), where the value sits. It is refused, in words, when the step does not hold that value, the path has none, or the value is one of several rows a step added.
 - `unlink` turns the links back into the values they stood for; `unique` adds the run's id at the `end` or `start` of a typed text (`off` takes it away).
 
-`recording list` shows, on each step, what it `changed` (the values a later step may use), what it `uses`, which steps it is `usedBy`, and `unique`.
+`recording list` shows, on each step, what it `changed` (the values a later step may use), what it `uses`, which steps it is `usedBy`, and `unique`; on a remember entry, `remembered` (the value it read).
 
-When a test is for a person, the agent keeps everything in the recorded test, with no Java. It links with these ops, names the steps with `edit` and `say`, groups them, and saves with `export_recorded_test`. The file replays on its own, and you can change it in the palette; you never have to link or name a step yourself. The agent never types `${…}` into a step: what it types is taken as typed, and it links with `link`. The [record-test skill](/swing-ui-agent/agents/skills/) teaches this.
+When a test is for a person, the agent keeps everything in the recorded test, with no Java. It links with these ops, names the steps with `edit` and `say`, groups them, and saves with `export_recorded_test`. The file replays on its own, and you can change it in the palette; you never have to link or name a step yourself. The agent never types `${…}` into a step: what it types, and the `text` or `target` it gives `edit`, is taken as typed, and it links with `link`. A whole step it gives `insert` or `edit` is in the file's form, and an edit that would leave a step using a value no earlier step makes, or an id twice, is refused: the recording stays as it was. The [record-test skill](/swing-ui-agent/agents/skills/) teaches this.
 
 ## In the file
 
@@ -115,6 +116,7 @@ A recorded test that uses values from earlier steps is written as format version
 {
   "action" : "answer",
   "id" : "answer",
+  "say" : "Confirm the order",
   "button" : "Place order"
 },
 {
@@ -137,7 +139,7 @@ A recorded test that uses values from earlier steps is written as format version
 - A **reference** is `${<id><path>}` inside a value: `<id>` is a step id, a remembered name or `run`, and `<path>` leads into what that step changed. A remembered value alone is `${orderNumber}`.
 - **Run values:** `${run.id}` (8 letters and digits, new on every run), `${run.date}` (`yyyy-MM-dd`), `${run.time}` (`HH:mm:ss`, at the start of the run).
 - **A remember entry** is a check with `"action": "remember"`, its `target` and the name under `as`. `"selected": true` reads the selected row, item or tab.
-- `$${` writes a literal `${`.
+- `$${` writes a literal `${`. So a `$` right before a reference cannot be written (`$${total}` is the text `${total}`): keep such a text exact, or use the value without the `$` in front.
 
 The fields, where references may appear, and what the reader refuses are on the [format page](/swing-ui-agent/reference/recorded-test-format/#values-from-earlier-steps).
 

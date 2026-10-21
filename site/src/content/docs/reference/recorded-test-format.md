@@ -99,11 +99,11 @@ Version 4. A value in a step may hold a **reference**, `${<id><path>}`, that the
   - an earlier step's `id`, then `<path>` leads into what that step changed (its outcome, see [What a step changed](/swing-ui-agent/guides/values-from-earlier-steps/#what-a-step-changed));
   - an earlier `remember` entry's `as` name, alone: `${orderNumber}`;
   - `run`: `${run.id}` (8 letters and digits, new on every run), `${run.date}` (`yyyy-MM-dd`), `${run.time}` (`HH:mm:ss`, at the start of the run).
-- **`<path>`** is `.key`, `['key with spaces, dots or quotes']`, `[n]` (from 0) or `[-n]` (from the end).
+- **`<path>`** is `.key`, `['key with spaces, dots or quotes']`, `[n]` (from 0) or `[-n]` (from the end). These are the forms the agent writes; the reader takes the rest of the small JSON path a Java test's `Outcome.read` knows too (`[*]`, `..key`, `[?(@.Customer == 'Ada Shop Ltd')]`). A reference must select exactly one value, or its step fails.
 - **Where:** in values, such as typed text, the values of a `row`, an `item`, a locator's `name` (such as a tab title), picked and selected values, what a check expects (`text`, `value`, `cell`), and the `params` of a `do` step. Never in `say`, `action`, `id`, `as`, `window`, `role`, `scope`, `column`, `match` or `ref`.
 - **Ids:** a letter, then up to 39 letters, digits or `_`; each id or remember name once; `run` is taken. Only steps that others use carry one.
-- **`$${`** is a literal `${`. In a version 2 or 3 file, `${` is plain text.
-- A reference that cannot be filled fails its step with the source in words, for example `Step 3 (Copy) added no row to Orders`, after waiting as a check waits (10 seconds by default). It never falls back to the value seen while recording.
+- **`$${`** is a literal `${`. In a version 2 or 3 file, `${` is plain text. A `$` right before a reference cannot be written: `$${total}` is the text `${total}`.
+- A reference that cannot be filled fails its step with the source in words, for example `Step 3 (Copy) added no row to Orders`. A value that comes late is waited for right after its source step, before the next step runs, as a check waits (10 seconds by default). It never falls back to the value seen while recording, nor to one an earlier run made.
 - A `params` number of a `do` step that holds a reference is checked when the step runs.
 
 ## Numbering

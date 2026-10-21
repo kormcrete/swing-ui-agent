@@ -151,16 +151,18 @@ value, or the step fails in words. Never the recorded value.
 
 - **Automatic links.** While recording, a value you click, type, pick or check is linked when it is new in an
   earlier step's outcome, 4 characters or more, not yes/no/true/false, not a whole number below 1000, whole (or a
-  whole part of typed text). Most recent step first; a row or item only when that step added exactly ONE. Not
-  linked: a check against its own element's new text, field or cell (see step 5 above), a value in another form,
+  whole part of typed text). Most recent step first, and within one step a field, then a row, an item, a plugin
+  step's own value, before a text or title; a row or item only when that step added (or changed) that one alone.
+  Not linked: a check against its own element's new text, field or cell (see step 5 above), a value in another form,
   rows from a search.
 - **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later
-  step may use), `uses` [{from, value}], `usedBy` and `unique`.
+  step may use), `uses` [{from, value}], `usedBy` and `unique`, and on a remember entry `remembered` (the value
+  it read).
 - **Link by hand** when the rules do not fire but the value is surely the same (short values too; never a row among
   several a step added, nor a value in another form: those are refused):
-  `$UI recording '{"op":"link","n":"7.1","ref":"${3.rows.Orders.added[0].Order}"}'` (a step number or id, then a
+  `$UI recording '{"op":"link","n":"7.1","ref":"${3.rows['Orders › table'].added[0].Order}"}'` (a step number or id, then a
   path from its `changed`; or a remembered name, `"ref":"orderNumber"`). `unlink {n}` turns links back into values.
 - **Remember** a value already on screen (not a change): `$UI recording
   '{"op":"remember","target":{"role":"table","scope":["tab:Orders"],"column":"Order"},"selected":true,"as":"orderNumber"}'`
@@ -169,13 +171,15 @@ value, or the step fails in words. Never the recorded value.
 - **Unique per run** for typed text that must not repeat (a note, a new customer's name):
   `$UI recording '{"op":"unique","n":5,"where":"end"}'` adds `${run.id}` (8 letters and digits, new per run); later
   steps that use that text follow it. Nothing is typed again.
-- **Never type `${...}` yourself.** What you type is taken as typed (a literal); links come only from the recorder and
-  `link`.
+- **Never type `${...}` yourself.** What you type is taken as typed (a literal): steps you run, and the `text` and
+  `target` of `recording edit`. Links come only from the recorder and `link`. A whole step you give `insert` or
+  `edit {step}` is in the file's form (`${id.path}` there is a reference); an edit that leaves a reference without an
+  EARLIER source, or an id twice, is refused and the recording stays as it was.
 - **See what a step changed:** `"outcome": true` on `do_action`, `batch` steps or a verb tool returns
   `outcome` (only what changed, keyed by visible names) and `outcomeHandle`; `read {"form":"outcome","handle":N}`
   reads it again for a late change.
 - **Prove it:** save, then `run_recorded_test` TWICE; each run must pass on its own new record (the report shows each
-  resolved value, e.g. `(copy.rows.Orders.added[0].Order = ORD-1642)`).
+  resolved value, e.g. `(copy.rows['Orders › table'].added[0].Order = ORD-1642)`).
 - More: https://kormcrete.github.io/swing-ui-agent/guides/values-from-earlier-steps/
 
 ## Name the steps
@@ -255,7 +259,7 @@ working directory; `dir` (the test sources root, e.g. `<project>/src/test/java`)
 `warning` (where the file went) and `startWarning` (reset and re-record with a `menu`/`press` first step).
 
 Links export as code: a source step as `Outcome copy = ui.outcomeOf(() -> ...)` and its values as
-`copy.text("$.rows.Orders.added[0].Order")` (waits for a late value, up to the client's timeout), a remember entry as
+`copy.text("$.rows['Orders › table'].added[0].Order")` (waits for a late value, up to the client's timeout), a remember entry as
 `String orderNumber = ....selectedText()` / `.shownText()`, run values as `ui.run().id()`. A `do` step whose Java
 form is a typed call or several steps cannot be a source; the export says so.
 
