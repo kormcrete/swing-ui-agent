@@ -119,4 +119,12 @@ class StepNumbersTest {
             assertThat(e.getMessage()).contains(message);
         });
     }
+
+    @Test
+    void rememberIsNumberedLikeACheck() throws Exception {
+        String remember = "{\"action\":\"remember\",\"as\":\"n\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}";
+        List<Action> f = flat(CLICK, remember, EXPECT, MENU);
+        assertThat(StepNumbers.labels(f)).containsExactly("1", "1.1", "1.2", "2");
+        assertThat(StepNumbers.isCheck(f.get(1))).isTrue();
+    }
 }

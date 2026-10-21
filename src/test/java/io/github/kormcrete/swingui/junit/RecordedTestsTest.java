@@ -118,7 +118,7 @@ class RecordedTestsTest {
 
     @Test
     void aBrokenFileIsAFailedTestNotASkippedOne() throws IOException {
-        write("broken.json", "{\"version\":4,\"start\":\"reset\",\"steps\":[]}");
+        write("broken.json", "{\"version\":5,\"start\":\"reset\",\"steps\":[]}");
         TestExecutionSummary s = launch(new RecordingVerbs());
         assertThat(s.getTestsFoundCount()).isEqualTo(1);
         assertThat(s.getTestsFailedCount()).isEqualTo(1);

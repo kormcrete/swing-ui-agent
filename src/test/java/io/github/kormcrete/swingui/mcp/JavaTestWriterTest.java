@@ -392,6 +392,18 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void valuesFromEarlierStepsAreRefusedUntilTheyHaveAJavaForm() {
+        TypeVerb t = new TypeVerb(); t.target = Locator.of("text", "Note"); t.text = "Copy ${run.id}";
+        ExportRefused e = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), t), ExportRefused.class);
+        assertThat(e.problems().get(0)).contains("step 2", "${...}", "no Java form yet");
+
+        io.github.kormcrete.swingui.flow.verb.RememberVerb r = new io.github.kormcrete.swingui.flow.verb.RememberVerb();
+        r.target = Locator.of("label", "Number"); r.as = "number";
+        ExportRefused remember = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), r), ExportRefused.class);
+        assertThat(remember.problems().get(0)).contains("check 1.1", "remember", "no Java form");
+    }
+
+    @Test
     void aTypeWithAPointIsStillRefused() {
         Locator l = Locator.of("clickable", "Canvas");
         l.point = new LinkedHashMap<>();

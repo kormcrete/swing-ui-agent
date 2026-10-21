@@ -172,4 +172,18 @@ class TableWidgetTest {
         JTable twinRows = new JTable(new Object[][] {{"a"}, {"a"}}, new Object[] {"Product"});
         assertThat(TableWidget.holdsRow(twinRows, key("Product", "a"))).isTrue();
     }
+
+    @Test
+    void minusOneIsTheLastRow() {
+        assertThat(TableWidget.row(table, RowSpec.of(Collections.<String, Object>singletonMap("index", -1)))).isEqualTo(2);
+        assertThat(TableWidget.row(table, RowSpec.of(Collections.<String, Object>singletonMap("index", -3)))).isEqualTo(0);
+    }
+
+    @Test
+    void minusBeyondTheStartIsNotFound() {
+        DriverException e = catchThrowableOfType(() -> TableWidget.row(table,
+                RowSpec.of(Collections.<String, Object>singletonMap("index", -4))), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
+        assertThat(e.getMessage()).contains("-4").contains("3 rows");
+    }
 }

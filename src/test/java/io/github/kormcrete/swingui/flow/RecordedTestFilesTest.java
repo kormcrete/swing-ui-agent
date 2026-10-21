@@ -109,6 +109,7 @@ class RecordedTestFilesTest {
         m.put("close", "{\"action\":\"close\"}");
         m.put("loginAs", "{\"action\":\"loginAs\",\"as\":\"clerk\"}");
         m.put("do", DO_ADD);
+        m.put("remember", "{\"action\":\"remember\"," + t + ",\"as\":\"number\",\"selected\":true}");
         return m;
     }
 
@@ -119,7 +120,7 @@ class RecordedTestFilesTest {
         String before = samples.get("click");
         for (Map.Entry<String, String> e : samples.entrySet()) {
             // an expect is a check: it is written under the sample before it
-            Flow flow = "expect".equals(e.getKey()) ? stepsOf(before, e.getValue()) : stepsOf(e.getValue());
+            Flow flow = "expect".equals(e.getKey()) || "remember".equals(e.getKey()) ? stepsOf(before, e.getValue()) : stepsOf(e.getValue());
             String text = RecordedTestFiles.write(flow);
             Flow back;
             try {
@@ -144,8 +145,8 @@ class RecordedTestFilesTest {
 
     @Test
     void aNewerVersionSaysToUpdateTheAgent() {
-        refused("{\"version\":4,\"start\":\"reset\",\"steps\":[]}",
-                "is format version 4, written by a newer swing-ui-agent; this one reads version 3 - update the agent");
+        refused("{\"version\":5,\"start\":\"reset\",\"steps\":[]}",
+                "is format version 5, written by a newer swing-ui-agent; this one reads version 4 - update the agent");
     }
 
     @Test
@@ -184,7 +185,7 @@ class RecordedTestFilesTest {
         refused("{\"version\":2,\"start\":\"reset\",\"requires\":{},\"steps\":[{\"action\":\"close\"}]}",
                 "'requires' needs format version 3");
         refused("{\"version\":2,\"start\":\"reset\",\"params\":{},\"steps\":[{\"action\":\"close\"}]}",
-                "'params'", "exact values only", "belong in a Java test");
+                "'params'", "takes values from earlier steps with ${...} references (format 4)");
     }
 
     @Test
@@ -327,7 +328,7 @@ class RecordedTestFilesTest {
         refused(V3 + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\","
                 + "\"check\":true}]}]}", "check 1.1 (do)", "'check'");
         refused(V3 + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"click\"}]}]}", "check 1.1",
-                "only an expect or a domain check (do)");
+                "only an expect, a remember or a domain check (do)");
     }
 
     @Test
@@ -485,7 +486,7 @@ class RecordedTestFilesTest {
     @Test
     void aVersion1FileSaysToNestTheChecks() {
         refused("{\"version\":1,\"start\":\"reset\",\"steps\":[{\"action\":\"close\"}]}",
-                "is format version 1 (one flat list)", "reads versions 2 and 3", "nest each check under the step before it");
+                "is format version 1 (one flat list)", "reads versions 2 to 4", "nest each check under the step before it");
     }
 
     @Test
@@ -511,7 +512,7 @@ class RecordedTestFilesTest {
     @Test
     void anActionInsideChecksIsRefused() {
         refused(HEAD + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"click\"}]}]}",
-                "check 1.1", "only an expect or a domain check (do)");
+                "check 1.1", "only an expect, a remember or a domain check (do)");
         assertThat(RecordedTestFiles.parse(HEAD + "\"steps\":[{\"action\":\"close\",\"checks\":[{\"action\":\"expect\","
                 + "\"target\":{\"role\":\"label\"},\"text\":\"1\"}]}]}", "x").steps).hasSize(2);
     }
@@ -599,9 +600,9 @@ class RecordedTestFilesTest {
     @Test
     void paramsAndCaptureSayValuesBelongInAJavaTest() {
         refused("{\"version\":2,\"start\":\"reset\",\"params\":{},\"steps\":[{\"action\":\"close\"}]}",
-                "'params'", "exact values only", "Java test");
-        refused(HEAD + "\"steps\":[{\"action\":\"close\",\"capture\":\"id\"}]}", "step 1 (close)", "'capture'", "exact values only",
-                "Java test");
+                "'params'", "takes values from earlier steps with ${...} references (format 4)");
+        refused(HEAD + "\"steps\":[{\"action\":\"close\",\"capture\":\"id\"}]}", "step 1 (close)", "'capture'",
+                "takes values from earlier steps with ${...} references (format 4)");
     }
 
     @Test
@@ -626,7 +627,7 @@ class RecordedTestFilesTest {
         base.start = "reset";
 
         Flow newer = copy(base);
-        newer.version = 4;
+        newer.version = 5;
         assertThatThrownBy(() -> RecordedTestFiles.write(newer)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("version");
 
@@ -668,5 +669,123 @@ class RecordedTestFilesTest {
         c.start = f.start;
         for (Action a : f.steps) c.steps.add(FlowJson.mapper().readValue(FlowJson.mapper().writeValueAsString(a), Action.class));
         return c;
+    }
+
+    // ---- format 4: step ids, references, remember
+
+    private static final String ORDERS = "\"target\":{\"window\":\"main\",\"role\":\"table\",\"name\":\"Orders\"";
+    private static final String V4 = "{\"version\":4,\"name\":\"x\",\"start\":\"reset\",";
+
+    @Test
+    void aV4FileWithReferencesLoadsAndWritesBack() throws Exception {
+        Flow flow = stepsOf(
+                "{\"action\":\"click\"," + ORDERS + ",\"row\":{\"Number\":\"ORD-1640\"}}}",
+                "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"window\":\"main\",\"role\":\"button\",\"name\":\"Copy\"}}",
+                "{\"action\":\"click\",\"count\":2," + ORDERS + ",\"row\":{\"Number\":\"${copy.rows.Orders.added[0].Number}\"}}}",
+                "{\"action\":\"type\",\"target\":{\"window\":\"main\",\"role\":\"text\",\"name\":\"Note\"},\"text\":\"Copy ${run.id}\"}",
+                "{\"action\":\"click\",\"target\":{\"window\":\"main\",\"role\":\"button\",\"name\":\"Save\"}}",
+                "{\"action\":\"remember\",\"as\":\"saved\",\"target\":{\"window\":\"main\",\"role\":\"label\",\"name\":\"Number\"}}",
+                "{\"action\":\"expect\",\"target\":{\"window\":\"main\",\"role\":\"label\",\"name\":\"Number\"},\"text\":\"${saved}\"}");
+
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(4);
+        String text = RecordedTestFiles.write(flow);
+        assertThat(text).contains("\"version\" : 4").contains("\"id\" : \"copy\"").contains("${copy.rows.Orders.added[0].Number}")
+                .doesNotContain("$${");
+        Flow back = RecordedTestFiles.parse(text, "x");
+        assertThat(back.steps).hasSameSizeAs(flow.steps);
+        assertThat(RecordedTestFiles.write(back)).isEqualTo(text);
+        assertThat(back.steps.get(1).id).isEqualTo("copy");
+        assertThat(back.steps.get(5)).isInstanceOf(io.github.kormcrete.swingui.flow.verb.RememberVerb.class);
+        // the remember step is a check, written under the action before it
+        assertThat(text.indexOf("\"checks\"")).isGreaterThan(text.indexOf("\"Save\""));
+    }
+
+    @Test
+    void aReferenceToALaterOrUnknownStepIsRefusedWithItsLine() {
+        String later = V4 + "\"steps\":[\n"
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"${copy.x}\"},\n"
+                + "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}]}";
+        refused(later, "step 1 (type)", "line 2", "${copy.x}", "no earlier step");
+        refused(V4 + "\"steps\":[{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"${nope}\"}]}",
+                "step 1 (type)", "${nope}", "no earlier step");
+        // a step does not use its own id
+        refused(V4 + "\"steps\":[{\"action\":\"type\",\"id\":\"a\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"${a}\"}]}",
+                "${a}", "no earlier step");
+        refused(V4 + "\"steps\":[{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"${a.b[\"}]}",
+                "step 1 (type)");
+    }
+
+    @Test
+    void duplicateIdsAreRefused() {
+        String click = "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}";
+        refused(V4 + "\"steps\":[" + click + "," + click + "]}", "step 2 (click)", "'copy'", "already");
+        // a remember name shares the namespace with step ids
+        refused(V4 + "\"steps\":[" + click.replace("\"id\":\"copy\",", "")
+                + ",{\"action\":\"click\",\"id\":\"saved\",\"target\":{\"role\":\"button\",\"name\":\"Save\"},\"checks\":["
+                + "{\"action\":\"remember\",\"as\":\"saved\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}]}]}",
+                "check 2.1", "'saved'", "already");
+    }
+
+    @Test
+    void runIsNotAStepId() {
+        refused(V4 + "\"steps\":[{\"action\":\"click\",\"id\":\"run\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}]}",
+                "step 1 (click)", "'run'", "reserved");
+        refused(V4 + "\"steps\":[{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"},\"checks\":["
+                + "{\"action\":\"remember\",\"as\":\"run\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}]}]}",
+                "check 1.1", "'run'", "reserved");
+        refused(V4 + "\"steps\":[{\"action\":\"click\",\"id\":\"1st copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}]}",
+                "'1st copy'", "letter");
+    }
+
+    @Test
+    void aV3FileKeepsDollarBraceTextAsTyped() throws Exception {
+        String json = "{\"version\":3,\"name\":\"x\",\"start\":\"reset\",\"requires\":[\"order-desk\"],\"steps\":[\n"
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"a ${b}\"},\n"
+                + "{\"action\":\"do\",\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"${c\"}}]}";
+        Flow flow = RecordedTestFiles.parse(json, "x");
+        // in memory the text is in its escaped form, never a reference
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) flow.steps.get(0)).text).isEqualTo("a $${b}");
+        assertThat(io.github.kormcrete.swingui.flow.refs.Refs.of(flow.steps.get(0))).isEmpty();
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(3);
+        String back = RecordedTestFiles.write(flow);
+        assertThat(back).contains("\"text\" : \"a ${b}\"").contains("\"product\" : \"${c\"").doesNotContain("$${")
+                .contains("\"version\" : 3");
+        assertThat(RecordedTestFiles.write(RecordedTestFiles.parse(back, "x"))).isEqualTo(back);
+    }
+
+    @Test
+    void aV2FileWithDollarBraceRoundTripsAsV2() throws Exception {
+        String json = "{\"version\":2,\"name\":\"x\",\"start\":\"reset\",\"steps\":[{\"action\":\"type\","
+                + "\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"a ${b}\",\"say\":\"Types ${b}\"}]}";
+        String back = RecordedTestFiles.write(RecordedTestFiles.parse(json, "x"));
+        assertThat(back).contains("\"version\" : 2").contains("\"text\" : \"a ${b}\"").contains("\"say\" : \"Types ${b}\"");
+    }
+
+    @Test
+    void aFileWithoutLinksIsStillWrittenAsV2OrV3() throws Exception {
+        assertThat(RecordedTestFiles.versionFor(stepsOf("{\"action\":\"menu\",\"path\":[\"Orders\"]}"))).isEqualTo(2);
+        assertThat(RecordedTestFiles.versionFor(stepsOf(DO_ADD))).isEqualTo(3);
+        // a v4 file whose links are gone is written as v3/v2 again
+        Flow flow = RecordedTestFiles.parse(V4 + "\"steps\":[{\"action\":\"menu\",\"path\":[\"Orders\"]}]}", "x");
+        assertThat(RecordedTestFiles.write(flow)).contains("\"version\" : 2");
+        // a v4 file with a do step and a link is v4
+        Flow linked = stepsOf(DO_ADD, "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}");
+        assertThat(RecordedTestFiles.write(linked)).contains("\"version\" : 4").contains("\"requires\"");
+    }
+
+    @Test
+    void idOrRememberBelowV4IsRefusedWithTheV4Hint() {
+        String hint = "needs format version 4 (\"version\": 4), the format of a recorded test that uses values from earlier steps";
+        refused(HEAD + "\"steps\":[{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}]}",
+                "step 1 (click)", "'id'", hint);
+        refused(HEAD + "\"steps\":[{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"},\"checks\":["
+                + "{\"action\":\"remember\",\"as\":\"n\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}]}]}",
+                "check 1.1", "'remember'", hint);
+    }
+
+    @Test
+    void aRememberStepIsACheckNotAStep() {
+        refused(V4 + "\"steps\":[{\"action\":\"remember\",\"as\":\"n\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}]}",
+                "step 1", "a check goes under the step it checks");
     }
 }

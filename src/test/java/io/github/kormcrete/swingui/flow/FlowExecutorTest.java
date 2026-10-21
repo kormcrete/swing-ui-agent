@@ -49,7 +49,7 @@ class FlowExecutorTest {
         assertThat(e.getMessage()).contains("click", "type", "press", "check", "select", "pick", "menu", "answer",
                 "chooseFile", "drag", "drop", "expect", "scroll", "setClipboard", "screenshot", "contextMenu",
                 "navigate", "close", "loginAs");
-        assertThat(FlowJson.stepTypes()).hasSize(25).contains("do");
+        assertThat(FlowJson.stepTypes()).hasSize(26).contains("do");
     }
 
     // ---- the app steps behind a waiting dialog ---------------------------------------------

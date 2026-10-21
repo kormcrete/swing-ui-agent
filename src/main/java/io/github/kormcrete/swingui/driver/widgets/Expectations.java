@@ -135,6 +135,69 @@ public final class Expectations {
         return null;
     }
 
+    /**
+     * The text a {@code remember} step keeps, as {@code expect} reads it. With {@code selected}: the selected row's cell in the
+     * target's column (table), the selected item (list, tree) or the selected tab's title. Without: the target's own text, a
+     * cell, list entry or tree item included. Reads the models only. Fails as EXPECTATION when the text is empty (the
+     * message is retried by the caller, like a failed check), as BAD_INPUT when the target cannot give one.
+     */
+    public static String remembered(Resolved r, boolean selected) {
+        if (r.component instanceof JPasswordField) {
+            throw new DriverException(Reason.BAD_INPUT, "a password field's content is never read");
+        }
+        String value = selected ? selectedText(r) : ownText(r);
+        if (value == null || value.isEmpty()) {
+            throw new DriverException(Reason.EXPECTATION, "nothing to remember: " + r.locator + " is empty");
+        }
+        return value;
+    }
+
+    private static String ownText(Resolved r) {
+        Component c = r.component;
+        if (c instanceof JList && r.item() != null) {
+            return Cells.list((JList<?>) c, entry((JList<?>) c, r.item())).text;
+        }
+        if (c instanceof JTree && r.item() != null) {
+            return Cells.tree((JTree) c, TreeWidget.row((JTree) c, r.item())).text;
+        }
+        return text(r);
+    }
+
+    private static String selectedText(Resolved r) {
+        Component c = r.component;
+        if (c instanceof JTabbedPane) {
+            JTabbedPane tabs = (JTabbedPane) c;
+            int at = tabs.getSelectedIndex();
+            if (at < 0) throw new DriverException(Reason.EXPECTATION, "nothing to remember: " + r.locator + " has no selected tab");
+            return Names.tabTitle(tabs, at);
+        }
+        if (c instanceof JTable) {
+            JTable table = (JTable) c;
+            if (r.column() == null) {
+                throw new DriverException(Reason.BAD_INPUT, "remembering the selected row of a table needs a 'column' on the target");
+            }
+            int row = table.getSelectedRow();
+            if (row < 0) throw new DriverException(Reason.EXPECTATION, "nothing to remember: " + r.locator + " has no selected row");
+            return Cells.table(table, row, TableWidget.column(table, r.column())).text;
+        }
+        if (c instanceof JList) {
+            JList<?> list = (JList<?>) c;
+            int at = list.getSelectedIndex();
+            if (at < 0) throw new DriverException(Reason.EXPECTATION, "nothing to remember: " + r.locator + " has no selected item");
+            return Cells.list(list, at).text;
+        }
+        if (c instanceof JTree) {
+            JTree tree = (JTree) c;
+            int[] rows = tree.getSelectionRows();
+            if (rows == null || rows.length == 0) {
+                throw new DriverException(Reason.EXPECTATION, "nothing to remember: " + r.locator + " has no selected item");
+            }
+            return Cells.tree(tree, rows[0]).text;
+        }
+        throw new DriverException(Reason.BAD_INPUT, "'selected' remembers the selected row, item or tab; "
+                + r.describe() + " is none of those");
+    }
+
     private static String text(Resolved r) {
         Component c = r.component;
         if (r.part != null) return r.part.name;

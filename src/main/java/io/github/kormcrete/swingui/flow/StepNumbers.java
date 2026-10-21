@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.flow;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,9 +49,12 @@ public final class StepNumbers {
         }
     }
 
-    /** True for a check: an {@code expect}, or a domain check ({@code do} marked {@link DoAction#check}). Every other step is an action. */
+    /**
+     * True for a check: an {@code expect}, a {@code remember} (it reads like a check, under the action before it), or a
+     * domain check ({@code do} marked {@link DoAction#check}). Every other step is an action.
+     */
     public static boolean isCheck(Action a) {
-        return a instanceof ExpectVerb || a instanceof DoAction && Boolean.TRUE.equals(((DoAction) a).check);
+        return a instanceof ExpectVerb || a instanceof RememberVerb || a instanceof DoAction && Boolean.TRUE.equals(((DoAction) a).check);
     }
 
     /** The steps of {@code flat}, in order. */

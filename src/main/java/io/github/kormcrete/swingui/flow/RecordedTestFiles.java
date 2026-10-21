@@ -2,6 +2,8 @@ package io.github.kormcrete.swingui.flow;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.flow.refs.Refs;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
@@ -14,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
@@ -36,7 +39,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
- * Recorded test files on disk, format versions 2 and 3: strict where {@link FlowJson} is lenient, so a typo never silently
+ * Recorded test files on disk, format versions 2 to 4: strict where {@link FlowJson} is lenient, so a typo never silently
  * drops a step's meaning and a file from a newer agent says why it cannot run. Each step carries the checks that follow it
  * ({@link StepNumbers}); a step or check may have a one-line {@code say}; whole steps may be grouped:
  * <pre>
@@ -70,11 +73,20 @@ import java.util.regex.Pattern;
  * A domain check sits in {@code checks} with its {@code "action" : "do"}. A recorded test without do steps is written as
  * version 2, which every earlier agent of this format reads. Names reserved for later formats are refused with a hint to
  * update the agent. Files always use {@code \n}.
+ *
+ * <p>Version 4 lets a step use values from earlier steps. A step that something links to has an {@code "id"}; a
+ * {@code remember} check keeps an element's text under its {@code "as"} name; any string may hold {@code ${id.path}}
+ * references (see {@link Refs}), and {@code $${} is a literal {@code ${}. A file is written as version 4 only when it has
+ * an id, a remember check or a reference, so older agents keep reading every other file. In memory a step's strings are
+ * always in the escaped form of version 4: a version 2 or 3 file is escaped when read (its {@code ${} is plain text) and
+ * unescaped when written.
  */
 public final class RecordedTestFiles {
 
-    /** The newest format this agent reads and writes: a recorded test with {@code do} steps is written in it. */
-    public static final int VERSION = 3;
+    /** The newest format this agent reads and writes: a recorded test with ids, remember checks or references is written in it. */
+    public static final int VERSION = 4;
+    /** The format a recorded test with {@code do} steps (and no links) is written in. */
+    public static final int VERSION_WITH_DO = 3;
     /** The format a recorded test without {@code do} steps is written in; the oldest this agent reads. */
     public static final int VERSION_WITHOUT_DO = 2;
     /** The only start there is: right after a session reset. */
@@ -93,8 +105,12 @@ public final class RecordedTestFiles {
     private static final List<String> TOP_FIELDS = Arrays.asList("version", "name", "description", "start", "steps");
     private static final String DO = "do";
     private static final String NEEDS_V3 = "needs format version 3 (\"version\": 3), the format of a recorded test with do steps";
+    private static final String NEEDS_V4 = "needs format version 4 (\"version\": 4), the format of a recorded test that uses values from earlier steps";
+    private static final String RUN = "run";
+    private static final String REMEMBER = "remember";
+    private static final Pattern ID = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,39}");
     private static final String NEWER = "belongs to a newer recorded test format; update swing-ui-agent";
-    private static final String STATIC = "a recorded test holds exact values only; values per run or read from the app belong in a Java test";
+    private static final String STATIC = "a recorded test takes values from earlier steps with ${...} references (format 4), not 'capture'/'params'";
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 ._-]{0,99}");
     private static final Pattern DEVICE = Pattern.compile("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])");
     private static final String NAME_RULE = "a recorded test name is 1-100 characters: letters, digits, space, '.', '_', '-', "
@@ -149,14 +165,15 @@ public final class RecordedTestFiles {
         if (root == null || !root.isObject()) throw bad(source, "not a recorded test file (a JSON object is expected)");
 
         JsonNode version = root.get("version");
-        if (version == null) throw bad(source, "needs \"version\": " + VERSION_WITHOUT_DO + " (" + VERSION + " for a recorded test with do steps)");
+        if (version == null) throw bad(source, "needs \"version\": " + VERSION_WITHOUT_DO + " (" + VERSION_WITH_DO + " with do steps, " + VERSION
+                + " with values from earlier steps)");
         if (!version.isIntegralNumber() || !version.canConvertToInt() || version.intValue() < 1) {
             throw bad(source, "\"version\" must be a whole number of 1 or more, not " + version);
         }
         int v = version.intValue();
         if (v < VERSION_WITHOUT_DO) {
             throw bad(source, "is format version " + v + " (one flat list); this agent reads versions " + VERSION_WITHOUT_DO
-                    + " and " + VERSION + ", where checks sit under the step they check - export it again, or nest each check "
+                    + " to " + VERSION + ", where checks sit under the step they check - export it again, or nest each check "
                     + "under the step before it");
         }
         if (v > VERSION) {
@@ -169,14 +186,14 @@ public final class RecordedTestFiles {
             String field = it.next();
             if (TOP_FIELDS.contains(field)) continue;
             if ("requires".equals(field)) {
-                if (v < VERSION) unknown.add("'requires' " + NEEDS_V3);
+                if (v < VERSION_WITH_DO) unknown.add("'requires' " + NEEDS_V3);
             } else if ("params".equals(field)) {
                 unknown.add("'params': " + STATIC);
             } else if ("groups".equals(field)) {
                 unknown.add("'groups': a group is written as {\"say\": ..., \"steps\": [...]} inside steps");
             } else {
                 unknown.add("unknown field '" + field + "'; a recorded test file has version, name, description, start, steps "
-                        + "(and requires, from version " + VERSION + ")");
+                        + "(and requires, from version " + VERSION_WITH_DO + ")");
             }
         }
         if (!unknown.isEmpty()) throw bad(source, join(unknown, "; "));
@@ -214,7 +231,60 @@ public final class RecordedTestFiles {
             }
         }
         doSteps(r);
+        if (v >= VERSION) links(r);
         return flow;
+    }
+
+    /**
+     * Version 4: every step id and remember name is valid and used once, and every reference in a step names the id or
+     * name of an EARLIER step, or {@code run}; a reference whose path does not parse is refused too. BAD_INPUT names the
+     * step and its line.
+     */
+    private static void links(Reading r) {
+        Map<String, String> defined = new HashMap<String, String>();
+        for (int i = 0; i < r.flow.steps.size(); i++) {
+            Action a = r.flow.steps.get(i);
+            Integer line = i < r.flow.lines.size() ? r.flow.lines.get(i) : null;
+            String where = r.labels.get(i) + " (" + typeName(a) + ")" + (line == null ? "" : " (line " + line + ")");
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.of(a);
+            } catch (IllegalArgumentException e) {
+                throw bad(r.source, where + ": " + e.getMessage());
+            }
+            for (Refs.Ref ref : refs) {
+                if (!defined.containsKey(ref.id) && !RUN.equals(ref.id)) {
+                    throw bad(r.source, where + ": " + ref.source + " refers to '" + ref.id + "', but no earlier step is named '"
+                            + ref.id + "'");
+                }
+            }
+            String name = a.id;
+            if (a instanceof RememberVerb) {
+                if (a.id != null) throw bad(r.source, where + ": a remember check is named by \"as\", not \"id\"");
+                name = ((RememberVerb) a).as;
+                if (name == null) throw bad(r.source, where + ": needs \"as\", the name to keep the value under");
+            }
+            if (name == null) continue;
+            String problem = idProblem(name);
+            if (problem != null) throw bad(r.source, where + ": " + problem);
+            if (defined.containsKey(name)) {
+                throw bad(r.source, where + ": '" + name + "' is already the name of " + defined.get(name));
+            }
+            defined.put(name, r.labels.get(i));
+        }
+    }
+
+    private static String typeName(Action a) {
+        return a instanceof RememberVerb ? REMEMBER : typeOf(FlowJson.mapper().valueToTree(a));
+    }
+
+    /** Why {@code name} cannot be a step id or a remember name; null when it can. */
+    public static String idProblem(String name) {
+        if (RUN.equals(name)) return "'run' is reserved for the values of the run (run.id, run.date, run.time)";
+        if (!ID.matcher(name).matches()) {
+            return "'" + name + "' is not a valid name: a letter, then up to 39 letters, digits or '_'";
+        }
+        return null;
     }
 
     /** The plugin names of {@code "requires"} (absent: none); BAD_INPUT unless an array of distinct names, one or more. */
@@ -357,8 +427,8 @@ public final class RecordedTestFiles {
             }
         } else {
             JsonNode action = node.get("action");
-            if (action.isTextual() && "expect".equals(action.textValue())) {
-                throw bad(source, "step " + n + " (expect): a check goes under the step it checks (\"checks\"); "
+            if (action.isTextual() && ("expect".equals(action.textValue()) || REMEMBER.equals(action.textValue()))) {
+                throw bad(source, "step " + n + " (" + action.textValue() + "): a check goes under the step it checks (\"checks\"); "
                         + "checks before any action form the first step {\"checks\": [...]}");
             }
             ObjectNode own = ((ObjectNode) node).deepCopy();
@@ -376,11 +446,12 @@ public final class RecordedTestFiles {
             if (!check.isObject()) throw bad(source, label + ": a check is a JSON object (an expect without \"action\")");
             JsonNode kind = check.get("action");
             boolean domain = kind != null && kind.isTextual() && DO.equals(kind.textValue());
-            if (kind != null && !domain && !(kind.isTextual() && "expect".equals(kind.textValue()))) {
-                throw bad(source, label + ": only an expect or a domain check (do) goes in checks; an action is a step of its own");
+            boolean remember = kind != null && kind.isTextual() && REMEMBER.equals(kind.textValue());
+            if (kind != null && !domain && !remember && !(kind.isTextual() && "expect".equals(kind.textValue()))) {
+                throw bad(source, label + ": only an expect, a remember or a domain check (do) goes in checks; an action is a step of its own");
             }
             ObjectNode own = ((ObjectNode) check).deepCopy();
-            if (!domain) own.put("action", "expect");
+            if (!domain && !remember) own.put("action", "expect");
             Action c = action(r, own, label);
             sayOrThrow(c.say, label + " (" + typeOf(own) + ")", source);
             if (c.say != null) c.say = c.say.trim();
@@ -397,7 +468,10 @@ public final class RecordedTestFiles {
     private static Action action(Reading r, JsonNode node, String label) {
         String source = r.source;
         String type = typeOf(node);
-        if (DO.equals(type) && r.version < VERSION) throw bad(source, label + ": 'do' " + NEEDS_V3);
+        if (DO.equals(type) && r.version < VERSION_WITH_DO) throw bad(source, label + ": 'do' " + NEEDS_V3);
+        if (r.version < VERSION && REMEMBER.equals(type)) throw bad(source, label + " (" + type + "): 'remember' " + NEEDS_V4);
+        if (r.version < VERSION && node.has("id")) throw bad(source, label + " (" + type + "): 'id' " + NEEDS_V4);
+        if (r.version < VERSION) node = escaped(node);
         if (DO.equals(type) && node.has("check")) {
             throw bad(source, label + " (do): 'check' is not written in a file: a domain check goes under the step it checks "
                     + "(in its \"checks\")");
@@ -418,6 +492,29 @@ public final class RecordedTestFiles {
         } catch (IOException e) {
             throw bad(source, label + ": " + e.getMessage());
         }
+    }
+
+    /** A copy of {@code node} with {@link Refs#escape} applied to every string value: text of an older file is never a reference. */
+    private static JsonNode escaped(JsonNode node) {
+        return mapStrings(node, true);
+    }
+
+    private static JsonNode mapStrings(JsonNode node, boolean escape) {
+        if (node.isTextual()) return new TextNode(escape ? Refs.escape(node.textValue()) : Refs.unescape(node.textValue()));
+        if (node.isObject()) {
+            ObjectNode out = FlowJson.mapper().createObjectNode();
+            for (Iterator<Map.Entry<String, JsonNode>> it = node.fields(); it.hasNext();) {
+                Map.Entry<String, JsonNode> f = it.next();
+                out.set(f.getKey(), mapStrings(f.getValue(), escape));
+            }
+            return out;
+        }
+        if (node.isArray()) {
+            ArrayNode out = FlowJson.mapper().createArrayNode();
+            for (JsonNode e : node) out.add(mapStrings(e, escape));
+            return out;
+        }
+        return node;
     }
 
     private static void sayOrThrow(String say, String where, String source) {
@@ -526,10 +623,17 @@ public final class RecordedTestFiles {
         return flow;
     }
 
-    /** The format version a recorded test is written as: {@link #VERSION} with a {@code do} step, else {@link #VERSION_WITHOUT_DO}. */
+    /**
+     * The format version a recorded test is written as: {@link #VERSION} when a step has an id, is a remember check or holds a
+     * reference; else {@link #VERSION_WITH_DO} with a {@code do} step; else {@link #VERSION_WITHOUT_DO}.
+     */
     public static int versionFor(Flow flow) {
-        for (Action a : flow.steps) if (a instanceof DoAction) return VERSION;
-        return VERSION_WITHOUT_DO;
+        boolean hasDo = false;
+        for (Action a : flow.steps) {
+            if (a.id != null || a instanceof RememberVerb || !Refs.of(a).isEmpty()) return VERSION;
+            if (a instanceof DoAction) hasDo = true;
+        }
+        return hasDo ? VERSION_WITH_DO : VERSION_WITHOUT_DO;
     }
 
     /**
@@ -546,8 +650,8 @@ public final class RecordedTestFiles {
     }
 
     /**
-     * The file text of a recorded test: version 2, or version 3 with {@code "requires"} ({@link #requiresOf}) when it has do
-     * steps; steps with their checks nested, groups wrapped, pretty-printed, {@code \n} line feeds on every OS, one final
+     * The file text of a recorded test: version 2, version 3 when it has do steps, or version 4 ({@link #versionFor}); with
+     * {@code "requires"} ({@link #requiresOf}) when it has do steps; a version 2 or 3 file has its strings unescaped; steps with their checks nested, groups wrapped, pretty-printed, {@code \n} line feeds on every OS, one final
      * line feed. IllegalArgumentException when the reader would refuse the result: a newer version, a start other than
      * {@code reset}, a bad structure ({@link #structureProblems}), or do steps whose plugins are not known.
      */
@@ -564,7 +668,9 @@ public final class RecordedTestFiles {
         if (!problems.isEmpty()) throw new IllegalArgumentException(join(problems, "; "));
         int version = versionFor(flow);
         List<String> requires = requiresOf(flow);
-        if (version == VERSION && requires.isEmpty()) {
+        boolean hasDo = false;
+        for (Action a : flow.steps) if (a instanceof DoAction) hasDo = true;
+        if (hasDo && requires.isEmpty()) {
             throw new IllegalArgumentException("cannot write do steps without their plugins: name each step as <plugin>:<id>, "
                     + "or the plugins in the recorded test's requires");
         }
@@ -575,7 +681,7 @@ public final class RecordedTestFiles {
         if (flow.name != null) root.put("name", flow.name);
         if (flow.description != null) root.put("description", flow.description);
         root.put("start", START_RESET);
-        if (version == VERSION) {
+        if (hasDo) {
             ArrayNode names = root.putArray("requires");
             for (String r : requires) names.add(r);
         }
@@ -585,14 +691,14 @@ public final class RecordedTestFiles {
             FlowGroup group = null;
             for (FlowGroup g : flow.groups) if (g.from == list.get(i).first()) group = g;
             if (group == null) {
-                steps.add(stepNode(mapper, flow, list.get(i)));
+                steps.add(stepNode(mapper, flow, list.get(i), version < VERSION));
                 continue;
             }
             ObjectNode g = steps.addObject();
             g.put("say", group.say);
             ArrayNode members = g.putArray("steps");
             while (true) {
-                members.add(stepNode(mapper, flow, list.get(i)));
+                members.add(stepNode(mapper, flow, list.get(i), version < VERSION));
                 if (list.get(i).last() >= group.to) break;
                 i++;
             }
@@ -608,18 +714,18 @@ public final class RecordedTestFiles {
         }
     }
 
-    private static ObjectNode stepNode(ObjectMapper mapper, Flow flow, StepNumbers.Step step) {
+    private static ObjectNode stepNode(ObjectMapper mapper, Flow flow, StepNumbers.Step step, boolean unescape) {
         ObjectNode node = step.checkOnly() ? mapper.createObjectNode() : (ObjectNode) mapper.valueToTree(flow.steps.get(step.action));
         node.remove("check");   // a do step's place says whether it checks
-        if (step.checks.isEmpty()) return node;
+        if (step.checks.isEmpty()) return unescape ? (ObjectNode) mapStrings(node, false) : node;
         ArrayNode checks = node.putArray("checks");
         for (int c : step.checks) {
             ObjectNode check = (ObjectNode) mapper.valueToTree(flow.steps.get(c));
             if (flow.steps.get(c) instanceof DoAction) check.remove("check");
-            else check.remove("action");
+            else if (!(flow.steps.get(c) instanceof RememberVerb)) check.remove("action");
             checks.add(check);
         }
-        return node;
+        return unescape ? (ObjectNode) mapStrings(node, false) : node;
     }
 
     /** Validates a recorded test name (a trailing {@code .json} is accepted and stripped); BAD_INPUT states the rule. */

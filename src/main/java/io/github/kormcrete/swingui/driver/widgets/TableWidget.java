@@ -164,18 +164,19 @@ public final class TableWidget {
     }
 
     /**
-     * The row a spec names. A key column the table does not have is looked up in the table beside it
+     * The row a spec names; an index below zero counts from the end ({@code -1} is the last row). A key column the table does not have is looked up in the table beside it
      * that serves as its row header - the {@code JScrollPane}'s row-header view, the shape a frozen
      * key column takes (a data grid's "Item" column): that table shows the same rows, so its
      * row {@code r} is this table's row {@code r}.
      */
     public static int row(JTable table, RowSpec spec) {
         if (spec.index != null) {
-            if (spec.index < 0 || spec.index >= table.getRowCount()) {
+            int at = spec.index < 0 ? table.getRowCount() + spec.index : spec.index;
+            if (at < 0 || at >= table.getRowCount()) {
                 throw new DriverException(Reason.NOT_FOUND, "row index " + spec.index + " is out of range; the table has "
                         + table.getRowCount() + " rows");
             }
-            return spec.index;
+            return at;
         }
         List<JTable> keyTables = new ArrayList<JTable>();
         List<Integer> keyColumns = new ArrayList<Integer>();

@@ -120,6 +120,7 @@ public final class StepCallVerbs implements Verbs {
     @Override public FileChooserState fileChooser(Long timeout) { return verbs.fileChooser(timeout); }
     @Override public String clipboardText() { return verbs.clipboardText(); }
     @Override public UiReading readUi() { return verbs.readUi(); }
+    @Override public String remember(Locator target, boolean selected, Long timeout) { return verbs.remember(target, selected, timeout); }
     @Override public void resetPointer() { verbs.resetPointer(); }
 
     // ---- verbs: one kept step each

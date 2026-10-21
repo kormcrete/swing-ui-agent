@@ -94,6 +94,7 @@ public final class TracingVerbs implements Verbs {
     }
     @Override public String clipboardText() { throw read("clipboard"); }
     @Override public UiReading readUi() { throw read("reading of the UI"); }
+    @Override public String remember(Locator target, boolean selected, Long timeout) { throw read("remembered value"); }
     @Override public FileChooserState fileChooser(Long timeout) { throw read("file chooser"); }
 
     /** Asked only after a failed step, which a trace has none of: nothing to suggest. */

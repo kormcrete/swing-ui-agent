@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.flow.CloseAction;
 import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
+import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
@@ -285,6 +286,10 @@ public final class JavaTestWriter {
                 String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
                 Action a = steps.get(i);
                 stepLines.add(null);
+                if (usesValueSyntax(a)) {
+                    problems.add(what + ": " + a.describe() + " uses ${...} (values from earlier steps), which has no Java form yet");
+                    continue;
+                }
                 if (a instanceof DoAction) {
                     doStep(i, (DoAction) a, what);
                     continue;
@@ -525,6 +530,17 @@ public final class JavaTestWriter {
             // Every VerbAction subtype is one of the above; a new one needs a table row here too.
             problems.add(what + ": " + v.describe() + " is a verb this writer has no Java form for");
             return null;
+        }
+
+        /** True when a string of the step holds {@code ${} or its escape {@code $${}: the Java export does not know values of earlier steps. */
+        private boolean usesValueSyntax(Action a) {
+            return mentionsDollarBrace(FlowJson.mapper().valueToTree(a));
+        }
+
+        private boolean mentionsDollarBrace(com.fasterxml.jackson.databind.JsonNode n) {
+            if (n.isTextual()) return n.textValue().contains("${");
+            for (com.fasterxml.jackson.databind.JsonNode child : n) if (mentionsDollarBrace(child)) return true;
+            return false;
         }
 
         // ---- per-verb statements

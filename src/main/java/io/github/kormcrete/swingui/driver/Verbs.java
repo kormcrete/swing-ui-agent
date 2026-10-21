@@ -199,6 +199,15 @@ public interface Verbs {
     }
 
     /**
+     * The text of {@code target} for a later step to use, waiting like {@link #expect} until it is there and not empty.
+     * With {@code selected}: the selected row's cell in the target's column (table), the selected item (list, tree) or the
+     * selected tab's title. A read; fails when the value is empty.
+     */
+    default String remember(Locator target, boolean selected, Long timeout) {
+        throw missing("remember");
+    }
+
+    /**
      * What the app's windows show now, once the event queue is drained: a step's outcome is the difference of a reading
      * before it and one after it ({@code Outcomes.diff}). A read; nothing is recorded.
      */

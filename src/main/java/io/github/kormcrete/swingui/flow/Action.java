@@ -41,11 +41,18 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = NavigateAction.class, name = "navigate"),
         @JsonSubTypes.Type(value = CloseAction.class, name = "close"),
         @JsonSubTypes.Type(value = LoginAsAction.class, name = "loginAs"),
-        @JsonSubTypes.Type(value = DoAction.class, name = "do")
+        @JsonSubTypes.Type(value = DoAction.class, name = "do"),
+        @JsonSubTypes.Type(value = RememberVerb.class, name = "remember")
 })
 public abstract class Action {
     /** The step's or check's sentence: optional, one line, never run. */
     public String say;
+
+    /**
+     * The name later steps use in {@code ${id...}} references to what this step changed; null when nothing links to it.
+     * A letter, then up to 39 letters, digits or {@code _}; unique in the recorded test; never {@code run}.
+     */
+    public String id;
 
     /** Short human label for logs/results, e.g. "navigate(Orders)". */
     public abstract String describe();

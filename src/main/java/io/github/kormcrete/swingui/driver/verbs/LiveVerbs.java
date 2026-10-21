@@ -713,6 +713,21 @@ public final class LiveVerbs implements Verbs {
         }
     }
 
+    @Override
+    public String remember(final Locator target, final boolean selected, Long timeout) {
+        if (target == null) throw bad("remember needs a 'target'");
+        long deadline = System.currentTimeMillis() + waitMillis(timeout);
+        while (true) {
+            try {
+                return Edt.call(() -> Expectations.remembered(driver.resolver().resolve(target), selected));
+            } catch (DriverException e) {
+                if (e.reason() == Reason.BAD_INPUT || e.reason() == Reason.CAPABILITY_GAP) throw e;
+                if (System.currentTimeMillis() >= deadline) throw e;
+            }
+            pause(POLL_MS);
+        }
+    }
+
     // ---------------------------------------------------------------- lists, tabs, combos, popups
 
     /**

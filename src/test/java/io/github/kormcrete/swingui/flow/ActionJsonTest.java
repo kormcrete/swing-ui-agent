@@ -17,7 +17,7 @@ class ActionJsonTest {
         assertThat(FlowJson.stepTypes()).containsExactly(
                 "click", "type", "press", "check", "select", "pick", "menu", "answer", "chooseFile", "drag", "drop",
                 "expect", "scroll", "setClipboard", "screenshot", "contextMenu", "hover", "resizeColumn", "resizeWindow", "closeWindow", "focusFileChooserName",
-                "navigate", "close", "loginAs", "do");
+                "navigate", "close", "loginAs", "do", "remember");
     }
 
     @Test
