@@ -60,9 +60,6 @@ final class StepMenu extends JPopupMenu {
 
     private StepMenu submenu(String label, boolean enabled, List<String> items, int selected, IntConsumer action) {
         Sub sub = new Sub(label);
-        // a window of its own: never painted with the app's window, which a capture paints (it paints nothing of the
-        // palette's own), and on top of it anyway
-        sub.getPopupMenu().setLightWeightPopupEnabled(false);
         for (int i = 0; i < items.size(); i++) {
             int at = i;
             JMenuItem item = selected < 0 ? new JMenuItem(items.get(i)) : new JRadioButtonMenuItem(items.get(i), i == selected);

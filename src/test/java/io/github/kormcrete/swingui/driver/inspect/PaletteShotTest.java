@@ -283,43 +283,60 @@ class PaletteShotTest {
 
     private static void submenuAndSpeedList() throws Exception {
         inFrameOnScreen((frame, content) -> {
-            StepMenu menu = new StepMenu().item("Describe this step…", true, () -> { })
-                    .submenu("Use a value from an earlier step…", true,
-                            java.util.Arrays.asList("ORD-1643"), i -> { });
-            // short, so that the submenu fits beside the menu in the window
-            menu.show(content, 0, 20);
-            javax.swing.JMenu sub = menu.submenu("Use a value from an earlier step…");
-            javax.swing.MenuSelectionManager.defaultManager().setSelectedPath(
-                    new javax.swing.MenuElement[] {menu, sub, sub.getPopupMenu()});
+            // the palette's overlay on the window: it lifts the palette's own popups above the palette
+            Overlay overlay = new Overlay(frame.getRootPane());
             try {
-                JMenuItem choice = (JMenuItem) sub.getMenuComponent(0);
-                assertThat(choice.isShowing()).isTrue();
-                // the row menu too
-                Point m = onScreenCentre(menu.getComponent(0), frame);
-                assertThat(at(decode(Screenshots.of(frame, null, null, null)), m)).isEqualTo(0xFF0000);
-                Point c = onScreenCentre(choice, frame);
-                assertThat(at(decode(Screenshots.of(frame, null, null, null)), c)).isEqualTo(0xFF0000);
-                assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), c)).isNotEqualTo(0xFF0000);
+                popupsOpenInACapture(frame, content);
             } finally {
-                menu.setVisible(false);
-                javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath();
-            }
-            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
-            steps.setBounds(10, 20, 460, 200);
-            content.add(steps);
-            layOut(steps);
-            javax.swing.JComboBox<String> speed = steps.speedChoice();
-            speed.setPopupVisible(true);
-            try {
-                javax.swing.JList<?> list = ((javax.swing.plaf.basic.ComboPopup) speed.getUI().getAccessibleChild(speed, 0)).getList();
-                assertThat(list.isShowing()).isTrue();
-                Point l = onScreenCentre(list, frame);
-                assertThat(at(decode(Screenshots.of(frame, null, null, null)), l)).isEqualTo(0xFF0000);
-                assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), l)).isNotEqualTo(0xFF0000);
-            } finally {
-                speed.setPopupVisible(false);
+                overlay.dispose();
             }
         });
+    }
+
+    private static void popupsOpenInACapture(JFrame frame, JPanel content) throws Exception {
+        StepMenu menu = new StepMenu().item("Describe this step…", true, () -> { })
+                .submenu("Use a value from an earlier step…", true,
+                        java.util.Arrays.asList("ORD-1643"), i -> { });
+        // short, so that the submenu fits beside the menu in the window
+        menu.show(content, 0, 20);
+        javax.swing.JMenu sub = menu.submenu("Use a value from an earlier step…");
+        javax.swing.MenuSelectionManager.defaultManager().setSelectedPath(
+                new javax.swing.MenuElement[] {menu, sub, sub.getPopupMenu()});
+        try {
+            JMenuItem choice = (JMenuItem) sub.getMenuComponent(0);
+            assertThat(choice.isShowing()).isTrue();
+            // the row menu too
+            Point m = onScreenCentre(menu.getComponent(0), frame);
+            assertThat(at(decode(Screenshots.of(frame, null, null, null)), m)).isEqualTo(0xFF0000);
+            Point c = onScreenCentre(choice, frame);
+            // in the window, as Metal, Windows and FlatLaf put a popup that fits
+            assertThat(SwingUtilities.getWindowAncestor(choice)).isSameAs(frame);
+            assertThat(at(decode(Screenshots.of(frame, null, null, null)), c)).isEqualTo(0xFF0000);
+            assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), c)).isNotEqualTo(0xFF0000);
+        } finally {
+            menu.setVisible(false);
+            javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath();
+        }
+        StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
+        steps.setBounds(10, 20, 460, 200);
+        content.add(steps);
+        layOut(steps);
+        javax.swing.JComboBox<String> speed = steps.speedChoice();
+        speed.setPopupVisible(true);
+        try {
+            javax.swing.JList<?> list = ((javax.swing.plaf.basic.ComboPopup) speed.getUI().getAccessibleChild(speed, 0)).getList();
+            assertThat(list.isShowing()).isTrue();
+            assertThat(SwingUtilities.getWindowAncestor(list)).isSameAs(frame);
+            Point l = onScreenCentre(list, frame);
+            assertThat(at(decode(Screenshots.of(frame, null, null, null)), l)).isEqualTo(0xFF0000);
+            assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), l)).isNotEqualTo(0xFF0000);
+        } finally {
+            speed.setPopupVisible(false);
+        }
+        // closed, they leave nothing of theirs in the window
+        for (Component k : frame.getLayeredPane().getComponents()) {
+            assertThat(k.getClass().getName()).doesNotEndWith("$Lifted");
+        }
     }
 
     private static void layOut(java.awt.Container c) {

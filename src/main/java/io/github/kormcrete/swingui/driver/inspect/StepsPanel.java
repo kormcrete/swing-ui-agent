@@ -323,8 +323,6 @@ final class StepsPanel extends JPanel {
         right.add(new JLabel("Replay speed"));
         speed.setSelectedIndex(1);
         speed.setFocusable(false);
-        // its list in a panel of its own: a capture of the window leaves it out, as it leaves the palette out
-        speed.setLightWeightPopupEnabled(false);
         right.add(speed);
         right.add(x);
         top.add(right, BorderLayout.EAST);

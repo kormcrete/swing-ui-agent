@@ -45,6 +45,8 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.event.AWTEventListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.ContainerAdapter;
 import java.awt.event.ContainerEvent;
 import java.awt.event.ContainerListener;
@@ -198,13 +200,54 @@ final class Overlay extends JComponent {
     }
 
     /**
-     * {@code c}, just added to the popup layer, as one of the palette's own popups - its row menu, a dropdown's list, a
-     * tooltip on one of its parts - goes above the palette: on the popup layer it would show under the palette's
-     * controls, and they would get its clicks. A popup that does not fit in the window is a window of its own, on top
-     * anyway; the app's own popups stay where Swing puts them. EDT.
+     * {@code c}, just added to the popup layer, as one of the palette's own popups - its row menu and submenus, a
+     * dropdown's list, a tooltip on one of its parts - goes above the palette: on the popup layer it would show under the
+     * palette's controls, and they would get its clicks. It goes there inside a {@link Lifted} of its own, which a
+     * capture of the window paints nothing of. A popup that does not fit in the window is a window of its own, on top
+     * anyway and never painted with the window; the app's own popups stay where Swing puts them. EDT.
      */
     private void lift(Component c) {
-        if (layers.getLayer(c) == JLayeredPane.POPUP_LAYER && palettePopup(c, 0)) layers.setLayer(c, POPUPS, 0);
+        if (layers.getLayer(c) != JLayeredPane.POPUP_LAYER || !palettePopup(c, 0)) return;
+        if (!c.isLightweight()) {
+            layers.setLayer(c, POPUPS, 0);
+            return;
+        }
+        Lifted holder = new Lifted(c);
+        holder.setBounds(c.getBounds());
+        c.setLocation(0, 0);
+        holder.add(c);
+        layers.add(holder, POPUPS, 0);
+    }
+
+    /**
+     * Holds one of the palette's lightweight popups above the palette, as big as it: a capture of the window paints
+     * nothing of it (the popup, its items, a dropdown's list), as of the rest of the palette. When Swing takes the popup
+     * out (it closes) the holder goes too.
+     */
+    private static final class Lifted extends JComponent {
+        Lifted(Component popup) {
+            ComponentAdapter follow = new ComponentAdapter() {
+                @Override public void componentResized(ComponentEvent e) {
+                    setSize(popup.getSize());
+                }
+            };
+            popup.addComponentListener(follow);
+            addContainerListener(new ContainerAdapter() {
+                @Override public void componentRemoved(ContainerEvent e) {
+                    popup.removeComponentListener(follow);
+                    Container parent = getParent();
+                    if (parent == null) return;
+                    Rectangle was = getBounds();
+                    parent.remove(Lifted.this);
+                    parent.repaint(was.x, was.y, was.width, was.height);
+                }
+            });
+        }
+
+        @Override
+        public void paint(Graphics g) {
+            if (!Screenshots.capturing()) super.paint(g);
+        }
     }
 
     /** Whether the popup {@code c} holds (Swing wraps it in a panel or two) is one of the palette's own. */
