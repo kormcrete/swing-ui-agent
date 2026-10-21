@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.junit;
 
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Locator;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /** A test's handle on one live Swing client. The only way a UI test reaches the UI. */
@@ -33,6 +35,16 @@ public final class Client {
     private final Long timeoutMillis;
     private final List<String> warnings;
     private final Path screenshotDir;
+    private final RunInfo run;
+    /** The {@link #outcomeOf} running now, shared with the clients {@link #timeout} makes; null when none. */
+    private final AtomicReference<Capture> capture;
+
+    /** One {@link #outcomeOf}: its thread, how many actions it saw, what the one action changed. */
+    private static final class Capture {
+        final Thread thread = Thread.currentThread();
+        int actions;
+        Outcome outcome;
+    }
 
     public Client(Verbs verbs, ClientApp app, String runId) {
         this(verbs, app, runId, SCREENSHOT_DIR);
@@ -40,24 +52,55 @@ public final class Client {
 
     /** {@code screenshotDir}: where {@link #saveScreenshot} puts a relative path; null for {@link #SCREENSHOT_DIR}. */
     Client(Verbs verbs, ClientApp app, String runId, Path screenshotDir) {
-        this(verbs, app, runId, null, new ArrayList<String>(), screenshotDir == null ? SCREENSHOT_DIR : screenshotDir);
+        this(verbs, app, runId, null, new ArrayList<String>(), screenshotDir == null ? SCREENSHOT_DIR : screenshotDir,
+                RunInfo.start(), new AtomicReference<Capture>());
     }
 
-    private Client(Verbs verbs, ClientApp app, String runId, Long timeoutMillis, List<String> warnings, Path screenshotDir) {
+    private Client(Verbs verbs, ClientApp app, String runId, Long timeoutMillis, List<String> warnings, Path screenshotDir,
+                   RunInfo run, AtomicReference<Capture> capture) {
         this.verbs = verbs;
         this.app = app;
         this.runId = runId;
         this.timeoutMillis = timeoutMillis;
         this.warnings = warnings;
         this.screenshotDir = screenshotDir;
+        this.run = run;
+        this.capture = capture;
     }
 
     /** Unique per test, e.g. {@code UIT-20260928-141503-a3f9}: name what the test creates with it. */
     public String runId() { return runId; }
 
+    /**
+     * This test's run values - {@code ui.run().id()}, {@code date()}, {@code time()} - as a recorded test's
+     * {@code ${run.id}} gives them; the same for the whole test (every client {@link #timeout} makes from this one).
+     */
+    public RunInfo run() { return run; }
+
+    /**
+     * What the one action {@code oneAction} makes changed in the app ({@link Outcome}), read before and after it:
+     * {@code Outcome copy = ui.outcomeOf(() -> ui.button("Copy").click());}, then
+     * {@code copy.text("$.rows.Orders.added[0].Number")}. Only actions inside it pay for the reading. Throws
+     * IllegalStateException("outcomeOf takes exactly one action") when it runs none, or at a second one (which does not
+     * run); a UiActionFailed when this client cannot read the app.
+     */
+    public Outcome outcomeOf(Runnable oneAction) {
+        Capture c = new Capture();
+        if (!capture.compareAndSet(null, c)) {
+            throw new IllegalStateException("outcomeOf takes exactly one action, and another outcomeOf is running");
+        }
+        try {
+            oneAction.run();
+        } finally {
+            capture.set(null);
+        }
+        if (c.actions != 1) throw new IllegalStateException("outcomeOf takes exactly one action");
+        return c.outcome;
+    }
+
     /** The same client with another wait for its actions and assertions, and those of the targets made from it. */
     public Client timeout(Duration d) {
-        return new Client(verbs, app, runId, Target.millis(d), warnings, screenshotDir);
+        return new Client(verbs, app, runId, Target.millis(d), warnings, screenshotDir, run, capture);
     }
 
     /** The app's typed hooks: an interface the app's plugin registers, e.g. {@code ui.hooks(MyAppHooks.class).openTabTitles()}. */
@@ -326,15 +369,29 @@ public final class Client {
         }
     }
 
-    /** Runs one verb; a DriverException becomes UiActionFailed (with candidates when a target was not found). */
+    /**
+     * Runs one verb; a DriverException becomes UiActionFailed (with candidates when a target was not found). Inside
+     * {@link #outcomeOf} it reads what the verb changed ({@link Verbs#withChanges}), once.
+     */
     void act(String what, Locator target, Supplier<VerbOutcome> call) {
+        Capture c = capture.get();
+        boolean read = c != null && c.thread == Thread.currentThread();
+        if (read && ++c.actions > 1) throw new IllegalStateException("outcomeOf takes exactly one action");
         VerbOutcome out;
         try {
-            out = call.get();
+            out = read ? verbs.withChanges(call) : call.get();
         } catch (DriverException e) {
             throw new UiActionFailed(what, target, e, candidatesFor(target, e));
         }
         if (out != null && out.warning != null) warn(what + (target == null ? "" : " " + target) + ": " + out.warning);
+        if (read) {
+            if (out == null || out.changed == null) {
+                throw new UiActionFailed(what, target, new DriverException(Reason.CAPABILITY_GAP,
+                        "the action ran, but what it changed could not be read (an agent older than this client gives no "
+                                + "outcome)"), Collections.<String>emptyList());
+            }
+            c.outcome = Outcome.of(out.changed);
+        }
     }
 
     List<String> candidatesFor(Locator target, DriverException e) {

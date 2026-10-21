@@ -117,14 +117,16 @@ final class StepRunner {
 
     /**
      * {@code node} with each {@code {name}} replaced by its value; a text that is only an INT param's placeholder
-     * becomes the number (a row index, a count).
+     * becomes the number (a row index, a count), unless the value is not one yet (a value of an earlier step).
      */
     static JsonNode fill(JsonNode node, MapParams values) {
         if (node.isTextual()) {
             String s = node.asText();
             if (s.length() > 2 && s.startsWith("{") && s.endsWith("}")) {
                 String name = s.substring(1, s.length() - 1);
-                if (values.type(name) == ParamType.INT) return IntNode.valueOf(Integer.parseInt(values.text(name)));
+                if (values.type(name) == ParamType.INT && MapParams.isInt(values.text(name))) {
+                    return IntNode.valueOf(Integer.parseInt(values.text(name)));
+                }
             }
             return TextNode.valueOf(values.fill(s));
         }

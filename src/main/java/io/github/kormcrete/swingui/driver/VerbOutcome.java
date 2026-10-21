@@ -36,4 +36,9 @@ public final class VerbOutcome {
      * maps); they go under {@code "step"} in the step's outcome. Null when it returned none, and for a verb.
      */
     public Map<String, Object> made;
+    /**
+     * What the step changed ({@code Outcomes.diff} of a reading before it and one after it), when it ran inside
+     * {@link Verbs#withChanges}; else null.
+     */
+    public Map<String, Object> changed;
 }

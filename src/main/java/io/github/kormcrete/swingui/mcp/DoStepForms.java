@@ -64,7 +64,8 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
     private JavaTestWriter.DoForm of(DoAction d, boolean keep) {
         Plugins.DoStep found;
         try {
-            found = plugins.lookUp(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
+            // a value of an earlier step (a number param's too) is written as its Java, so it is checked at run
+            found = plugins.lookUpBeforeRun(d.step, d.params == null ? Collections.<String, String>emptyMap() : d.params);
         } catch (DriverException e) {
             String why = d.describe() + " has no Java form: " + DriverException.stripReason(e.getMessage(), e.reason());
             return keep ? JavaTestWriter.DoForm.withoutJava(why) : JavaTestWriter.DoForm.refused(why);
@@ -93,7 +94,12 @@ public final class DoStepForms implements JavaTestWriter.DoForms {
             return JavaTestWriter.DoForm.call(found.sentence, step.javaClass(), step.javaCall(), found.values, numbers);
         }
         String named = found.sentence + " (" + found.qualified() + ")";
-        BodyTrace.Result traced = Plugins.steps(found);
+        BodyTrace.Result traced;
+        try {
+            traced = Plugins.steps(found);
+        } catch (DriverException e) {
+            return JavaTestWriter.DoForm.refused(named + " has no Java form: " + DriverException.stripReason(e.getMessage(), e.reason()));
+        }
         if (!traced.derivable()) {
             return JavaTestWriter.DoForm.refused(named + " has no Java form: the step names no java(...) call, and its "
                     + "body cannot be written out as steps (" + traced.why() + "); give the step a java(...) call in the plugin, or "

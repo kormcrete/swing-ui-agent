@@ -6,7 +6,9 @@ import io.github.kormcrete.swingui.driver.FileChooserState;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.junit.Client;
+import io.github.kormcrete.swingui.junit.Outcome;
 import io.github.kormcrete.swingui.testing.RecordingApp;
 import io.github.kormcrete.swingui.junit.UiActionFailed;
 import io.github.kormcrete.swingui.spi.PluginParts;
@@ -106,6 +108,28 @@ class RemoteParityTest {
             ui.closeActiveTab();
         });
         assertThat(served.calls).isEqualTo(local.calls);
+    }
+
+    @Test
+    void anOutcomeAndARememberedTextAreTheSameOverTheAgent() {
+        for (RecordingVerbs v : Arrays.asList(local, served)) {
+            final RecordingVerbs verbs = v;
+            verbs.readings = () -> UiReading.builder().field("Number",
+                    verbs.calls.contains("click button 'Copy' null null null null") ? "ORD-1641" : "ORD-1640").build();
+            verbs.rememberAnswer = "Ada Lovelace";
+        }
+        String[] seen = new String[4];
+        int[] at = {0};
+        both(ui -> {
+            Outcome copy = ui.outcomeOf(() -> ui.button("Copy").click());
+            seen[at[0]++] = copy.text("$.fields.Number");
+            seen[at[0]++] = ui.table("Orders").cell("Customer").selectedText() + "/" + ui.label("Number").shownText();
+            // after it, an action reads nothing
+            ui.button("Save").click();
+        });
+        assertThat(seen).containsExactly("ORD-1641", "Ada Lovelace/Ada Lovelace", "ORD-1641", "Ada Lovelace/Ada Lovelace");
+        assertThat(served.calls).isEqualTo(local.calls);
+        assertThat(served.calls).contains("readUi", "remember table 'Orders' column=Customer true null");
     }
 
     @Test

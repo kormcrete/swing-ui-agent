@@ -3,11 +3,13 @@ package io.github.kormcrete.swingui.driver;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.Outcomes;
 import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * What recorded tests, MCP tools and JUnit tests drive: reads, and one method per verb. A null timeout means the
@@ -213,6 +215,20 @@ public interface Verbs {
      */
     default UiReading readUi() {
         throw new DriverException(Reason.CAPABILITY_GAP, "this client cannot read the UI's changes");
+    }
+
+    /**
+     * Runs {@code action}, one verb call on these verbs, and gives its outcome with what it changed
+     * ({@link VerbOutcome#changed}): by default the difference of a {@link #readUi} before it and one after it, so it
+     * fails as {@code readUi} does where the UI cannot be read. A Java test's {@code Client.outcomeOf} asks for it.
+     */
+    default VerbOutcome withChanges(Supplier<VerbOutcome> action) {
+        UiReading before = readUi();
+        VerbOutcome out = action.get();
+        UiReading after = readUi();
+        if (out == null) out = new VerbOutcome();
+        out.changed = Outcomes.diff(before, after);
+        return out;
     }
 
     static DriverException missing(String verb) {

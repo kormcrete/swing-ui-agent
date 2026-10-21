@@ -392,29 +392,197 @@ class JavaTestWriterTest {
                 + "        ui.clickable(\"Canvas\").clickAt(0.5, 0.25);\n");
     }
 
-    @Test
-    void valuesFromEarlierStepsAreRefusedUntilTheyHaveAJavaForm() {
-        TypeVerb t = new TypeVerb(); t.target = Locator.of("text", "Note"); t.text = "Copy ${run.id}";
-        ExportRefused e = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), t), ExportRefused.class);
-        assertThat(e.problems().get(0)).contains("step 2", "${...}", "no Java form yet");
+    // ---- values of earlier steps: outcome locals, remembered locals, run values
 
+    private static RememberVerb remember(Locator target, String as, boolean selected) {
         RememberVerb r = new RememberVerb();
-        r.target = Locator.of("label", "Number"); r.as = "number";
-        TypeVerb literal = new TypeVerb(); literal.target = Locator.of("text", "Note"); literal.text = "a $${b}";
-        assertThat(write(click(Locator.of("button", "Copy")), literal)).contains(".type(\"a ${b}\")");
-        TypeVerb broken = new TypeVerb(); broken.target = Locator.of("text", "Note"); broken.text = "Copy ${x";
-        assertThat(catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), broken), ExportRefused.class)
-                .problems().get(0)).contains("step 2", "no Java form yet");
-        ExportRefused remember = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), r), ExportRefused.class);
-        assertThat(remember.problems().get(0)).contains("check 1.1", "remember", "no Java form");
+        r.target = target;
+        r.as = as;
+        if (selected) r.selected = true;
+        return r;
+    }
+
+    private static Locator ordersRow(String column, String value) {
+        Locator l = Locator.of("table", "Orders");
+        l.row = new LinkedHashMap<String, Object>();
+        l.row.put(column, value);
+        return l;
+    }
+
+    /** Copy an order, keep its number, open the copy by it and note where it came from (in-memory, escaped strings). */
+    static Flow linkedRecording() {
+        ClickVerb copy = click(Locator.of("button", "Copy"));
+        copy.id = "copy";
+        ClickVerb open = click(ordersRow("Number", "${copy.rows.Orders.added[0].Number}"));
+        open.count = 2;
+        TypeVerb note = new TypeVerb();
+        note.target = Locator.of("text", "Note");
+        note.text = "Copy of ${orderNumber} for ${copy.rows.Orders.added[0]['Customer']}, run ${run.id} $${not a reference}";
+        note.replace = true;
+        note.commit = true;
+        ExpectVerb number = new ExpectVerb();
+        number.target = Locator.of("label", "Number");
+        number.text = "${orderNumber}";
+        Locator customer = Locator.of("table", "Orders");
+        customer.column = "Customer";
+        return flow(copy, remember(Locator.of("label", "Number"), "orderNumber", false), open, note, number,
+                remember(customer, "new", true), click(Locator.of("tab", "${new}")));
     }
 
     @Test
-    void aRecordingKeepsAStepThatUsesEarlierValuesOutOfItsJavaCheck() throws Exception {
+    void aLinkedRecordingExportsOutcomeLocalsAndCompiles() throws Exception {
+        String src = JavaTestWriter.write(linkedRecording(), "com.example.uitest.recorded", "CopyUiIT", "copy");
+
+        assertThat(src).contains("import io.github.kormcrete.swingui.junit.Outcome;\n");
+        assertThat(body(src)).containsExactly(
+                "        Outcome copy = ui.outcomeOf(() -> ui.button(\"Copy\").click());",
+                "        String orderNumber = ui.label(\"Number\").shownText();",
+                "",
+                "        ui.table(\"Orders\").row(\"Number\", copy.text(\"$.rows.Orders.added[0].Number\")).doubleClick();",
+                "        ui.field(\"Note\").fill(\"Copy of \" + orderNumber + \" for \" + copy.text(\"$.rows.Orders.added[0]['Customer']\")"
+                        + " + \", run \" + ui.run().id() + \" ${not a reference}\");",
+                "        assertThat(ui.label(\"Number\")).hasText(orderNumber);",
+                "        String newValue = ui.table(\"Orders\").cell(\"Customer\").selectedText();",
+                "",
+                "        ui.tab(newValue).click();",
+                "");
+        assertThat(JavaTestWriter.lines(linkedRecording()).get(0))
+                .isEqualTo("Outcome copy = ui.outcomeOf(() -> ui.button(\"Copy\").click());");
+
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("jw");
+        java.nio.file.Path pkg = java.nio.file.Files.createDirectories(dir.resolve("com/example/uitest/recorded"));
+        java.nio.file.Path file = pkg.resolve("CopyUiIT.java");
+        java.nio.file.Files.write(file, src.getBytes("UTF-8"));
+        javax.tools.JavaCompiler javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertThat(javac).isNotNull();
+        int rc = javac.run(null, null, null, "-encoding", "UTF-8", "-classpath", System.getProperty("java.class.path"),
+                "-d", dir.toString(), file.toString());
+        assertThat(rc).as("generated source compiles:\n" + src).isZero();
+    }
+
+    @Test
+    void localsAreJavaNamesThatDoNotClash() {
+        ClickVerb first = click(Locator.of("button", "Copy"));
+        first.id = "Ui";
+        ClickVerb second = click(Locator.of("button", "Copy again"));
+        second.id = "ui_2";
+        ClickVerb third = click(Locator.of("button", "Save"));
+        third.id = "class";
+        TypeVerb t = new TypeVerb();
+        t.target = Locator.of("text", "Note");
+        t.text = "${Ui.fields.Number} ${ui_2.fields.Number} ${class.fields.Number} ${Number} ${run.date} ${run['time']}";
+        String[] lines = bodyOf(flow(first, second, third, remember(Locator.of("label", "Number"), "Number", false),
+                remember(Locator.of("label", "Total"), "number", false), t));
+
+        assertThat(lines[0]).startsWith("        Outcome ui2 = ");
+        assertThat(lines[1]).startsWith("        Outcome ui_2 = ");
+        assertThat(lines[2]).startsWith("        Outcome classValue = ");
+        assertThat(lines[3]).startsWith("        String number = ");
+        assertThat(lines[4]).startsWith("        String number2 = ");
+        assertThat(lines[6]).isEqualTo("        ui.field(\"Note\").type(ui2.text(\"$.fields.Number\") + \" \" + ui_2.text(\"$.fields.Number\")"
+                + " + \" \" + classValue.text(\"$.fields.Number\") + \" \" + number + \" \" + ui.run().date() + \" \" + ui.run().time());");
+    }
+
+    @Test
+    void aValueWithNoJavaFormIsAPreciseProblem() {
+        ClickVerb copy = click(Locator.of("button", "Copy"));
+        copy.id = "copy";
+        ExpectVerb seen = stateCheck("label", "Number", "!hidden");
+        seen.id = "seen";
+        List<TypeVerb> uses = new java.util.ArrayList<TypeVerb>();
+        for (String text : Arrays.asList("${nobody.fields.Number}", "${run.week}", "${copy}", "${seen.fields.Number}",
+                "${orderNumber.part}", "Copy ${x")) {
+            TypeVerb t = new TypeVerb();
+            t.target = Locator.of("text", "Note");
+            t.text = text;
+            uses.add(t);
+        }
+        Flow f = flow(copy, seen, remember(Locator.of("label", "Number"), "orderNumber", false));
+        f.steps.addAll(uses);
+
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.write(f, "p", "SmokeUiIT", "walk"), ExportRefused.class);
+
+        assertThat(e.problems()).containsExactly(
+                "step 2: uses ${nobody.fields.Number}, but no step before it has the id or remembered name 'nobody'",
+                "step 3: uses ${run.week}, which is no run value: the run has run.id, run.date and run.time",
+                "step 4: uses ${copy}, everything step 1 changed: a step needs one value of it, e.g. ${copy.fields.Number}",
+                "step 5: uses ${seen.fields.Number}, what check 1.1 changed, but a check changes nothing",
+                "step 6: uses ${orderNumber.part}, but a remembered value is one text: use ${orderNumber}",
+                "step 7: type(text 'Note' 'Copy ${x') holds a ${ that is no reference (Unclosed reference in: Copy ${x): write $${ for a ${ "
+                        + "in the text");
+        // a recording keeps such steps, left out of the Java check, and writes what it can
+        List<String> lines = JavaTestWriter.lines(f, JavaTestWriter.DoForms.NONE_KEEPING_REFERENCES);
+        assertThat(lines.subList(0, 3)).containsExactly("ui.button(\"Copy\").click();",
+                "assertThat(ui.label(\"Number\")).isVisible();", "String orderNumber = ui.label(\"Number\").shownText();");
+        assertThat(lines.subList(3, 9)).containsOnlyNulls();
+    }
+
+    @Test
+    void aDoStepsValuesNeedOneAction() {
+        Map<String, String> none = Collections.emptyMap();
+        JavaTestWriter.DoForms forms = step -> step.step.equals("place")
+                ? JavaTestWriter.DoForm.call("Place the order", "io.github.kormcrete.orderdesk.uitest.OrderDeskSteps",
+                        "placeOrder(ui)", none, Collections.<String>emptySet())
+                : step.step.equals("addQty")
+                ? JavaTestWriter.DoForm.call("Add to the cart", "io.github.kormcrete.orderdesk.uitest.OrderDeskSteps",
+                        "addQtyToCart(ui, {product}, {qty})", step.params, Collections.singleton("qty"))
+                : JavaTestWriter.DoForm.steps("Copy the order", step.step.equals("copy")
+                        ? Collections.<Action>singletonList(click(Locator.of("button", "Copy")))
+                        : Arrays.<Action>asList(click(Locator.of("button", "Copy")), click(Locator.of("button", "OK"))));
+        DoAction place = doStep("place", null);
+        place.id = "place";
+        DoAction copy = doStep("copy", null);
+        copy.id = "copied";
+        DoAction twice = doStep("copyTwice", null);
+        twice.id = "twice";
+        DoAction add = doStep("addQty", null, "product", "${copied.rows.Orders.added[0].Product}", "qty",
+                "${copied.fields.Qty}");
+        TypeVerb t = new TypeVerb();
+        t.target = Locator.of("text", "Note");
+        t.text = "${place.rows.Orders.added[0].Number} ${place.step.number} ${twice.fields.Number} ${copied.step.number}";
+        Flow f = flow(place, copy, twice, add, t);
+
+        ExportRefused e = catchThrowableOfType(() -> JavaTestWriter.write(f, "p", "SmokeUiIT", "walk", forms),
+                ExportRefused.class);
+
+        assertThat(e.problems()).containsExactly("step 5: uses ${place.rows.Orders.added[0].Number}, what step 1 changed, "
+                        + "but its Java form is the plugin's call OrderDeskSteps.placeOrder(...), which may act more than once, "
+                        + "and outcomeOf takes exactly one action",
+                "step 5: uses ${place.step.number}, a value the domain step of step 1 returns: a Java test gets it from what "
+                        + "the plugin's java(...) helper returns, not from what the step changed",
+                "step 5: uses ${twice.fields.Number}, what step 3 changed, but its Java form is 2 steps, and outcomeOf takes "
+                        + "exactly one action",
+                "step 5: uses ${copied.step.number}, a value the domain step of step 2 returns: a Java test gets it from what "
+                        + "the plugin's java(...) helper returns, not from what the step changed");
+        f.steps.remove(t);
+        String[] lines = bodyOf(f, forms);
+        assertThat(lines).contains("        Outcome copied = ui.outcomeOf(() -> ui.button(\"Copy\").click());",
+                "        OrderDeskSteps.addQtyToCart(ui, copied.text(\"$.rows.Orders.added[0].Product\"), "
+                        + "Integer.parseInt(copied.text(\"$.fields.Qty\")));");
+    }
+
+    @Test
+    void aDomainStepsNumberParamMayUseAnEarlierValue() {
+        DoStepForms forms = orderDesk(DomainStep.act("setQty", "Set the quantity to {qty}")
+                .param("qty", ParamType.INT)
+                .steps("{\"action\":\"type\",\"target\":{\"role\":\"spinner\",\"name\":\"Qty\"},\"text\":\"{qty}\"}")
+                .build());
+        ClickVerb last = click(Locator.of("button", "Last order"));
+        last.id = "last";
+
+        String[] lines = bodyOf(flow(last, doStep("order-desk:setQty", null, "qty", "${last.fields.Qty}")), forms);
+
+        assertThat(lines).containsSequence("        Outcome last = ui.outcomeOf(() -> ui.button(\"Last order\").click());", "",
+                "        // Set the quantity to ${last.fields.Qty}",
+                "        ui.role(\"spinner\", \"Qty\").type(last.text(\"$.fields.Qty\"));");
+    }
+
+    @Test
+    void aRecordingWritesTheStepsThatUseEarlierValues() throws Exception {
         TypeVerb t = new TypeVerb(); t.target = Locator.of("text", "Note"); t.text = "Copy ${run.id}";
         String source = JavaTestWriter.write(Arrays.<Action>asList(click(Locator.of("button", "Copy")), t), "demo",
                 "CopyUiIT", "copy", JavaTestWriter.DoForms.NONE_KEEPING_REFERENCES);
-        assertThat(source).contains("ui.button(\"Copy\").click();").doesNotContain("run.id");
+        assertThat(source).contains("ui.button(\"Copy\").click();", "ui.field(\"Note\").type(\"Copy \" + ui.run().id());");
     }
 
     @Test

@@ -124,6 +124,8 @@ public final class StepCallVerbs implements Verbs {
         return verbs.remember(target, selected, timeout);
     }
     @Override public void resetPointer() { verbs.resetPointer(); }
+    /** The verbs below read what {@code action} changed; its steps are still kept here, as it calls back into these. */
+    @Override public VerbOutcome withChanges(Supplier<VerbOutcome> action) { return verbs.withChanges(action); }
 
     // ---- verbs: one kept step each
 

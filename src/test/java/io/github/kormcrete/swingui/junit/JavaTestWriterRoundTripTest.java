@@ -9,7 +9,13 @@ import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
+import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.FlowExecutor;
+import io.github.kormcrete.swingui.flow.FlowResult;
+import io.github.kormcrete.swingui.flow.refs.RunValues;
 import io.github.kormcrete.swingui.flow.verb.*;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
+import io.github.kormcrete.swingui.testing.RecordingHost;
 import io.github.kormcrete.swingui.mcp.JavaTestWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -22,6 +28,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -84,8 +91,36 @@ class JavaTestWriterRoundTripTest {
         ExpectVerb byId = new ExpectVerb(); byId.target = Locator.ofId("orderList.export.pdf"); byId.state = Collections.singletonList("disabled"); s.add(byId);
         ExpectVerb shown = new ExpectVerb(); shown.target = Locator.of("tab", "Orders"); shown.shown = true; s.add(shown);
         ExpectVerb absent = new ExpectVerb(); absent.target = Locator.of("tab", "ORD-1640"); absent.absent = true; s.add(absent);
+        // v4: what a step changed, remembered values and the run's id, used by later steps
+        ClickVerb copy = new ClickVerb(); copy.target = Locator.of("button", "Copy"); copy.id = "copy"; s.add(copy);
+        RememberVerb number = new RememberVerb(); number.target = Locator.of("label", "Number"); number.as = "orderNumber"; s.add(number);
+        ClickVerb openCopy = new ClickVerb(); openCopy.target = table("Orders", "Order no.", "${copy.rows.Orders.added[0]['Order no.']}");
+        openCopy.count = 2; s.add(openCopy);
+        TypeVerb note = new TypeVerb(); note.target = Locator.of("text", "Note"); note.text = "Copy of ${orderNumber}, run ${run.id} $${kept}";
+        note.replace = true; note.commit = true; s.add(note);
+        ExpectVerb copied = new ExpectVerb(); copied.target = Locator.of("label", "Number");
+        copied.text = "${copy.rows.Orders.added[0]['Order no.']}"; s.add(copied);
+        Locator customers = Locator.of("table", "Orders"); customers.column = "Customer";
+        RememberVerb customer = new RememberVerb(); customer.target = customers; customer.as = "customer"; customer.selected = true; s.add(customer);
+        ClickVerb customerTab = new ClickVerb(); customerTab.target = Locator.of("tab", "${customer}"); s.add(customerTab);
         s.add(new CloseAction());
         return s;
+    }
+
+    /** The Orders table before Copy is clicked, and after: Copy adds ORD-1641. */
+    private static java.util.function.Supplier<UiReading> copyAddsARow(RecordingVerbs verbs) {
+        return () -> {
+            List<List<String>> rows = new ArrayList<List<String>>();
+            rows.add(Arrays.asList("ORD-1640", "Ada Lovelace"));
+            if (verbs.calls.contains("click button 'Copy' null null null null")) rows.add(Arrays.asList("ORD-1641", "Ada Lovelace"));
+            return UiReading.builder().table("Orders", Arrays.asList("Order no.", "Customer"), rows).build();
+        };
+    }
+
+    private static List<String> runIdAs(List<String> calls, String runId) {
+        List<String> out = new ArrayList<String>();
+        for (String c : calls) out.add(c.replace(runId, "<run.id>"));
+        return out;
     }
 
     private static Locator table(String name, String column, String value) {
@@ -103,19 +138,26 @@ class JavaTestWriterRoundTripTest {
     void theExportedTestMakesExactlyTheRecordedCalls() throws Exception {
         List<Action> steps = allSteps();
 
+        // replayed as a recorded test is: references filled in from what the steps changed and remembered
         RecordingVerbs direct = new RecordingVerbs();
-        for (Action a : steps) {
-            // navigate and close go to the app hooks, as FlowExecutor sends them to its StepHost
-            if (a instanceof NavigateAction) direct.calls.add("hook navigate " + ((NavigateAction) a).target);
-            else if (a instanceof CloseAction) direct.calls.add("hook closeActiveTab");
-            else ((VerbAction) a).run(direct);
-        }
+        direct.readings = copyAddsARow(direct);
+        direct.rememberAnswer = "Ada Lovelace";
+        Flow flow = new Flow();
+        flow.steps.addAll(steps);
+        FlowResult replay = new FlowExecutor().outcomes(direct::readUi)
+                .runValues(new RunValues("rt000001", LocalDateTime.now())).run(flow, new RecordingHost(direct));
+        assertThat(replay.steps).allMatch(r -> r.passed);
 
         String src = JavaTestWriter.write(steps, "rt", "RoundTripUiIT", "walk");
         RecordingVerbs viaJava = new RecordingVerbs();
-        run(src, new Client(viaJava, new RecordingApp(viaJava.calls), "rt"));
+        viaJava.readings = copyAddsARow(viaJava);
+        viaJava.rememberAnswer = "Ada Lovelace";
+        Client ui = new Client(viaJava, new RecordingApp(viaJava.calls), "rt");
+        run(src, ui);
 
-        assertThat(viaJava.calls).containsExactlyElementsOf(direct.calls);
+        assertThat(runIdAs(viaJava.calls, ui.run().id())).containsExactlyElementsOf(runIdAs(direct.calls, "rt000001"));
+        assertThat(direct.calls).contains("click table 'Orders' row={Order no.=ORD-1641} null 2 null null",
+                "type text 'Note' Copy of Ada Lovelace, run rt000001 ${kept} true true null", "click tab 'Ada Lovelace' null null null null");
     }
 
     @Test

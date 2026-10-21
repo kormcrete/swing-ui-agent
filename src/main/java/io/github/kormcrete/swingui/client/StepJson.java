@@ -158,6 +158,15 @@ final class StepJson {
         return s;
     }
 
+    /** A remember step: the text of {@code target}, or of what is selected in it, kept under {@code as}. */
+    ObjectNode remember(Locator target, String as, boolean selected, Long timeout) {
+        ObjectNode s = step("remember", timeout);
+        put(s, "target", target);
+        s.put("as", as);
+        if (selected) s.put("selected", true);
+        return s;
+    }
+
     /** The app step that opens a view by name. */
     ObjectNode navigate(String target) {
         ObjectNode s = json.createObjectNode();

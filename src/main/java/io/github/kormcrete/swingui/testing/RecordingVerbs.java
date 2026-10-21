@@ -10,12 +10,14 @@ import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A Verbs that records each call as one line and answers from public knobs; for unit tests of code built on the driver.
@@ -46,6 +48,13 @@ public final class RecordingVerbs implements Verbs {
     public String modalText;
     /** When set, {@code read} answers from it instead of {@link #readAnswer}; it may throw a DriverException. */
     public Function<Locator, Node> reads;
+    /**
+     * What {@code readUi} answers, each read recorded as "readUi" (a step's outcome is the difference of two); null: the
+     * UI cannot be read, as the default {@code readUi} says.
+     */
+    public Supplier<UiReading> readings;
+    /** What {@code remember} answers. */
+    public String rememberAnswer = "remembered";
 
     private VerbOutcome verb(String line) {
         calls.add(line);
@@ -159,6 +168,18 @@ public final class RecordingVerbs implements Verbs {
             throw new DriverException(Reason.EXPECTATION, expectFailureMessage);
         }
         return outcome;
+    }
+
+    @Override public UiReading readUi() {
+        if (readings == null) return Verbs.super.readUi();
+        calls.add("readUi");
+        return readings.get();
+    }
+
+    @Override public String remember(Locator t, boolean selected, Long timeout) {
+        calls.add("remember " + t + " " + selected + " " + timeout);
+        if (failNext != null) { DriverException x = failNext; failNext = null; throw x; }
+        return rememberAnswer;
     }
 
     /** One stable line per expectation, e.g. {@code state=[!disabled]}, {@code rows=gte 1}. */

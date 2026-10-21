@@ -1,6 +1,7 @@
 package rt;
 
 import io.github.kormcrete.swingui.junit.Client;
+import io.github.kormcrete.swingui.junit.Outcome;
 import io.github.kormcrete.swingui.junit.UiTest;
 import org.junit.jupiter.api.Test;
 
@@ -55,6 +56,15 @@ class RoundTripUiIT {
         assertThat(ui.tab("Orders")).isVisible();
         assertThat(ui.tab("ORD-1640")).isAbsent();
 
+        Outcome copy = ui.outcomeOf(() -> ui.button("Copy").click());
+        String orderNumber = ui.label("Number").shownText();
+
+        ui.table("Orders").row("Order no.", copy.text("$.rows.Orders.added[0]['Order no.']")).doubleClick();
+        ui.field("Note").fill("Copy of " + orderNumber + ", run " + ui.run().id() + " ${kept}");
+        assertThat(ui.label("Number")).hasText(copy.text("$.rows.Orders.added[0]['Order no.']"));
+        String customer = ui.table("Orders").cell("Customer").selectedText();
+
+        ui.tab(customer).click();
         ui.closeActiveTab();
     }
 }

@@ -373,6 +373,28 @@ public final class Target {
     /** The element's name as the driver reads it: a label's or button's text, a field's caption. */
     public String text() { return read().name; }
 
+    /**
+     * The text a person sees in the element, as a recorded test's remember step keeps it: a field's content, a label's or
+     * button's text, a cell's (a table target with a row and a column), a list or tree item's, a tab's title. Waits up
+     * to the timeout until there is one; fails when the element is missing or empty. Unlike {@link #text}, which is the
+     * element's name (a field's caption).
+     */
+    public String shownText() { return remembered(false); }
+
+    /**
+     * The text of what is selected in the element: the selected row's cell in the target's column (a table target with a
+     * column), the selected item (list, tree) or the selected tab's title. Waits like {@link #shownText}.
+     */
+    public String selectedText() { return remembered(true); }
+
+    private String remembered(boolean selected) {
+        try {
+            return client.verbs().remember(locator.copy(), selected, timeoutMillis());
+        } catch (io.github.kormcrete.swingui.driver.DriverException e) {
+            throw new UiActionFailed(selected ? "selectedText" : "shownText", locator, e, client.candidatesFor(locator, e));
+        }
+    }
+
     /** The element's current value: a field's content, a combo's selection. */
     public String value() { return read().value; }
 

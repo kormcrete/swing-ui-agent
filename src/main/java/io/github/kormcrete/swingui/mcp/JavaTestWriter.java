@@ -39,6 +39,7 @@ import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,6 +57,11 @@ import java.util.regex.Pattern;
  * ({@code OrderDeskSteps.addToCart(ui, "Gel pen, black");}, its class imported), else the steps it makes, under its
  * sentence as a comment; a step with neither is refused.
  *
+ * <p>Values of earlier steps ({@code ${...}}) become Java expressions: a step a later one names by its id becomes
+ * {@code Outcome copy = ui.outcomeOf(() -> ...);} and the reference {@code copy.text("$.rows.Orders.added[0].Number")}, a
+ * remember entry {@code String orderNumber = <target>.shownText();} (or {@code selectedText()}) and the reference that
+ * local, {@code ${run.id}} {@code ui.run().id()}; a text with fixed parts around them is a concatenation.
+ *
  * <p>Every problem a step has is collected before anything is thrown, so one {@link ExportRefused}
  * names everything wrong with the recording instead of stopping at the first.
  */
@@ -70,7 +76,30 @@ public final class JavaTestWriter {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z]\\w*)\\}");
     /** Simple names the class already uses: a do step's class of the same name is written by its full name. */
     private static final Set<String> TAKEN = new HashSet<String>(Arrays.asList("Client", "LoginAs", "UiTest", "Test",
-            "Duration", "Boolean", "String", "Integer", "Object", "System", "Math"));
+            "Duration", "Boolean", "String", "Integer", "Object", "System", "Math", "Outcome", "RunInfo"));
+
+    /**
+     * While a step is written, a reference in one of its texts stands as {@code REF_OPEN source REF_SPLIT expression
+     * REF_CLOSE} ({@link Writer#javaText}): {@link #quote} writes the expression into the Java text, a problem shows the
+     * source. Private-use characters, which no text of a recording holds (one that does is refused).
+     */
+    private static final char REF_OPEN = '\uE000';
+    private static final char REF_SPLIT = '\uE001';
+    private static final char REF_CLOSE = '\uE002';
+    private static final Pattern REF_MARK = Pattern.compile(REF_OPEN + "([^" + REF_SPLIT + "]*)" + REF_SPLIT + "[^" + REF_CLOSE
+            + "]*" + REF_CLOSE);
+    /** A run value's path: {@code .id}, {@code ['id']}. */
+    private static final Pattern RUN_PATH = Pattern.compile("\\.(\\w+)|\\['(\\w+)'\\]|\\[\"(\\w+)\"\\]");
+    /** A path into what a domain step's body returned: {@code .step...}. */
+    private static final Pattern STEP_PATH = Pattern.compile("(\\.step|\\['step'\\]|\\[\"step\"\\])([.\\[].*)?");
+    private static final Set<String> RUN_VALUES = new HashSet<String>(Arrays.asList("id", "date", "time"));
+    /** Names a local must not take: Java's own words, the test's {@code ui}, and packages a full class name may start with. */
+    private static final Set<String> NOT_LOCALS = new HashSet<String>(Arrays.asList("abstract", "assert", "boolean", "break",
+            "byte", "case", "catch", "char", "class", "const", "continue", "default", "do", "double", "else", "enum", "extends",
+            "final", "finally", "float", "for", "goto", "if", "implements", "import", "instanceof", "int", "interface", "long",
+            "native", "new", "package", "private", "protected", "public", "return", "short", "static", "strictfp", "super",
+            "switch", "synchronized", "this", "throw", "throws", "transient", "try", "void", "volatile", "while", "true",
+            "false", "null", "var", "ui", "java", "javax", "com", "org", "io", "net"));
 
     private JavaTestWriter() {}
 
@@ -93,14 +122,15 @@ public final class JavaTestWriter {
         }
 
         /**
-         * True for a recording's forms: a step that uses values of earlier steps ({@code ${...}}) is kept, left out of
-         * the Java check, as only the Java export has no form for it yet. False: it is a problem.
+         * True for a recording's forms: a step that uses values of earlier steps ({@code ${...}}), or a remember entry, is
+         * written when it can be, and otherwise kept with no problem: whether its values have a Java form depends on the
+         * steps around it, which a recording may still change. False: a value with no Java form is a problem.
          */
         default boolean keepsReferences() {
             return keeps();
         }
 
-        /** {@link #NONE} for a recording: every do step is refused, a step that uses earlier values is kept. */
+        /** {@link #NONE} for a recording: every do step is refused, a step that uses earlier values is kept ({@link #keepsReferences}). */
         DoForms NONE_KEEPING_REFERENCES = new DoForms() {
             @Override public DoForm of(DoAction step) {
                 return NONE.of(step);
@@ -239,6 +269,19 @@ public final class JavaTestWriter {
         private boolean usesRowsRow;
         private boolean usesRowsIndex;
         private boolean usesAssertThat;
+        private boolean usesOutcome;
+
+        /** The steps some later step names by id with a path: written as an {@link #outcomeLocal}. */
+        private final Set<Integer> sources = new HashSet<Integer>();
+        /** The Java local of each step that holds a value for later steps (an outcome, a remembered text), by index. */
+        private final Map<Integer, String> locals = new HashMap<Integer, String>();
+        /** Why a source step's outcome has no Java form, by index. */
+        private final Map<Integer, String> noOutcome = new HashMap<Integer, String>();
+        private final Set<String> localNames = new HashSet<String>();
+        /** The record labels, "step 3" or "check 3.1", by index. */
+        private List<String> what;
+        /** The local a remember statement being built declares. */
+        private String rememberLocal;
 
         private final List<FlowGroup> groups;
         private final DoForms doForms;
@@ -261,7 +304,11 @@ public final class JavaTestWriter {
             } else {
                 processSteps();
             }
-            if (!problems.isEmpty()) throw new ExportRefused(problems);
+            if (!problems.isEmpty()) {
+                List<String> readable = new ArrayList<String>();
+                for (String p : problems) readable.add(readable(p));
+                throw new ExportRefused(readable);
+            }
             return assemble();
         }
 
@@ -304,37 +351,210 @@ public final class JavaTestWriter {
             }
             // a problem names the record as the list numbers it: "step 7" or "check 7.2"
             List<String> labels = StepNumbers.labels(steps);
+            what = new ArrayList<String>();
+            for (int i = 0; i < steps.size(); i++) what.add((StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i));
+            findSources();
+            if (start == 1 && sources.contains(0)) noOutcome.put(0, "it logs in before the test starts (@LoginAs)");
             for (int i = start; i < steps.size(); i++) {
-                String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
-                Action a = steps.get(i);
+                String what = this.what.get(i);
+                Action recorded = steps.get(i);
                 stepLines.add(null);
-                if (a instanceof RememberVerb) {
-                    // kept by a recording like a step that uses earlier values: only the Java export has no form for it yet
-                    if (!doForms.keepsReferences()) {
-                        problems.add(what + ": " + a.describe()
-                                + " keeps a value for later steps (remember), which has no Java form yet");
-                    }
-                    continue;
-                }
-                if (hasReferences(a)) {
-                    if (!doForms.keepsReferences()) {
-                        problems.add(what + ": " + a.describe()
-                                + " uses ${...} (values from earlier steps), which has no Java form yet");
-                    }
-                    continue;
-                }
-                a = unescaped(a);
-                if (a instanceof DoAction) {
-                    doStep(i, (DoAction) a, what);
-                    continue;
-                }
-                List<String> java = javaOf(a, what);
-                if (java == null) continue;
-                // a screenshot belongs to the block before it: it shows what those steps left on screen
-                begin(i, a, a.say, a instanceof ExpectVerb);
-                for (String line : java) statements.add(indent(line));
-                stepLines.set(i, stepLine(a, java));
+                int before = problems.size();
+                Action a = javaValues(recorded, i, what);
+                if (a != null) write(i, a, what);
+                // a recording keeps such a step: whether its values have a Java form is the export's question
+                boolean usesValues = recorded instanceof RememberVerb || usesValues(recorded);
+                if (usesValues && doForms.keepsReferences()) problems.subList(before, problems.size()).clear();
             }
+        }
+
+        /** Writes record {@code i}, {@code a} with its values as Java ({@link #javaValues}). */
+        private void write(int i, Action a, String what) {
+            if (a instanceof DoAction) {
+                doStep(i, (DoAction) a, what);
+                return;
+            }
+            List<String> java = javaOf(a, what);
+            if (java == null) return;
+            if (a instanceof RememberVerb) locals.put(i, rememberLocal);
+            if (sources.contains(i)) java = outcomeLocal(i, a, java);
+            // a screenshot belongs to the block before it: it shows what those steps left on screen
+            begin(i, a, a.say, StepNumbers.isCheck(a));
+            for (String line : java) statements.add(indent(line));
+            stepLines.set(i, stepLine(a, java));
+        }
+
+        /** True when a text of {@code a} holds a reference, or a {@code ${} that is none. */
+        private boolean usesValues(Action a) {
+            try {
+                return !Refs.of(a).isEmpty();
+            } catch (IllegalArgumentException malformed) {
+                return true;
+            }
+        }
+
+        /** The steps a later step names by id with a path ({@link #sources}): the latest earlier step of that id. */
+        private void findSources() {
+            for (int j = 0; j < steps.size(); j++) {
+                List<Refs.Ref> refs;
+                try {
+                    refs = Refs.of(steps.get(j));
+                } catch (IllegalArgumentException malformed) {
+                    continue;   // the step's own problem
+                }
+                for (Refs.Ref r : refs) {
+                    Integer k = definition(r.id, j);
+                    if (k != null && !(steps.get(k) instanceof RememberVerb) && !r.path.isEmpty()) sources.add(k);
+                }
+            }
+        }
+
+        /** The latest step before {@code j} whose id or remember name is {@code id}; null when none. */
+        private Integer definition(String id, int j) {
+            for (int k = j - 1; k >= 0; k--) {
+                Action a = steps.get(k);
+                if (a instanceof RememberVerb ? id.equals(((RememberVerb) a).as) : id.equals(a.id)) return k;
+            }
+            return null;
+        }
+
+        /**
+         * {@code java} with its statement keeping what it changed: {@code Outcome copy = ui.outcomeOf(() -> ...);}, the
+         * local noted for later steps. A check, a screenshot or a step of another kind keeps its lines; why goes to
+         * {@link #noOutcome}.
+         */
+        private List<String> outcomeLocal(int i, Action a, List<String> java) {
+            if (StepNumbers.isCheck(a)) {
+                noOutcome.put(i, "a check changes nothing");
+                return java;
+            }
+            if (a instanceof ScreenshotVerb) {
+                noOutcome.put(i, "a screenshot changes nothing");
+                return java;
+            }
+            List<String> out = new ArrayList<String>(java);
+            String stmt = out.get(out.size() - 1);
+            String local = local(a.id);
+            out.set(out.size() - 1, "Outcome " + local + " = ui.outcomeOf(() -> " + stmt.substring(0, stmt.length() - 1) + ");");
+            locals.put(i, local);
+            usesOutcome = true;
+            return out;
+        }
+
+        /**
+         * A new Java local for the value named {@code id}: its name with a small first letter, {@code Value} after a word
+         * of Java's, numbered when another local has it.
+         */
+        private String local(String id) {
+            String base = id == null || id.isEmpty() ? "value" : Character.toLowerCase(id.charAt(0)) + id.substring(1);
+            StringBuilder name = new StringBuilder();
+            for (int k = 0; k < base.length(); k++) name.append(Character.isJavaIdentifierPart(base.charAt(k)) ? base.charAt(k) : '_');
+            if (!Character.isJavaIdentifierStart(name.charAt(0))) name.insert(0, 'v');
+            String plain = NOT_LOCALS.contains(name.toString()) && !"ui".equals(name.toString()) ? name + "Value" : name.toString();
+            String local = plain;
+            for (int n = 2; NOT_LOCALS.contains(local) || localNames.contains(local); n++) local = plain + n;
+            localNames.add(local);
+            return local;
+        }
+
+        /**
+         * The step with its strings in plain form, each reference to an earlier value marked with its Java expression
+         * ({@link #REF_OPEN}); the step itself when nothing changed, null when a value has no Java form (the problem is
+         * recorded). In memory a literal {@code ${} is stored as {@code $${}.
+         */
+        private Action javaValues(Action a, int at, String what) {
+            JsonNode tree = FlowJson.mapper().valueToTree(a);
+            final boolean[] ok = {true};
+            JsonNode plain = Refs.mapValues(tree, text -> {
+                String java = javaText(a, text, at, what);
+                if (java == null) ok[0] = false;
+                return java == null ? text : java;
+            });
+            if (!ok[0]) return null;
+            if (plain.equals(tree)) return a;
+            try {
+                return FlowJson.mapper().treeToValue(plain, Action.class);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalStateException("a step written to JSON does not read back: " + e.getMessage(), e);
+            }
+        }
+
+        /** {@code text} of step {@code a} in plain form, its references marked with their Java; null after a problem (each recorded). */
+        private String javaText(Action a, String text, int at, String what) {
+            for (int k = 0; k < text.length(); k++) {
+                char c = text.charAt(k);
+                if (c == REF_OPEN || c == REF_SPLIT || c == REF_CLOSE) {
+                    problems.add(what + ": " + a.describe() + " holds a character (U+" + Integer.toHexString(c).toUpperCase()
+                            + ") the Java export cannot write");
+                    return null;
+                }
+            }
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.scan(text);
+            } catch (IllegalArgumentException e) {
+                problems.add(what + ": " + a.describe() + " holds a ${ that is no reference (" + e.getMessage()
+                        + "): write $${ for a ${ in the text");
+                return null;
+            }
+            StringBuilder out = new StringBuilder();
+            int last = 0;
+            boolean all = true;
+            for (Refs.Ref r : refs) {
+                // every reference is looked at: one problem each
+                String java = expression(r, at, what);
+                if (java == null) all = false;
+                out.append(Refs.unescape(text.substring(last, r.start)))
+                        .append(REF_OPEN).append(r.source).append(REF_SPLIT).append(java).append(REF_CLOSE);
+                last = r.end;
+            }
+            return all ? out.append(Refs.unescape(text.substring(last))).toString() : null;
+        }
+
+        /** The Java expression of reference {@code r} in record {@code at}; null when it has none (the problem recorded). */
+        private String expression(Refs.Ref r, int at, String what) {
+            String uses = what + ": uses " + r.source;
+            if ("run".equals(r.id)) {
+                Matcher m = RUN_PATH.matcher(r.path);
+                String value = !m.matches() ? null : m.group(1) != null ? m.group(1) : m.group(2) != null ? m.group(2) : m.group(3);
+                if (value != null && RUN_VALUES.contains(value)) return "ui.run()." + value + "()";
+                problems.add(uses + ", which is no run value: the run has run.id, run.date and run.time");
+                return null;
+            }
+            Integer k = definition(r.id, at);
+            if (k == null) {
+                problems.add(uses + ", but no step before it has the id or remembered name '" + r.id + "'");
+                return null;
+            }
+            String local = locals.get(k);
+            if (steps.get(k) instanceof RememberVerb) {
+                if (!r.path.isEmpty() && !".value".equals(r.path)) {
+                    problems.add(uses + ", but a remembered value is one text: use ${" + r.id + "}");
+                    return null;
+                }
+                if (local == null) problems.add(uses + ", but " + what(k) + " (remember) has no Java form");
+                return local;
+            }
+            if (r.path.isEmpty()) {
+                problems.add(uses + ", everything " + what(k) + " changed: a step needs one value of it, e.g. ${" + r.id
+                        + ".fields.Number}");
+                return null;
+            }
+            if (steps.get(k) instanceof DoAction && STEP_PATH.matcher(r.path).matches()) {
+                problems.add(uses + ", a value the domain step of " + what(k) + " returns: a Java test gets it from what the "
+                        + "plugin's java(...) helper returns, not from what the step changed");
+                return null;
+            }
+            String why = noOutcome.get(k);
+            if (why != null || local == null) {
+                problems.add(uses + ", what " + what(k) + " changed, but " + (why != null ? why : "that step has no Java form"));
+                return null;
+            }
+            return local + ".text(" + quote("$" + r.path) + ")";
+        }
+
+        private String what(int k) {
+            return what.get(k);
         }
 
         /**
@@ -413,6 +633,12 @@ public final class JavaTestWriter {
             if (f.javaClass != null) {
                 String stmt = typedCall(f, what);
                 if (stmt == null) return;
+                if (sources.contains(i)) {
+                    String method = f.call.trim();
+                    method = method.indexOf('(') < 0 ? method : method.substring(0, method.indexOf('('));
+                    noOutcome.put(i, "its Java form is the plugin's call " + f.javaClass.substring(f.javaClass.lastIndexOf('.') + 1)
+                            + "." + method + "(...), which may act more than once, and outcomeOf takes exactly one action");
+                }
                 begin(i, d, say != null && !say.equals(f.sentence) ? say : null, check);
                 statements.add(indent(stmt));
                 stepLines.set(i, stmt);
@@ -438,6 +664,14 @@ public final class JavaTestWriter {
                 entries.add(stepLine(c, java));
             }
             if (!written) return;
+            if (sources.contains(i)) {
+                if (f.steps.size() == 1) {
+                    lines = outcomeLocal(i, d, lines);
+                    entries.set(0, stepLine(f.steps.get(0), lines));
+                } else {
+                    noOutcome.put(i, "its Java form is " + f.steps.size() + " steps, and outcomeOf takes exactly one action");
+                }
+            }
             begin(i, d, say != null ? say : f.sentence, check);
             for (String line : lines) statements.add(indent(line));
             stepLines.set(i, String.join("\n", entries));
@@ -455,7 +689,9 @@ public final class JavaTestWriter {
                             + (f.values.containsKey(name) ? "which has no value here" : "which is no param of the step"));
                     return null;
                 }
-                String literal = f.numbers.contains(name) ? String.valueOf(Integer.parseInt(value)) : quote(value);
+                boolean reference = value.indexOf(REF_OPEN) >= 0;
+                String literal = !f.numbers.contains(name) ? quote(value)
+                        : reference ? "Integer.parseInt(" + quote(value) + ")" : String.valueOf(Integer.parseInt(value));
                 m.appendReplacement(out, Matcher.quoteReplacement(literal));
             }
             m.appendTail(out);
@@ -500,7 +736,7 @@ public final class JavaTestWriter {
 
         private void addComment(String say) {
             if (say == null || say.trim().isEmpty()) return;
-            statements.add(indent("// " + comment(say)));
+            statements.add(indent("// " + comment(readable(say))));
         }
 
         /** True (and a problem recorded per bad locator) when any of this verb's targets uses an unconverted ref, or a point other than on a plain click. */
@@ -561,30 +797,10 @@ public final class JavaTestWriter {
                 return windowChain(((CloseWindowVerb) v).window, v.timeout) + ".close();";
             }
             if (v instanceof FocusFileChooserNameVerb) return clientRoot(v.timeout) + ".focusFileChooserName();";
+            if (v instanceof RememberVerb) return buildRemember((RememberVerb) v, what);
             // Every VerbAction subtype is one of the above; a new one needs a table row here too.
             problems.add(what + ": " + v.describe() + " is a verb this writer has no Java form for");
             return null;
-        }
-
-        /** True when a step string holds a reference (or a malformed one): the Java export has no form for it yet. */
-        private boolean hasReferences(Action a) {
-            try {
-                return !Refs.of(a).isEmpty();
-            } catch (IllegalArgumentException e) {
-                return true;
-            }
-        }
-
-        /** The step with its strings in plain form: in memory a literal {@code ${} is stored as {@code $${}. */
-        private Action unescaped(Action a) {
-            JsonNode tree = FlowJson.mapper().valueToTree(a);
-            JsonNode plain = Refs.mapValues(tree, Refs::unescape);
-            if (plain.equals(tree)) return a;
-            try {
-                return FlowJson.mapper().treeToValue(plain, Action.class);
-            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-                throw new IllegalStateException("a step written to JSON does not read back: " + e.getMessage(), e);
-            }
         }
 
         // ---- per-verb statements
@@ -609,6 +825,18 @@ public final class JavaTestWriter {
                 for (String m : v.modifiers) args.append(", ").append(quote(m));
             }
             return chain + ".click(" + args + ");";
+        }
+
+        /** {@code String orderNumber = <target>.shownText();}, or {@code selectedText()}: the local is {@link #rememberLocal}. */
+        private String buildRemember(RememberVerb v, String what) {
+            if (v.as == null || v.as.isEmpty()) {
+                problems.add(what + ": " + v.describe() + " needs a name (as)");
+                return null;
+            }
+            String chain = actionChain(v.target, v.timeout, what);
+            if (chain == null) return null;
+            rememberLocal = local(v.as);
+            return "String " + rememberLocal + " = " + chain + (Boolean.TRUE.equals(v.selected) ? ".selectedText();" : ".shownText();");
         }
 
         private String buildType(TypeVerb v, String what) {
@@ -960,6 +1188,7 @@ public final class JavaTestWriter {
             Set<String> imports = new TreeSet<String>(doClasses.values());
             imports.add("io.github.kormcrete.swingui.junit.Client");
             if (loginAlias != null) imports.add("io.github.kormcrete.swingui.junit.LoginAs");
+            if (usesOutcome) imports.add("io.github.kormcrete.swingui.junit.Outcome");
             imports.add("io.github.kormcrete.swingui.junit.UiTest");
             imports.add("org.junit.jupiter.api.Test");
             for (String type : imports) sb.append("import ").append(type).append(";\n");
@@ -1053,8 +1282,35 @@ public final class JavaTestWriter {
         return s == null ? "null" : quote(s);
     }
 
-    /** A Java string literal, backslash/quote/newline/CR/tab escaped; non-ASCII kept as-is (source is UTF-8). */
+    /** {@code text} with each reference marked for the writer ({@link #REF_OPEN}) back as it was written: {@code ${...}}. */
+    private static String readable(String text) {
+        return text.indexOf(REF_OPEN) < 0 ? text : REF_MARK.matcher(text).replaceAll("$1");
+    }
+
+    /**
+     * {@code s} as a Java String expression: a literal ({@link #literalOf}), or, where it holds values of earlier steps
+     * ({@link #REF_OPEN}), the literal parts and those values' Java joined with {@code +}.
+     */
     private static String quote(String s) {
+        if (s.indexOf(REF_OPEN) < 0) return literalOf(s);
+        List<String> parts = new ArrayList<String>();
+        int i = 0;
+        while (i < s.length()) {
+            int open = s.indexOf(REF_OPEN, i);
+            if (open < 0) {
+                parts.add(literalOf(s.substring(i)));
+                break;
+            }
+            if (open > i) parts.add(literalOf(s.substring(i, open)));
+            int close = s.indexOf(REF_CLOSE, open);
+            parts.add(s.substring(s.indexOf(REF_SPLIT, open) + 1, close));
+            i = close + 1;
+        }
+        return String.join(" + ", parts);
+    }
+
+    /** A Java string literal, backslash/quote/newline/CR/tab escaped; non-ASCII kept as-is (source is UTF-8). */
+    private static String literalOf(String s) {
         StringBuilder sb = new StringBuilder(s.length() + 2);
         sb.append('"');
         for (int i = 0; i < s.length(); i++) {

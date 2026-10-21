@@ -19,17 +19,27 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * The driver, out of process: every verb is one do_action step (not recorded), every read one read,
  * snapshot, screenshot, read_clipboard or read_file_chooser call. A failed step throws the DriverException the
- * in-process driver would have thrown: same reason, same message, same details.
+ * in-process driver would have thrown: same reason, same message, same details. Inside {@link #withChanges} the first
+ * step asks the agent for what it changed ({@code "outcome": true}).
  */
 public final class RemoteVerbs implements Verbs {
 
     private final AgentClient agent;
     private final ObjectMapper json;
     private final StepJson steps;
+    /** What a {@link #withChanges} on this thread asked for: the first step sent inside it carries the request. */
+    private final ThreadLocal<Asked> asked = new ThreadLocal<Asked>();
+
+    private static final class Asked {
+        boolean sent;
+        Map<String, Object> changed;
+    }
 
     public RemoteVerbs(AgentClient agent) {
         this.agent = agent;
@@ -205,6 +215,30 @@ public final class RemoteVerbs implements Verbs {
         return run(steps.setClipboard(text, timeout));
     }
 
+    /** A remember step through do_action: its result's message is the text it read. */
+    @Override public String remember(Locator target, boolean selected, Long timeout) {
+        return text(send(steps.remember(target, "value", selected, timeout), false), "message");
+    }
+
+    /**
+     * The first step {@code action} sends asks the agent for what it changed (an app step through {@link RemoteApp}
+     * too); the agent reads the app before and after it, as for a recorded step.
+     */
+    @Override public VerbOutcome withChanges(Supplier<VerbOutcome> action) {
+        Asked a = new Asked();
+        Asked outer = asked.get();
+        asked.set(a);
+        VerbOutcome out;
+        try {
+            out = action.get();
+        } finally {
+            if (outer == null) asked.remove(); else asked.set(outer);
+        }
+        if (out == null) out = new VerbOutcome();
+        out.changed = a.changed;
+        return out;
+    }
+
     // resetPointer stays the no-op default: the agent's session reset moves the pointer home.
 
     // ---- the wire
@@ -212,16 +246,30 @@ public final class RemoteVerbs implements Verbs {
     /** The step encoding, for {@link RemoteApp}'s app steps. */
     StepJson stepJson() { return steps; }
 
-    /** One step through do_action, kept out of export_test's recording. */
+    /** One step through do_action, kept out of export_test's recording; inside {@link #withChanges} the first one asks for what it changed. */
     VerbOutcome run(ObjectNode step) {
+        Asked wanted = asked.get();
+        boolean asking = wanted != null && !wanted.sent;
+        if (asking) wanted.sent = true;
+        JsonNode r = send(step, asking);
+        VerbOutcome out = new VerbOutcome();
+        out.warning = text(r, "warning");
+        if (asking && r.path("outcome").isObject()) {
+            out.changed = json.convertValue(r.get("outcome"), new TypeReference<Map<String, Object>>() {});
+            wanted.changed = out.changed;
+        }
+        return out;
+    }
+
+    /** The do_action result of {@code step}, run unrecorded; a failed step throws. */
+    private JsonNode send(ObjectNode step, boolean outcome) {
         ObjectNode a = agent.args();
         a.set("action", step);
         a.put("record", false);
+        if (outcome) a.put("outcome", true);
         JsonNode r = agent.callJson("do_action", a);
         if (!r.path("passed").asBoolean(false)) throw failure(r, "details");
-        VerbOutcome out = new VerbOutcome();
-        out.warning = text(r, "warning");
-        return out;
+        return r;
     }
 
     private DriverException failure(JsonNode r, String detailsField) {
