@@ -531,6 +531,21 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void aVerbToolDeclaresOutcomeAndReturnsIt() throws Exception {
+        UiMcpSession s = session();
+        io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition click = tool(s, "click");
+        assertThat(click.descriptor(mapper).at("/inputSchema/properties/outcome/type").asText()).isEqualTo("boolean");
+        host.verbs.readings.add(orders("ORD-1640"));
+        host.verbs.readings.add(orders("ORD-1640", "ORD-1641"));
+
+        JsonNode r = mapper.readTree(click.invoke(mapper.readTree(
+                "{\"target\":{\"role\":\"button\",\"name\":\"Copy\"},\"outcome\":true}")));
+
+        assertThat(r.at("/outcome/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
+        assertThat(r.path("recorded").has("outcome")).isFalse();
+    }
+
+    @Test
     void batchStepOutcome() throws Exception {
         UiMcpSession s = session();
         s.reader(() -> {

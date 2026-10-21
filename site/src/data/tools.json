@@ -1141,7 +1141,7 @@
     },
     {
       "name": "click",
-      "description": "Clicks an element as a mouse would: the click is posted into the client's event queue at the element (or its row/column/item/point), where AWT decides who receives it. A disabled, hidden, covered or modal-blocked target is refused. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Clicks an element as a mouse would: the click is posted into the client's event queue at the element (or its row/column/item/point), where AWT decides who receives it. A disabled, hidden, covered or modal-blocked target is refused. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1266,6 +1266,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1278,7 +1282,7 @@
     },
     {
       "name": "type",
-      "description": "Types text into a field or a table cell as a keyboard would. A cell target (row and column) is clicked, then edited; commit presses Enter after typing. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Types text into a field or a table cell as a keyboard would. A cell target (row and column) is clicked, then edited; commit presses Enter after typing. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1396,6 +1400,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1409,7 +1417,7 @@
     },
     {
       "name": "press",
-      "description": "Presses a key chord, e.g. \"Enter\", \"Escape\", \"Mod+O\", \"Shift+Tab\". With a target, focuses it first; without one the keys go to the showing modal dialog, else the focused window. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Presses a key chord, e.g. \"Enter\", \"Escape\", \"Mod+O\", \"Shift+Tab\". With a target, focuses it first; without one the keys go to the showing modal dialog, else the focused window. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1519,6 +1527,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1531,7 +1543,7 @@
     },
     {
       "name": "check",
-      "description": "Sets a check box, toggle or Boolean table cell to the given state by clicking it; does nothing when it is already in that state. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Sets a check box, toggle or Boolean table cell to the given state by clicking it; does nothing when it is already in that state. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1641,6 +1653,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1654,7 +1670,7 @@
     },
     {
       "name": "select",
-      "description": "Selects by clicking: a combo box item (opens its popup, clicks the item), list items (the first plain, the rest with Mod), or a tab of a tab strip. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Selects by clicking: a combo box item (opens its popup, clicks the item), list items (the first plain, the rest with Mod), or a tab of a tab strip. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1771,6 +1787,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1783,7 +1803,7 @@
     },
     {
       "name": "pick",
-      "description": "Clicks down a path of items in the showing popup (a dropdown button's menu, a context menu), opening submenus on the way. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Clicks down a path of items in the showing popup (a dropdown button's menu, a context menu), opening submenus on the way. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1802,6 +1822,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1814,7 +1838,7 @@
     },
     {
       "name": "menu",
-      "description": "Invokes a main-window menu-bar item by its label path. An in-window menu bar is clicked; the native macOS screen menu bar has no input path, so its item is invoked directly (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Invokes a main-window menu-bar item by its label path. An in-window menu bar is clicked; the native macOS screen menu bar has no input path, so its item is invoked directly (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1833,6 +1857,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1845,7 +1873,7 @@
     },
     {
       "name": "context_menu",
-      "description": "Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. A table row, list item or tree row is selected first unless it is already part of the selection, as a right-click does in most apps. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Right-clicks an element (with row/column/item/point) and clicks down 'path' in the context menu that opens. A table row, list item or tree row is selected first unless it is already part of the selection, as a right-click does in most apps. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1958,6 +1986,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1971,7 +2003,7 @@
     },
     {
       "name": "answer",
-      "description": "Answers the showing modal dialog: clicks the button with this label, or with \"escape\" presses Escape and requires the dialog to close. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Answers the showing modal dialog: clicks the button with this label, or with \"escape\" presses Escape and requires the dialog to close. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1987,6 +2019,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -1999,7 +2035,7 @@
     },
     {
       "name": "choose_file",
-      "description": "Answers the showing file chooser: types the path and presses Enter (falling back to the chooser's own approve, recorded as via:api), or with approve:false presses Escape. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Answers the showing file chooser: types the path and presses Enter (falling back to the chooser's own approve, recorded as via:api), or with approve:false presses Escape. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2019,6 +2055,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2028,7 +2068,7 @@
     },
     {
       "name": "drag",
-      "description": "Posts a mouse drag gesture from one element to another in the same window. A native drag is never started; use drop to deliver data. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Posts a mouse drag gesture from one element to another in the same window. A native drag is never started; use drop to deliver data. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2228,6 +2268,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2241,7 +2285,7 @@
     },
     {
       "name": "drop",
-      "description": "Drops files or text onto an element's drop target without the OS (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Drops files or text onto an element's drop target without the OS (recorded as via:api). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2358,6 +2402,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2370,7 +2418,7 @@
     },
     {
       "name": "expect",
-      "description": "Checks an element without acting, retrying until it holds or the timeout (default 10000 ms) passes. Give exactly one of state, text, value, tooltip, rows, cell, selected, shown, absent. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Checks an element without acting, retrying until it holds or the timeout (default 10000 ms) passes. Give exactly one of state, text, value, tooltip, rows, cell, selected, shown, absent. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2537,6 +2585,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2549,7 +2601,7 @@
     },
     {
       "name": "scroll",
-      "description": "Scrolls a table, tree, list or panel: to an end with 'to', by whole screens with 'pages', or until a row is in view by giving the target a 'row'. Exactly one of the three. It moves the viewport directly rather than posting wheel input, so it is exact and it fires the same change a scroll bar does - which is what continuous paging listens for. Read where it ended up from the element's 'scroll' block (x, y, width, height, maxX, maxY) or its atTop/atBottom states. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Scrolls a table, tree, list or panel: to an end with 'to', by whole screens with 'pages', or until a row is in view by giving the target a 'row'. Exactly one of the three. It moves the viewport directly rather than posting wheel input, so it is exact and it fires the same change a scroll bar does - which is what continuous paging listens for. Read where it ended up from the element's 'scroll' block (x, y, width, height, maxX, maxY) or its atTop/atBottom states. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2669,6 +2721,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2681,7 +2737,7 @@
     },
     {
       "name": "set_clipboard",
-      "description": "Puts text on the system clipboard, as a copy in another application would - e.g. a block copied from Excel: a tab between cells, a line break between rows, each value as displayed. Paste it into the app with press \"Mod+V\" on the focused element (click the anchor cell first). It REPLACES what the user had on the clipboard. Read it back with read_clipboard. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Puts text on the system clipboard, as a copy in another application would - e.g. a block copied from Excel: a tab between cells, a line break between rows, each value as displayed. Paste it into the app with press \"Mod+V\" on the focused element (click the anchor cell first). It REPLACES what the user had on the clipboard. Read it back with read_clipboard. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2697,6 +2753,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2709,7 +2769,7 @@
     },
     {
       "name": "hover",
-      "description": "Moves the pointer onto an element (inside true, the default) or off it again, so parts that show only on hover, such as a row's inline buttons, show or hide. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Moves the pointer onto an element (inside true, the default) or off it again, so parts that show only on hover, such as a row's inline buttons, show or hide. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2819,6 +2879,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2831,7 +2895,7 @@
     },
     {
       "name": "resize_column",
-      "description": "Drags a table column's right header edge by delta pixels (negative narrows it). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Drags a table column's right header edge by delta pixels (negative narrows it). Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2941,6 +3005,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2954,7 +3022,7 @@
     },
     {
       "name": "resize_window",
-      "description": "Resizes a window to width x height pixels. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Resizes a window to width x height pixels. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2978,6 +3046,10 @@
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
           },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
+          },
           "_lease": {
             "type": "string",
             "description": "lease token from session op 'lease'; omit while nobody holds the lease"
@@ -2992,7 +3064,7 @@
     },
     {
       "name": "close_window",
-      "description": "Closes a window the way its title-bar close button would. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
+      "description": "Closes a window the way its title-bar close button would. Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct Swing call, fragile:true a target that needed nth or is a point).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3007,6 +3079,10 @@
           "snapshot": {
             "type": "boolean",
             "description": "Also return a snapshot taken after the step."
+          },
+          "outcome": {
+            "type": "boolean",
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",

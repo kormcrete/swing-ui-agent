@@ -34,11 +34,13 @@ import java.util.regex.Pattern;
  * The recorder's automatic links: a value in a new step that an earlier step made is written as a reference to it
  * ({@code ${copy.rows.Orders.added[0].Order}}), so a replay uses what that step makes then. Strict on purpose: only a
  * value that was new in that step's outcome (its value index), distinctive (4 characters or more, no yes/no/true/false,
- * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text. A row or item
+ * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text (a domain step's
+ * own values, under {@code step} of its outcome, too). A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
  * is. A remembered value and a text made unique per run are linked alike (that text also in its plain form, as typed
  * before it was made unique, short or not: the person asked for it). Several sources: the most recent step wins; within
- * one step a field beats a row, an item, then a text or a title (the order of its value index).
+ * one step a field, a row, an item or a domain step's own value beats a text or a title (then the order of its value
+ * index).
  *
  * <p>The person's links go through here too: what earlier steps changed that a step has ({@link Pool}, offered in
  * words), the one they pick ({@link #linkTo}), and the later uses of a text made unique per run ({@link #uniqueBack}).
@@ -85,9 +87,17 @@ final class Linker {
 
     /** Links the values of {@code a} (strings escaped as the recording keeps them) to what the steps {@code earlier} made. */
     static Linked link(Action a, List<RecordedStep> earlier) {
+        return link(a, earlier, earlier);
+    }
+
+    /**
+     * {@link #link(Action, List)}; {@code records}: the whole recording, whose names (step ids, remember names) an id
+     * given to a source must not take - a later step's too.
+     */
+    static Linked link(Action a, List<RecordedStep> earlier, List<RecordedStep> records) {
         List<Candidate> all = new ArrayList<Candidate>();
         for (int i = earlier.size() - 1, age = 0; i >= 0; i--, age++) candidates(earlier.get(i), age, all, true);
-        return new Work(earlier, all, true).run(a);
+        return new Work(earlier, all, true).names(records).run(a);
     }
 
     /**
@@ -96,6 +106,11 @@ final class Linker {
      * references to it, short ones too. Nothing linked when that step is gone or none of them is in {@code a}.
      */
     static Linked linkTo(Action a, List<RecordedStep> earlier, int sourceId, String group) {
+        return linkTo(a, earlier, sourceId, group, earlier);
+    }
+
+    /** {@link #linkTo(Action, List, int, String)}; {@code records}: as for {@link #link(Action, List, List)}. */
+    static Linked linkTo(Action a, List<RecordedStep> earlier, int sourceId, String group, List<RecordedStep> records) {
         List<Candidate> all = new ArrayList<Candidate>();
         for (RecordedStep s : earlier) {
             if (s.id != sourceId) continue;
@@ -103,7 +118,7 @@ final class Linker {
             candidates(s, 0, of, false);
             for (Candidate c : of) if (groupOf(c).equals(group)) all.add(c);
         }
-        return new Work(earlier, all, false).run(a);
+        return new Work(earlier, all, false).names(records).run(a);
     }
 
     /**
@@ -111,11 +126,12 @@ final class Linker {
      * to {@code path} ({@code .rows.Orders.added[0].Number}; "" for a remembered value) of what {@code source} (one of
      * {@code earlier}) changed or remembered, short values too. {@code field} (null: any place a step has values) names
      * the one place, as a path into the step's JSON ({@code text}, {@code target.row.Number}, {@code params.qty}).
-     * Nothing linked when the value is not there.
+     * Nothing linked when the value is not there. {@code records}: as for {@link #link(Action, List, List)}.
      */
     static Linked linkToValue(Action a, List<RecordedStep> earlier, RecordedStep source, String path, String value,
-            String field) {
-        Work work = new Work(earlier, Collections.singletonList(new Candidate(value, source, path, null, 0, 0)), false);
+            String field, List<RecordedStep> records) {
+        Work work = new Work(earlier, Collections.singletonList(new Candidate(value, source, path, null, 0, 0)), false)
+                .names(records);
         work.only = field;
         return work.run(a);
     }
@@ -197,7 +213,9 @@ final class Linker {
             String v = e.getKey();
             String p = e.getValue();
             if (strict && !distinctive(v) || own.contains(v) || several(s.outcome, p)) continue;
-            int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") ? 0 : 1;
+            // what a domain step says it made counts as a field does
+            int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") || p.startsWith(".step")
+                    ? 0 : 1;
             out.add(new Candidate(v, s, p, null, kind, age));
         }
         composed(s, tree, age, out, strict);
@@ -392,6 +410,13 @@ final class Linker {
         final List<Match> matches = new ArrayList<Match>();
         /** The one place to link, as a path into the step's JSON; null: every place. */
         String only;
+        /** The records whose names an id given to a source must not take; by default the earlier ones. */
+        List<RecordedStep> named;
+
+        Work names(List<RecordedStep> records) {
+            this.named = records;
+            return this;
+        }
 
         Work(List<RecordedStep> earlier, List<Candidate> all, boolean rows) {
             this.earlier = earlier;
@@ -573,7 +598,8 @@ final class Linker {
             }
             Set<String> taken = new HashSet<String>();
             taken.add("run");
-            for (RecordedStep s : earlier) {
+            // every name of the recording, a later step's too: a file with one name twice does not load
+            for (RecordedStep s : named != null ? named : earlier) {
                 if (s.action.id != null) taken.add(s.action.id);
                 if (s.action instanceof RememberVerb && ((RememberVerb) s.action).as != null) {
                     taken.add(((RememberVerb) s.action).as);

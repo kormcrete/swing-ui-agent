@@ -787,10 +787,16 @@ public class UiMcpSession {
                     List<RecordedStep> records = model.records();
                     int i = 0;
                     while (records.get(i).id != id) i++;
-                    Linker.Linked linked = Linker.linkTo(records.get(i).action, records.subList(0, i), sourceId, group);
+                    Linker.Linked linked = Linker.linkTo(records.get(i).action, records.subList(0, i), sourceId, group,
+                            records);
                     if (!linked.linked()) {
                         return new Inspector.Result(false, "nothing in " + (at.isCheck() ? "check " : "step ") + at + " is "
                                 + changedBy(from, sourceId) + " (nothing linked)");
+                    }
+                    try {
+                        checkLink(id, linked);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
                     }
                     String did = model.link(id, linked.action, linked.seen, linked.ids, RecordedStep.Author.PERSON);
                     publish();
@@ -1452,11 +1458,10 @@ public class UiMcpSession {
         Map<String, String> newValues = null;
         if (before != null && after != null) {
             Map<String, Object> diff = Outcomes.diff(before, after);
+            // a domain step's own values join it, and its value index: later steps may be linked to them as to the UI's
+            if (step.outcome != null && step.outcome.made != null) diff.put(FlowExecutor.STEP, step.outcome.made);
             newValues = Outcomes.newValues(before, diff);
             changed = FlowJson.mapper().valueToTree(diff);
-            if (step.outcome != null && step.outcome.made != null) {
-                changed.set(FlowExecutor.STEP, FlowJson.mapper().valueToTree(step.outcome.made));
-            }
         }
         ObjectNode r = mapper.createObjectNode();
         RowChoice row = null;
@@ -1566,7 +1571,8 @@ public class UiMcpSession {
         if (at == records.size()) return added.action;
         Linker.Linked linked;
         try {
-            linked = Linker.link(added.action, records.subList(0, at));
+            linked = Linker.link(added.action, records.subList(0, at), records);
+            if (linked.linked()) checkLink(added.id, linked);
         } catch (RuntimeException e) {
             return added.action;   // linking is a help: the step stays exact rather than going unrecorded
         }
@@ -3363,7 +3369,7 @@ public class UiMcpSession {
         }
         Linker.Linked linked;
         try {
-            linked = Linker.linkToValue(target.action, records.subList(0, at), source, named.path, value, field);
+            linked = Linker.linkToValue(target.action, records.subList(0, at), source, named.path, value, field, records);
         } catch (IllegalArgumentException e) {
             throw new DriverException(Reason.BAD_INPUT, "'field' is a path into " + what + "'s step, like text or "
                     + "target.row.Number: " + e.getMessage());
@@ -3372,7 +3378,31 @@ public class UiMcpSession {
             throw new DriverException(Reason.BAD_INPUT, value + " is not in " + what + (field == null ? ""
                     : "'s " + field) + " where a link can go - whole, or whole inside typed text (nothing linked)");
         }
+        checkLink(target.id, linked);
         return edited(model.link(target.id, linked.action, linked.seen, linked.ids, RecordedStep.Author.AGENT));
+    }
+
+    /**
+     * Refuses (BAD_INPUT, nothing changed) a link of the record {@code stepId} that would leave a recording its file
+     * could not hold: tried on a copy, it must still be one export_test writes and its ids, remember names and references
+     * must load ({@link RecordedTestFiles#linkProblems(List)}).
+     */
+    private void checkLink(int stepId, Linker.Linked linked) {
+        // the copy shares the run's values: what its link put there under a new id goes again if it is refused
+        java.util.Set<String> fresh = new java.util.HashSet<String>();
+        for (String id : linked.ids.values()) if (!model.runValues().has(id)) fresh.add(id);
+        RecordingModel scratch = model.copy();
+        try {
+            scratch.link(stepId, linked.action, linked.seen, linked.ids, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            List<String> problems = RecordedTestFiles.linkProblems(scratch.actions());
+            if (!problems.isEmpty()) {
+                throw new DriverException(Reason.BAD_INPUT, String.join("; ", problems) + " (nothing linked)");
+            }
+        } catch (RuntimeException e) {
+            for (String id : fresh) model.runValues().remove(id);
+            throw e;
+        }
     }
 
     /**
@@ -3460,22 +3490,25 @@ public class UiMcpSession {
             if (!r.has("recorded")) throw notRemembered(r);
             List<RecordedStep> records = model.records();
             RecordedStep added = records.get(records.size() - 1);
-            return edited("remembered " + r.path("message").asText() + " as " + as + " (check " + model.addressOf(added.id) + ")");
+            // keepOutcome kept the value it read as the entry's value index
+            String value = added.newValues.isEmpty() ? "" : added.newValues.keySet().iterator().next();
+            return edited("remembered " + value + " as " + as + " (check " + model.addressOf(added.id) + ")");
         }
         if (steps == 0) throw new DriverException(Reason.BAD_INPUT, "the recording has no step to remember a value under");
         int under = n == null ? steps : n.step;
         StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null, null, false);
-        if (!run.result.path("passed").asBoolean(false)) throw notRemembered(run.result);
-        String value = run.result.path("message").asText();
-        Action action = literal(recordable(action(json), run.step == null ? null : run.step.outcome));
+        if (!run.result.path("passed").asBoolean(false) || run.step == null || run.step.outcome == null
+                || run.step.outcome.note == null) {
+            throw notRemembered(run.result);
+        }
+        String value = run.step.outcome.note;
+        Action action = literal(recordable(action(json), run.step.outcome));
         StepAddress place = new StepAddress(under, StepNumbers.of(model.actions()).get(under - 1).checks.size() + 1);
         RecordingModel scratch = model.copy();
         scratch.insert(place, action, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
         model.insert(place, action, RecordedStep.Author.AGENT);
-        RecordedStep added = model.at(place);
-        model.runValues().remember(as, value);
-        model.remembered(added.id, value);
+        keepOutcome(model.at(place), null, null, run.step);   // the value, as a remember step that ran keeps it
         return edited("remembered " + value + " as " + as + " (check " + place + ")");
     }
 

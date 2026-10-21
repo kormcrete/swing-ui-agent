@@ -80,7 +80,8 @@ public final class Outcomes {
      * The texts in {@code outcome} that {@code before} showed nowhere, each with the path where it sits (no leading
      * {@code $}: {@code .rows.Orders.added[0].Order}). A value found in several places keeps the first in this order:
      * fields, rows, items, texts, opened, then selected and message; the map's order is that order. A text keyed by
-     * itself is left out, and so is what is selected when the outcome is partial.
+     * itself is left out, and so is what is selected when the outcome is partial. Last come the values a domain step's
+     * body returned, when the outcome holds them under {@code step} (text and numbers, at {@code .step.number}).
      */
     public static Map<String, String> newValues(UiReading before, Map<String, Object> outcome) {
         Set<String> seen = before.values();
@@ -118,7 +119,24 @@ public final class Outcomes {
             for (int i = 0; i < chosen.size(); i++) cells(out, seen, chosen.get(i), ".selected" + key(e.getKey()) + "[" + i + "]");
         }
         add(out, seen, outcome.get("message"), ".message");
+        made(out, seen, outcome.get("step"), ".step");
         return out;
+    }
+
+    /** Each text or number in {@code value} (a domain step's values: maps, lists, scalars) at its path under {@code at}. */
+    private static void made(Map<String, String> out, Set<String> seen, Object value, String at) {
+        if (value instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) value).entrySet()) {
+                made(out, seen, e.getValue(), at + key(String.valueOf(e.getKey())));
+            }
+        } else if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            for (int i = 0; i < list.size(); i++) made(out, seen, list.get(i), at + "[" + i + "]");
+        } else if (value instanceof Number) {
+            add(out, seen, String.valueOf(value), at);
+        } else {
+            add(out, seen, value, at);
+        }
     }
 
     private static Map<String, Object> section(Map<String, Object> outcome, String name) {

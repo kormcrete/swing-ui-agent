@@ -3842,11 +3842,46 @@ class UiMcpRecordingTest {
         assertThat(placed.at("/outcome/step/number").asText()).isEqualTo("ORD-1641");
         assertThat(s.recordedSteps().get(0).outcome.at("/step/number").asText()).isEqualTo("ORD-1641");
 
+        // the number the step returned is new: a later step that types it is linked to it at once
         s.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1641\"}"));
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.recordedSteps().get(1).action).text)
+                .isEqualTo("${placeOrder.step.number}");
+        assertThat(recording(s, "{\"op\":\"list\"}").at("/steps/0/changed/.step.number").asText()).isEqualTo("ORD-1641");
+        // and by hand, after the exact value
+        recording(s, "{\"op\":\"unlink\",\"n\":2}");
         JsonNode linked = recording(s, "{\"op\":\"link\",\"n\":2,\"ref\":\"${1.step.number}\"}");
         String text = ((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.recordedSteps().get(1).action).text;
         assertThat(text).isEqualTo("${placeOrder.step.number}");
         assertThat(linked.at("/steps/1/uses/0/value").asText()).isEqualTo("ORD-1641");
+    }
+
+    @Test
+    void aLinksNewIdNeverTakesALaterNameAndTheRecordedTestLoads() throws Exception {
+        session.reader(readings(ordersOf("ORD-1640", "Bea"), ordersOf("ORD-1640", "Bea", "ORD-1641", "Ada")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"Ada\"}"));
+        // a later entry already holds the name the link would give step 1
+        backend.verbs.remembered = "Bea";
+        call("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Customer\"},\"as\":\"copy\"}");
+
+        // the person's link by hand
+        Inspector.Result r = sink.link(id(1), id(0) + "|.rows.Orders.added[0]");
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy2");
+        assertThat(textOf(1)).isEqualTo("${copy2.rows.Orders.added[0].Customer}");
+        call("{\"op\":\"undo\"}");
+        assertThat(session.recordedSteps().get(0).action.id).isNull();
+
+        // the agent's
+        call("{\"op\":\"link\",\"n\":2,\"ref\":\"${1.rows.Orders.added[0].Customer}\"}");
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy2");
+        assertThat(textOf(1)).isEqualTo("${copy2.rows.Orders.added[0].Customer}");
+
+        // the recorded test saves and loads
+        session.exportRecordedTest("copy-once", quoted(dir), null, false);
+        session.loadRecordedTest(dir.resolve("copy-once.json"));
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy2");
+        assertThat(textOf(1)).isEqualTo("${copy2.rows.Orders.added[0].Customer}");
     }
 
     @Test

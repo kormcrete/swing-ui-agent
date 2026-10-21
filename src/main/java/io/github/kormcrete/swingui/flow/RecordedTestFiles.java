@@ -247,6 +247,16 @@ public final class RecordedTestFiles {
     }
 
     /**
+     * {@link #linkProblems(Flow, boolean)} of {@code steps} as a recording holds them: ids and remember names used once,
+     * every reference naming an earlier step; each problem names the step. Empty when there are none.
+     */
+    public static List<String> linkProblems(List<Action> steps) {
+        Flow flow = new Flow();
+        flow.steps = new ArrayList<Action>(steps);
+        return linkProblems(flow, false);
+    }
+
+    /**
      * Every step id and remember name is valid and used once, and every reference in a step names the id or name of an
      * EARLIER step, or {@code run}; a reference whose path does not parse is a problem too. Each names the step (and its
      * line when {@code withLines} and the recorded test was read from a file).

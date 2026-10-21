@@ -84,7 +84,7 @@ final class VerbSchemas {
     static String description(Class<?> type) {
         Doc doc = type.getAnnotation(Doc.class);
         return (doc == null ? "" : doc.value() + " ")
-                + "Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?}; "
+                + "Returns {passed, reason?, message, ms, recorded, pending?, realInput?, activations?, snapshot?, outcome?}; "
                 + "the recorded step is what export_test writes (a ref becomes a locator; via:api marks a direct "
                 + "Swing call, fragile:true a target that needed nth or is a point).";
     }
@@ -109,6 +109,7 @@ final class VerbSchemas {
         }
         properties.putObject("snapshot").put("type", "boolean")
                 .put("description", "Also return a snapshot taken after the step.");
+        properties.putObject("outcome").put("type", "boolean").put("description", UiMcpTools.OUTCOME_ARG);
         if (required.size() > 0) schema.set("required", required);
         return schema;
     }
