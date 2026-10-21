@@ -60,9 +60,11 @@ import java.util.function.Predicate;
  * shows those steps under it, greyed (▾ hides them), and its row menu renames it, unfolds it into those steps or deletes
  * it. Under the list, what the last steps could become. A double click on a row, or F2 or Enter, names it in place: a
  * field over the row's text holds its sentence (Enter saves, Esc cancels, a click elsewhere saves a change); several
- * steps get a header row of their own for a group's sentence. Rows know their record's id: what the person deletes,
- * redoes or describes is what they saw, even when the agent changed the recording since. The callbacks get flat record
- * indexes (the session's order), never rows: a header row is no record.
+ * steps get a header row of their own for a group's sentence. A step that uses what an earlier one changed shows 🔗 and
+ * where from, in words (the value it stood for on hover); its row menu links it by hand, goes back to the exact value,
+ * and makes a typed text unique per run; deleting a step others use asks first. Rows know their record's id: what the
+ * person deletes, redoes or describes is what they saw, even when the agent changed the recording since. The callbacks
+ * get flat record indexes (the session's order), never rows: a header row is no record.
  */
 final class StepsPanel extends JPanel {
 
@@ -88,6 +90,15 @@ final class StepsPanel extends JPanel {
 
         /** Puts the steps of the fold with record {@code id} back in its place. */
         void unfold(int id);
+
+        /** Record {@code id} uses what an earlier step changed: {@code ref} is one of its offers' (see {@link Inspector.LinkOffer}). */
+        void link(int id, String ref);
+
+        /** Record {@code id} goes back to the exact values its links stood for. */
+        void unlink(int id);
+
+        /** Unique per run for the typed text of record {@code id}: {@code where} "end", "start" or "off". */
+        void unique(int id, String where);
     }
 
     /** One row: a record (step or check), a group's header, or what the person is still doing (pending). */
@@ -261,6 +272,9 @@ final class StepsPanel extends JPanel {
         @Override public void ungroup(int id) { }
         @Override public void rowBy(int id, String by) { }
         @Override public void unfold(int id) { }
+        @Override public void link(int id, String ref) { }
+        @Override public void unlink(int id) { }
+        @Override public void unique(int id, String where) { }
     };
     /** The row menu opened last (shown when the list is). */
     private StepMenu menu;
@@ -332,7 +346,7 @@ final class StepsPanel extends JPanel {
                 }
                 // a domain step's values in bold
                 if (row.line != null && row.line.domain() && !row.line.params.isEmpty()) {
-                    setText(html(lead(row), text(row.line), row.line.params.values()));
+                    setText(html(lead(row), text(row.line) + linked(row.line), row.line.params.values()));
                 }
                 // a new group's header looks like any group's while its sentence is typed
                 if (row.header() || row.fresh) {
@@ -424,6 +438,16 @@ final class StepsPanel extends JPanel {
         JPanel south = new JPanel(new BorderLayout(0, 4));
         south.setOpaque(false);
         south.add(hint, BorderLayout.NORTH);
+        confirm.setOpaque(false);
+        confirm.setVisible(false);
+        question.setForeground(Overlay.NAVY);
+        JPanel answers = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        answers.setOpaque(false);
+        answers.add(small("Delete", () -> answer("Delete")));
+        answers.add(small("Cancel", () -> answer("Cancel")));
+        confirm.add(question, BorderLayout.CENTER);
+        confirm.add(answers, BorderLayout.SOUTH);
+        south.add(confirm, BorderLayout.CENTER);
         south.add(buttons, BorderLayout.SOUTH);
         buttons.setOpaque(false);
         buttons.add(small(replayAllLabel, replayAll, "from a reset, as the exported test runs"));
@@ -431,7 +455,7 @@ final class StepsPanel extends JPanel {
                 "from the selected step on; from the first one, after a reset"));
         buttons.add(small("↺ Redo from selected", () -> { if (selected() >= 0) redoFrom.accept(stepRecordAt(selected())); },
                 "cut the recording at the selected step, replay the steps before it from a reset, record on"));
-        this.delete = small("✕ Delete", () -> { if (selected() >= 0 && oneStep()) delete.accept(recordAt(selected())); },
+        this.delete = small("✕ Delete", () -> { if (selected() >= 0 && oneStep()) askDelete(recordAt(selected())); },
                 DELETE_TIP);
         buttons.add(this.delete);
         this.undo = small("↶ Undo", undo);
@@ -441,6 +465,96 @@ final class StepsPanel extends JPanel {
     }
 
     private static final String DELETE_TIP = "a step with its checks, or one check";
+
+    /** Above the buttons while the person is asked whether to delete a step others use: the question and its answers. */
+    private final JPanel confirm = new JPanel(new BorderLayout(0, 4));
+    private final JLabel question = new JLabel();
+    /** The question asked, as plain text; null when none is. */
+    private String asked;
+    /** The id of the record the question is about. */
+    private int askedId = -1;
+
+    /**
+     * ✕ Delete, or a domain step's Delete, on record {@code record}: deleted at once, unless steps outside it use what it
+     * changed - then the person is asked first, and the session, deleting it, keeps the values those steps used.
+     */
+    private void askDelete(int record) {
+        if (record < 0 || record >= records.size()) return;
+        List<String> users = usersOf(record);
+        if (users.isEmpty()) {
+            deleteRecord.accept(record);
+            return;
+        }
+        boolean one = users.size() == 1;
+        asked = (one ? "Step " + users.get(0) + " uses" : "Steps " + and(users) + " use") + " what it changed. Delete it and keep "
+                + (one ? "its" : "their") + " values as they are?";
+        askedId = records.get(record).id;
+        question.setText("<html>" + escape(asked) + "</html>");
+        if (!confirm.isVisible()) {
+            confirm.setVisible(true);
+            revalidate();
+        }
+        repaint();
+    }
+
+    /**
+     * The steps, by number, that use what record {@code record} changed - for a step's action, what any record of the
+     * step changed - leaving out those it takes with it.
+     */
+    private List<String> usersOf(int record) {
+        Inspector.StepLine r = records.get(record);
+        String step = stepOf(labels.get(record));
+        java.util.TreeSet<Integer> users = new java.util.TreeSet<Integer>();
+        for (int i = 0; i < records.size(); i++) {
+            boolean taken = r.check ? i == record : step.equals(stepOf(labels.get(i)));
+            if (!taken) continue;
+            for (String user : records.get(i).usedBy) {
+                String s = stepOf(user);
+                if (r.check ? !user.equals(labels.get(record)) : !s.equals(step)) users.add(Integer.parseInt(s));
+            }
+        }
+        List<String> out = new ArrayList<String>();
+        for (int n : users) out.add(String.valueOf(n));
+        return out;
+    }
+
+    /** "5", "5 and 7", "4, 5 and 7". */
+    private static String and(List<String> items) {
+        if (items.size() == 1) return items.get(0);
+        return String.join(", ", items.subList(0, items.size() - 1)) + " and " + items.get(items.size() - 1);
+    }
+
+    /** The question the person is asked now, as plain text; null when none. */
+    String question() {
+        return confirm.isVisible() ? asked : null;
+    }
+
+    /**
+     * Answers the question: "Delete" deletes the record it is about (still the one the person saw, wherever it is now),
+     * "Cancel" changes nothing. Either way the question goes.
+     */
+    void answer(String label) {
+        if (!confirm.isVisible()) return;
+        int id = askedId;
+        dropQuestion();
+        if (!"Delete".equals(label)) return;
+        for (int i = 0; i < records.size(); i++) {
+            if (records.get(i).id == id) {
+                deleteRecord.accept(i);
+                return;
+            }
+        }
+    }
+
+    private void dropQuestion() {
+        asked = null;
+        askedId = -1;
+        if (confirm.isVisible()) {
+            confirm.setVisible(false);
+            revalidate();
+            repaint();
+        }
+    }
 
     /** ✕ Delete deletes one step or one check: greyed, saying so, while the selection spans several steps. */
     private void deleteFits() {
@@ -526,9 +640,9 @@ final class StepsPanel extends JPanel {
         if (row < 0 || row >= rows.size()) return null;
         Row r = rows.get(row);
         if (r.line != null && r.line.folded()) {
-            return r.line.line + " - from " + r.line.raw.size() + " steps: " + String.join("; ", r.line.raw);
+            return r.line.line + " - from " + r.line.raw.size() + " steps: " + String.join("; ", r.line.raw) + seen(r.line);
         }
-        if (r.line != null) return r.line.line;
+        if (r.line != null) return r.line.line + seen(r.line);
         if (r.raw) return model.get(row).trim().substring(2);
         if (!r.header()) return null;
         int[] span = groupSpan(row);
@@ -579,7 +693,7 @@ final class StepsPanel extends JPanel {
             Inspector.StepLine a = first.line;
             if (a.folded()) m.item("Unfold (show the " + a.raw.size() + " steps)", true, () -> edits.unfold(a.id));
             int record = first.record;
-            m.item("Delete", true, () -> deleteRecord.accept(record));
+            m.item("Delete", true, () -> askDelete(record));
         }
         m.item("Ungroup", first.line.groupId != 0, () -> edits.ungroup(first.id()));
         Inspector.RowLine row = first.line.row;
@@ -598,8 +712,30 @@ final class StepsPanel extends JPanel {
                 if (byValue) edits.rowBy(first.id(), "position");
             });
         }
+        if (sel.size() == 1) links(m, first.line);
         return m;
     }
+
+    /**
+     * The links of record {@code r}: a value from an earlier step (what earlier steps changed that is in it, in words),
+     * the exact value back (when it uses one), and for a typed text where unique per run adds the run's id.
+     */
+    private void links(StepMenu m, Inspector.StepLine r) {
+        m.separator();
+        List<String> offered = new ArrayList<String>();
+        for (Inspector.LinkOffer o : r.offers) offered.add(o.words);
+        m.submenu("Use a value from an earlier step…", true, offered, i -> edits.link(r.id, r.offers.get(i).ref));
+        m.item("Use the exact value", !r.links.isEmpty(), () -> edits.unlink(r.id));
+        if (r.unique == null) return;
+        int now = UNIQUE.indexOf(r.unique);
+        m.choices("Unique per run", UNIQUE_LABELS, now, i -> {
+            if (i != now) edits.unique(r.id, UNIQUE.get(i));
+        });
+    }
+
+    /** Where unique per run adds the run's id, as the session names it and as the menu says it. */
+    private static final List<String> UNIQUE = java.util.Arrays.asList("end", "start", "off");
+    private static final List<String> UNIQUE_LABELS = java.util.Arrays.asList("Add at the end", "Add at the start", "Off");
 
     /**
      * What naming the records {@code sel} (in order, at least one) names: rows of several steps a group of the whole
@@ -973,6 +1109,7 @@ final class StepsPanel extends JPanel {
      */
     void running(boolean on) {
         running = on;
+        if (on) dropQuestion();
         for (Component c : buttons.getComponents()) c.setEnabled(!on);
         if (on) return;
         deleteFits();
@@ -1186,7 +1323,23 @@ final class StepsPanel extends JPanel {
      * its step, a group's member by two more.
      */
     static String row(String label, String mark, Inspector.StepLine s, boolean open) {
-        return prefix(label, mark, s) + domainLead(s, open) + text(s);
+        return prefix(label, mark, s) + domainLead(s, open) + text(s) + linked(s);
+    }
+
+    /** After a record's sentence: 🔗 and where its links take their values from, in words; "" for a step without. */
+    private static String linked(Inspector.StepLine s) {
+        if (s.links.isEmpty()) return "";
+        List<String> words = new ArrayList<String>();
+        for (Inspector.LinkLine l : s.links) words.add(l.words);
+        return "  🔗 " + String.join("; ", words);
+    }
+
+    /** For the hover: each link with the value it stood for when the step last ran; "" for a step without. */
+    private static String seen(Inspector.StepLine s) {
+        if (s.links.isEmpty()) return "";
+        List<String> words = new ArrayList<String>();
+        for (Inspector.LinkLine l : s.links) words.add(l.words + (l.seen == null ? "" : " (seen: " + l.seen + ")"));
+        return " - 🔗 " + String.join("; ", words);
     }
 
     /** A record's sentence, or else its line ("check: …" for a check). */

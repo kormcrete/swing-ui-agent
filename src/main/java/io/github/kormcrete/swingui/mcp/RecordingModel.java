@@ -13,6 +13,7 @@ import io.github.kormcrete.swingui.flow.refs.JsonPaths;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.refs.RunValues;
 import io.github.kormcrete.swingui.flow.verb.RememberVerb;
+import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -556,21 +557,23 @@ final class RecordingModel {
         List<RecordedStep> before = copyOfRecords();
         int checks = 0;
         for (int n = from; n <= to; n++) checks += st.get(n - 1).checks.size();
+        String kept = keepValues(st.get(from - 1).first(), st.get(to - 1).last());
         for (int i = st.get(to - 1).last(); i >= st.get(from - 1).first(); i--) steps.remove(i);
         String what = stepsText(from, to);
         String past = "deleted " + what;
         if (checks > 0) {
             past += " and " + (from == to ? "its " : "their ") + checks + (checks == 1 ? " check" : " checks");
         }
-        return finish("delete of " + what, past, author, before, false);
+        return finish("delete of " + what, past + kept, author, before, false);
     }
 
     /** Removes check {@code check} of step {@code step}. */
     String deleteCheck(int step, int check, RecordedStep.Author author) {
         int flat = flatOf(step, check, true);
         List<RecordedStep> before = copyOfRecords();
+        String kept = keepValues(flat, flat);
         steps.remove(flat);
-        return finish("delete of check " + step + "." + check, "deleted check " + step + "." + check, author, before,
+        return finish("delete of check " + step + "." + check, "deleted check " + step + "." + check + kept, author, before,
                 false);
     }
 
@@ -947,6 +950,11 @@ final class RecordingModel {
      * link and the ids, and the step stays with its exact values.
      */
     String link(int stepId, Action linked, Map<String, String> seen, Map<Integer, String> sourceIds) {
+        return link(stepId, linked, seen, sourceIds, null);
+    }
+
+    /** {@link #link(int, Action, Map, Map)} made by {@code by} (the person linking by hand); null: for the step's author. */
+    String link(int stepId, Action linked, Map<String, String> seen, Map<Integer, String> sourceIds, RecordedStep.Author by) {
         int i = indexOf(stepId);
         if (i < 0) throw bad("that step is gone: the recording changed since (nothing linked)");
         List<RecordedStep> before = copyOfRecords();
@@ -974,7 +982,8 @@ final class RecordingModel {
             }
         }
         String what = describe(i);
-        return finish("link of " + what, "linked " + what + " to " + sourcesText(linked), s.author, before, false);
+        return finish("link of " + what, "linked " + what + " to " + sourcesText(linked), by != null ? by : s.author, before,
+                false);
     }
 
     /** "what step 1 changed", "what steps 1 and 3 changed", "a remembered value", "the run's values". */
@@ -1023,18 +1032,197 @@ final class RecordingModel {
 
     /** {@code text} with each reference replaced by the value it stood for, escaped like any typed text. */
     private String exactText(String text, Map<String, String> seen) {
-        List<Refs.Ref> refs = Refs.scan(text);
-        if (refs.isEmpty()) return text;
+        return filled(text, seen, runValues, null, Unknown.REFUSE, false);
+    }
+
+    /** What to do with a reference no value is known for. */
+    enum Unknown {
+        /** BAD_INPUT: replay the steps before it first. */
+        REFUSE,
+        /** It stays as it is. */
+        KEEP,
+        /** "…" in its place (for the person's eyes only). */
+        DOTS
+    }
+
+    /**
+     * {@code text} (as the recording keeps it) with each reference to an id in {@code only} (null: every reference)
+     * replaced by the value it stood for when the step last ran ({@code seen}), else by what {@code values} has now.
+     * The run's id unique per run added and no run has used yet goes, with the space that came with it: the text as it
+     * was typed. {@code plain}: escapes undone, for the person's eyes; else the values escaped like any typed text.
+     */
+    static String filled(String text, Map<String, String> seen, RunValues values, Set<String> only, Unknown unknown,
+            boolean plain) {
+        List<Refs.Ref> refs;
+        try {
+            refs = Refs.scan(text);
+        } catch (IllegalArgumentException malformed) {
+            return plain ? Refs.unescape(text) : text;
+        }
+        if (refs.isEmpty()) return plain ? Refs.unescape(text) : text;
         StringBuilder sb = new StringBuilder();
         int last = 0;
         for (Refs.Ref r : refs) {
-            String value = seen.get(r.source);
-            if (value == null) value = runValues.resolve(r).orElse(null);
-            if (value == null) throw bad("no value is known for " + r.source + ": replay the steps before it first");
-            sb.append(text, last, r.start).append(Refs.escape(value));
+            String fixed = text.substring(last, r.start);
             last = r.end;
+            if (only != null && !only.contains(r.id)) {
+                sb.append(plain ? Refs.unescape(fixed) : fixed).append(r.source);
+                continue;
+            }
+            String value = seen.get(r.source);
+            if (value == null && Linker.RUN_ID.equals(r.source)) {
+                // the space before it, or else the one after it, came with it
+                if (fixed.endsWith(" ")) fixed = fixed.substring(0, fixed.length() - 1);
+                else if (last < text.length() && text.charAt(last) == ' ') last++;
+                sb.append(plain ? Refs.unescape(fixed) : fixed);
+                continue;
+            }
+            if (value == null) value = values.resolve(r).orElse(null);
+            sb.append(plain ? Refs.unescape(fixed) : fixed);
+            if (value != null) {
+                sb.append(plain ? value : Refs.escape(value));
+            } else if (unknown == Unknown.REFUSE) {
+                throw bad("no value is known for " + r.source + ": replay the steps before it first");
+            } else {
+                sb.append(unknown == Unknown.DOTS ? "…" : r.source);
+            }
         }
-        return sb.append(text.substring(last)).toString();
+        String rest = text.substring(last);
+        return sb.append(plain ? Refs.unescape(rest) : rest).toString();
+    }
+
+    /** The entries of {@code seen} whose reference {@code a} still has. */
+    private static Map<String, String> stillUsed(Action a, Map<String, String> seen) {
+        if (seen.isEmpty()) return seen;
+        Set<String> used = new HashSet<String>();
+        for (Refs.Ref r : Refs.of(a)) used.add(r.source);
+        Map<String, String> out = new LinkedHashMap<String, String>();
+        for (Map.Entry<String, String> e : seen.entrySet()) if (used.contains(e.getKey())) out.put(e.getKey(), e.getValue());
+        return out;
+    }
+
+    /** {@code a} with {@code fn} applied to each of its value strings; {@code a} itself when nothing changes. */
+    private static Action mapped(Action a, java.util.function.Function<String, String> fn) {
+        JsonNode tree = FlowJson.mapper().valueToTree(a);
+        JsonNode out = Refs.mapValues(tree, fn);
+        if (out.equals(tree)) return a;
+        try {
+            return FlowJson.mapper().treeToValue(out, Action.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("a step written to JSON does not read back: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    /** The name a reference to the record {@code s} uses: a remember entry's name, else the step's id; null when none. */
+    static String nameOf(RecordedStep s) {
+        return s.action instanceof RememberVerb ? ((RememberVerb) s.action).as : s.action.id;
+    }
+
+    /**
+     * Before the records at flat {@code from}-{@code to} go: every other record that uses what they changed or
+     * remembered gets the values it used, as text (a value no one knows stays a reference). Returns "; steps 5 and 7 keep
+     * the values they used" (their numbers before the delete), or "" when none uses them.
+     */
+    private String keepValues(int from, int to) {
+        final Set<String> names = new HashSet<String>();
+        for (int i = from; i <= to; i++) {
+            String name = nameOf(steps.get(i));
+            if (name != null) names.add(name);
+        }
+        if (names.isEmpty()) return "";
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        TreeSet<Integer> users = new TreeSet<Integer>();
+        for (StepNumbers.Step n : st) {
+            for (int i = n.first(); i <= n.last(); i++) {
+                if (i >= from && i <= to) continue;
+                final RecordedStep s = steps.get(i);
+                Action exact = mapped(s.action, text -> filled(text, s.linkSeen, runValues, names, Unknown.KEEP, false));
+                if (exact == s.action) continue;
+                steps.set(i, s.with(exact, s.edited).withLinkSeen(stillUsed(exact, s.linkSeen)));
+                users.add(n.number);
+            }
+        }
+        if (users.isEmpty()) return "";
+        List<String> numbers = new ArrayList<String>();
+        for (int n : users) numbers.add(String.valueOf(n));
+        return "; " + (numbers.size() == 1 ? "step " + numbers.get(0) + " keeps the values it used"
+                : "steps " + and(numbers) + " keep the values they used");
+    }
+
+    /** "5", "5 and 7", "4, 5 and 7". */
+    private static String and(List<String> items) {
+        if (items.size() == 1) return items.get(0);
+        return String.join(", ", items.subList(0, items.size() - 1)) + " and " + items.get(items.size() - 1);
+    }
+
+    /**
+     * Unique per run for the typed text of the record {@code stepId}: {@code where} "end" or "start" adds the run's id
+     * there ({@code ${run.id}}, a space between), "off" takes it away. Nothing is typed again: the later records that
+     * have the text as it was typed - whole, or as a whole word in theirs, short or not - use the unique text too (and
+     * follow it to the start, the end, or back to the plain text). One edit by {@code by}; null when it is that way already.
+     */
+    String unique(int stepId, String where, RecordedStep.Author by) {
+        if (!"end".equals(where) && !"start".equals(where) && !"off".equals(where)) {
+            throw bad("unique per run is \"end\", \"start\" or \"off\", not \"" + where + "\"");
+        }
+        int i = indexOf(stepId);
+        if (i < 0) throw bad("that step is gone: the recording changed since (nothing changed)");
+        final RecordedStep s = steps.get(i);
+        if (!(s.action instanceof TypeVerb) || ((TypeVerb) s.action).text == null) {
+            throw bad("only a typed text can be unique per run");
+        }
+        String text = ((TypeVerb) s.action).text;
+        String now = Linker.uniqueForm(text);
+        if (where.equals(now == null ? "off" : now)) return null;
+        String base = Linker.uniqueBase(text);
+        String what = describe(i);
+        if (Refs.unescape(base).trim().isEmpty()) throw bad(what + " types no text to make unique");
+        final String made = "off".equals(where) ? base : "end".equals(where) ? base + " " + Linker.RUN_ID
+                : Linker.RUN_ID + " " + base;
+        List<RecordedStep> before = copyOfRecords();
+        TypeVerb typed = (TypeVerb) FlowJson.mapper().convertValue(s.action, Action.class);
+        typed.text = made;
+        RecordedStep unique = s.with(typed, s.edited).withLinkSeen(stillUsed(typed, s.linkSeen));
+        steps.set(i, unique);
+        // the text as typed, for its later uses; not known when a value it uses is not
+        String plain;
+        try {
+            plain = filled(base, s.linkSeen, runValues, null, Unknown.REFUSE, true);
+        } catch (DriverException unknown) {
+            plain = null;
+        }
+        final String old = now == null ? null : text;
+        List<StepNumbers.Step> st = StepNumbers.of(actions());
+        int own = addressOf(stepId).step;
+        TreeSet<Integer> users = new TreeSet<Integer>();
+        for (StepNumbers.Step n : st) {
+            for (int k = n.first(); k <= n.last(); k++) {
+                if (k <= i) continue;
+                RecordedStep r = steps.get(k);
+                // a use of the unique text as it was follows it
+                Action a = old == null ? r.action : mapped(r.action, t -> t.replace(old, made));
+                Map<String, String> seen = new LinkedHashMap<String, String>(r.linkSeen);
+                if (!"off".equals(where) && plain != null) {
+                    Linker.Linked l = Linker.uniqueBack(a, unique, plain, made);
+                    if (l.linked()) {
+                        a = l.action;
+                        seen.putAll(l.seen);
+                    }
+                }
+                if (a == r.action) continue;
+                steps.set(k, r.with(a, r.edited).withLinkSeen(stillUsed(a, seen)));
+                if (n.number != own) users.add(n.number);
+            }
+        }
+        List<String> numbers = new ArrayList<String>();
+        for (int n : users) numbers.add(String.valueOf(n));
+        String past = "off".equals(where) ? "turned unique per run off in " + what : "made the text of " + what + " unique per run";
+        if (!numbers.isEmpty()) {
+            boolean one = numbers.size() == 1;
+            past += "; " + (one ? "step " : "steps ") + and(numbers) + ("off".equals(where)
+                    ? (one ? " uses" : " use") + " the plain text again" : (one ? " uses it" : " use it"));
+        }
+        return finish("unique per run of " + what, past, by, before, false);
     }
 
     /** The values the references of record {@code id} stood for when it ran just now. Not an edit. */

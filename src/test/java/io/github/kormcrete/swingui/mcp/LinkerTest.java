@@ -371,6 +371,74 @@ class LinkerTest {
         assertThat(row.ids).isEmpty();
     }
 
+    // ---- the person's links ------------------------------------------------------------------------------------------
+
+    @Test
+    void theOffersAreWhatEarlierStepsChangedThatTheStepHasNewestFirst() {
+        RecordedStep copy = step(2, COPY, "{'rows':{'Orders':{'added':[{'Order':'ORD-1643','Customer':'Ada Lovelace'}],"
+                + "'removed':[],'changed':[],'count':4}}}", "ORD-1643", ".rows.Orders.added[0].Order",
+                "Ada Lovelace", ".rows.Orders.added[0].Customer");
+        RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
+                "{'fields':{'Number':'ORD-1643','Qty':'12'}}", "ORD-1643", ".fields.Number", "12", ".fields.Qty");
+        Linker.Pool pool = new Linker.Pool();
+        pool.add(copy);
+        pool.add(open);
+
+        List<Linker.Offer> offers = pool.fitting(action(type("Copy of ORD-1643, 12")), 10);
+        // the newest step first; a row is one offer with its new values; short values too (the person chooses)
+        assertThat(offers).extracting(o -> o.source.id + " " + o.group + " " + o.values.keySet()).containsExactly(
+                "3 .fields.Number [ORD-1643]", "3 .fields.Qty [12]", "2 .rows.Orders.added[0] [ORD-1643, Ada Lovelace]");
+        // what is not in the step is not offered; nor what a reference holds already
+        assertThat(pool.fitting(action(type("ORD-1644")), 10)).isEmpty();
+        assertThat(pool.fitting(action(type(ORDER)), 10)).isEmpty();
+        assertThat(pool.fitting(action(type("ORD-1643")), 1)).hasSize(1);
+    }
+
+    @Test
+    void aLinkByHandUsesTheChosenStepAndTakesShortValues() {
+        RecordedStep copy = copy();
+        RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
+                "{'fields':{'Number':'ORD-1643','Qty':'12'}}", "ORD-1643", ".fields.Number", "12", ".fields.Qty");
+
+        // the automatic link takes the newest; the person may take the older one
+        assertThat(typed("ORD-1643", steps(copy, open))).isEqualTo("${open.fields.Number}");
+        Linker.Linked older = Linker.linkTo(action(type("ORD-1643")), steps(copy, open), 2, ".rows.Orders.added[0]");
+        assertThat(tree(older.action).path("text").asText()).isEqualTo(ORDER);
+        assertThat(older.ids).containsExactly(entry(2, "copy"));
+        // a short value the automatic links leave alone
+        Linker.Linked qty = Linker.linkTo(action(type("12 boxes")), steps(copy, open), 3, ".fields.Qty");
+        assertThat(tree(qty.action).path("text").asText()).isEqualTo("${open.fields.Qty} boxes");
+        assertThat(qty.seen).containsExactly(entry("${open.fields.Qty}", "12"));
+        // a value the step does not have: nothing
+        assertThat(Linker.linkTo(action(type("ORD-1644")), steps(copy, open), 2, ".rows.Orders.added[0]").linked()).isFalse();
+        assertThat(Linker.linkTo(action(type("ORD-1643")), steps(copy, open), 9, ".fields.Number").linked()).isFalse();
+    }
+
+    @Test
+    void aTextMadeUniquePerRunIsLinkedInItsPlainFormBeforeItRuns() {
+        RecordedStep customer = new RecordedStep(1, RecordedStep.Author.PERSON,
+                action("{'action':'type','target':{'id':'customer'},'text':'Al ${run.id}'}"), false);
+
+        Linker.Linked l = Linker.link(action(type("Orders of Al")), steps(customer));
+        assertThat(tree(l.action).path("text").asText()).isEqualTo("Orders of Al ${run.id}");
+        // linked, though no run used the id yet
+        assertThat(l.linked()).isTrue();
+        assertThat(l.seen).isEmpty();
+        assertThat(typed("Alice", steps(customer))).isEqualTo("Alice");
+        // a run reference the person did not add this way gives no plain form
+        RecordedStep dated = new RecordedStep(1, RecordedStep.Author.PERSON,
+                action("{'action':'type','target':{'id':'note'},'text':'Order ${run.date}'}"), false);
+        assertThat(typed("Order", steps(dated))).isEqualTo("Order");
+
+        Linker.Linked back = Linker.uniqueBack(action("{'action':'expect','target':{'id':'status'},'text':'Al'}"), customer,
+                "Al", "Al ${run.id}");
+        assertThat(tree(back.action).path("text").asText()).isEqualTo("Al ${run.id}");
+        assertThat(Linker.uniqueForm("Al ${run.id}")).isEqualTo("end");
+        assertThat(Linker.uniqueForm("${run.id} Al")).isEqualTo("start");
+        assertThat(Linker.uniqueForm("${run.id}")).isNull();
+        assertThat(Linker.uniqueBase("${run.id} Al")).isEqualTo("Al");
+    }
+
     @Test
     void aStepThatHasReferencesAlreadyIsLeftAlone() {
         unchanged(type(ORDER), steps(copy()));

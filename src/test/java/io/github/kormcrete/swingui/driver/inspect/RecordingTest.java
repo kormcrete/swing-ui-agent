@@ -2316,6 +2316,179 @@ class RecordingTest {
         assertThat(menuOn(0).labels()).noneMatch(l -> l.startsWith("Row:"));
     }
 
+    // ---- links: what a step uses of an earlier step, in words ---------------------------------------------------------
+
+    private static final List<Inspector.LinkLine> NO_LINKS = Collections.emptyList();
+    private static final List<Inspector.LinkOffer> NO_OFFERS = Collections.emptyList();
+    private static final List<String> UNUSED = Collections.emptyList();
+
+    private static List<Inspector.LinkLine> link(String words, String seen) {
+        return Collections.singletonList(new Inspector.LinkLine(words, seen));
+    }
+
+    @Test
+    void aLinkedStepShowsTheChainAndTheValueSeen() throws Exception {
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("2"));
+        sink.linked("2", "type(#search 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS, "off", UNUSED);
+        sink.linked("3", "type(#customer 'Ada')", link("unique per run", null), NO_OFFERS, "end", UNUSED);
+        withSteps();
+        // the value seen stands in the line, the link after the sentence in words: no reference, no path
+        assertThat(rows()).containsExactly(
+                "1  ●  click(button 'Copy')",
+                "2  ●  type(#search 'ORD-1643')  🔗 from step 1: Copy added",
+                "3  ●  type(#customer 'Ada')  🔗 unique per run");
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.tooltipAt(1))
+                    .isEqualTo("type(#search 'ORD-1643') - 🔗 from step 1: Copy added (seen: ORD-1643)");
+            // a run value not seen yet: no value to show
+            assertThat(recording.panel.tooltipAt(2)).isEqualTo("type(#customer 'Ada') - 🔗 unique per run");
+            assertThat(recording.panel.tooltipAt(0)).isEqualTo("click(button 'Copy')");
+        });
+    }
+
+    @Test
+    void theStepMenuOffersEarlierChangesInWords() throws Exception {
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, UNUSED);
+        int search = sink.linked("2", "type(#search 'ORD-1643')", NO_LINKS, Arrays.asList(
+                new Inspector.LinkOffer("Step 1, Copy added to Orders: ORD-1643 · Ada Lovelace", "1|.rows.Orders.added[0]"),
+                new Inspector.LinkOffer("orderNumber (remembered): ORD-1643", "4|")), "off", UNUSED);
+        withSteps();
+        StepMenu menu = menuOn(1);
+        assertThat(menu.labels()).containsSubsequence("Use a value from an earlier step…", "Use the exact value");
+        assertThat(menu.enabled("Use a value from an earlier step…")).isTrue();
+        assertThat(menu.labels("Use a value from an earlier step…")).containsExactly(
+                "Step 1, Copy added to Orders: ORD-1643 · Ada Lovelace", "orderNumber (remembered): ORD-1643");
+        // nothing linked yet: no exact value to go back to
+        assertThat(menu.enabled("Use the exact value")).isFalse();
+
+        SwingUtilities.invokeAndWait(() -> menu.choose("Use a value from an earlier step…",
+                "Step 1, Copy added to Orders: ORD-1643 · Ada Lovelace"));
+        settle();
+        assertThat(sink.log).containsExactly("link " + search + " 1|.rows.Orders.added[0]");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("linked"));
+
+        // nothing an earlier step changed is in step 1: the entry is greyed
+        assertThat(menuOn(0).enabled("Use a value from an earlier step…")).isFalse();
+        // a refusal says why on the bar
+        sink.refuseLink = "that step is gone: the recording changed since (nothing linked)";
+        StepMenu again = menuOn(1);
+        SwingUtilities.invokeAndWait(() -> again.choose("Use a value from an earlier step…", "orderNumber (remembered): ORD-1643"));
+        settle();
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text())
+                .isEqualTo("✗ not linked: that step is gone: the recording changed since (nothing linked)"));
+    }
+
+    @Test
+    void useTheExactValueUnlinks() throws Exception {
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("2"));
+        int search = sink.linked("2", "type(#search 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS,
+                "off", UNUSED);
+        withSteps();
+        StepMenu menu = menuOn(1);
+        assertThat(menu.enabled("Use the exact value")).isTrue();
+        SwingUtilities.invokeAndWait(() -> menu.choose("Use the exact value"));
+        settle();
+        assertThat(sink.log).containsExactly("unlink " + search);
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("used the exact value"));
+    }
+
+    @Test
+    void uniquePerRunAddsRunIdAndLinksLaterUses() throws Exception {
+        int customer = sink.linked("1", "type(#customer 'Ada')", NO_LINKS, NO_OFFERS, "off", UNUSED);
+        sink.linked("2", "click(#save)", NO_LINKS, NO_OFFERS, null, UNUSED);
+        sink.linked("3", "type(#search 'Ada')", link("unique per run", null), NO_OFFERS, "off", UNUSED);
+        withSteps();
+        StepMenu menu = menuOn(0);
+        assertThat(menu.labels("Unique per run")).containsExactly("Add at the end", "Add at the start", "Off");
+        assertThat(menu.selected("Unique per run", "Off")).isTrue();
+        SwingUtilities.invokeAndWait(() -> menu.choose("Unique per run", "Add at the end"));
+        settle();
+        // the session makes it unique and links the later uses, as one edit: the palette only asks
+        assertThat(sink.log).containsExactly("unique " + customer + " end");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.bar.text()).isEqualTo("unique per run"));
+
+        // only a typed text can be unique per run
+        assertThat(menuOn(1).labels()).doesNotContain("Unique per run");
+        // the way chosen now is marked
+        sink.steps.set(0, new Inspector.StepLine(customer, "person", "type(#customer 'Ada')", false, "1", null, false, 0,
+                null, null, Collections.<String>emptyList(), Collections.<String, String>emptyMap(),
+                link("unique per run", null), NO_OFFERS, "end", Collections.singletonList("3")));
+        settleRefresh();
+        StepMenu on = menuOn(0);
+        assertThat(on.selected("Unique per run", "Add at the end")).isTrue();
+        assertThat(on.selected("Unique per run", "Off")).isFalse();
+        SwingUtilities.invokeAndWait(() -> on.choose("Unique per run", "Off"));
+        settle();
+        assertThat(sink.log).containsExactly("unique " + customer + " end", "unique " + customer + " off");
+    }
+
+    @Test
+    void deletingALinkedSourceWarnsTurnsLinksExactAndUndoRestoresThem() throws Exception {
+        int copy = sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Arrays.asList("2", "3.1"));
+        sink.linked("1.1", "expect(#status text 'New')", NO_LINKS, NO_OFFERS, null, UNUSED);
+        int search = sink.linked("2", "type(#search 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS,
+                "off", Collections.singletonList("3"));
+        sink.linked("3", "click(#find)", link("from step 2: Search set Order", "ORD-1643"), NO_OFFERS, null, UNUSED);
+        sink.linked("3.1", "expect(#total text 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS, null,
+                UNUSED);
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.question()).isNull();
+            recording.panel.select(0);
+            recording.panel.press("✕ Delete");
+            // nothing is deleted yet: the person is asked first
+            assertThat(recording.panel.question())
+                    .isEqualTo("Steps 2 and 3 use what it changed. Delete it and keep their values as they are?");
+            recording.panel.answer("Cancel");
+            assertThat(recording.panel.question()).isNull();
+        });
+        settle();
+        assertThat(sink.log).isEmpty();
+
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.press("✕ Delete");
+            recording.panel.answer("Delete");
+        });
+        // the delete, then the list read again after it
+        settle();
+        settle();
+        // the session turns the links of steps 2 and 3 into the values they used, in the same edit as the delete
+        assertThat(sink.log).containsExactly("delete " + copy);
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.panel.question()).isNull());
+
+        // one step that uses another: said in the singular; Undo takes the delete back as any edit
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.rows()).hasSize(4);
+            recording.panel.select(1);
+            recording.panel.press("✕ Delete");
+            assertThat(recording.panel.question())
+                    .isEqualTo("Step 3 uses what it changed. Delete it and keep its values as they are?");
+            recording.panel.answer("Cancel");
+        });
+        sink.undoLabel = "delete of step 1 by the person";
+        settleRefresh();
+        SwingUtilities.invokeAndWait(() -> recording.panel.press("↶ Undo"));
+        settle();
+        assertThat(sink.log).containsExactly("delete " + copy, "undo");
+        assertThat(sink.log).doesNotContain("delete " + search);
+    }
+
+    @Test
+    void aStepNothingUsesIsDeletedAtOnce() throws Exception {
+        int copy = sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("1.1"));
+        sink.linked("1.1", "expect(#total text 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS, null,
+                UNUSED);
+        withSteps();
+        // its own check goes with it: nobody else is left without a value
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.select(0);
+            recording.panel.press("✕ Delete");
+            assertThat(recording.panel.question()).isNull();
+        });
+        settle();
+        assertThat(sink.log).containsExactly("delete " + copy);
+    }
+
     @Test
     void deleteIsGreyedForASelectionOfSeveralSteps() throws Exception {
         aGroupOfTwo();

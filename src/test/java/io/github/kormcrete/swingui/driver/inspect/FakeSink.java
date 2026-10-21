@@ -91,6 +91,21 @@ final class FakeSink implements Inspector.Sink {
         }
     }
 
+    /**
+     * Adds the person's record {@code label} with what the session says of its links: the links it has, what it may be
+     * linked to, its unique per run ({@code null}: not a typed text) and the steps that use what it changed. Returns its id.
+     */
+    int linked(String label, String l, List<Inspector.LinkLine> links, List<Inspector.LinkOffer> offers, String unique,
+               List<String> usedBy) {
+        Inspector.StepLine s;
+        synchronized (this) {
+            s = new Inspector.StepLine(nextId++, "person", l, false, label, null, label.contains("."), 0, null, null,
+                    Collections.<String>emptyList(), Collections.<String, String>emptyMap(), links, offers, unique, usedBy);
+        }
+        steps.add(s);
+        return s.id;
+    }
+
     /** {@link #add} of the person's record without sentence, group or row. */
     int add(String label, String l) {
         return add("person", label, l, null, 0, null, null);
@@ -202,6 +217,20 @@ final class FakeSink implements Inspector.Sink {
     @Override public Inspector.Result rowBy(int id, String by) {
         log.add("row " + id + " " + by);
         return new Inspector.Result(true, "row by " + by);
+    }
+    /** Why a link, an exact value or unique per run is refused (null: it is not). */
+    volatile String refuseLink;
+    @Override public Inspector.Result link(int id, String ref) {
+        log.add("link " + id + " " + ref);
+        return refuseLink != null ? new Inspector.Result(false, refuseLink) : new Inspector.Result(true, "linked");
+    }
+    @Override public Inspector.Result unlink(int id) {
+        log.add("unlink " + id);
+        return refuseLink != null ? new Inspector.Result(false, refuseLink) : new Inspector.Result(true, "used the exact value");
+    }
+    @Override public Inspector.Result unique(int id, String where) {
+        log.add("unique " + id + " " + where);
+        return refuseLink != null ? new Inspector.Result(false, refuseLink) : new Inspector.Result(true, "unique per run");
     }
     @Override public Inspector.Result undo() {
         log.add("undo");

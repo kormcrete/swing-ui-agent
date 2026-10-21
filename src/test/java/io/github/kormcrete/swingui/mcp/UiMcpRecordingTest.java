@@ -3150,6 +3150,211 @@ class UiMcpRecordingTest {
         assertThat(typed()).containsExactly("type #search ORD-1642 null null");
     }
 
+    // ---- links in the palette: shown in words, by hand, the exact value, unique per run, a delete that keeps values -----
+
+    /** The person copies an order (step 1, which adds ORD-1641) and types its number into the search (step 2, linked). */
+    private void copyThenSearch() {
+        io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
+        io.github.kormcrete.swingui.driver.outcome.UiReading after = orders("ORD-1640", "ORD-1641");
+        Map<String, Object> copy = step("click", Locator.of("button", "Copy"));
+        copy.put(Inspector.SEQ, 1);
+        assertThat(sink.done(copy).ok).isTrue();
+        Map<String, Object> outcome = io.github.kormcrete.swingui.driver.outcome.Outcomes.diff(before, after);
+        sink.outcome(1, outcome, io.github.kormcrete.swingui.driver.outcome.Outcomes.newValues(before, outcome));
+        assertThat(sink.done(typing("search", "ORD-1641", 2)).ok).isTrue();
+    }
+
+    private static Map<String, Object> typing(String id, String text, int seq) {
+        Map<String, Object> t = step("type", Locator.ofId(id));
+        t.put("text", text);
+        t.put(Inspector.SEQ, seq);
+        return t;
+    }
+
+    private static String text(RecordedStep s) {
+        return ((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.action).text;
+    }
+
+    /** Each record as the recording keeps it: its step as JSON and the values its references stood for. */
+    private List<String> kept() throws Exception {
+        List<String> out = new java.util.ArrayList<String>();
+        for (RecordedStep s : session.recordedSteps()) out.add(mapper.writeValueAsString(s.action) + " " + s.linkSeen);
+        return out;
+    }
+
+    @Test
+    void aLinkedStepShowsTheChainAndTheValueSeen() {
+        copyThenSearch();
+        Inspector.StepLine search = sink.steps().get(1);
+        // the person reads the value seen, never the reference
+        assertThat(search.line).isEqualTo("type(#search 'ORD-1641')");
+        assertThat(search.links).extracting(l -> l.words + " = " + l.seen).containsExactly("from step 1: Copy added = ORD-1641");
+        assertThat(sink.steps().get(0).usedBy).containsExactly("2");
+        assertThat(sink.steps().get(0).links).isEmpty();
+        assertThat(sink.steps().get(0).unique).isNull();
+        assertThat(search.unique).isEqualTo("off");
+        // the agent still reads the step as it is kept
+        assertThat(session.recordedSteps().get(1).action.describe()).contains(NUMBER);
+    }
+
+    @Test
+    void theStepMenuOffersEarlierChangesInWords() {
+        copyThenSearch();
+        assertThat(sink.unlink(id(1)).ok).isTrue();
+        Map<String, Object> note = typing("note", "Copy of ORD-1641", 3);
+        assertThat(sink.done(note).ok).isTrue();
+        assertThat(sink.unlink(id(2)).ok).isTrue();
+        assertThat(sink.done(typing("other", "ORD-1640", 4)).ok).isTrue();
+
+        // what an earlier step changed that is in this step, in words; never the whole UI, never a path
+        assertThat(sink.steps().get(1).offers).extracting(o -> o.words)
+                .containsExactly("Step 1, Copy added to Orders: ORD-1641");
+        assertThat(sink.steps().get(2).offers).extracting(o -> o.words)
+                .containsExactly("Step 1, Copy added to Orders: ORD-1641");
+        // ORD-1640 was there before Copy: Copy did not make it
+        assertThat(sink.steps().get(3).offers).isEmpty();
+        assertThat(sink.steps().get(0).offers).isEmpty();
+
+        // after Done the value index is kept: still offered, and the person links by hand
+        sink.end();
+        Inspector.LinkOffer offer = sink.steps().get(2).offers.get(0);
+        Inspector.Result r = sink.link(id(2), offer.ref);
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(r.line).isEqualTo("linked step 3 to what step 1 changed");
+        assertThat(text(session.recordedSteps().get(2))).isEqualTo("Copy of " + NUMBER);
+        assertThat(sink.undoLabel()).isEqualTo("link of step 3 by the person");
+        assertThat(sink.steps().get(2).links).extracting(l -> l.words).containsExactly("from step 1: Copy added");
+        // an offer that no longer fits says so
+        Inspector.Result stale = sink.link(id(3), offer.ref);
+        assertThat(stale.ok).isFalse();
+        assertThat(stale.line).isEqualTo("nothing in step 4 is what step 1 changed (nothing linked)");
+    }
+
+    @Test
+    void useTheExactValueUnlinks() {
+        copyThenSearch();
+        Inspector.Result r = sink.unlink(id(1));
+        assertThat(r.ok).isTrue();
+        assertThat(r.line).isEqualTo("used the exact value in step 2");
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo("ORD-1641");
+        assertThat(sink.steps().get(1).links).isEmpty();
+        assertThat(sink.steps().get(0).usedBy).isEmpty();
+        assertThat(sink.undoLabel()).isEqualTo("exact value of step 2 by the person");
+
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo(NUMBER);
+        assertThat(sink.steps().get(1).links).extracting(l -> l.words).containsExactly("from step 1: Copy added");
+        // nothing to turn back: refused in words
+        assertThat(sink.unlink(id(0)).line).isEqualTo("step 1 uses no value of an earlier step");
+    }
+
+    @Test
+    void uniquePerRunAddsRunIdAndLinksLaterUses() throws Exception {
+        // a short text too: the person asked for it
+        assertThat(sink.done(typing("customer", "Al", 1)).ok).isTrue();
+        assertThat(sink.done(step("click", Locator.ofId("save"))).ok).isTrue();
+        assertThat(sink.done(typing("search", "Orders of Al", 3)).ok).isTrue();
+        Map<String, Object> check = step("expect", Locator.ofId("status"));
+        check.put("text", "Al");
+        assertThat(sink.check(check).ok).isTrue();
+        assertThat(sink.done(typing("note", "Alice", 4)).ok).isTrue();
+        List<String> before = kept();
+        backend.verbs.calls.clear();
+
+        Inspector.Result r = sink.unique(id(0), "end");
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(r.line).isEqualTo("made the text of step 1 unique per run; step 3 uses it");
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(text(steps.get(0))).isEqualTo("Al ${run.id}");
+        assertThat(text(steps.get(2))).isEqualTo("Orders of Al ${run.id}");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.ExpectVerb) steps.get(3).action).text).isEqualTo("Al ${run.id}");
+        assertThat(text(steps.get(4))).isEqualTo("Alice");
+        // nothing is typed again into the app: the recording goes on with the plain text
+        assertThat(backend.verbs.calls).isEmpty();
+        assertThat(sink.steps().get(0).line).isEqualTo("type(#customer 'Al')");
+        assertThat(sink.steps().get(0).unique).isEqualTo("end");
+        assertThat(sink.steps().get(0).links).extracting(l -> l.words).containsExactly("unique per run");
+        assertThat(sink.steps().get(2).links).extracting(l -> l.words).containsExactly("unique per run");
+        assertThat(sink.steps().get(2).line).isEqualTo("type(#search 'Orders of Al')");
+        // one edit: Undo takes it all back
+        assertThat(sink.undoLabel()).isEqualTo("unique per run of step 1 by the person");
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(kept()).isEqualTo(before);
+
+        // on again; a step recorded later that types the same text uses it at once
+        assertThat(sink.unique(id(0), "end").ok).isTrue();
+        assertThat(sink.done(typing("filter", "Al", 5)).ok).isTrue();
+        assertThat(text(session.recordedSteps().get(5))).isEqualTo("Al ${run.id}");
+
+        // at the start instead: the steps that use it follow
+        assertThat(sink.unique(id(0), "start").ok).isTrue();
+        steps = session.recordedSteps();
+        assertThat(text(steps.get(0))).isEqualTo("${run.id} Al");
+        assertThat(text(steps.get(2))).isEqualTo("Orders of ${run.id} Al");
+        assertThat(text(steps.get(5))).isEqualTo("${run.id} Al");
+
+        // off: the plain text everywhere
+        assertThat(sink.unique(id(0), "off").ok).isTrue();
+        steps = session.recordedSteps();
+        assertThat(text(steps.get(0))).isEqualTo("Al");
+        assertThat(text(steps.get(2))).isEqualTo("Orders of Al");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.ExpectVerb) steps.get(3).action).text).isEqualTo("Al");
+        assertThat(text(steps.get(5))).isEqualTo("Al");
+        assertThat(steps.get(0).linkSeen).isEmpty();
+        assertThat(steps.get(2).linkSeen).isEmpty();
+        assertThat(sink.steps().get(0).unique).isEqualTo("off");
+
+        // only a typed text can be unique per run
+        assertThat(sink.unique(id(1), "end").line).isEqualTo("only a typed text can be unique per run");
+    }
+
+    @Test
+    void aReplayedUniqueTextIsExactWithTheValueItTyped() throws Exception {
+        assertThat(sink.done(typing("customer", "Al", 1)).ok).isTrue();
+        assertThat(sink.unique(id(0), "end").ok).isTrue();
+        call("{\"op\":\"stop\"}");
+        noReset(session);
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        String typedNow = typed().get(0);
+        String runId = typedNow.substring("type #customer Al ".length(), "type #customer Al ".length() + 8);
+        assertThat(sink.steps().get(0).line).isEqualTo("type(#customer 'Al " + runId + "')");
+        assertThat(sink.steps().get(0).links).extracting(l -> l.words + " = " + l.seen)
+                .containsExactly("unique per run = " + runId);
+        assertThat(sink.unlink(id(0)).ok).isTrue();
+        assertThat(text(session.recordedSteps().get(0))).isEqualTo("Al " + runId);
+    }
+
+    @Test
+    void deletingALinkedSourceWarnsTurnsLinksExactAndUndoRestoresThem() throws Exception {
+        copyThenSearch();
+        Map<String, Object> check = step("expect", Locator.ofId("total"));
+        check.put("text", "ORD-1641");
+        assertThat(sink.check(check).ok).isTrue();
+        assertThat(sink.done(typing("note", "Copy of ORD-1641", 3)).ok).isTrue();
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(text(steps.get(1))).isEqualTo(NUMBER);
+        assertThat(((io.github.kormcrete.swingui.flow.verb.ExpectVerb) steps.get(2).action).text).isEqualTo(NUMBER);
+        assertThat(text(steps.get(3))).isEqualTo("Copy of " + NUMBER);
+        // what the palette asks about: the steps that use what step 1 changed
+        assertThat(sink.steps().get(0).usedBy).containsExactly("2", "2.1", "3");
+        List<String> before = kept();
+
+        Inspector.Result r = sink.delete(id(0));
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(r.line).isEqualTo("deleted step 1; steps 2 and 3 keep the values they used");
+        steps = session.recordedSteps();
+        assertThat(text(steps.get(0))).isEqualTo("ORD-1641");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.ExpectVerb) steps.get(1).action).text).isEqualTo("ORD-1641");
+        assertThat(text(steps.get(2))).isEqualTo("Copy of ORD-1641");
+        for (RecordedStep s : steps) assertThat(s.linkSeen).isEmpty();
+        assertThat(sink.undoLabel()).isEqualTo("delete of step 1 by the person");
+
+        // Undo: the step and the links come back exactly
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(kept()).isEqualTo(before);
+        assertThat(session.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+    }
+
     @Test
     void aStepWithNothingToLinkMakesNoEdit() throws Exception {
         session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));

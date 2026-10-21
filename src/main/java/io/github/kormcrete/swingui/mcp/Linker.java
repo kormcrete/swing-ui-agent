@@ -36,8 +36,13 @@ import java.util.regex.Pattern;
  * value that was new in that step's outcome (its value index), distinctive (4 characters or more, no yes/no/true/false,
  * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text. A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
- * is. A remembered value and a text made unique per run are linked alike. Several sources: the most recent step wins;
- * within one step a field beats a row, an item, then a text or a title (the order of its value index).
+ * is. A remembered value and a text made unique per run are linked alike (that text also in its plain form, as typed
+ * before it was made unique, short or not: the person asked for it). Several sources: the most recent step wins; within
+ * one step a field beats a row, an item, then a text or a title (the order of its value index).
+ *
+ * <p>The person's links go through here too: what earlier steps changed that a step has ({@link Pool}, offered in
+ * words), the one they pick ({@link #linkTo}), and the later uses of a text made unique per run ({@link #uniqueBack}).
+ * Those take short values as well; only the automatic links keep to distinctive ones.
  */
 final class Linker {
 
@@ -53,17 +58,22 @@ final class Linker {
         final Set<Integer> sources;
         /** The id each source without one gets, by record id; a remember step is named by its name already. */
         final Map<Integer, String> ids;
+        private final boolean any;
 
-        Linked(Action action, Map<String, String> seen, Set<Integer> sources, Map<Integer, String> ids) {
+        Linked(Action action, Map<String, String> seen, Set<Integer> sources, Map<Integer, String> ids, boolean any) {
             this.action = action;
             this.seen = Collections.unmodifiableMap(seen);
             this.sources = Collections.unmodifiableSet(sources);
             this.ids = Collections.unmodifiableMap(ids);
+            this.any = any;
         }
 
-        /** Whether anything was linked. */
+        /**
+         * Whether anything was linked (a text unique per run that has not run yet links with no value seen for its
+         * {@code run} reference).
+         */
         boolean linked() {
-            return !seen.isEmpty();
+            return any;
         }
     }
 
@@ -75,44 +85,35 @@ final class Linker {
 
     /** Links the values of {@code a} (strings escaped as the recording keeps them) to what the steps {@code earlier} made. */
     static Linked link(Action a, List<RecordedStep> earlier) {
-        Work w = new Work(earlier);
-        if (w.best.isEmpty()) return w.none(a);
-        ObjectNode tree = FlowJson.mapper().valueToTree(a);
-        String kind = tree.path("action").asText();
-        if (a instanceof VerbAction) {
-            for (String field : ((VerbAction) a).targets().keySet()) {
-                if (tree.get(field) instanceof ObjectNode) w.locator((ObjectNode) tree.get(field));
-            }
+        List<Candidate> all = new ArrayList<Candidate>();
+        for (int i = earlier.size() - 1, age = 0; i >= 0; i--, age++) candidates(earlier.get(i), age, all, true);
+        return new Work(earlier, all, true).run(a);
+    }
+
+    /**
+     * The person's link: the values of {@code a} that are what the step with record id {@code sourceId} (one of
+     * {@code earlier}) changed in {@code group} ({@link Offer#group}) - whole, or whole inside typed text - become
+     * references to it, short ones too. Nothing linked when that step is gone or none of them is in {@code a}.
+     */
+    static Linked linkTo(Action a, List<RecordedStep> earlier, int sourceId, String group) {
+        List<Candidate> all = new ArrayList<Candidate>();
+        for (RecordedStep s : earlier) {
+            if (s.id != sourceId) continue;
+            List<Candidate> of = new ArrayList<Candidate>();
+            candidates(s, 0, of, false);
+            for (Candidate c : of) if (groupOf(c).equals(group)) all.add(c);
         }
-        switch (kind) {
-            case "type":
-                w.typed(tree, "text");
-                break;
-            case "select":
-                w.whole(tree, "item");
-                w.wholeEach(tree.get("items"));
-                break;
-            case "pick":
-                w.wholeEach(tree.get("path"));
-                break;
-            case "expect":
-                w.whole(tree, "text");
-                w.whole(tree, "value");
-                JsonNode cell = tree.get("cell");
-                if (cell instanceof ObjectNode) {
-                    w.whole((ObjectNode) cell, "expected");
-                    JsonNode target = tree.get("target");
-                    w.row(target == null ? null : target.get("name"), cell.get("row"));
-                }
-                break;
-            case "do":
-                w.wholeEach(tree.get("params"));
-                break;
-            default:
-                break;
-        }
-        if (w.matches.isEmpty()) return w.none(a);
-        return w.finish(tree);
+        return new Work(earlier, all, false).run(a);
+    }
+
+    /**
+     * A later step's use of a text made unique per run: where {@code a} has {@code plain} (the text as typed, references
+     * filled), whole or as a whole word in typed text, it gets {@code template} (that text with its {@code run}
+     * reference) instead; short texts too. {@code made} is the step made unique: the values its references stood for.
+     */
+    static Linked uniqueBack(Action a, RecordedStep made, String plain, String template) {
+        List<Candidate> one = Collections.singletonList(new Candidate(plain, made, null, template, 0, 0));
+        return new Work(Collections.<RecordedStep>emptyList(), one, false).run(a);
     }
 
     // ------------------------------------------------------------------ candidates
@@ -126,7 +127,10 @@ final class Linker {
         final String path;
         /** For a text made unique per run: its form with the references, as written. */
         final String template;
-        /** 0: a field, row, item, remembered value or a text unique per run; 1: a text, a title, anything else. */
+        /**
+         * 0: a field, row, item, remembered value or a text unique per run; 1: a text, a title, anything else; 2: a text
+         * unique per run in its plain form.
+         */
         final int kind;
         /** 0 for the most recent step, counting up. */
         final int age;
@@ -157,91 +161,143 @@ final class Linker {
         }
     }
 
-    private static final class Work {
-        final List<RecordedStep> earlier;
-        /** The best candidate for each value, best first. */
-        final Map<String, Candidate> best = new LinkedHashMap<String, Candidate>();
-        final List<Match> matches = new ArrayList<Match>();
-
-        Work(List<RecordedStep> earlier) {
-            this.earlier = earlier;
-            List<Candidate> all = new ArrayList<Candidate>();
-            for (int i = earlier.size() - 1, age = 0; i >= 0; i--, age++) candidates(earlier.get(i), age, all);
-            // stable: the most recent step first, then by kind, then in the order of the step's value index
-            Collections.sort(all, new Comparator<Candidate>() {
-                @Override public int compare(Candidate x, Candidate y) {
-                    return x.age != y.age ? x.age - y.age : x.kind - y.kind;
+    /** The candidates of step {@code s}, {@code age} steps back; {@code strict}: only distinctive values (automatic links). */
+    private static void candidates(RecordedStep s, int age, List<Candidate> out, boolean strict) {
+        if (s.action instanceof RememberVerb) {
+            String as = ((RememberVerb) s.action).as;
+            if (as != null) {
+                for (String v : s.newValues.keySet()) {
+                    if (!strict || distinctive(v)) out.add(new Candidate(v, s, "", null, 0, age));
                 }
-            });
-            for (Candidate c : all) if (!best.containsKey(c.value)) best.put(c.value, c);
-        }
-
-        private static void candidates(RecordedStep s, int age, List<Candidate> out) {
-            if (s.action instanceof RememberVerb) {
-                String as = ((RememberVerb) s.action).as;
-                if (as != null) {
-                    for (String v : s.newValues.keySet()) if (distinctive(v)) out.add(new Candidate(v, s, "", null, 0, age));
-                }
-                return;
             }
-            Set<String> own = ownValues(s);
-            for (Map.Entry<String, String> e : s.newValues.entrySet()) {
-                String v = e.getKey();
-                String p = e.getValue();
-                if (!distinctive(v) || own.contains(v) || several(s.outcome, p)) continue;
-                int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") ? 0 : 1;
-                out.add(new Candidate(v, s, p, null, kind, age));
-            }
-            composed(s, age, out);
+            return;
         }
+        JsonNode tree = FlowJson.mapper().valueToTree(s.action);
+        Set<String> own = s.newValues.isEmpty() ? Collections.<String>emptySet() : ownValues(s, tree);
+        for (Map.Entry<String, String> e : s.newValues.entrySet()) {
+            String v = e.getKey();
+            String p = e.getValue();
+            if (strict && !distinctive(v) || own.contains(v) || several(s.outcome, p)) continue;
+            int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") ? 0 : 1;
+            out.add(new Candidate(v, s, p, null, kind, age));
+        }
+        composed(s, tree, age, out, strict);
+    }
 
-        /** The texts of the step made unique per run (references to {@code run} only), as they were when it ran. */
-        private static void composed(final RecordedStep s, final int age, final List<Candidate> out) {
-            if (s.linkSeen.isEmpty()) return;
-            Refs.mapValues(FlowJson.mapper().valueToTree(s.action), text -> {
-                List<Refs.Ref> refs;
-                try {
-                    refs = Refs.scan(text);
-                } catch (IllegalArgumentException malformed) {
-                    return text;
-                }
-                if (refs.isEmpty()) return text;
-                for (Refs.Ref r : refs) {
-                    if (!"run".equals(r.id) || !s.linkSeen.containsKey(r.source)) return text;
-                }
+    /** What {@link #uniqueForm} adds: the run's id. */
+    static final String RUN_ID = "${run.id}";
+
+    /**
+     * The texts of the step made unique per run (references to {@code run} only), as they were when it ran; and a text
+     * in the form unique per run gives it ({@link #uniqueForm}) in its plain form, as it was typed before.
+     */
+    private static void composed(final RecordedStep s, JsonNode tree, final int age, final List<Candidate> out,
+            final boolean strict) {
+        Refs.mapValues(tree, text -> {
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.scan(text);
+            } catch (IllegalArgumentException malformed) {
+                return text;
+            }
+            if (refs.isEmpty()) return text;
+            boolean seen = true;
+            for (Refs.Ref r : refs) {
+                if (!"run".equals(r.id)) return text;
+                seen &= s.linkSeen.containsKey(r.source);
+            }
+            if (seen) {
                 String value = fill(text, refs, s.linkSeen);
-                if (distinctive(value)) out.add(new Candidate(value, s, null, text, 0, age));
-                return text;
-            });
-        }
+                if (!strict || distinctive(value)) out.add(new Candidate(value, s, null, text, 0, age));
+            }
+            String plain = uniqueForm(text) == null ? null : Refs.unescape(uniqueBase(text));
+            if (plain != null && !plain.trim().isEmpty()) out.add(new Candidate(plain, s, null, text, 2, age));
+            return text;
+        });
+    }
 
-        /**
-         * The value strings of a step's own action (what it typed, picked, named), with its references as they stood
-         * when it ran: never what the app made.
-         */
-        private static Set<String> ownValues(final RecordedStep s) {
-            final Set<String> own = new HashSet<String>(s.linkSeen.values());
-            Refs.mapValues(FlowJson.mapper().valueToTree(s.action), text -> {
-                List<Refs.Ref> refs;
-                try {
-                    refs = Refs.scan(text);
-                } catch (IllegalArgumentException malformed) {
-                    return text;
+    /**
+     * Where unique per run put the run's id in {@code text} (as the recording keeps it): "end" for {@code <text>
+     * ${run.id}}, "start" for {@code ${run.id} <text>}; null for any other text.
+     */
+    static String uniqueForm(String text) {
+        if (text.endsWith(" " + RUN_ID) && text.length() > RUN_ID.length() + 1) return "end";
+        if (text.startsWith(RUN_ID + " ") && text.length() > RUN_ID.length() + 1) return "start";
+        return null;
+    }
+
+    /** {@code text} without what unique per run added ({@link #uniqueForm}); the text itself when it has nothing added. */
+    static String uniqueBase(String text) {
+        String form = uniqueForm(text);
+        if ("end".equals(form)) return text.substring(0, text.length() - RUN_ID.length() - 1);
+        if ("start".equals(form)) return text.substring(RUN_ID.length() + 1);
+        return text;
+    }
+
+    /**
+     * The value strings of a step's own action (what it typed, picked, named), with its references as they stood
+     * when it ran: never what the app made.
+     */
+    private static Set<String> ownValues(final RecordedStep s, JsonNode tree) {
+        final Set<String> own = new HashSet<String>(s.linkSeen.values());
+        Refs.mapValues(tree, text -> {
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.scan(text);
+            } catch (IllegalArgumentException malformed) {
+                return text;
+            }
+            boolean known = true;
+            for (Refs.Ref r : refs) known &= s.linkSeen.containsKey(r.source);
+            own.add(known ? fill(text, refs, s.linkSeen) : Refs.unescape(text));
+            return text;
+        });
+        return own;
+    }
+
+    // ------------------------------------------------------------------ where a step has values
+
+    /**
+     * Walks the places of a step where a value can be linked: a target's name (not a caption's), item and row keys;
+     * typed text; a selected item, a picked path; what a check expects; a domain step's params. Not menu paths, sentences,
+     * windows, ids or file paths.
+     */
+    private abstract static class Walk {
+
+        void walk(ObjectNode tree, Action a) {
+            if (a instanceof VerbAction) {
+                for (String field : ((VerbAction) a).targets().keySet()) {
+                    if (tree.get(field) instanceof ObjectNode) locator((ObjectNode) tree.get(field));
                 }
-                boolean known = true;
-                for (Refs.Ref r : refs) known &= s.linkSeen.containsKey(r.source);
-                own.add(known ? fill(text, refs, s.linkSeen) : Refs.unescape(text));
-                return text;
-            });
-            return own;
+            }
+            switch (tree.path("action").asText()) {
+                case "type":
+                    typed(tree, "text");
+                    break;
+                case "select":
+                    whole(tree, "item");
+                    wholeEach(tree.get("items"));
+                    break;
+                case "pick":
+                    wholeEach(tree.get("path"));
+                    break;
+                case "expect":
+                    whole(tree, "text");
+                    whole(tree, "value");
+                    JsonNode cell = tree.get("cell");
+                    if (cell instanceof ObjectNode) {
+                        whole((ObjectNode) cell, "expected");
+                        JsonNode target = tree.get("target");
+                        row(target == null ? null : target.get("name"), cell.get("row"));
+                    }
+                    break;
+                case "do":
+                    wholeEach(tree.get("params"));
+                    break;
+                default:
+                    break;
+            }
         }
-
-        Linked none(Action a) {
-            return new Linked(a, new LinkedHashMap<String, String>(), new HashSet<Integer>(),
-                    new LinkedHashMap<Integer, String>());
-        }
-
-        // -------------------------------------------------------------- where values are
 
         void locator(ObjectNode l) {
             JsonNode role = l.get("role");
@@ -250,18 +306,111 @@ final class Linker {
             row(l.get("name"), l.get("row"));
         }
 
+        /** The keys of a row locator ({@code name}: its table's), each a value of its own. */
+        void row(JsonNode name, JsonNode row) {
+            if (!(row instanceof ObjectNode)) return;
+            for (Iterator<String> it = row.fieldNames(); it.hasNext(); ) whole((ObjectNode) row, it.next());
+        }
+
+        /** Each text of an array or object (a pick's path, a row's values, a do step's params). */
+        void wholeEach(JsonNode values) {
+            if (values instanceof ArrayNode) {
+                for (int i = 0; i < values.size(); i++) wholeAt((ArrayNode) values, i);
+            } else if (values instanceof ObjectNode) {
+                for (Iterator<String> it = values.fieldNames(); it.hasNext(); ) whole((ObjectNode) values, it.next());
+            }
+        }
+
+        /** A value that is linked whole: {@code parent}'s {@code field}, when there is one. */
+        abstract void whole(ObjectNode parent, String field);
+
+        /** A value that is linked whole: slot {@code i} of {@code parent}. */
+        abstract void wholeAt(ArrayNode parent, int i);
+
+        /** Typed text: linked whole, or each value found whole inside it. */
+        abstract void typed(ObjectNode parent, String field);
+    }
+
+    /** The plain texts (escapes undone) at the places a step has values, without those that hold a reference. */
+    private static final class Spots extends Walk {
+        final List<String> whole = new ArrayList<String>();
+        final List<String> typed = new ArrayList<String>();
+
+        @Override void whole(ObjectNode parent, String field) {
+            add(parent.get(field), whole);
+        }
+
+        @Override void wholeAt(ArrayNode parent, int i) {
+            add(parent.get(i), whole);
+        }
+
+        @Override void typed(ObjectNode parent, String field) {
+            add(parent.get(field), typed);
+        }
+
+        private static void add(JsonNode node, List<String> to) {
+            if (node != null && node.isTextual() && !hasRefs(node.textValue())) to.add(Refs.unescape(node.textValue()));
+        }
+
+        /** Whether {@code value} is one of them, or whole inside typed text. */
+        boolean has(String value) {
+            if (whole.contains(value) || typed.contains(value)) return true;
+            for (String t : typed) {
+                for (int i = t.indexOf(value); i >= 0; i = t.indexOf(value, i + 1)) {
+                    if (fits(t, i, value, new TreeMap<Integer, Candidate>())) return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static final class Work extends Walk {
+        final List<RecordedStep> earlier;
+        /** Whether a row an earlier step added is linked by that row (automatic links). */
+        final boolean rows;
+        /** The best candidate for each value, best first. */
+        final Map<String, Candidate> best = new LinkedHashMap<String, Candidate>();
+        final List<Match> matches = new ArrayList<Match>();
+
+        Work(List<RecordedStep> earlier, List<Candidate> all, boolean rows) {
+            this.earlier = earlier;
+            this.rows = rows;
+            List<Candidate> sorted = new ArrayList<Candidate>(all);
+            // stable: the most recent step first, then by kind, then in the order of the step's value index
+            Collections.sort(sorted, new Comparator<Candidate>() {
+                @Override public int compare(Candidate x, Candidate y) {
+                    return x.age != y.age ? x.age - y.age : x.kind - y.kind;
+                }
+            });
+            for (Candidate c : sorted) if (!best.containsKey(c.value)) best.put(c.value, c);
+        }
+
+        Linked run(Action a) {
+            if (best.isEmpty()) return none(a);
+            ObjectNode tree = FlowJson.mapper().valueToTree(a);
+            walk(tree, a);
+            return matches.isEmpty() ? none(a) : finish(tree);
+        }
+
+        Linked none(Action a) {
+            return new Linked(a, new LinkedHashMap<String, String>(), new HashSet<Integer>(),
+                    new LinkedHashMap<Integer, String>(), false);
+        }
+
+        // -------------------------------------------------------------- where values are
+
         /**
          * The keys of a row locator. A row an earlier step added (in its outcome, under the table {@code name}) is linked
          * by that row: each key column that holds a new value, the others exact; when it holds none (a twin of another
          * row), the row stays exact. Any other row has its key values linked one by one.
          */
-        void row(JsonNode name, JsonNode row) {
+        @Override void row(JsonNode name, JsonNode row) {
             if (!(row instanceof ObjectNode)) return;
             ObjectNode keys = (ObjectNode) row;
             String table = name != null && name.isTextual() && !hasRefs(name.textValue())
                     ? Refs.unescape(name.textValue()) : null;
-            if (table != null && addedRow(table, keys)) return;
-            for (Iterator<String> it = keys.fieldNames(); it.hasNext(); ) whole(keys, it.next());
+            if (rows && table != null && addedRow(table, keys)) return;
+            super.row(name, row);
         }
 
         private boolean addedRow(String table, ObjectNode keys) {
@@ -273,7 +422,7 @@ final class Linker {
                 if (added.size() > 1) continue;
                 for (int k = 0; k < added.size(); k++) {
                     if (!sameRow(keys, added.get(k))) continue;
-                    Set<String> own = ownValues(s);
+                    Set<String> own = ownValues(s, FlowJson.mapper().valueToTree(s.action));
                     for (Iterator<Map.Entry<String, JsonNode>> it = keys.fields(); it.hasNext(); ) {
                         Map.Entry<String, JsonNode> e = it.next();
                         String v = Refs.unescape(e.getValue().textValue());
@@ -302,19 +451,12 @@ final class Linker {
             return true;
         }
 
-        /** Each text of an array or object (a pick's path, a row's values, a do step's params). */
-        void wholeEach(JsonNode values) {
-            if (values instanceof ArrayNode) {
-                for (int i = 0; i < values.size(); i++) {
-                    Candidate c = wholeMatch(values.get(i));
-                    if (c != null) matches.add(new Match(values, null, i, Collections.<Object>singletonList(c)));
-                }
-            } else if (values instanceof ObjectNode) {
-                for (Iterator<String> it = values.fieldNames(); it.hasNext(); ) whole((ObjectNode) values, it.next());
-            }
+        @Override void wholeAt(ArrayNode values, int i) {
+            Candidate c = wholeMatch(values.get(i));
+            if (c != null) matches.add(new Match(values, null, i, Collections.<Object>singletonList(c)));
         }
 
-        void whole(ObjectNode parent, String field) {
+        @Override void whole(ObjectNode parent, String field) {
             Candidate c = wholeMatch(parent.get(field));
             if (c != null) matches.add(new Match(parent, field, -1, Collections.<Object>singletonList(c)));
         }
@@ -325,7 +467,7 @@ final class Linker {
         }
 
         /** Typed text: linked whole, else each candidate found whole inside it (fixed text around it). */
-        void typed(ObjectNode parent, String field) {
+        @Override void typed(ObjectNode parent, String field) {
             JsonNode node = parent.get(field);
             if (node == null || !node.isTextual() || hasRefs(node.textValue())) return;
             String raw = Refs.unescape(node.textValue());
@@ -352,25 +494,6 @@ final class Linker {
             matches.add(new Match(parent, field, -1, pieces));
         }
 
-        /**
-         * Whether {@code value} at {@code i} in {@code raw} is whole (no letter or digit glued to it), clear of the places
-         * taken already, and not right after a {@code $} (which a reference cannot follow).
-         */
-        private static boolean fits(String raw, int i, String value, TreeMap<Integer, Candidate> at) {
-            int end = i + value.length();
-            if (i > 0 && glued(raw.charAt(i - 1), value.charAt(0))) return false;
-            if (end < raw.length() && glued(raw.charAt(end), value.charAt(value.length() - 1))) return false;
-            if (i > 0 && raw.charAt(i - 1) == '$') return false;
-            Map.Entry<Integer, Candidate> before = at.floorEntry(i);
-            if (before != null && before.getKey() + before.getValue().value.length() > i) return false;
-            Map.Entry<Integer, Candidate> after = at.ceilingEntry(i);
-            return after == null || after.getKey() >= end;
-        }
-
-        private static boolean glued(char outside, char edge) {
-            return Character.isLetterOrDigit(outside) && Character.isLetterOrDigit(edge);
-        }
-
         // -------------------------------------------------------------- writing
 
         Linked finish(ObjectNode tree) {
@@ -387,7 +510,10 @@ final class Linker {
                     Candidate c = (Candidate) p;
                     if (c.template != null) {
                         text.append(c.template);
-                        for (Refs.Ref r : Refs.scan(c.template)) seen.put(r.source, c.source.linkSeen.get(r.source));
+                        // a text unique per run that has not run yet: its run's id was never seen
+                        for (Refs.Ref r : Refs.scan(c.template)) {
+                            if (c.source.linkSeen.containsKey(r.source)) seen.put(r.source, c.source.linkSeen.get(r.source));
+                        }
                         continue;
                     }
                     String ref = "${" + idOf(c.source, ids) + c.path + "}";
@@ -399,7 +525,7 @@ final class Linker {
                 else ((ArrayNode) m.parent).set(m.index, TextNode.valueOf(text.toString()));
             }
             try {
-                return new Linked(FlowJson.mapper().treeToValue(tree, Action.class), seen, sources, ids);
+                return new Linked(FlowJson.mapper().treeToValue(tree, Action.class), seen, sources, ids, true);
             } catch (JsonProcessingException e) {
                 throw new IllegalStateException("a linked step does not read back: " + e.getOriginalMessage(), e);
             }
@@ -438,6 +564,103 @@ final class Linker {
         private static String idOf(RecordedStep s, Map<Integer, String> ids) {
             if (s.action instanceof RememberVerb) return ((RememberVerb) s.action).as;
             return s.action.id != null ? s.action.id : ids.get(s.id);
+        }
+    }
+
+    /**
+     * Whether {@code value} at {@code i} in {@code raw} is whole (no letter or digit glued to it), clear of the places
+     * taken already, and not right after a {@code $} (which a reference cannot follow).
+     */
+    private static boolean fits(String raw, int i, String value, TreeMap<Integer, Candidate> at) {
+        int end = i + value.length();
+        if (i > 0 && glued(raw.charAt(i - 1), value.charAt(0))) return false;
+        if (end < raw.length() && glued(raw.charAt(end), value.charAt(value.length() - 1))) return false;
+        if (i > 0 && raw.charAt(i - 1) == '$') return false;
+        Map.Entry<Integer, Candidate> before = at.floorEntry(i);
+        if (before != null && before.getKey() + before.getValue().value.length() > i) return false;
+        Map.Entry<Integer, Candidate> after = at.ceilingEntry(i);
+        return after == null || after.getKey() >= end;
+    }
+
+    private static boolean glued(char outside, char edge) {
+        return Character.isLetterOrDigit(outside) && Character.isLetterOrDigit(edge);
+    }
+
+    // ------------------------------------------------------------------ what the person may link a step to
+
+    /**
+     * Something one earlier step changed that the person may link a later step to: a row or item it added or changed
+     * (its new values), one other value, a remembered value, or a text it made unique per run. Values plain, in the
+     * order of the step's value index.
+     */
+    static final class Offer {
+        final RecordedStep source;
+        /**
+         * Which of the step's values: the path of the row or item ({@code .rows.Orders.added[0]}) or of the value
+         * ({@code .fields.Number}), "" for a remembered value, {@code =} and the text for a text unique per run.
+         */
+        final String group;
+        /** The values, plain, each with its path ("" for a remembered value, null for a text unique per run). */
+        final Map<String, String> values = new LinkedHashMap<String, String>();
+
+        Offer(RecordedStep source, String group) {
+            this.source = source;
+            this.group = group;
+        }
+    }
+
+    /** The {@link Offer#group} of a candidate. */
+    private static String groupOf(Candidate c) {
+        if (c.template != null) return "=" + c.template;
+        java.util.regex.Matcher m = ROW.matcher(c.path);
+        return m.find() ? m.group() : c.path;
+    }
+
+    /**
+     * What the steps of a recording changed, gathered one step after another: what each step may be linked to is what
+     * the steps before it changed ({@link #fitting}). The words are the caller's.
+     */
+    static final class Pool {
+        /** Each step's offers, oldest step first. */
+        private final List<List<Offer>> offers = new ArrayList<List<Offer>>();
+
+        /** What {@code s} changed joins the pool: the steps after it may use it. */
+        void add(RecordedStep s) {
+            List<Candidate> of = new ArrayList<Candidate>();
+            candidates(s, 0, of, false);
+            Map<String, Offer> groups = new LinkedHashMap<String, Offer>();
+            for (Candidate c : of) {
+                String g = groupOf(c);
+                Offer o = groups.get(g);
+                if (o == null) groups.put(g, o = new Offer(s, g));
+                if (!o.values.containsKey(c.value)) o.values.put(c.value, c.path);
+            }
+            if (!groups.isEmpty()) offers.add(new ArrayList<Offer>(groups.values()));
+        }
+
+        /**
+         * What a step doing {@code a} may use, newest step first (then in the order of its value index), at most
+         * {@code max}: the offers one of whose values it has (whole, or whole inside typed text, where it holds no
+         * reference already).
+         */
+        List<Offer> fitting(Action a, int max) {
+            List<Offer> out = new ArrayList<Offer>();
+            if (offers.isEmpty()) return out;
+            Spots spots = new Spots();
+            spots.walk(FlowJson.mapper().<ObjectNode>valueToTree(a), a);
+            if (spots.whole.isEmpty() && spots.typed.isEmpty()) return out;
+            for (int i = offers.size() - 1; i >= 0; i--) {
+                for (Offer o : offers.get(i)) {
+                    if (out.size() == max) return out;
+                    for (String v : o.values.keySet()) {
+                        if (spots.has(v)) {
+                            out.add(o);
+                            break;
+                        }
+                    }
+                }
+            }
+            return out;
         }
     }
 
@@ -487,6 +710,9 @@ final class Linker {
     private static final String KEY = "(?:\\.[A-Za-z_][A-Za-z0-9_-]*|\\['(?:[^'\\\\]|\\\\.)*'\\])";
     /** A path into a list of rows or items a step added or changed, e.g. {@code .rows.Orders.added[2].Order}. */
     private static final Pattern LISTED = Pattern.compile("^(\\.(?:rows|items)" + KEY + "\\.(?:added|changed))\\[\\d+\\]");
+
+    /** A row's or an item's path in an added or changed list: {@code .rows.Orders.added[0]}, {@code .rows.T.changed[1].after}. */
+    private static final Pattern ROW = Pattern.compile("^\\.(?:rows|items)" + KEY + "\\.(?:added|changed)\\[\\d+\\](?:\\.after)?");
 
     /**
      * Whether {@code path} (in {@code outcome}) is in a list of added or changed rows or items with more than one entry:

@@ -41,6 +41,7 @@ import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.RememberVerb;
+import io.github.kormcrete.swingui.flow.verb.TypeVerb;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.refs.Resolution;
 import io.github.kormcrete.swingui.flow.refs.RunValues;
@@ -77,7 +78,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Runs steps against the live client's {@link StepHost}, reports its {@link UiInventory} for
@@ -751,6 +754,80 @@ public class UiMcpSession {
                     if (at == null) return gone("row not changed");
                     try {
                         String did = changeRow(at, by, RecordedStep.Author.PERSON);
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
+                }
+            }
+
+            @Override
+            public Inspector.Result link(int id, String ref) {
+                if (agentReplaying != null) return agentReplayingResult();
+                synchronized (UiMcpSession.this) {
+                    int bar = ref.indexOf('|');
+                    int sourceId;
+                    try {
+                        sourceId = Integer.parseInt(ref.substring(0, Math.max(0, bar)));
+                    } catch (NumberFormatException e) {
+                        return new Inspector.Result(false, "no such value to link (nothing linked)");
+                    }
+                    String group = ref.substring(bar + 1);
+                    StepAddress at = model.addressOf(id);
+                    StepAddress from = model.addressOf(sourceId);
+                    if (at == null || from == null) return gone("nothing linked");
+                    List<RecordedStep> records = model.records();
+                    int i = 0;
+                    while (records.get(i).id != id) i++;
+                    Linker.Linked linked = Linker.linkTo(records.get(i).action, records.subList(0, i), sourceId, group);
+                    if (!linked.linked()) {
+                        return new Inspector.Result(false, "nothing in " + (at.isCheck() ? "check " : "step ") + at + " is "
+                                + changedBy(from, sourceId) + " (nothing linked)");
+                    }
+                    String did = model.link(id, linked.action, linked.seen, linked.ids, RecordedStep.Author.PERSON);
+                    publish();
+                    return new Inspector.Result(true, did);
+                }
+            }
+
+            /** "what step 3 changed", or "the remembered orderNumber". */
+            private String changedBy(StepAddress from, int sourceId) {
+                for (RecordedStep r : model.records()) {
+                    if (r.id == sourceId && r.action instanceof RememberVerb) return "the remembered " + ((RememberVerb) r.action).as;
+                }
+                return "what " + (from.isCheck() ? "check " : "step ") + from + " changed";
+            }
+
+            @Override
+            public Inspector.Result unlink(int id) {
+                if (agentReplaying != null) return agentReplayingResult();
+                synchronized (UiMcpSession.this) {
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing changed");
+                    try {
+                        String did = model.unlink(id, RecordedStep.Author.PERSON);
+                        if (did == null) {
+                            return new Inspector.Result(false, (at.isCheck() ? "check " : "step ") + at
+                                    + " uses no value of an earlier step");
+                        }
+                        publish();
+                        return new Inspector.Result(true, did);
+                    } catch (DriverException e) {
+                        return new Inspector.Result(false, message(e));
+                    }
+                }
+            }
+
+            @Override
+            public Inspector.Result unique(int id, String where) {
+                if (agentReplaying != null) return agentReplayingResult();
+                synchronized (UiMcpSession.this) {
+                    StepAddress at = model.addressOf(id);
+                    if (at == null) return gone("nothing changed");
+                    try {
+                        String did = model.unique(id, where, RecordedStep.Author.PERSON);
+                        if (did == null) return new Inspector.Result(true, "step " + at + " is that way already");
                         publish();
                         return new Inspector.Result(true, did);
                     } catch (DriverException e) {
@@ -3577,6 +3654,189 @@ public class UiMcpSession {
         if (a != null) o.put("say", a.say);
     }
 
+    /** The most a step's "Use a value from an earlier step…" lists. */
+    private static final int MAX_OFFERS = 20;
+
+    /** Where unique per run put the run's id in {@code text}: "end", "start" or "off". */
+    private static String uniqueOf(String text) {
+        String form = Linker.uniqueForm(text);
+        return form == null ? "off" : form;
+    }
+
+    /**
+     * The record's action as the person reads it: each reference as the value it stood for when the step last ran (a
+     * run's id unique per run added and no run used yet left out; a value not known yet "…"), escapes undone.
+     */
+    private Action shown(final RecordedStep s) {
+        try {
+            JsonNode tree = mapper.valueToTree(s.action);
+            JsonNode plain = Refs.mapValues(tree, text -> RecordingModel.filled(text, s.linkSeen, model.runValues(), null,
+                    RecordingModel.Unknown.DOTS, true));
+            return plain.equals(tree) ? s.action : FlowJson.mapper().treeToValue(plain, Action.class);
+        } catch (JsonProcessingException | RuntimeException e) {
+            return s.action;
+        }
+    }
+
+    /**
+     * The links of one revision of the recording, in the person's words: what each record uses and which records use
+     * what it changed, and what the steps may be linked to.
+     */
+    private final class Links {
+        private final List<RecordedStep> records;
+        private final List<String> labels;
+        /** The record a reference's id names (a step's id, a remember entry's name), by that id. */
+        private final Map<String, Integer> named = new HashMap<String, Integer>();
+        /** The record index of each record id. */
+        private final Map<Integer, Integer> at = new HashMap<Integer, Integer>();
+        /** By record index: its references, and the labels of the records that use it. */
+        private final List<List<Refs.Ref>> refs = new ArrayList<List<Refs.Ref>>();
+        private final Map<Integer, Set<String>> users = new HashMap<Integer, Set<String>>();
+
+        Links(List<RecordedStep> records, List<String> labels) {
+            this.records = records;
+            this.labels = labels;
+            for (int i = 0; i < records.size(); i++) {
+                RecordedStep s = records.get(i);
+                at.put(s.id, i);
+                String name = RecordingModel.nameOf(s);
+                if (name != null && !named.containsKey(name)) named.put(name, i);
+                List<Refs.Ref> of;
+                try {
+                    of = Refs.of(s.action);
+                } catch (IllegalArgumentException malformed) {
+                    of = Collections.emptyList();
+                }
+                refs.add(of);
+            }
+            for (int i = 0; i < records.size(); i++) {
+                for (Refs.Ref r : refs.get(i)) {
+                    Integer source = named.get(r.id);
+                    if (source == null || source == i) continue;
+                    if (!users.containsKey(source)) users.put(source, new LinkedHashSet<String>());
+                    users.get(source).add(labels.get(i));
+                }
+            }
+        }
+
+        /** The labels of the records that use what record {@code i} changed or remembered. */
+        List<String> usedBy(int i) {
+            Set<String> by = users.get(i);
+            return by == null ? Collections.<String>emptyList() : new ArrayList<String>(by);
+        }
+
+        /** What record {@code i} uses, one line per source in words, with the values it stood for when it last ran. */
+        List<Inspector.LinkLine> of(int i) {
+            RecordedStep s = records.get(i);
+            Map<String, Set<String>> seen = new LinkedHashMap<String, Set<String>>();
+            for (Refs.Ref r : refs.get(i)) {
+                String words = words(r);
+                if (!seen.containsKey(words)) seen.put(words, new LinkedHashSet<String>());
+                String value = s.linkSeen.get(r.source);
+                if (value != null) seen.get(words).add(value);
+            }
+            List<Inspector.LinkLine> out = new ArrayList<Inspector.LinkLine>();
+            for (Map.Entry<String, Set<String>> e : seen.entrySet()) {
+                out.add(new Inspector.LinkLine(e.getKey(), e.getValue().isEmpty() ? null : String.join(" · ", e.getValue())));
+            }
+            return out;
+        }
+
+        /** "from step 3: Copy added", "orderNumber (remembered)", "unique per run". */
+        private String words(Refs.Ref r) {
+            if ("run".equals(r.id)) return Linker.RUN_ID.equals(r.source) ? "unique per run" : "this run's " + r.path.substring(1);
+            Integer source = named.get(r.id);
+            if (source == null) return "from a step that is gone";
+            RecordedStep s = records.get(source);
+            if (s.action instanceof RememberVerb) return r.id + " (remembered)";
+            String did = did(r.path);
+            return "from step " + labels.get(source) + ": " + name(s) + (did.isEmpty() ? "" : " " + did);
+        }
+
+        /** What the person picks from: "Step 3, Copy added to Orders: ORD-1643 · Ada Lovelace". */
+        Inspector.LinkOffer offer(Linker.Offer o) {
+            String values = String.join(" · ", o.values.keySet());
+            int i = at.get(o.source.id);
+            String words;
+            if (o.source.action instanceof RememberVerb) {
+                words = ((RememberVerb) o.source.action).as + " (remembered): " + values;
+            } else if (o.group.startsWith("=")) {
+                words = "Step " + labels.get(i) + ", unique per run: " + values;
+            } else {
+                String did = didTo(o.group);
+                words = "Step " + labels.get(i) + ", " + name(o.source) + (did.isEmpty() ? "" : " " + did) + ": " + values;
+            }
+            return new Inspector.LinkOffer(words, o.source.id + "|" + o.group);
+        }
+    }
+
+    /** The keys and indexes of a path ({@code .rows['Order lines'].added[0].Qty} → rows, Order lines, [0], added...). */
+    private static List<String> keys(String path) {
+        List<String> out = new ArrayList<String>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\\.([A-Za-z_][A-Za-z0-9_-]*)|\\['((?:[^'\\\\]|\\\\.)*)'\\]|\\[(-?\\d+|\\*)\\]").matcher(path);
+        while (m.find()) {
+            if (m.group(1) != null) out.add(m.group(1));
+            else if (m.group(2) != null) out.add(m.group(2).replaceAll("\\\\(.)", "$1"));
+            else out.add("[" + m.group(3) + "]");
+        }
+        return out;
+    }
+
+    /** What a step did to make the value at {@code path} of its outcome: "added", "changed", "set Number", "opened"... */
+    private static String did(String path) {
+        List<String> k = keys(path);
+        if (k.isEmpty()) return "";
+        switch (k.get(0)) {
+            case "rows":
+            case "items":
+                return k.size() > 2 ? k.get(2) : "changed";
+            case "fields":
+                return k.size() > 1 ? "set " + k.get(1) : "set a field";
+            case "texts":
+                return k.size() > 1 ? "showed " + k.get(1) : "showed a text";
+            case "opened":
+                return "opened";
+            case "selected":
+                return "selected";
+            case "message":
+                return "showed a message";
+            default:
+                return "";
+        }
+    }
+
+    /** {@link #did} for an offer's group, with where: "added to Orders", "changed in Orders", "set Number". */
+    private static String didTo(String group) {
+        List<String> k = keys(group);
+        if (k.size() > 2 && ("rows".equals(k.get(0)) || "items".equals(k.get(0)))) {
+            return "added".equals(k.get(2)) ? "added to " + k.get(1) : k.get(2) + " in " + k.get(1);
+        }
+        return did(group);
+    }
+
+    /**
+     * What the person calls a step: its sentence, else what it acts on (its target's name, a menu's last item, a domain
+     * step's name), else what it does.
+     */
+    private static String name(RecordedStep s) {
+        Action a = s.action;
+        if (a.say != null) return a.say;
+        if (a instanceof VerbAction) {
+            for (Locator l : ((VerbAction) a).targets().values()) {
+                if (l == null) continue;
+                String n = l.name != null ? l.name : l.id;
+                if (n != null) return Refs.unescape(n);
+            }
+        }
+        if (a instanceof MenuVerb && ((MenuVerb) a).path != null && !((MenuVerb) a).path.isEmpty()) {
+            List<String> path = ((MenuVerb) a).path;
+            return path.get(path.size() - 1);
+        }
+        if (a instanceof DoAction && ((DoAction) a).step != null) return ((DoAction) a).step;
+        return FlowJson.mapper().valueToTree(a).path("action").asText("step");
+    }
+
     /** {@link #publish(String)} for a change the palette needs no note about. */
     private void publish() {
         publish(null);
@@ -3669,15 +3929,24 @@ public class UiMcpSession {
             g.put("say", groupSays.get(e.getKey()));
         }
         List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
+        Links links = new Links(snap.steps, labels);
+        Linker.Pool pool = new Linker.Pool();
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
             List<String> raw = new ArrayList<String>();
             if (s.folded()) for (RecordedStep x : s.raw) raw.add(x.action.describe());
-            Map<String, String> params = s.action instanceof DoAction && ((DoAction) s.action).params != null
-                    ? ((DoAction) s.action).params : Collections.<String, String>emptyMap();
-            listed.add(new Inspector.StepLine(s.id, s.author.json, s.action.describe(), s.edited, labels.get(i), s.action.say,
+            // the person reads values: what a reference stood for, a literal ${ as typed
+            Action shown = shown(s);
+            Map<String, String> params = shown instanceof DoAction && ((DoAction) shown).params != null
+                    ? ((DoAction) shown).params : Collections.<String, String>emptyMap();
+            List<Inspector.LinkOffer> offers = new ArrayList<Inspector.LinkOffer>();
+            for (Linker.Offer o : pool.fitting(s.action, MAX_OFFERS)) offers.add(links.offer(o));
+            pool.add(s);
+            String unique = s.action instanceof TypeVerb && ((TypeVerb) s.action).text != null
+                    ? uniqueOf(((TypeVerb) s.action).text) : null;
+            listed.add(new Inspector.StepLine(s.id, s.author.json, shown.describe(), s.edited, labels.get(i), s.action.say,
                     StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say,
-                    rowLine(s), raw, params));
+                    rowLine(s), raw, params, links.of(i), offers, unique, links.usedBy(i)));
         }
         if (!snap.notRecorded.isEmpty()) {
             ArrayNode lines = r.putArray("notRecorded");

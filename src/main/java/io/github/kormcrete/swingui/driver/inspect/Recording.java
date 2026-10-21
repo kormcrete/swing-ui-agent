@@ -564,6 +564,15 @@ final class Recording {
             @Override public void unfold(int id) {
                 edit(() -> sink.unfold(id), "✗ not unfolded: ");
             }
+            @Override public void link(int id, String ref) {
+                edit(() -> sink.link(id, ref), "✗ not linked: ");
+            }
+            @Override public void unlink(int id) {
+                edit(() -> sink.unlink(id), "✗ exact value not used: ");
+            }
+            @Override public void unique(int id, String where) {
+                edit(() -> sink.unique(id, where), "✗ unique per run not changed: ");
+            }
         });
         home.panel(panel);
         if (replaying || agentReplay != null) panel.running(true);

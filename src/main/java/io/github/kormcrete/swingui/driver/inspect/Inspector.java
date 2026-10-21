@@ -177,7 +177,8 @@ public final class Inspector {
 
         /**
          * Deletes the record with {@code id}: an action id deletes its step together with the step's checks, a check id
-         * deletes that check alone. Refused when it is gone or the agent is replaying the recording.
+         * deletes that check alone. The steps that used what it changed keep the values they used, in the same edit.
+         * Refused when it is gone or the agent is replaying the recording.
          */
         Result delete(int id);
 
@@ -198,6 +199,26 @@ public final class Inspector {
          * row, the other way is not known yet (a loaded step knows it after one passing replay), or the agent is replaying.
          */
         Result rowBy(int id, String by);
+
+        /**
+         * Makes the step or check with {@code id} use what an earlier step changed ({@code ref}: one of its
+         * {@link StepLine#offers}) where it has that value, typed text around it kept as it is. Counts as one edit.
+         * Refused when a record is gone, the value is no longer in the step, or the agent is replaying.
+         */
+        Result link(int id, String ref);
+
+        /**
+         * Turns every value the record {@code id} uses of an earlier step back into the value it stood for when the step
+         * last ran ("Use the exact value"). One edit; refused when it uses none, is gone, or the agent is replaying.
+         */
+        Result unlink(int id);
+
+        /**
+         * Unique per run for the typed text of the record {@code id}: {@code where} "end" or "start" adds the run's id
+         * there, "off" takes it away. Nothing is typed again; the later steps that have the plain text, whole or as a
+         * whole word in theirs, use the unique text too. One edit; refused for a step that types no text.
+         */
+        Result unique(int id, String where);
 
         /**
          * Takes back the last edit, the agent's or the person's. The result's line is what was undone (as
@@ -328,6 +349,14 @@ public final class Inspector {
         public final List<String> raw;
         /** For a do step: its values by param name (shown bold in its sentence); else empty. */
         public final Map<String, String> params;
+        /** What the step uses of earlier steps, in words, each with the value it stood for when the step last ran. */
+        public final List<LinkLine> links;
+        /** What the person may link the step to: what earlier steps changed that is in the step, in words; newest first. */
+        public final List<LinkOffer> offers;
+        /** For a typed text: "off", "end" or "start", where unique per run adds the run's id; null for any other step. */
+        public final String unique;
+        /** The labels ("5", "7.1") of the records that use what this one changed; empty when none do. */
+        public final List<String> usedBy;
 
         public StepLine(int id, String author, String line, boolean edited) {
             this(id, author, line, edited, null, null, line.startsWith("expect("), 0, null, null);
@@ -346,8 +375,20 @@ public final class Inspector {
 
         public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
                 int groupId, String groupSay, RowLine row, List<String> raw, Map<String, String> params) {
+            this(id, author, line, edited, label, say, check, groupId, groupSay, row, raw, params,
+                    Collections.<LinkLine>emptyList(), Collections.<LinkOffer>emptyList(), null,
+                    Collections.<String>emptyList());
+        }
+
+        public StepLine(int id, String author, String line, boolean edited, String label, String say, boolean check,
+                int groupId, String groupSay, RowLine row, List<String> raw, Map<String, String> params,
+                List<LinkLine> links, List<LinkOffer> offers, String unique, List<String> usedBy) {
             this.raw = Collections.unmodifiableList(new ArrayList<String>(raw));
             this.params = Collections.unmodifiableMap(new LinkedHashMap<String, String>(params));
+            this.links = Collections.unmodifiableList(new ArrayList<LinkLine>(links));
+            this.offers = Collections.unmodifiableList(new ArrayList<LinkOffer>(offers));
+            this.unique = unique;
+            this.usedBy = Collections.unmodifiableList(new ArrayList<String>(usedBy));
             this.id = id;
             this.author = author;
             this.line = line;
@@ -373,6 +414,36 @@ public final class Inspector {
         /** A step of the plugin's vocabulary (a do step), not a check: shown with ◆. */
         boolean domain() {
             return !check && line.startsWith("do(");
+        }
+    }
+
+    /**
+     * A value a step uses of an earlier one, as the person reads it: {@code words} say where it comes from ("from step 3:
+     * Copy added", "orderNumber (remembered)", "unique per run"), {@code seen} is the value it stood for when the step
+     * last ran (null: it has not run since).
+     */
+    public static final class LinkLine {
+        public final String words;
+        public final String seen;
+
+        public LinkLine(String words, String seen) {
+            this.words = words;
+            this.seen = seen;
+        }
+    }
+
+    /**
+     * Something an earlier step changed, or a remembered value, that a step may use instead of the value it has: its
+     * {@code words} ("Step 3, Copy added to Orders: ORD-1643 · Ada Lovelace") and what the session needs to make the link
+     * ({@code ref}, handed back as it is).
+     */
+    public static final class LinkOffer {
+        public final String words;
+        public final String ref;
+
+        public LinkOffer(String words, String ref) {
+            this.words = words;
+            this.ref = ref;
         }
     }
 
