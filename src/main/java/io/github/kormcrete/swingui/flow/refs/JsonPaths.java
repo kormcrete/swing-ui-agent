@@ -1,6 +1,9 @@
 package io.github.kormcrete.swingui.flow.refs;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -49,6 +52,51 @@ public final class JsonPaths {
   /** Parses only; throws {@link IllegalArgumentException} when the path is not valid. */
   public static void check(String path) {
     parse(path);
+  }
+
+  /**
+   * Puts {@code value} at {@code path} in {@code root}, making the objects and arrays on the way (an array is filled up
+   * with nulls to the index). Only keys and indexes from the start: throws for any other step, or a path that runs into a
+   * value already there.
+   */
+  public static void put(ObjectNode root, String path, String value) {
+    List<Step> steps = parse(path);
+    if (steps.isEmpty()) {
+      throw bad(path, "names no place");
+    }
+    JsonNode at = root;
+    for (int k = 0; k < steps.size(); k++) {
+      Step s = steps.get(k);
+      boolean last = k == steps.size() - 1;
+      JsonNode next = last ? null : steps.get(k + 1).kind == Kind.INDEX ? JsonNodeFactory.instance.arrayNode()
+          : JsonNodeFactory.instance.objectNode();
+      if (s.kind == Kind.KEY && at.isObject()) {
+        ObjectNode o = (ObjectNode) at;
+        if (last) {
+          o.put(s.key, value);
+          return;
+        }
+        if (!o.has(s.key)) {
+          o.set(s.key, next);
+        }
+        at = o.get(s.key);
+      } else if (s.kind == Kind.INDEX && s.index >= 0 && at.isArray()) {
+        ArrayNode a = (ArrayNode) at;
+        while (a.size() <= s.index) {
+          a.addNull();
+        }
+        if (last) {
+          a.set(s.index, JsonNodeFactory.instance.textNode(value));
+          return;
+        }
+        if (a.get(s.index).isNull()) {
+          a.set(s.index, next);
+        }
+        at = a.get(s.index);
+      } else {
+        throw bad(path, "only keys and indexes from the start name a place to put a value");
+      }
+    }
   }
 
   /**

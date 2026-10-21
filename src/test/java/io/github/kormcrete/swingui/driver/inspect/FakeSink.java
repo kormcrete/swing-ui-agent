@@ -128,7 +128,23 @@ final class FakeSink implements Inspector.Sink {
     }
     @Override public void resume() { log.add("resume"); }
     @Override public void end() { log.add("end"); }
-    @Override public Inspector.Result done(Map<String, Object> step) { person(String.valueOf(step.get("action"))); return new Inspector.Result(true, "ok"); }
+    @Override public Inspector.Result done(Map<String, Object> step) {
+        if (step.containsKey(Inspector.SEQ)) changes.add("step " + step.get(Inspector.SEQ));
+        person(String.valueOf(step.get("action")));
+        return new Inspector.Result(true, "ok");
+    }
+    /** The person's steps by their {@link Inspector#SEQ} and what each changed, in the order they came: "step 1", "outcome 1 [ORD-1641]". */
+    final List<String> changes = Collections.synchronizedList(new ArrayList<String>());
+    @Override public void outcome(int seq, Map<String, Object> outcome, Map<String, String> newValues) {
+        changes.add("outcome " + seq + " " + newValues.keySet());
+    }
+    /** What a replay's start answers; and the ranges replays started with ("0-2"). */
+    volatile Inspector.Result replaying = new Inspector.Result(true, "");
+    final List<String> replays = Collections.synchronizedList(new ArrayList<String>());
+    @Override public Inspector.Result replaying(int from, int to) {
+        replays.add(from + "-" + to);
+        return replaying;
+    }
     @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
     @Override public Inspector.Result refused(String line) { log.add("refused " + line); return new Inspector.Result(false, line); }
     @Override public List<Inspector.StepLine> steps() {

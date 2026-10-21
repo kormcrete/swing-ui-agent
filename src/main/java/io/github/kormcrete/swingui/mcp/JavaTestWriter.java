@@ -90,6 +90,25 @@ public final class JavaTestWriter {
         default boolean keeps() {
             return false;
         }
+
+        /**
+         * True for a recording's forms: a step that uses values of earlier steps ({@code ${...}}) is kept, left out of
+         * the Java check, as only the Java export has no form for it yet. False: it is a problem.
+         */
+        default boolean keepsReferences() {
+            return keeps();
+        }
+
+        /** {@link #NONE} for a recording: every do step is refused, a step that uses earlier values is kept. */
+        DoForms NONE_KEEPING_REFERENCES = new DoForms() {
+            @Override public DoForm of(DoAction step) {
+                return NONE.of(step);
+            }
+
+            @Override public boolean keepsReferences() {
+                return true;
+            }
+        };
     }
 
     /**
@@ -289,8 +308,10 @@ public final class JavaTestWriter {
                 Action a = steps.get(i);
                 stepLines.add(null);
                 if (hasReferences(a)) {
-                    problems.add(what + ": " + a.describe()
-                            + " uses ${...} (values from earlier steps), which has no Java form yet");
+                    if (!doForms.keepsReferences()) {
+                        problems.add(what + ": " + a.describe()
+                                + " uses ${...} (values from earlier steps), which has no Java form yet");
+                    }
                     continue;
                 }
                 a = unescaped(a);

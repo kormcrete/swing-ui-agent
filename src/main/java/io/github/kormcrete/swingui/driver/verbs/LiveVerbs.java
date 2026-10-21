@@ -312,7 +312,12 @@ public final class LiveVerbs implements Verbs {
     @Override
     public UiReading readUi() {
         driver.settle().drain();
-        return Edt.call(() -> UiReader.standard(this::errorMessage).read(appWindows()));
+        return Edt.call(this::readUiHere);
+    }
+
+    /** {@link #readUi} as the app is now, without waiting for it to settle: the person's own steps are read so. EDT. */
+    public UiReading readUiHere() {
+        return UiReader.standard(this::errorMessage).read(appWindows());
     }
 
     /** What a dialog the app's error-dialog rules call an error says; null for any other window. EDT. */

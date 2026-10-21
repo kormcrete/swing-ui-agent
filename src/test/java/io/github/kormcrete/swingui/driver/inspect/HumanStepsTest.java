@@ -37,6 +37,53 @@ class HumanStepsTest {
     }
 
     @Test
+    void theBeforeReadingIsTakenOnceAtTheFirstInputAfterAStep() {
+        List<io.github.kormcrete.swingui.driver.outcome.UiReading> heard =
+                new ArrayList<io.github.kormcrete.swingui.driver.outcome.UiReading>();
+        int[] reads = {0};
+        human.readings(() -> {
+            reads[0]++;
+            return io.github.kormcrete.swingui.driver.outcome.UiReading.builder().build();
+        }, heard::add);
+
+        click(scene.save, 1);
+        human.flush();
+        assertThat(steps).hasSize(1);
+        reads[0] = 0;
+        heard.clear();
+        for (int i = 0; i < 5; i++) key(scene.customer, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_A, 'a');
+
+        assertThat(reads[0]).isEqualTo(1);   // once, at the first key after the click went out
+        assertThat(heard).hasSize(1);
+        // focus moving is the app's doing, never a boundary of its own
+        click(scene.save, 1);
+        human.flush();
+        reads[0] = 0;
+        focus(scene.customer, FocusEvent.FOCUS_GAINED);
+        assertThat(reads[0]).isZero();
+        key(scene.customer, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_A, 'a');
+        assertThat(reads[0]).isEqualTo(1);
+    }
+
+    @Test
+    void theAgentsStepMakesThePersonsNextInputReadAgain() {
+        int[] reads = {0};
+        human.readings(() -> {
+            reads[0]++;
+            return io.github.kormcrete.swingui.driver.outcome.UiReading.builder().build();
+        }, r -> { });
+        key(scene.customer, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_A, 'a');
+        key(scene.customer, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_A, 'a');
+        assertThat(reads[0]).isEqualTo(1);
+
+        Inspector.agentActing(true);
+        Inspector.agentActing(false);
+        key(scene.customer, KeyEvent.KEY_PRESSED, 0, KeyEvent.VK_A, 'a');
+
+        assertThat(reads[0]).isEqualTo(2);   // what the person sees now is no longer what was read before the agent acted
+    }
+
+    @Test
     void aDoubleClickIsOneClickWithACount() {
         click(scene.save, 1);
         click(scene.save, 2);

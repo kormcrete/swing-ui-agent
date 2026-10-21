@@ -40,6 +40,12 @@ import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
+import io.github.kormcrete.swingui.flow.refs.Refs;
+import io.github.kormcrete.swingui.flow.refs.Resolution;
+import io.github.kormcrete.swingui.flow.refs.RunValues;
+import io.github.kormcrete.swingui.driver.outcome.Outcomes;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.UiInventory;
@@ -60,6 +66,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -112,6 +119,16 @@ public class UiMcpSession {
     private boolean freshStart;
     /** That reset was an app plugin's, to a defined start state, not only dialogs closed. */
     private boolean definedStart;
+
+    /** Reads the app for what a step changed ({@link Verbs#readUi}); null when nothing can be read. A seam for tests. */
+    private Supplier<UiReading> reader = this::readHost;
+    /** How long a replayed step waits for a value an earlier step makes late; null: the driver's expect timeout. */
+    private Long linkWaitMs;
+    /** The app as read before each replayed step that has an id, while a replay runs: a value that comes late is read again. */
+    private final Map<String, UiReading> replayBefore = new HashMap<String, UiReading>();
+    /** The person's last recorded step: its number among their steps ({@link Inspector#SEQ}) and its record id (0: none). */
+    private int personSeq;
+    private int personRecord;
 
     /**
      * The start of a recorded test: what {@code session reset} does to the app - dialogs closed, with an app plugin its reset -
@@ -252,7 +269,7 @@ public class UiMcpSession {
         this.plugins = host instanceof Plugins ? (Plugins) host : null;
         DoStepForms forms = plugins != null ? new DoStepForms(plugins) : null;
         this.doForms = forms != null ? forms : JavaTestWriter.DoForms.NONE;
-        this.keptForms = forms != null ? forms.keeping() : JavaTestWriter.DoForms.NONE;
+        this.keptForms = forms != null ? forms.keeping() : JavaTestWriter.DoForms.NONE_KEEPING_REFERENCES;
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
@@ -323,6 +340,21 @@ public class UiMcpSession {
     /** Who hears of every change to the recording; a seam for tests. */
     void recordingView(RecordingView view) {
         this.view = view;
+    }
+
+    /** How the app is read for what a step changed; a seam for tests. */
+    void reader(Supplier<UiReading> reader) {
+        this.reader = reader;
+    }
+
+    /** How long a replayed step waits for a late value; a seam for tests. */
+    void linkWait(long millis) {
+        this.linkWaitMs = millis;
+    }
+
+    /** The values the recording's references use in this session; for tests. */
+    synchronized RunValues runValues() {
+        return model.runValues();
     }
 
     /** An unscoped snapshot over this many bytes carries a hint to scope the next one. */
@@ -485,6 +517,7 @@ public class UiMcpSession {
             public Inspector.Result done(Map<String, Object> step) {
                 Map<String, Object> plain = new LinkedHashMap<String, Object>(step);
                 Object viewIndex = plain.remove(Inspector.ROW_INDEX);
+                Object seq = plain.remove(Inspector.SEQ);
                 JsonNode seen = seen(plain.remove(Inspector.SEEN));
                 JsonNode json = stripNulls(mapper.valueToTree(plain));
                 try {
@@ -492,7 +525,9 @@ public class UiMcpSession {
                         if (model.state() == RecordingModel.State.STOPPED) {
                             return new Inspector.Result(false, "the recording is stopped");
                         }
-                        Action action = action(json);
+                        // what the person typed is text: a ${ in it is no reference
+                        Action action = literal(action(json));
+                        personRecord = 0;
                         List<String> problems = exportProblems(action);
                         if (!problems.isEmpty()) {
                             String line = action.describe() + " - " + String.join("; ", problems);
@@ -500,13 +535,40 @@ public class UiMcpSession {
                             publish();
                             return new Inspector.Result(false, line);
                         }
-                        model.append(action, RecordedStep.Author.PERSON, personRow(json, viewIndex), seen);
+                        RecordedStep added = model.append(action, RecordedStep.Author.PERSON, personRow(json, viewIndex), seen);
+                        if (seq instanceof Number) {
+                            personSeq = ((Number) seq).intValue();
+                            personRecord = added.id;
+                        }
                         publish();
                         scheduleFolding();
                         return new Inspector.Result(true, action.describe());
                     }
                 } catch (RuntimeException e) {
                     return new Inspector.Result(false, json + " - " + e.getMessage());
+                }
+            }
+
+            @Override
+            public void outcome(int seq, Map<String, Object> outcome, Map<String, String> newValues) {
+                synchronized (UiMcpSession.this) {
+                    if (seq != personSeq || personRecord == 0 || model.state() != RecordingModel.State.RECORDING) return;
+                    model.outcome(personRecord, FlowJson.mapper().valueToTree(outcome), newValues);
+                }
+            }
+
+            @Override
+            public Inspector.Result replaying(int from, int to) {
+                if (agentReplaying != null) return agentReplayingResult();
+                synchronized (UiMcpSession.this) {
+                    if (from <= 0) {
+                        startRun();
+                        return new Inspector.Result(true, "");
+                    }
+                    replayBefore.clear();
+                    int last = Math.min(to, model.size()) - 1;
+                    String why = from > last ? null : partialRefusal(from, last);
+                    return new Inspector.Result(why == null, why == null ? "" : why);
                 }
             }
 
@@ -554,22 +616,25 @@ public class UiMcpSession {
             @Override
             public Inspector.Result replay(int index) {
                 if (agentReplaying != null) return agentReplayingResult();
+                RecordedStep step;
                 JsonNode json;
                 int id;
                 synchronized (UiMcpSession.this) {
                     if (index < 0 || index >= model.size()) {
                         return new Inspector.Result(false, "no step " + (index + 1));
                     }
-                    RecordedStep step = model.at(index + 1);
+                    step = model.at(index + 1);
                     id = step.id;
                     json = stripNulls(mapper.valueToTree(step.action));
                     model.replayStarted();   // nothing recorded before it folds with what follows
                 }
                 try {
-                    StepRun run = replayStep(json);
+                    StepRun run = replayStep(json, step);
                     JsonNode result = run.result;
                     boolean passed = result.path("passed").asBoolean(false);
                     String line = result.path("action").asText(json.toString());
+                    // a value an earlier step did not make: the words say which, nothing else needs saying
+                    if (result.has(UNRESOLVED)) return Inspector.Result.failedStep(result.path(UNRESOLVED).asText(), null, null);
                     if (!passed) {
                         line += " - " + result.path("message").asText("");
                         return Inspector.Result.failedStep(line, result.path("reason").asText(null),
@@ -1178,16 +1243,46 @@ public class UiMcpSession {
      * when the run's own outcome has none.
      */
     private StepRun runStep(JsonNode actionJson, boolean record, RecordedStep.Author author, RowChoice given) {
+        return runStep(actionJson, record, author, given, null);
+    }
+
+    /**
+     * {@link #runStep(JsonNode, boolean, RecordedStep.Author, RowChoice)}; {@code replayed}: the recorded step this runs
+     * again, null for a step the agent or the person runs now. Only a replayed step's references are filled in, from
+     * what this session knows ({@link RecordingModel#runValues}, waiting for a value that comes late); the agent's own
+     * text is taken as it is. What an action changes is read before and after it - a replayed one's always, a new one's
+     * when the recording takes it - and kept on its record; a check changes nothing and is not read.
+     */
+    private StepRun runStep(JsonNode actionJson, boolean record, RecordedStep.Author author, RowChoice given,
+                            RecordedStep replayed) {
         Action action = sentenced(action(actionJson), "the step's sentence");
+        long started = System.currentTimeMillis();
+        Map<String, String> resolved = null;
+        if (replayed != null) {
+            Action recorded = action;
+            try {
+                action = FlowExecutor.fill(recorded, model.runValues(), replayBefore, this::readOrFail,
+                        linkWaitMs != null ? linkWaitMs : FlowExecutor.defaultLinkWait(), model.flow());
+            } catch (DriverException e) {
+                if (e.reason().isToolError()) throw e;
+                return unresolved(action, e, started);
+            }
+            resolved = Resolution.resolved(recorded, model.runValues());
+        }
         Flow flow = new Flow();
         flow.name = "step";
         flow.steps = new ArrayList<Action>();
         flow.steps.add(action);
-        long started = System.currentTimeMillis();
+        boolean read = !StepNumbers.isCheck(action)
+                && (replayed != null || record && model.state() == RecordingModel.State.RECORDING);
+        UiReading before = null;
+        UiReading after = null;
         FlowResult result;
         Inspector.agentActing(true);
         try {
+            if (read) before = read();
             result = executor.run(flow, host);
+            if (before != null && !result.steps.isEmpty() && result.steps.get(0).passed) after = read();
         } finally {
             Inspector.agentActing(false);
         }
@@ -1221,9 +1316,13 @@ public class UiMcpSession {
                 Action recordedAction = action instanceof DoAction ? recordedDo((DoAction) action, step.action)
                         : recordable(action, step.outcome);
                 row = rowOf(recordedAction, step.outcome, given);
+                // the agent's and the person's text is taken as it is: a ${ in it is no reference
+                recordedAction = literal(recordedAction);
                 List<String> problems = exportProblems(recordedAction);
                 if (problems.isEmpty()) {
-                    model.append(recordedAction, author, row, action instanceof DoAction ? null : seenOf(step.outcome));
+                    RecordedStep added = model.append(recordedAction, author, row,
+                            action instanceof DoAction ? null : seenOf(step.outcome));
+                    keepOutcome(added, before, after, step);
                     r.set("recorded", mapper.valueToTree(recordedAction));
                     scheduleFolding();
                 } else {
@@ -1243,7 +1342,126 @@ public class UiMcpSession {
         PendingDialog dialog = host.openDialog();
         if (dialog != null) r.set("dialog", mapper.valueToTree(dialog));
         if (passed && !record) row = rowOf(action, step.outcome, given);
+        if (passed && replayed != null) {
+            if (action.id != null && before != null) replayBefore.put(action.id, before);
+            keepOutcome(replayed, before, after, step);
+            if (resolved != null && !resolved.isEmpty()) model.linkSeen(replayed.id, resolved);
+        }
         return new StepRun(r, row);
+    }
+
+    /** A result field only the palette reads: a replayed step failed for a value an earlier step did not make, in words. */
+    private static final String UNRESOLVED = "unresolved";
+
+    /** A replayed step that never ran: a reference of it has no value ({@code e} says which, in words). */
+    private StepRun unresolved(Action action, DriverException e, long started) {
+        ObjectNode r = mapper.createObjectNode();
+        r.put("passed", false);
+        r.put("action", action.describe());
+        r.put("reason", e.reason().name());
+        r.put("message", e.getMessage());
+        r.put("ms", System.currentTimeMillis() - started);
+        r.put(UNRESOLVED, DriverException.stripReason(e.getMessage(), e.reason()));
+        return new StepRun(r, null);
+    }
+
+    /**
+     * Keeps what the record {@code s} changed, from the readings {@code before} and {@code after} it ran (none: nothing
+     * read), and the value a remember step took.
+     */
+    private void keepOutcome(RecordedStep s, UiReading before, UiReading after, StepResult step) {
+        if (before != null && after != null) {
+            Map<String, Object> outcome = Outcomes.diff(before, after);
+            model.outcome(s.id, FlowJson.mapper().valueToTree(outcome), Outcomes.newValues(before, outcome));
+        }
+        if (s.action instanceof RememberVerb && ((RememberVerb) s.action).as != null && step.outcome != null
+                && step.outcome.note != null) {
+            model.runValues().remember(((RememberVerb) s.action).as, step.outcome.note);
+        }
+    }
+
+    /** The app as it is now, for what a step changed; null when it cannot be read (no driver, a remote one). */
+    private UiReading read() {
+        try {
+            return reader.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** The host's driver's reading of the app; null without a driver. */
+    private UiReading readHost() {
+        Verbs verbs = host.verbs();
+        return verbs == null ? null : verbs.readUi();
+    }
+
+    /** {@link #read}, for a value that comes late; one that cannot be read fails the step. */
+    private UiReading readOrFail() {
+        UiReading now = read();
+        if (now == null) throw new DriverException(Reason.NOT_FOUND, "the app could not be read again for a value that comes late");
+        return now;
+    }
+
+    /**
+     * {@code a} with every {@code ${} in its value strings kept as text ({@link Refs#escape}): a step the agent or the
+     * person ran is recorded as typed, never as a reference to an earlier step.
+     */
+    private static Action literal(Action a) {
+        JsonNode tree = FlowJson.mapper().valueToTree(a);
+        JsonNode escaped = Refs.mapValues(tree, Refs::escape);
+        if (escaped.equals(tree)) return a;
+        try {
+            return FlowJson.mapper().treeToValue(escaped, Action.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("a step written to JSON does not read back: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    /** A fresh run of the recording: new {@code run} values, no reading of an earlier replay waited on. */
+    private void startRun() {
+        model.runValues().startRun(RunValues.newRunId(), LocalDateTime.now());
+        replayBefore.clear();
+    }
+
+    /**
+     * Why the records {@code first} to {@code last} (flat, inclusive) cannot replay on their own: the first reference
+     * to what a record before them changed or remembered that this session does not know, in words ("Step 6 uses what
+     * step 3 changed; replay from step 3 or earlier"); null when they can.
+     */
+    private String partialRefusal(int first, int last) {
+        List<Action> actions = model.actions();
+        List<String> labels = StepNumbers.labels(actions);
+        Map<String, Integer> madeAt = new HashMap<String, Integer>();
+        java.util.Set<String> remembered = new java.util.HashSet<String>();
+        for (int i = 0; i <= last; i++) {
+            Action a = actions.get(i);
+            if (i >= first) {
+                List<Refs.Ref> refs;
+                try {
+                    refs = Refs.of(a);
+                } catch (IllegalArgumentException malformed) {
+                    refs = Collections.emptyList();   // the step fails on it when it runs
+                }
+                for (Refs.Ref ref : refs) {
+                    Integer at = madeAt.get(ref.id);
+                    if (at == null || model.runValues().has(ref.id)) continue;
+                    String source = stepNumber(labels.get(at));
+                    return "Step " + stepNumber(labels.get(i)) + " uses what step " + source
+                            + (remembered.contains(ref.id) ? " remembered" : " changed") + "; replay from step " + source
+                            + " or earlier";
+                }
+            }
+            String made = a instanceof RememberVerb ? ((RememberVerb) a).as : a.id;
+            if (made == null) continue;
+            // made again within the replay: it is there when a later step needs it
+            if (i >= first) {
+                madeAt.remove(made);
+            } else {
+                madeAt.put(made, i);
+                if (a instanceof RememberVerb) remembered.add(made); else remembered.remove(made);
+            }
+        }
+        return null;
     }
 
     /**
@@ -1435,9 +1653,9 @@ public class UiMcpSession {
         return action(tree);
     }
 
-    /** The palette's replay of a recorded step: it runs, nothing is recorded. */
-    private synchronized StepRun replayStep(JsonNode json) {
-        return runStep(json, false, RecordedStep.Author.AGENT, null);
+    /** The palette's replay of the recorded step {@code step} ({@code json}): it runs, nothing is recorded. */
+    private synchronized StepRun replayStep(JsonNode json, RecordedStep step) {
+        return runStep(json, false, RecordedStep.Author.AGENT, null, step);
     }
 
     /** The person's check: it runs and is recorded when it passes. */
@@ -2448,8 +2666,15 @@ public class UiMcpSession {
     /** Replays steps {@code a} to {@code b} under the agent's hold (see {@link #agentReplaying}); resets first from step 1. */
     private ObjectNode replay(int a, int b, long pause) {
         int[] range = model.flatRange(a, b);   // refuses a number that is no step
-        model.replayStarted();   // nothing recorded before it folds with what follows
         boolean reset = a == 1;
+        if (reset) {
+            startRun();
+        } else {
+            replayBefore.clear();
+            String why = partialRefusal(range[0], range[1]);
+            if (why != null) throw new DriverException(Reason.BAD_INPUT, why);
+        }
+        model.replayStarted();   // nothing recorded before it folds with what follows
         ObjectNode r = mapper.createObjectNode();
         ArrayNode results = mapper.createArrayNode();
         // the palette hears of it before a refused palette call can: a ● Record refused for it finds its bar there
@@ -2481,7 +2706,7 @@ public class UiMcpSession {
                 ObjectNode step;
                 RowChoice row;
                 try {
-                    StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null);
+                    StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null, recorded);
                     step = run.result;
                     row = run.row;
                 } catch (DriverException e) {
@@ -2583,6 +2808,7 @@ public class UiMcpSession {
 
     /** A redo from the first step has nothing to replay: only the reset. */
     private ObjectNode resetOnly() {
+        startRun();
         model.replayStarted();
         if (palette) view.agentReplaying("resetting the app");
         agentReplaying = "reset";

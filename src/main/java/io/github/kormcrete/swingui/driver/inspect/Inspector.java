@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.driver.model.Refs;
 import io.github.kormcrete.swingui.driver.model.Resolved;
 import io.github.kormcrete.swingui.driver.model.Resolver;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.ListWidget;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
@@ -106,6 +107,12 @@ public final class Inspector {
      */
     public static final String SEEN = "seen";
 
+    /**
+     * A key beside the person's step map (never part of the step): its number in the order the person's steps went out,
+     * which {@link Sink#outcome} names to say what that step changed. It is removed before the step is parsed.
+     */
+    public static final String SEQ = "seq";
+
     /** Where the person's steps and checks go: the session that records the agent's steps too. Never called on the EDT. */
     public interface Sink {
         /**
@@ -120,6 +127,13 @@ public final class Inspector {
 
         /** A step the person already did: record it. */
         Result done(Map<String, Object> step);
+
+        /**
+         * What the person's step {@code seq} ({@link #SEQ}) changed in the app, read at their next input (or when the
+         * agent began to act): {@code outcome} as {@link io.github.kormcrete.swingui.driver.outcome.Outcomes#diff} gives
+         * it, and its {@code newValues} (value to path). Comes after that step's {@link #done} and before the next one's.
+         */
+        default void outcome(int seq, Map<String, Object> outcome, Map<String, String> newValues) { }
 
         /**
          * Something the person did that no step can say ({@code line}: what and why, e.g. "the expand arrow of 'Office':
@@ -141,6 +155,15 @@ public final class Inspector {
 
         /** Runs step {@code index} again, without recording it. */
         Result replay(int index);
+
+        /**
+         * A replay of the records {@code from} to {@code to} (exclusive) begins, before its first {@link #replay}; from 0
+         * the app was just reset, a fresh run. Refused when a step in it uses what a step before {@code from} changed
+         * and nothing in this session says that yet; the result's line says which, in words.
+         */
+        default Result replaying(int from, int to) {
+            return new Result(true, "");
+        }
 
         /**
          * Drops the STEP of the record with {@code id} (a check id means its step) and every step after it (a redo's cut).
@@ -469,7 +492,13 @@ public final class Inspector {
      * the app runs, also after the window's overlay went; never saved, so the next start picks again.
      */
     private final Map<JRootPane, double[]> homes = new WeakHashMap<JRootPane, double[]>();
-    private Recording recording;
+    /** Read off the EDT too: the agent's step asks it whether a person's step still waits for what it changed. */
+    private volatile Recording recording;
+    /**
+     * Reads the app's windows for what a person's step changed ({@link io.github.kormcrete.swingui.driver.outcome.UiReader});
+     * null: their steps get no outcome. EDT.
+     */
+    volatile Supplier<UiReading> reader;
     /** While the agent replays: its bar, without buttons, in place of the palette's. EDT. */
     private Bar agentBar;
     /** Load recorded test…'s panel while it is open. EDT. */
@@ -499,7 +528,10 @@ public final class Inspector {
 
     /** The one inspector of this JVM, over the driver's own model. */
     public static synchronized Inspector of(Driver driver) {
-        if (instance == null) instance = new Inspector(driver.refs(), driver.resolver(), driver.recorder());
+        if (instance == null) {
+            instance = new Inspector(driver.refs(), driver.resolver(), driver.recorder());
+            instance.reader = () -> driver.verbs().readUiHere();
+        }
         return instance;
     }
 
@@ -551,10 +583,36 @@ public final class Inspector {
     public static void agentActing(boolean on) {
         if (on) {
             agentActing.incrementAndGet();
+            agentSteps.incrementAndGet();
+            Inspector i = instance;
+            if (i != null) i.agentStarts();
             return;
         }
         Inspector i = instance;
         if (agentActing.decrementAndGet() == 0 && i != null) SwingUtilities.invokeLater(i::agentDone);
+    }
+
+    /** How many of the agent's own steps began so far: the person's next input reads the app again after one. */
+    private static final java.util.concurrent.atomic.AtomicInteger agentSteps = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** {@link #agentSteps} now. */
+    static int agentStepsSoFar() {
+        return agentSteps.get();
+    }
+
+    /**
+     * The agent begins to act: a person's step that still waits for what it changed gets it now, read before the
+     * agent's input reaches the app. Waits for the EDT only then.
+     */
+    private void agentStarts() {
+        Recording r = recording;
+        if (r == null || !r.awaitsOutcome()) return;
+        try {
+            Edt.run(r::readNow);
+        } catch (RuntimeException e) {
+            // what the person's step changed is extra: the agent's step goes on without it
+            System.err.println("swing-ui-agent inspector: " + e);
+        }
     }
 
     /** How many runs of several agent steps are going on now (a batch, a replay, a recorded test's run). */

@@ -85,7 +85,11 @@ public class FlowExecutor {
     }
 
     private long linkWait() {
-        if (linkWaitMs != null) return linkWaitMs;
+        return linkWaitMs != null ? linkWaitMs : defaultLinkWait();
+    }
+
+    /** How long a reference waits for its value by default: the driver's expect timeout. */
+    public static long defaultLinkWait() {
         Driver driver = Driver.current();
         return driver != null ? driver.settings().expectMillis : DriverSettings.defaults(LaunchMode.NORMAL).expectMillis;
     }
@@ -203,36 +207,13 @@ public class FlowExecutor {
             }
         }
 
-        /**
-         * The step with its references filled in. A reference to a step's outcome that has no value yet is read again
-         * every {@link #LINK_POLL_MS} until it has one or the wait is over; then the step fails, saying in words what
-         * the earlier step did not do. Never the value the recording saw.
-         */
+        /** The step with its references filled in, waiting for a late value ({@link #fill(Action, RunValues, Map, OutcomeSource, long, Flow)}). */
         Action fill(Action a) {
             if (a instanceof RememberVerb && ((RememberVerb) a).as != null) {
                 String problem = RecordedTestFiles.idProblem(((RememberVerb) a).as);
                 if (problem != null) throw new DriverException(Reason.BAD_INPUT, "remember as '" + ((RememberVerb) a).as + "': " + problem);
             }
-            Long deadline = null;
-            while (true) {
-                try {
-                    return Resolution.fill(a, values);
-                } catch (RunValues.UnresolvedReference e) {
-                    UiReading was = before.get(e.ref.id);
-                    long now = System.nanoTime();
-                    if (deadline == null) deadline = now + linkWait() * 1_000_000L;
-                    if (was == null || now - deadline >= 0) {
-                        throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, flow));
-                    }
-                    try {
-                        Thread.sleep(LINK_POLL_MS);
-                    } catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                        throw new DriverException(Reason.TIMEOUT, "interrupted while waiting for " + e.ref.source);
-                    }
-                    values.put(e.ref.id, outcome(was, outcomes.read()));
-                }
-            }
+            return FlowExecutor.fill(a, values, before, outcomes, linkWait(), flow);
         }
 
         /** Reads the app before a step that a later step names. */
@@ -255,6 +236,37 @@ public class FlowExecutor {
 
         void forget() {
             pending = null;
+        }
+    }
+
+    /**
+     * {@code a} with its references filled in from {@code values} ({@link Resolution#fill}). A reference to a step's
+     * outcome that has no value yet is read again every {@link #LINK_POLL_MS} - what changed since the reading taken
+     * before that step ({@code before}, by id; a step without one is not waited for) - until it has one or
+     * {@code waitMillis} is over; then the step fails (NOT_FOUND), saying in words what the earlier step of
+     * {@code steps} did not do. Never the value the recording saw.
+     */
+    public static Action fill(Action a, RunValues values, Map<String, UiReading> before, OutcomeSource source,
+                              long waitMillis, Flow steps) {
+        Long deadline = null;
+        while (true) {
+            try {
+                return Resolution.fill(a, values);
+            } catch (RunValues.UnresolvedReference e) {
+                UiReading was = before.get(e.ref.id);
+                long now = System.nanoTime();
+                if (deadline == null) deadline = now + waitMillis * 1_000_000L;
+                if (was == null || now - deadline >= 0) {
+                    throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, steps));
+                }
+                try {
+                    Thread.sleep(LINK_POLL_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new DriverException(Reason.TIMEOUT, "interrupted while waiting for " + e.ref.source);
+                }
+                values.put(e.ref.id, outcome(was, source.read()));
+            }
         }
     }
 

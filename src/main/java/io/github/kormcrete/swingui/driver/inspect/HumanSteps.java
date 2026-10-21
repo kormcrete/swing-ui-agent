@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
 import io.github.kormcrete.swingui.driver.widgets.TreeWidget;
 
@@ -48,6 +49,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Turns what the person does in the app into the steps the agent would have sent: a press-and-release on one
@@ -114,13 +116,36 @@ final class HumanSteps implements AWTEventListener {
     /** Hears every popup menu open and close (Swing tells its menu selection manager). */
     private final ChangeListener popups = e -> popupsChanged();
 
+    /** Reads the app at a step's boundary ({@link #readings}); null: no readings. */
+    private Supplier<UiReading> reader;
+    private Consumer<UiReading> boundary;
+    /** A step went out (or the recorder just started listening) since the app was last read. */
+    private boolean readNext = true;
+    /** {@link Inspector#agentStepsSoFar} at the last reading: after an agent's step the app is read again. */
+    private int agentStepsRead;
+
     HumanSteps(Inspector inspector, Consumer<Map<String, Object>> emit, Consumer<String> notRecorded) {
         this.inspector = inspector;
-        this.emit = emit;
+        this.emit = step -> {
+            readNext = true;
+            emit.accept(step);
+        };
         this.notRecorded = notRecorded;
     }
 
+    /**
+     * What the person's steps changed: at the first input after a step went out (a key or a mouse button pressed, a
+     * mouse button released) the app is read with {@code reader} before the event reaches it, and
+     * {@code boundary} gets the reading - what the last step left, and what the next one starts from. Also at the first
+     * input once listening and after an agent's step. EDT.
+     */
+    void readings(Supplier<UiReading> reader, Consumer<UiReading> boundary) {
+        this.reader = reader;
+        this.boundary = boundary;
+    }
+
     void active(boolean on) {
+        if (on) readNext = true;
         if (on && !installed) {
             Toolkit.getDefaultToolkit().addAWTEventListener(this,
                     AWTEvent.MOUSE_EVENT_MASK | AWTEvent.KEY_EVENT_MASK | AWTEvent.FOCUS_EVENT_MASK);
@@ -171,12 +196,32 @@ final class HumanSteps implements AWTEventListener {
         if (Inspector.agentIsActing()) return;
         Object source = event.getSource();
         if (!(source instanceof Component) || Overlay.ours((Component) source)) return;
+        readAtInput(event);
         try {
             if (event instanceof MouseEvent) mouse((MouseEvent) event);
             else if (event instanceof KeyEvent) key((KeyEvent) event);
             else if (event instanceof FocusEvent) focus((FocusEvent) event);
         } catch (RuntimeException e) {
             // recording must never break the app's own event handling
+            System.err.println("swing-ui-agent inspector: " + e);
+        }
+    }
+
+    /** Reads the app at the first input after a step ({@link #readings}); never breaks the app's event handling. */
+    private void readAtInput(AWTEvent event) {
+        int id = event.getID();
+        // a press, or the release of a press that sent a step out: never what follows from it by itself (a click, a
+        // typed key, a release), which the app's work right after a step may still change, nor a focus change
+        if (reader == null || id != MouseEvent.MOUSE_PRESSED && id != MouseEvent.MOUSE_RELEASED && id != KeyEvent.KEY_PRESSED) {
+            return;
+        }
+        int agentSteps = Inspector.agentStepsSoFar();
+        if (!readNext && agentSteps == agentStepsRead) return;
+        readNext = false;
+        agentStepsRead = agentSteps;
+        try {
+            boundary.accept(reader.get());
+        } catch (RuntimeException e) {
             System.err.println("swing-ui-agent inspector: " + e);
         }
     }

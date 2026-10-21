@@ -767,4 +767,86 @@ class RecordingModelTest {
         model.rowKnown(id, new RowChoice(0, null));
         assertThat(model.lastChange()).isEqualTo("the row alternatives of check 2.1 are known");
     }
+
+    // ---- what each step changed (its outcome) and the session's values -------------------------------------------
+
+    private static com.fasterxml.jackson.databind.node.ObjectNode added(String number) {
+        com.fasterxml.jackson.databind.node.ObjectNode o = io.github.kormcrete.swingui.flow.FlowJson.mapper().createObjectNode();
+        o.putObject("rows").putObject("Orders").putArray("added").addObject().put("Number", number);
+        return o;
+    }
+
+    private static java.util.Map<String, String> index(String number) {
+        return Collections.singletonMap(number, ".rows.Orders.added[0].Number");
+    }
+
+    private static ClickVerb withId(ClickVerb c, String id) {
+        c.id = id;
+        return c;
+    }
+
+    @Test
+    void anOutcomeIsKeptOnItsStepAndInTheSessionsValues() {
+        RecordedStep copy = model.append(withId(click("Copy"), "copy"), AGENT);
+        RecordedStep save = model.append(click("Save"), PERSON);
+        int rev = model.rev();
+
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        model.outcome(save.id, added("ORD-1642"), index("ORD-1642"));
+
+        assertThat(model.records().get(0).outcome.at("/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
+        assertThat(model.records().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+        // by its id, or by the internal key of a step without one
+        assertThat(model.runValues().fill("${copy.rows.Orders.added[0].Number}")).isEqualTo("ORD-1641");
+        assertThat(model.runValues().has("#" + save.id)).isTrue();
+        // no edit of the steps: an edit listed before still applies
+        assertThat(model.rev()).isEqualTo(rev);
+    }
+
+    @Test
+    void olderOutcomesShrinkToTheValueIndexWhichStillResolves() {
+        RecordedStep copy = model.append(withId(click("Copy"), "copy"), AGENT);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        for (int i = 0; i < RecordingModel.FULL_OUTCOMES; i++) {
+            RecordedStep s = model.append(click("Next " + i), AGENT);
+            model.outcome(s.id, added("ORD-" + (1700 + i)), index("ORD-" + (1700 + i)));
+        }
+
+        RecordedStep first = model.records().get(0);
+        assertThat(first.outcome).isNull();
+        assertThat(first.newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+        assertThat(model.records().get(1).outcome).isNotNull();
+        assertThat(model.runValues().fill("${copy.rows.Orders.added[0].Number}")).isEqualTo("ORD-1641");
+    }
+
+    @Test
+    void anEditOfTheActionKeepsWhatTheStepChangedAndUndoToo() {
+        RecordedStep copy = model.append(click("Copy"), AGENT);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+
+        model.replace(at("1"), click("Copy order"), PERSON);
+        assertThat(model.records().get(0).outcome).isNotNull();
+        model.undo(PERSON);
+        assertThat(model.records().get(0).outcome).isNotNull();
+        assertThat(model.records().get(0).newValues).containsKey("ORD-1641");
+    }
+
+    @Test
+    void clearStopAndLoadForgetEveryOutcome() {
+        RecordedStep copy = model.append(withId(click("Copy"), "copy"), AGENT);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        model.stop();
+        assertThat(model.records().get(0).outcome).isNull();
+        assertThat(model.records().get(0).newValues).isEmpty();
+        assertThat(model.runValues().has("copy")).isFalse();
+
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        model.clear();
+        assertThat(model.runValues().has("copy")).isFalse();
+
+        RecordedStep again = model.append(withId(click("Copy"), "copy"), AGENT);
+        model.outcome(again.id, added("ORD-1641"), index("ORD-1641"));
+        model.load(java.util.Arrays.<Action>asList(withId(click("Copy"), "copy")), RecordedStep.Author.LOADED);
+        assertThat(model.runValues().has("copy")).isFalse();
+    }
 }

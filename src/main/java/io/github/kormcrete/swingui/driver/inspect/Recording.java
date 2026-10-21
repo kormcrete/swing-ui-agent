@@ -1,6 +1,8 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
 import io.github.kormcrete.swingui.driver.model.Locator;
+import io.github.kormcrete.swingui.driver.outcome.Outcomes;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 
 import javax.swing.JComponent;
 import javax.swing.JRootPane;
@@ -145,6 +147,7 @@ final class Recording {
         this.home = home;
         this.recordAgain = recordAgain;
         this.steps = new HumanSteps(inspector, this::emit, this::notRecorded);
+        if (inspector.reader != null) steps.readings(inspector.reader, this::boundary);
         this.activeBar = new Bar("Recording", RECORD_HINT).dot(RED, true)
                 .button("Record", Overlay.NO, () -> mode(false))
                 .button("Check", Overlay.YES, () -> mode(true))
@@ -356,6 +359,8 @@ final class Recording {
     private void stop(boolean person, String why) {
         steps.flush();
         steps.active(false);
+        // the session forgets what the steps changed at Done: the last one's comes too late
+        awaiting = 0;
         stopListeningForEscape();
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         state = State.STOPPED;
@@ -418,6 +423,7 @@ final class Recording {
     /** Stops for good: a new recording replaces this one. */
     void dispose() {
         stopped = true;
+        awaiting = 0;
         next.release();
         live.stop();
         if (noteTimer != null) noteTimer.stop();
@@ -433,7 +439,43 @@ final class Recording {
         if (!done.isDone()) done.complete(new ArrayList<String>(lines));
     }
 
+    /** The number of the person's last step handed to the sink ({@link Inspector#SEQ}). EDT. */
+    private int seq;
+    /** The person's step that waits for what it changed (its {@link #seq}); 0 when none. Read off the EDT too. */
+    private volatile int awaiting;
+    /** The app as read where the waiting step began; null before the first reading. EDT. */
+    private UiReading before;
+
+    /**
+     * The app as the person's next input (or the agent) finds it, {@code now}: what the waiting step changed goes to the
+     * sink (compared there, off the EDT) ahead of any later step, and {@code now} is where the next step begins. EDT.
+     */
+    void boundary(UiReading now) {
+        int step = awaiting;
+        UiReading was = before;
+        awaiting = 0;
+        before = now;
+        if (step == 0 || was == null) return;
+        sinkThread.submit(() -> {
+            Map<String, Object> outcome = Outcomes.diff(was, now);
+            sink.outcome(step, outcome, Outcomes.newValues(was, outcome));
+        });
+    }
+
+    /** Whether a person's step waits for what it changed. Any thread. */
+    boolean awaitsOutcome() {
+        return awaiting != 0;
+    }
+
+    /** The agent begins to act: the waiting step gets what it changed from a reading now. EDT. */
+    void readNow() {
+        if (awaiting == 0 || inspector.reader == null) return;
+        boundary(inspector.reader.get());
+    }
+
     private void emit(Map<String, Object> step) {
+        step.put(Inspector.SEQ, ++seq);
+        awaiting = seq;
         sinkThread.submit(() -> {
             Inspector.Result r = sink.done(step);
             SwingUtilities.invokeLater(() -> show(r));
@@ -963,6 +1005,14 @@ final class Recording {
         // the counter counts steps only: a check shows its step's number
         final String total = n <= from ? "" : StepsPanel.stepOf(labels.get(n - 1));
         int failed = -1;
+        if (n > from) {
+            // a step that uses what an earlier one changed needs that earlier one in this replay or in this session
+            Inspector.Result start = sink.replaying(from, n);
+            if (!start.ok) {
+                ended("✗ " + start.line, -1, false, wasChecking, after);
+                return;
+            }
+        }
         Inspector.onEdt(() -> {
             // marks from an earlier run must not mix with this one
             for (int i = from; i < n; i++) marks.remove(all.get(i).id);

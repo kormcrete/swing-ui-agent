@@ -70,4 +70,19 @@ class JsonPathsTest {
     assertThrows(IllegalArgumentException.class, () -> JsonPaths.check("$.a['x"));
     assertThrows(IllegalArgumentException.class, () -> JsonPaths.check("$[?(@.k ~ 'v')]"));
   }
+
+  @Test
+  void putMakesThePlaceAndSelectFindsItAgain() {
+    com.fasterxml.jackson.databind.node.ObjectNode root = new ObjectMapper().createObjectNode();
+    JsonPaths.put(root, "$.rows.Orders.added[1].Number", "ORD-1641");
+    JsonPaths.put(root, "$.rows.Orders.added[1]['Order date']", "2026-10-21");
+    JsonPaths.put(root, "$.fields.Status", "New");
+    assertEquals("ORD-1641", JsonPaths.select(root, "$.rows.Orders.added[1].Number").get(0).asText());
+    assertEquals("2026-10-21", JsonPaths.select(root, "$.rows.Orders.added[-1]['Order date']").get(0).asText());
+    assertTrue(JsonPaths.select(root, "$.rows.Orders.added[0]").get(0).isNull());
+    assertEquals("New", JsonPaths.select(root, "$.fields.Status").get(0).asText());
+    assertThrows(IllegalArgumentException.class, () -> JsonPaths.put(root, "$.rows[*].x", "v"));
+    assertThrows(IllegalArgumentException.class, () -> JsonPaths.put(root, "$.rows.Orders.added[-1].Number", "v"));
+    assertThrows(IllegalArgumentException.class, () -> JsonPaths.put(root, "$.fields.Status.deeper", "v"));
+  }
 }

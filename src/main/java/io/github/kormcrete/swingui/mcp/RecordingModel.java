@@ -9,12 +9,17 @@ import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.StepNumbers;
+import io.github.kormcrete.swingui.flow.refs.JsonPaths;
+import io.github.kormcrete.swingui.flow.refs.RunValues;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.time.LocalDateTime;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,6 +85,8 @@ final class RecordingModel {
     private boolean shared;
     /** Records with this id or a lower one were there when a replay last started: none folds with a later one. */
     private int replayFloor;
+    /** What the steps changed and remembered, by step id (or {@link #key}), and this run's {@code run} values. */
+    private RunValues runValues = freshValues();
 
     State state() {
         return state;
@@ -124,8 +131,9 @@ final class RecordingModel {
         changed("the " + by.json + " resumed the recording");
     }
 
-    /** Ends the recording: no further step joins it. */
+    /** Ends the recording: no further step joins it, and what its steps changed is forgotten. */
     void stop() {
+        forgetOutcomes();
         state = State.STOPPED;
         changed("the recording stopped");
     }
@@ -239,6 +247,7 @@ final class RecordingModel {
         steps.clear();
         notRecorded.clear();
         history.clear();
+        runValues = freshValues();
         state = State.IDLE;
         explicit = false;
         shared = false;
@@ -259,6 +268,7 @@ final class RecordingModel {
         steps.clear();
         history.clear();
         steps.addAll(loaded);
+        runValues = freshValues();
         changed("a recorded test was loaded");
     }
 
@@ -781,7 +791,7 @@ final class RecordingModel {
                 throw bad("the steps are not in one group (nothing folded)");
             }
             if (r.folded()) raw.addAll(r.raw);
-            else raw.add(r.keptRaw(false));
+            else raw.add(r.keptRaw(false).shrunk());
         }
         int a = addressOf(ids.get(0)).step;
         int b = addressOf(ids.get(ids.size() - 1)).step;
@@ -866,6 +876,94 @@ final class RecordingModel {
         return -1;
     }
 
+    // ------------------------------------------------------------------ what the steps changed (outcomes)
+
+    /** How many of the latest steps keep their whole outcome; older ones keep only their value index. */
+    static final int FULL_OUTCOMES = 20;
+
+    private static RunValues freshValues() {
+        return new RunValues(RunValues.newRunId(), LocalDateTime.now());
+    }
+
+    /**
+     * The values references use in this session: what each step changed when it last ran, under its {@code id} or, for
+     * a step without one, {@code #<record id>}; what was remembered; the {@code run} values.
+     */
+    RunValues runValues() {
+        return runValues;
+    }
+
+    /** The name a step's outcome is kept under in {@link #runValues}: its {@code id}, else {@code #<record id>}. */
+    static String key(RecordedStep s) {
+        return s.action.id != null ? s.action.id : "#" + s.id;
+    }
+
+    /**
+     * What the record {@code id} changed when it ran just now: kept on it (whole, the older ones shrinking to their value
+     * index) and in {@link #runValues}, newer than what was there. Nothing when the record is gone. Not an edit: no new
+     * revision.
+     */
+    void outcome(int id, ObjectNode outcome, Map<String, String> newValues) {
+        int i = indexOf(id);
+        if (i < 0) return;
+        RecordedStep s = steps.get(i).withOutcome(outcome, newValues);
+        steps.set(i, s);
+        runValues.put(key(s), outcome);
+        shrinkOlderThan(FULL_OUTCOMES);
+    }
+
+    /** The values the references of record {@code id} stood for when it ran just now. Not an edit. */
+    void linkSeen(int id, Map<String, String> seen) {
+        int i = indexOf(id);
+        if (i >= 0) steps.set(i, steps.get(i).withLinkSeen(seen));
+    }
+
+    /**
+     * Keeps the whole outcome of the last {@code keep} records that have one; older ones keep only their value index
+     * ({@link RecordedStep#newValues}), here, in the undo history and in {@link #runValues}, where a reference to one
+     * of those values still finds it.
+     */
+    void shrinkOlderThan(int keep) {
+        Set<Integer> whole = new HashSet<Integer>();
+        for (int i = steps.size() - 1; i >= 0 && whole.size() < keep; i--) {
+            if (steps.get(i).outcome != null) whole.add(steps.get(i).id);
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            RecordedStep s = steps.get(i);
+            if (s.outcome == null || whole.contains(s.id)) continue;
+            steps.set(i, s.shrunk());
+            runValues.put(key(s), indexTree(s.newValues));
+        }
+        for (Edit e : history) {
+            for (int i = 0; i < e.before.size(); i++) {
+                RecordedStep s = e.before.get(i);
+                if (s.outcome != null && !whole.contains(s.id)) e.before.set(i, s.shrunk());
+            }
+        }
+    }
+
+    /** Forgets what every step changed (Done, stop): their outcomes, value indexes and the session's values. */
+    private void forgetOutcomes() {
+        for (int i = 0; i < steps.size(); i++) steps.set(i, steps.get(i).withoutOutcome());
+        for (Edit e : history) {
+            for (int i = 0; i < e.before.size(); i++) e.before.set(i, e.before.get(i).withoutOutcome());
+        }
+        runValues = freshValues();
+    }
+
+    /** An outcome holding only the values of a value index, each at its path. */
+    private static ObjectNode indexTree(Map<String, String> newValues) {
+        ObjectNode root = FlowJson.mapper().createObjectNode();
+        for (Map.Entry<String, String> v : newValues.entrySet()) {
+            try {
+                JsonPaths.put(root, "$" + v.getValue(), v.getKey());
+            } catch (IllegalArgumentException clash) {
+                // two values on one path cannot both be kept: the first stays
+            }
+        }
+        return root;
+    }
+
     // ------------------------------------------------------------------ undo
 
     /** The records after the last edit is taken back, or null when there is nothing to undo. */
@@ -873,7 +971,14 @@ final class RecordingModel {
         Edit e = history.peekFirst();
         if (e == null) return null;
         List<RecordedStep> out = new ArrayList<RecordedStep>(e.before.size());
-        for (RecordedStep s : e.before) out.add(e.keepRawOnUndo.contains(s.id) ? s.keptRaw(true) : s);
+        Map<Integer, RecordedStep> now = new HashMap<Integer, RecordedStep>();
+        for (RecordedStep s : steps) now.put(s.id, s);
+        for (RecordedStep s : e.before) {
+            // what a step changed in the app is no edit: undo keeps what is known now
+            RecordedStep current = now.get(s.id);
+            if (current != null) s = s.withOutcome(current.outcome, current.newValues);
+            out.add(e.keepRawOnUndo.contains(s.id) ? s.keptRaw(true) : s);
+        }
         if (!e.cut) {
             // records made since join as they would have: an action never in a group, a check in its step's
             for (RecordedStep s : steps) {

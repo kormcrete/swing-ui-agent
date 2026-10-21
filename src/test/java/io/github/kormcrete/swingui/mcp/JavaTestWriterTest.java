@@ -410,6 +410,14 @@ class JavaTestWriterTest {
     }
 
     @Test
+    void aRecordingKeepsAStepThatUsesEarlierValuesOutOfItsJavaCheck() throws Exception {
+        TypeVerb t = new TypeVerb(); t.target = Locator.of("text", "Note"); t.text = "Copy ${run.id}";
+        String source = JavaTestWriter.write(Arrays.<Action>asList(click(Locator.of("button", "Copy")), t), "demo",
+                "CopyUiIT", "copy", JavaTestWriter.DoForms.NONE_KEEPING_REFERENCES);
+        assertThat(source).contains("ui.button(\"Copy\").click();").doesNotContain("run.id");
+    }
+
+    @Test
     void aTypeWithAPointIsStillRefused() {
         Locator l = Locator.of("clickable", "Canvas");
         l.point = new LinkedHashMap<>();

@@ -31,6 +31,7 @@ import java.awt.event.MouseEvent;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -1012,6 +1013,52 @@ class RecordingTest {
         eventually(() -> !recording.replaying && sink.log.size() == 2 ? Boolean.TRUE : null);
         Thread.sleep(100);
         assertThat(sink.log).containsExactly("replay 1", "replay 2");
+    }
+
+    @Test
+    void fromSelectedThatNeedsWhatAnEarlierStepChangedIsRefusedBeforeAnyStep() throws Exception {
+        sink.person("click(#copy)", "type(#search)");
+        sink.replaying = new Inspector.Result(false, "Step 2 uses what step 1 changed; replay from step 1 or earlier");
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.select(1);
+            recording.panel.press("▶ From selected");
+        });
+        eventually(() -> !recording.replaying ? Boolean.TRUE : null);
+        assertThat(sink.replays).containsExactly("1-2");
+        assertThat(sink.log).isEmpty();
+        assertThat(recording.bar.text()).isEqualTo("✗ Step 2 uses what step 1 changed; replay from step 1 or earlier");
+    }
+
+    @Test
+    void whatAPersonsStepChangedGoesToTheSessionBeforeTheirNextStep() throws Exception {
+        JButton save = appButton();
+        List<io.github.kormcrete.swingui.driver.outcome.UiReading> readings = Collections.synchronizedList(
+                new ArrayList<io.github.kormcrete.swingui.driver.outcome.UiReading>(Arrays.asList(
+                        orders("ORD-1640"), orders("ORD-1640", "ORD-1641"))));
+        scene.inspector.reader = () -> readings.size() > 1 ? readings.remove(0) : readings.get(0);
+        recordInFrame();
+        // two Escapes, each a press step at once: the second is the person's next input after the first
+        SwingUtilities.invokeAndWait(() -> dispatch(esc(save, KeyEvent.KEY_PRESSED)));
+        SwingUtilities.invokeAndWait(() -> dispatch(esc(save, KeyEvent.KEY_PRESSED)));
+
+        assertThat(eventually(() -> sink.changes.size() < 3 ? null : new ArrayList<String>(sink.changes)))
+                .containsExactly("step 1", "outcome 1 [ORD-1641]", "step 2");
+    }
+
+    /** {@code e} as the toolkit hands it to the person's recorder. EDT. */
+    private static void dispatch(java.awt.AWTEvent e) {
+        for (AWTEventListener l : Toolkit.getDefaultToolkit().getAWTEventListeners()) {
+            if (((AWTEventListenerProxy) l).getListener() instanceof HumanSteps) l.eventDispatched(e);
+        }
+    }
+
+    private static io.github.kormcrete.swingui.driver.outcome.UiReading orders(String... numbers) {
+        List<List<String>> rows = new ArrayList<List<String>>();
+        for (String n : numbers) rows.add(Collections.singletonList(n));
+        return io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Orders", Collections.singletonList("Number"), rows).build();
     }
 
     @Test
