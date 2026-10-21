@@ -97,10 +97,25 @@ class FixtureAppDriveIT {
         assertThat(listening.await(60, TimeUnit.SECONDS)).as("the agent never listened:\n" + appOutput).isTrue();
     }
 
+    @AfterAll
+    static void stopTheApp() throws Exception {
+        try {
+            if (testsDir != null) {
+                try (Stream<Path> all = Files.walk(testsDir)) {
+                    all.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+                }
+            }
+        } finally {
+            // the app this class started last: the first one, or the one a case started in its place
+            stopApp();
+        }
+    }
+
     private static void stopApp() throws Exception {
         if (app == null) return;
         app.destroy();
-        if (!app.waitFor(10, TimeUnit.SECONDS)) app.destroyForcibly();
+        // gone before the next app starts or the build cleans: a live JVM keeps the agent jar open on Windows
+        if (!app.waitFor(10, TimeUnit.SECONDS)) app.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
         app = null;
     }
 
@@ -521,10 +536,13 @@ class FixtureAppDriveIT {
             // changed (read again until the agent's next action)
             awaitFound("{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1003'}}");
             step("click", "{'target':{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1003'},'column':'Number'}}");
+            // a check of the copy's own number: new on every run, so linked to what Copy added
+            step("expect", "{'target':{" + REGISTER + ",'name':'Register'},'cell':{'row':{'Number':'REG-1003'},"
+                    + "'column':'Number','expected':'REG-1003'}}");
             JsonNode remembered = call("recording", "{'op':'remember','target':{" + REGISTER + ",'name':'Register',"
                     + "'column':'Number'},'selected':true,'as':'copyNumber'}");
             assertThat(remembered.path("did").asText()).as(remembered.path("why").asText())
-                    .isEqualTo("remembered REG-1003 as copyNumber (check 4.1)");
+                    .isEqualTo("remembered REG-1003 as copyNumber (check 4.2)");
             step("type", "{'target':{" + REGISTER + ",'role':'text','name':'Note'},'text':'Copied note'}");
             JsonNode unique = call("recording", "{'op':'unique','n':5,'where':'end'}");
             assertThat(unique.path("did").asText()).as(unique.path("why").asText())
@@ -535,7 +553,7 @@ class FixtureAppDriveIT {
 
             // the person's words for each step, and the note's two steps under one sentence
             String[][] said = {{"1", "Open the register"}, {"2", "Pick the first record"}, {"3", "Copy it"},
-                    {"4", "Open the copy"}, {"5", "Write a note of this run"}, {"6", "Save the note"},
+                    {"4", "Open the copy"}, {"'4.1'", "It has the new number"}, {"5", "Write a note of this run"}, {"6", "Save the note"},
                     {"'6.1'", "The copy keeps the note"}};
             for (String[] say : said) call("recording", "{'op':'edit','n':" + say[0] + ",'say':'" + say[1] + "'}");
             call("recording", "{'op':'group','from':5,'to':6,'say':'Note the copy'}");
@@ -545,8 +563,12 @@ class FixtureAppDriveIT {
             JsonNode steps = list.path("steps");
             assertThat(steps).as(why).hasSize(6);
             // the copy's number came from what Copy changed: linked at once, as the click on it was recorded
+            String copied = "${copy.rows.Register.added[0].Number}";
             assertThat(steps.path(3).path("step").path("target").path("row").path("Number").asText()).as(why)
-                    .isEqualTo("${copy.rows.Register.added[0].Number}");
+                    .isEqualTo(copied);
+            JsonNode own = steps.path(3).path("checks").path(0).path("step").path("cell");
+            assertThat(own.path("row").path("Number").asText()).as(why).isEqualTo(copied);
+            assertThat(own.path("expected").asText()).as(why).isEqualTo(copied);
             assertThat(steps.path(4).path("step").path("text").asText()).as(why).isEqualTo("Copied note ${run.id}");
             JsonNode check = steps.path(5).path("checks").path(0).path("step");
             // the check names the row by the remembered number and expects the unique note
@@ -567,7 +589,7 @@ class FixtureAppDriveIT {
         assertThat(json.path("version").asInt()).as(file).isEqualTo(4);
         // everything the agent built is in the file: sentences, the group, the links, the remembered name, the run's id
         assertThat(file).as(file).contains("\"Open the register\"", "\"Pick the first record\"", "\"Copy it\"",
-                "\"Open the copy\"", "\"Write a note of this run\"", "\"Save the note\"", "\"The copy keeps the note\"",
+                "\"Open the copy\"", "\"It has the new number\"", "\"Write a note of this run\"", "\"Save the note\"", "\"The copy keeps the note\"",
                 "\"Note the copy\"", "\"id\" : \"copy\"", "\"${copy.rows.Register.added[0].Number}\"",
                 "\"as\" : \"copyNumber\"", "\"${copyNumber}\"", "\"Copied note ${run.id}\"")
                 .doesNotContain("REG-1003");
@@ -635,7 +657,7 @@ class FixtureAppDriveIT {
             assertThat(steps.path(2).path("step").path("target").path("item").toString()).as(why)
                     .isEqualTo("[\"${addTag.items.Tags.added[0]}\"]");
             assertThat(steps.path(4).path("step").path("target").path("item").toString()).as(why)
-                    .contains("${newFolder.items.Folders.added[0]");
+                    .isEqualTo("[\"${newFolder.items.Folders.added[0]}\"]");
             call("recording", "{'op':'stop'}");
         } finally {
             stopIfStillRecording();
@@ -658,14 +680,21 @@ class FixtureAppDriveIT {
         String tag2 = resolved(second, "${addTag.items.Tags.added[0]}");
         assertThat(tag1).matches("TAG-\\d+");
         assertThat(tag2).matches("TAG-\\d+").isNotEqualTo(tag1);
-        assertThat(second.path("report").asText()).as(second.path("why").asText()).contains(tag2);
+        String folder1 = resolved(first, "${newFolder.items.Folders.added[0]}");
+        String folder2 = resolved(second, "${newFolder.items.Folders.added[0]}");
+        assertThat(folder1).matches("Folders > Folder \\d+");
+        assertThat(folder2).matches("Folders > Folder \\d+").isNotEqualTo(folder1);
+        assertThat(second.path("report").asText()).as(second.path("why").asText()).contains(tag2, folder2);
         runExportedJava(javaRoot, javaFile, "entries.NewEntriesUiIT");
     }
 
     @Test
     @Order(22)
     void aBrokenLinkFailsInWords() throws Exception {
-        // the step Copy was recorded on now clicks Save note, which adds no record: the copy it opens is not there
+        // the step Copy was recorded on now clicks Save note, which adds no record: the copy it opens is not there.
+        // The link waits the driver's whole expect timeout (10 s) for it: a run has no shorter wait of its own.
+        assertThat(copyTest).as("the copy recorded test of aRecordingThatCopiesARowReplaysTwiceEachOnItsOwnCopy, "
+                + "which did not get as far as its export").isNotNull();
         ObjectNode test = (ObjectNode) JSON.readTree(new String(Files.readAllBytes(copyTest), StandardCharsets.UTF_8));
         ObjectNode copy = stepWithId(test.path("steps"), "copy");
         assertThat(copy).as(test.toString()).isNotNull();

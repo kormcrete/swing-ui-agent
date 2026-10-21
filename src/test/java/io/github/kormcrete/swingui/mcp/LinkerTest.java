@@ -443,15 +443,16 @@ class LinkerTest {
     void aCheckIsNeverLinkedToWhatItsOwnElementShows() {
         // Save changed the status, a field and a cell: a check on one of them compared with itself would check nothing
         RecordedStep save = step(2, "{'action':'click','target':{'name':'save'}}", "{'texts':{'status':'saved Ada Shop'},"
-                        + "'fields':{'Billing › Customer':'Ada Shop Ltd'},'rows':{'Lines':{'added':[],'removed':[],"
+                        + "'fields':{'Billing \u203a Customer':'Ada Shop Ltd'},'rows':{'Lines':{'added':[],'removed':[],"
                         + "'changed':[{'before':{'Ref':'20'},'after':{'Ref':'ORD-1643'}}],'count':1}}}",
-                "saved Ada Shop", ".texts.status", "Ada Shop Ltd", ".fields['Billing › Customer']",
+                "saved Ada Shop", ".texts.status", "Ada Shop Ltd", ".fields['Billing \u203a Customer']",
                 "ORD-1643", ".rows.Lines.changed[0].after.Ref");
         List<RecordedStep> earlier = steps(save);
 
         unchanged("{'action':'expect','target':{'name':'status'},'text':'saved Ada Shop'}", earlier);
         unchanged("{'action':'expect','target':{'id':'status'},'text':'saved Ada Shop'}", earlier);
-        unchanged("{'action':'expect','target':{'role':'text','name':'Customer'},'value':'Ada Shop Ltd'}", earlier);
+        unchanged("{'action':'expect','target':{'scope':['tab:Billing'],'role':'text','name':'Customer'},"
+                + "'value':'Ada Shop Ltd'}", earlier);
         unchanged("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':{'index':0},'column':'Ref',"
                 + "'expected':'ORD-1643'}}", earlier);
         // another element showing the same value is checked against it
@@ -460,6 +461,42 @@ class LinkerTest {
         assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':"
                 + "{'index':0},'column':'Code','expected':'ORD-1643'}}"), earlier).action).at("/cell/expected").asText())
                 .isEqualTo("${save.rows.Lines.changed[0].after.Ref}");
+    }
+
+    @Test
+    void aCheckInAnotherScopeIsAnotherElement() {
+        RecordedStep save = step(2, "{'action':'click','target':{'name':'save'}}",
+                "{'fields':{'Billing \u203a Name':'Ada Shop Ltd'}}", "Ada Shop Ltd", ".fields['Billing \u203a Name']");
+        String billing = "${save.fields['Billing \u203a Name']}";
+
+        // the whole key, scope and all: Shipping's Name is checked against Billing's
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'scope':['tab:Shipping'],'role':'text',"
+                + "'name':'Name'},'value':'Ada Shop Ltd'}"), steps(save)).action).path("value").asText()).isEqualTo(billing);
+        // a locator that names no scope may be either one: the key does not say it is its own
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'text','name':'Name'},"
+                + "'value':'Ada Shop Ltd'}"), steps(save)).action).path("value").asText()).isEqualTo(billing);
+        unchanged("{'action':'expect','target':{'scope':['tab:Billing'],'role':'text','name':'Name'},'value':'Ada Shop Ltd'}",
+                steps(save));
+        // the window's title in the key too
+        RecordedStep dialog = step(2, "{'action':'click','target':{'name':'save'}}",
+                "{'fields':{'Address \u203a Billing \u203a Name':'Ada Shop Ltd'}}", "Ada Shop Ltd",
+                ".fields['Address \u203a Billing \u203a Name']");
+        unchanged("{'action':'expect','target':{'window':'dialog:Address','scope':['tab:Billing'],'role':'text',"
+                + "'name':'Name'},'value':'Ada Shop Ltd'}", steps(dialog));
+    }
+
+    @Test
+    void aCheckOfARowAStepAddedIsLinkedAndAnotherSourceStandsInForItsOwnValue() {
+        // the added row is new on every run: the check of its number in its own table is linked by it
+        JsonNode cell = tree(Linker.link(action("{'action':'expect','target':{'role':'table','name':'Orders'},"
+                + "'cell':{'row':{'Order':'ORD-1643'},'column':'Order','expected':'ORD-1643'}}"), steps(copy())).action);
+        assertThat(cell.at("/cell/row/Order").asText()).isEqualTo(ORDER);
+        assertThat(cell.at("/cell/expected").asText()).isEqualTo(ORDER);
+        // the field's own value (the newest source) is skipped: the row the copy added before it is used
+        RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
+                "{'fields':{'Number':'ORD-1643'}}", "ORD-1643", ".fields.Number");
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'text','name':'Number'},"
+                + "'value':'ORD-1643'}"), steps(copy(), open)).action).path("value").asText()).isEqualTo(ORDER);
     }
 
     @Test
@@ -492,6 +529,12 @@ class LinkerTest {
         assertThat(pool.fitting(action(click), 10)).hasSize(1);
         // another path stays as it is
         unchanged("{'action':'click','target':{'role':'tree','name':'Folders','item':['Folders','Folder 1']}}", steps(folder));
+        // the same path added to another tree is not this tree's
+        RecordedStep archived = step(2, "{'action':'click','target':{'role':'button','name':'Archive folder'}}",
+                "{'items':{'Archive':{'added':['Folders > Folder 3'],'removed':[]}}}",
+                "Folders > Folder 3", ".items.Archive.added[0]");
+        assertThat(tree(Linker.link(action(click), steps(archived)).action).at("/target/item").toString())
+                .isEqualTo("[\"Folders\",\"Folder 3\"]");
     }
 
     @Test

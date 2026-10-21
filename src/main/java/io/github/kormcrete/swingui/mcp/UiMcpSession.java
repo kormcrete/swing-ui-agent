@@ -144,6 +144,8 @@ public class UiMcpSession {
         final int id;
         final UiReading before;
         final Map<String, Object> made;
+        /** A check after it read the app for it already: later checks do not read again (the next action does). */
+        boolean checked;
 
         Late(int id, UiReading before, Map<String, Object> made) {
             this.id = id;
@@ -1517,8 +1519,12 @@ public class UiMcpSession {
             result = executor.run(flow, host);
             boolean ran = !result.steps.isEmpty() && result.steps.get(0).passed;
             if (before != null && ran) after = read();
-            // a check that waited for what the action before it made late: that action has it before the check links
-            if (check && agentRecords && ran && late != null) lateChanges(read());
+            // the first check after the action, which may have waited for what it made late: that action has it before
+            // the check links; the checks after it cost no reading (the next action reads anyway)
+            if (check && agentRecords && ran && late != null && !late.checked) {
+                late.checked = true;
+                lateChanges(read());
+            }
         } finally {
             Inspector.agentActing(false);
         }

@@ -3478,6 +3478,10 @@ class UiMcpRecordingTest {
         // a check changes nothing: its own change is not read, only what the action before it made late (one reading)
         session.verb("expect", mapper.readTree("{\"target\":{\"id\":\"status\"},\"text\":\"New\"}"));
         assertThat(reads).isEqualTo(3);
+        // the checks after it read nothing
+        session.verb("expect", mapper.readTree("{\"target\":{\"id\":\"status\"},\"text\":\"New\"}"));
+        session.verb("expect", mapper.readTree("{\"target\":{\"id\":\"total\"},\"text\":\"0.00\"}"));
+        assertThat(reads).isEqualTo(3);
         // a step that is not recorded is not read either
         session.doAction(mapper.readTree("{\"action\":\"click\",\"target\":{\"id\":\"next\"}}"), false);
         assertThat(reads).isEqualTo(3);

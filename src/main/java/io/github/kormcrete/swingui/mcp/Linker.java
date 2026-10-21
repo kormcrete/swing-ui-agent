@@ -37,8 +37,9 @@ import java.util.regex.Pattern;
  * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text (a domain step's
  * own values, under {@code step} of its outcome, too). A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
- * is; a tree row a step added is linked by its whole path. What a check expects is never linked to what the element it
- * checks showed itself (the check would compare it with itself). A remembered value and a text made unique per run are
+ * is; a tree row a step added to that tree is linked by its whole path. What a check expects is never linked to the
+ * checked element's own field or text, or to its cell in a row an earlier step changed (the check would compare it with
+ * itself); a row or item a step added is new on each run and is linked. A remembered value and a text made unique per run are
  * linked alike (that text also in its plain form, as typed before it was made unique, short or not: the person asked for
  * it; it is the typing step's own value, never what the field it filled shows). Several sources: the most recent step
  * wins (a value remembered after the step that added its row too); within one step a field, a row, an item or a domain
@@ -493,19 +494,25 @@ final class Linker {
          */
         @Override void items(ObjectNode l) {
             String path = treePath(l.get("item"));
-            Candidate c = path == null ? null : best.get(path);
-            if (c != null && c.path != null && c.path.startsWith(".items")) {
-                ArrayNode one = l.putArray("item");
-                one.add(Refs.escape(path));
-                matches.add(new Match(one, null, 0, Collections.<Object>singletonList(c)));
-                return;
+            if (path != null) {
+                Set<String> tree = ownKeys(l);
+                for (Candidate c : sorted) {
+                    if (!c.value.equals(path) || !in(c, "items", tree)) continue;
+                    ArrayNode one = l.putArray("item");
+                    one.add(Refs.escape(path));
+                    matches.add(new Match(one, null, 0, Collections.<Object>singletonList(c)));
+                    return;
+                }
             }
             super.items(l);
         }
 
         /**
-         * An automatic link of what a check expects never comes from what the element it checks showed after an earlier
-         * step: compared with itself, the check would check nothing. The person's and the agent's links go where asked.
+         * An automatic link of what a check expects never comes from the checked element's own field or text, or a row of
+         * its table that an earlier step changed, in its column: compared with itself, the check would check nothing (and
+         * a replay where it already showed that value finds no change). Another source of the value is taken instead. A
+         * row or item an earlier step added is new on every run: a check of it is linked. The person's and the agent's
+         * links go where asked.
          */
         @Override void expected(ObjectNode parent, String field, JsonNode target, String column) {
             if (!rows) {
@@ -934,30 +941,77 @@ final class Linker {
     }
 
     /**
-     * Whether candidate {@code c} is what {@code target} itself showed: its field or text (by its name or id, under any
-     * scope), or a cell of its table in {@code column}.
+     * Whether candidate {@code c} is what {@code target} itself showed: its own field or text, or (a cell check, in
+     * {@code column}) a row of its table an earlier step changed, its cell in that column.
      */
     private static boolean shows(Candidate c, JsonNode target, String column) {
-        if (c.path == null || c.path.isEmpty() || target == null) return false;
-        List<String> keys;
-        try {
-            keys = JsonPaths.keys("$" + c.path);
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
+        List<String> keys = keysOf(c);
         if (keys.size() < 2) return false;
-        Set<String> names = new HashSet<String>();
-        for (String k : new String[] {"name", "id"}) {
-            JsonNode n = target.get(k);
-            if (n != null && n.isTextual() && !hasRefs(n.textValue())) names.add(Refs.unescape(n.textValue()));
-        }
+        Set<String> own = ownKeys(target);
         if (column != null) {
-            return "rows".equals(keys.get(0)) && names.contains(keys.get(1)) && column.equals(keys.get(keys.size() - 1));
+            return keys.size() > 3 && "rows".equals(keys.get(0)) && own.contains(keys.get(1)) && "changed".equals(keys.get(2))
+                    && column.equals(keys.get(keys.size() - 1));
         }
-        if (keys.size() != 2 || !"fields".equals(keys.get(0)) && !"texts".equals(keys.get(0))) return false;
-        String key = keys.get(1);
-        int scope = key.lastIndexOf(SCOPE);
-        return names.contains(scope < 0 ? key : key.substring(scope + SCOPE.length()));
+        return keys.size() == 2 && ("fields".equals(keys.get(0)) || "texts".equals(keys.get(0))) && own.contains(keys.get(1));
+    }
+
+    /** Whether candidate {@code c} is in section {@code section} of an outcome under one of the keys {@code own}. */
+    private static boolean in(Candidate c, String section, Set<String> own) {
+        List<String> keys = keysOf(c);
+        return keys.size() >= 2 && section.equals(keys.get(0)) && own.contains(keys.get(1));
+    }
+
+    /** The keys of candidate {@code c}'s path ({@code rows, Orders, added, Number}); none for a candidate without one. */
+    private static List<String> keysOf(Candidate c) {
+        if (c.path == null || c.path.isEmpty()) return Collections.emptyList();
+        try {
+            return JsonPaths.keys("$" + c.path);
+        } catch (IllegalArgumentException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * The keys an outcome may give the element locator {@code l} names, whole: its name or id alone (no other element
+     * shares it), under the tabs and sections of its scope ({@code Billing › Name}), and under its window's title. A scope
+     * or window matched by a prefix gives no scoped key; nor does a number an outcome adds to twins ({@code Name #2}).
+     */
+    static Set<String> ownKeys(JsonNode l) {
+        Set<String> out = new HashSet<String>();
+        if (l == null) return out;
+        List<String> scopes = new ArrayList<String>();
+        boolean exact = true;
+        JsonNode scope = l.get("scope");
+        if (scope instanceof ArrayNode) {
+            for (JsonNode step : scope) {
+                String t = step.isTextual() ? step.textValue() : "";
+                int colon = t.indexOf(':');
+                String kind = colon < 0 ? "" : t.substring(0, colon);
+                if (!"tab".equals(kind) && !"section".equals(kind)) continue;
+                String title = t.substring(colon + 1);
+                if (title.startsWith("*") || title.endsWith("*")) exact = false;
+                scopes.add(title);
+            }
+        }
+        String window = null;
+        JsonNode w = l.get("window");
+        if (w != null && w.isTextual()) {
+            String t = w.textValue();
+            int colon = t.indexOf(':');
+            String title = colon < 0 ? null : t.substring(colon + 1);
+            if (title != null && !title.startsWith("*") && !title.endsWith("*")) window = title;
+        }
+        for (String k : new String[] {"name", "id"}) {
+            JsonNode n = l.get(k);
+            if (n == null || !n.isTextual() || hasRefs(n.textValue())) continue;
+            String name = Refs.unescape(n.textValue());
+            List<String> forms = new ArrayList<String>();
+            forms.add(name);
+            if (exact && !scopes.isEmpty()) forms.add(String.join(SCOPE, scopes) + SCOPE + name);
+            out.addAll(forms);
+            if (window != null) for (String f : forms) out.add(window + SCOPE + f);
+        }
+        return out;
     }
 
     /** What an outcome key puts between a name and the scopes around it ({@code Billing › Name}). */
