@@ -1885,7 +1885,8 @@ public class UiMcpSession {
      * {@code total}, {@code ms}, {@code steps}, {@code report}). Exactly one of {@code name} (in the recorded tests folder),
      * {@code path} or {@code test} (the file's JSON inline). It begins with the app reset, runs every step as
      * {@code do_action} would but records nothing, and stops at the first failing step, which carries its diagnosis
-     * (picture under {@code evidence}). A recorded test that fails is a result; one that cannot start (bad file, no reset) is an
+     * (picture under {@code evidence}). A step that uses values of earlier steps ({@code ${...}}) says what they stood for
+     * in this run ({@code resolved}); {@code run.id} is new for each run. A recorded test that fails is a result; one that cannot start (bad file, no reset) is an
      * error. Refused (BUSY) while a person records, answers or replays in the palette.
      */
     public synchronized String runRecordedTest(JsonNode args) {
@@ -1929,7 +1930,9 @@ public class UiMcpSession {
         agentReplaying = "running recorded test " + flow.name;
         try {
             appReset.run();
-            result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).run(flow, host);
+            Verbs verbs = host.verbs();
+            result = new FlowExecutor().diagnoseFailures(new FailureDiagnostics(evidence)).outcomes(verbs::readUi)
+                    .run(flow, host);
         } finally {
             if (palette) view.agentReplaying(null);
             agentReplaying = null;
@@ -1996,6 +1999,10 @@ public class UiMcpSession {
             for (String d : s.details) a.add(d);
         }
         if (s.warning != null) o.put("warning", s.warning);
+        if (s.resolved != null) {
+            ObjectNode resolved = o.putObject("resolved");
+            for (Map.Entry<String, String> e : s.resolved.entrySet()) resolved.put(e.getKey(), e.getValue());
+        }
         StepDiagnostics d = s.diagnostics;
         if (d != null) {
             ObjectNode dj = o.putObject("diagnostics");
@@ -2084,7 +2091,7 @@ public class UiMcpSession {
             Plugins.VocabularyStep v = offered.get(0);
             String at = where + ", plugin " + v.plugin + ": ";
             try {
-                plugins.lookUp(v.plugin + ":" + id, d.params == null ? Collections.<String, String>emptyMap() : d.params);
+                plugins.lookUpBeforeRun(v.plugin + ":" + id, d.params == null ? Collections.<String, String>emptyMap() : d.params);
             } catch (DriverException e) {
                 throw new DriverException(e.reason(), at + DriverException.stripReason(e.getMessage(), e.reason()));
             }

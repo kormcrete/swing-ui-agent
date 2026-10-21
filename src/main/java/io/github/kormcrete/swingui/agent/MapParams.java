@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ParamType;
 import io.github.kormcrete.swingui.spi.Params;
@@ -38,6 +39,14 @@ final class MapParams implements Params {
      * number in int range (digits only).
      */
     static MapParams of(DomainStep step, Map<String, String> given) {
+        return of(step, given, false);
+    }
+
+    /**
+     * {@link #of(DomainStep, Map)}; with {@code unresolved}, the values of a recorded test's step before its run, so an
+     * INT value holding a reference to an earlier step ({@code ${qty}}) is let through: it is checked once it is filled in.
+     */
+    static MapParams of(DomainStep step, Map<String, String> given, boolean unresolved) {
         Map<String, String> in = given == null ? Collections.<String, String>emptyMap() : given;
         List<String> names = new ArrayList<String>();
         for (DomainStep.Param p : step.params()) names.add(p.name());
@@ -52,7 +61,7 @@ final class MapParams implements Params {
         for (DomainStep.Param p : step.params()) {
             String v = in.containsKey(p.name()) ? in.get(p.name()) : p.optional() ? p.defaultValue() : null;
             if (v == null) throw bad(step.id() + " needs param '" + p.name() + "'");
-            if (p.type() == ParamType.INT && !isInt(v)) {
+            if (p.type() == ParamType.INT && !isInt(v) && !(unresolved && Refs.has(v))) {
                 throw bad("param '" + p.name() + "' of " + step.id() + " is INT: a whole number in int range, not '" + v + "'");
             }
             values.put(p.name(), v);

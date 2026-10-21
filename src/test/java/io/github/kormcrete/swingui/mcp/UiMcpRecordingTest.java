@@ -2230,6 +2230,32 @@ class UiMcpRecordingTest {
         assertThat(run.path("steps").get(0).path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
     }
 
+    @Test
+    void anIntParamThatUsesAnEarlierValueIsCheckedAtRunNotAtLoad() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("setQty", "Set the quantity to {qty}")
+                .param("qty", ParamType.INT)
+                .steps("{\"action\":\"type\",\"target\":{\"role\":\"spinner\",\"name\":\"Qty\"},\"text\":\"{qty}\"}")
+                .build());
+        Path file = dir.resolve("same-qty.json");
+        Files.write(file, ("{\"version\":4,\"name\":\"same-qty\",\"start\":\"reset\",\"requires\":[\"order-desk\"],\"steps\":["
+                + "{\"action\":\"menu\",\"path\":[\"Orders\",\"New order\"],\"checks\":["
+                + "{\"action\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Last qty\"},\"as\":\"qty\"}]},"
+                + "{\"action\":\"do\",\"step\":\"order-desk:setQty\",\"params\":{\"qty\":\"${qty}\"}}]}")
+                .getBytes(StandardCharsets.UTF_8));
+
+        backend.verbs.remembered = "3";
+        JsonNode run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"path\":\"" + quoted(file) + "\"}")));
+        assertThat(run.path("passed").asBoolean()).as(run.toString()).isTrue();
+        assertThat(backend.verbs.calls).contains("type spinner 'Qty' 3 null null");
+        assertThat(run.path("steps").get(2).path("action").asText()).isEqualTo("Set the quantity to 3");
+
+        backend.verbs.remembered = "three";
+        run = mapper.readTree(s.runRecordedTest(mapper.readTree("{\"path\":\"" + quoted(file) + "\"}")));
+        assertThat(run.path("passed").asBoolean()).isFalse();
+        assertThat(run.path("steps").get(2).path("message").asText())
+                .isEqualTo("BAD_INPUT: param 'qty' of setQty is INT: a whole number in int range, not 'three'");
+    }
+
     // ---- folding: the person's and the agent's raw steps become do steps ------------------------------------------
 
     private JsonNode recording(UiMcpSession s, String json) throws Exception {

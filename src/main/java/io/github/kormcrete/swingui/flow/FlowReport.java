@@ -1,12 +1,14 @@
 package io.github.kormcrete.swingui.flow;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * A run result as text, for a replay's output. Capability report first. A passing step is one line with its
  * timing (plus its note, if any), numbered as the file is: {@code [7]} a step, {@code [7.1]} one of its checks (indented
  * more), with its sentence in place of the technical line when it has one, which then follows on the next line, and a
- * group's sentence above its first step. A failing step adds what is needed to fix the recorded test without a live session: its
+ * group's sentence above its first step. What a step's references stood for follows its text:
+ * {@code [4] PASS Type the note (run.id = a1b2c3d4)}. A failing step adds what is needed to fix the recorded test without a live session: its
  * reason and details, what each locator matches now, a scoped compact tree, and a screenshot path
  * ({@link StepDiagnostics}).
  *
@@ -52,7 +54,7 @@ public final class FlowReport {
 
     private static void step(StringBuilder sb, StepResult s, String label, String say) {
         String pad = label.indexOf('.') >= 0 ? "    " : "  ";
-        String shownText = say != null ? say : s.action;
+        String shownText = (say != null ? say : s.action) + resolved(s);
         sb.append(String.format("%s[%s] %s %-44s %s", pad, label, s.passed ? "PASS" : "FAIL", shownText, timing(s)));
         if (s.via != null) sb.append(" via=").append(s.via);
         if (s.pending != null) sb.append(" pending=").append(s.pending.summary());
@@ -85,6 +87,19 @@ public final class FlowReport {
         }
         if (d.screenshot != null) sb.append("      screenshot: ").append(d.screenshot).append('\n');
         for (String p : d.problems) sb.append("      (").append(p).append(")\n");
+    }
+
+    /** What the step's references stood for, e.g. {@code " (run.id = a1b2c3d4)"}; empty when it has none. */
+    static String resolved(StepResult s) {
+        if (s.resolved == null || s.resolved.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(" (");
+        for (Map.Entry<String, String> e : s.resolved.entrySet()) {
+            if (sb.length() > 2) sb.append(", ");
+            String ref = e.getKey();
+            boolean braced = ref.startsWith("${") && ref.endsWith("}");
+            sb.append(braced ? ref.substring(2, ref.length() - 1) : ref).append(" = ").append(e.getValue());
+        }
+        return sb.append(')').toString();
     }
 
     /** The same numbers a {@code UIMCP-TIMING} line carries, for one step. */

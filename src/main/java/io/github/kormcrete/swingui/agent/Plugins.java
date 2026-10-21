@@ -259,8 +259,20 @@ public final class Plugins implements StepHost, UiInventory {
      * (BAD_INPUT, CAPABILITY_GAP), without running it.
      */
     public DoStep lookUp(String id, Map<String, String> params) {
+        return lookUp(id, params, false);
+    }
+
+    /**
+     * {@link #lookUp} for a recorded test's do step before its run: an INT param whose value holds a reference to an
+     * earlier step ({@code ${qty}}) is checked at run, once the value is filled in.
+     */
+    public DoStep lookUpBeforeRun(String id, Map<String, String> params) {
+        return lookUp(id, params, true);
+    }
+
+    private DoStep lookUp(String id, Map<String, String> params, boolean unresolved) {
         VocabularyStep found = find(id);
-        MapParams values = MapParams.of(found.step, params);
+        MapParams values = MapParams.of(found.step, params, unresolved);
         return new DoStep(found, values.values(), values.fill(found.step.sentence()));
     }
 

@@ -1,20 +1,32 @@
 package io.github.kormcrete.swingui.flow;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.github.kormcrete.swingui.driver.DomainStepFailed;
+import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.DriverSettings;
 import io.github.kormcrete.swingui.driver.EdtClock;
+import io.github.kormcrete.swingui.driver.LaunchMode;
 import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.StepCall;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Locator;
+import io.github.kormcrete.swingui.driver.outcome.Outcomes;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.Watch;
+import io.github.kormcrete.swingui.flow.refs.Refs;
+import io.github.kormcrete.swingui.flow.refs.Resolution;
+import io.github.kormcrete.swingui.flow.refs.RunValues;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.flow.verb.VerbAction;
 import io.github.kormcrete.swingui.spi.StepHost;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -26,15 +38,56 @@ import java.util.function.Supplier;
  * ({@link StepResult#steps}). Every step is timed (wall time and its {@link EdtClock} split); with
  * {@link #diagnoseFailures} a failed step also carries {@link StepDiagnostics}, a failed {@code do} step on its failed
  * child.
+ *
+ * <p>With {@link #outcomes}, a run of a recorded test file, a step may use values of earlier steps ({@link Refs}): each
+ * step that a later one refers to by its {@code id} is read before and after it ran, and what it changed is kept
+ * ({@link Outcomes#diff}); a remember step keeps its value; every step's references are filled in just before it runs
+ * ({@link Resolution#fill}), waiting for a value that comes late, and {@link StepResult#resolved} says what they stood
+ * for. Without one (the live session's own steps, whose text is never escaped) the steps run as they are.
  */
 public class FlowExecutor {
 
+    /** How often a reference without a value is tried again while it waits. */
+    static final long LINK_POLL_MS = 100;
+
+    /** What the app shows now, for the outcome of a step: the driver's {@code readUi}. */
+    public interface OutcomeSource {
+        UiReading read();
+    }
+
     private FailureDiagnostics diagnostics;
+    private OutcomeSource outcomes;
+    private RunValues runValues;
+    private Long linkWaitMs;
 
     /** Diagnose each failed step with {@code d} - for a replay, never for the live MCP session. */
     public FlowExecutor diagnoseFailures(FailureDiagnostics d) {
         this.diagnostics = d;
         return this;
+    }
+
+    /** Fills in references from earlier steps, reading the steps they name from {@code source} (see the class comment). */
+    public FlowExecutor outcomes(OutcomeSource source) {
+        this.outcomes = source;
+        return this;
+    }
+
+    /** The values references use; by default each run gets its own, with a new {@code run.id}. */
+    public FlowExecutor runValues(RunValues values) {
+        this.runValues = values;
+        return this;
+    }
+
+    /** How long a reference may wait for its value; by default the driver's expect timeout. */
+    FlowExecutor linkWait(long millis) {
+        this.linkWaitMs = millis;
+        return this;
+    }
+
+    private long linkWait() {
+        if (linkWaitMs != null) return linkWaitMs;
+        Driver driver = Driver.current();
+        return driver != null ? driver.settings().expectMillis : DriverSettings.defaults(LaunchMode.NORMAL).expectMillis;
     }
 
     /** A Verbs that cannot report capabilities (a recording or remote one) leaves them out. */
@@ -62,15 +115,25 @@ public class FlowExecutor {
         result.flowName = flow.name;
         Verbs verbs = host.verbs();
         if (verbs != null) result.capabilities = capabilitiesOrNull(verbs);
+        Links links = outcomes == null ? null : new Links(flow,
+                runValues != null ? runValues : new RunValues(RunValues.newRunId(), LocalDateTime.now()));
         for (int i = 0; i < flow.steps.size(); i++) {
-            Action action = flow.steps.get(i);
+            Action recorded = flow.steps.get(i);
+            Action action = recorded;
+            Map<String, String> resolved = null;
             Watch.Mark mark = verbs == null ? null : markOrNull(verbs);
             EdtClock.Reading edtBefore = EdtClock.read();
             long started = System.nanoTime();
             StepResult step;
             try {
-                refuseWhileADialogWaits(action, host);
+                refuseWhileADialogWaits(recorded, host);
+                if (links != null) {
+                    action = links.fill(recorded);
+                    resolved = orNull(Resolution.resolved(recorded, links.values));
+                    links.before(action);
+                }
                 VerbOutcome outcome = execute(action, host);
+                if (links != null) links.after(i, action, outcome);
                 step = StepResult.pass(i, action.describe());
                 if (outcome != null) {
                     step.outcome = outcome;
@@ -82,12 +145,14 @@ public class FlowExecutor {
                 }
             } catch (AssertionError | RuntimeException e) {
                 step = StepResult.fail(i, action.describe(), e.getMessage());
+                if (links != null) links.forget();
                 step.reason = reasonOf(e);
                 if (e instanceof DriverException && !((DriverException) e).details().isEmpty()) {
                     step.details = ((DriverException) e).details();
                 }
                 if (e instanceof DomainStepFailed) domainStep(step, ((DomainStepFailed) e).outcome());
             }
+            step.resolved = resolved;
             step.ms = (System.nanoTime() - started) / 1_000_000L;
             EdtClock.Reading edt = EdtClock.read().since(edtBefore);
             step.edtMs = edt.runMs();
@@ -97,10 +162,11 @@ public class FlowExecutor {
                 step.activations = orNull(verbs.watch().activationsSince(mark));
             }
             if (!step.passed && diagnostics != null) {
+                final Action ran = action;
                 StepResult child = failedChild(step);
                 String label = StepNumbers.label(flow.steps, i);
                 if (child == null) {
-                    step.diagnostics = diagnose(() -> diagnostics.diagnose(action, verbs, flow.name, label));
+                    step.diagnostics = diagnose(() -> diagnostics.diagnose(ran, verbs, flow.name, label));
                 } else {
                     String childLabel = label + "-" + (child.index + 1);
                     child.diagnostics = diagnose(() -> diagnostics.diagnose(targetsOf(child), verbs, flow.name, childLabel));
@@ -110,6 +176,94 @@ public class FlowExecutor {
             if (!step.passed) break; // stop at first failure
         }
         return result;
+    }
+
+    /**
+     * One run's references: the values so far ({@link RunValues}) and, for each step a later one names, the reading
+     * before it, kept until its last use so a value that comes late can be read again.
+     */
+    private final class Links {
+        final Flow flow;
+        final RunValues values;
+        /** The ids some step refers to, each with the index of the last step that does. */
+        final Map<String, Integer> lastUse = new HashMap<String, Integer>();
+        final Map<String, UiReading> before = new HashMap<String, UiReading>();
+        /** The reading before the step running now, when a later step names it. */
+        UiReading pending;
+
+        Links(Flow flow, RunValues values) {
+            this.flow = flow;
+            this.values = values;
+            for (int i = 0; i < flow.steps.size(); i++) {
+                try {
+                    for (Refs.Ref r : Refs.of(flow.steps.get(i))) lastUse.put(r.id, i);
+                } catch (IllegalArgumentException malformed) {
+                    // the step fails on it when it fills its values
+                }
+            }
+        }
+
+        /**
+         * The step with its references filled in. A reference to a step's outcome that has no value yet is read again
+         * every {@link #LINK_POLL_MS} until it has one or the wait is over; then the step fails, saying in words what
+         * the earlier step did not do. Never the value the recording saw.
+         */
+        Action fill(Action a) {
+            if (a instanceof RememberVerb && ((RememberVerb) a).as != null) {
+                String problem = RecordedTestFiles.idProblem(((RememberVerb) a).as);
+                if (problem != null) throw new DriverException(Reason.BAD_INPUT, "remember as '" + ((RememberVerb) a).as + "': " + problem);
+            }
+            Long deadline = null;
+            while (true) {
+                try {
+                    return Resolution.fill(a, values);
+                } catch (RunValues.UnresolvedReference e) {
+                    UiReading was = before.get(e.ref.id);
+                    long now = System.nanoTime();
+                    if (deadline == null) deadline = now + linkWait() * 1_000_000L;
+                    if (was == null || now - deadline >= 0) {
+                        throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, flow));
+                    }
+                    try {
+                        Thread.sleep(LINK_POLL_MS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new DriverException(Reason.TIMEOUT, "interrupted while waiting for " + e.ref.source);
+                    }
+                    values.put(e.ref.id, outcome(was, outcomes.read()));
+                }
+            }
+        }
+
+        /** Reads the app before a step that a later step names. */
+        void before(Action a) {
+            pending = a.id != null && lastUse.containsKey(a.id) ? outcomes.read() : null;
+        }
+
+        /** Keeps what the step changed or remembered, and lets go of readings no later step needs. */
+        void after(int index, Action a, VerbOutcome out) {
+            if (pending != null) {
+                before.put(a.id, pending);
+                values.put(a.id, outcome(pending, outcomes.read()));
+                pending = null;
+            }
+            if (a instanceof RememberVerb && out != null && out.note != null) values.remember(((RememberVerb) a).as, out.note);
+            for (Map.Entry<String, Integer> e : lastUse.entrySet()) {
+                if (e.getValue() == index) before.remove(e.getKey());
+            }
+        }
+
+        void forget() {
+            pending = null;
+        }
+    }
+
+    private static JsonNode outcome(UiReading before, UiReading after) {
+        return FlowJson.mapper().valueToTree(Outcomes.diff(before, after));
+    }
+
+    private static <K, V> Map<K, V> orNull(Map<K, V> m) {
+        return m.isEmpty() ? null : m;
     }
 
     private static StepDiagnostics diagnose(Supplier<StepDiagnostics> diagnosis) {

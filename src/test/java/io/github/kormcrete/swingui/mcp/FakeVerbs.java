@@ -9,6 +9,7 @@ import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.Capability;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.FakeSeam;
@@ -130,6 +131,27 @@ public class FakeVerbs implements Verbs {
     }
     @Override public VerbOutcome scroll(Locator target, String to, Integer pages, Long timeout) {
         return verb("scroll " + target + " " + to + " " + pages);
+    }
+
+    /** What {@link #readUi} answers, one per call in turn, the last again once they run out; none: an empty reading. */
+    public final List<UiReading> readings = new ArrayList<UiReading>();
+    /** How often {@link #readUi} was called. */
+    public int readUiCalls;
+
+    @Override public UiReading readUi() {
+        readUiCalls++;
+        if (readings.isEmpty()) return UiReading.builder().build();
+        return readings.get(Math.min(readUiCalls, readings.size()) - 1);
+    }
+
+    /** What {@link #remember} answers; null: it has no remember verb (CAPABILITY_GAP), as a driver without one. */
+    public String remembered;
+
+    @Override public String remember(Locator target, boolean selected, Long timeout) {
+        if (remembered == null) return Verbs.super.remember(target, selected, timeout);
+        calls.add("remember " + target + (selected ? " selected" : ""));
+        fail();
+        return remembered;
     }
 
     private VerbOutcome verb(String call) {

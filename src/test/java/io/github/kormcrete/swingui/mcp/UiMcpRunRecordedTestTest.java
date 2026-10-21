@@ -92,6 +92,30 @@ class UiMcpRunRecordedTestTest {
     }
 
     @Test
+    void aStepUsesWhatAnEarlierStepAddedAndTheResultSaysWhat() throws Exception {
+        java.util.List<String> headers = java.util.Arrays.asList("Number", "Customer");
+        backend.verbs.readings.add(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().table("Orders", headers,
+                java.util.Collections.singletonList(java.util.Arrays.asList("ORD-1642", "Ada Lovelace"))).build());
+        backend.verbs.readings.add(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().table("Orders", headers,
+                java.util.Arrays.asList(java.util.Arrays.asList("ORD-1642", "Ada Lovelace"),
+                        java.util.Arrays.asList("ORD-1643", "Ada Lovelace"))).build());
+        String test = "{\"version\":4,\"name\":\"copy-order\",\"start\":\"reset\",\"steps\":["
+                + "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},"
+                + "{\"action\":\"click\",\"target\":{\"role\":\"table\",\"name\":\"Orders\","
+                + "\"row\":{\"Number\":\"${copy.rows.Orders.added[0].Number}\"}},\"count\":2}]}";
+
+        JsonNode out = run("{\"test\":" + test + "," + evidenceArg() + "}");
+
+        assertThat(out.path("passed").asBoolean()).as(out.toString()).isTrue();
+        assertThat(backend.verbs.calls.get(2)).startsWith("click table 'Orders' row={Number=ORD-1643}");
+        assertThat(out.path("steps").get(1).path("resolved").path("${copy.rows.Orders.added[0].Number}").asText())
+                .isEqualTo("ORD-1643");
+        assertThat(out.path("steps").get(0).has("resolved")).isFalse();
+        assertThat(out.path("report").asText()).contains("(copy.rows.Orders.added[0].Number = ORD-1643)");
+        assertThat(backend.verbs.readUiCalls).isEqualTo(2);
+    }
+
+    @Test
     void stepsCarryTheirLabelAndSentence() throws Exception {
         Flow f = flow("said");
         f.steps.get(0).say = "Store the order";

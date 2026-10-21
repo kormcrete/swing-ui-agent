@@ -263,6 +263,27 @@ class PluginsTest {
     }
 
     @Test
+    void anIntParamWithAReferenceIsCheckedOnlyOnceItIsResolved() {
+        Plugins plugins = new Plugins(verbs);
+        readyWith(plugins, "order-desk", addQtyToCart());
+
+        // before the run (a file's do step): the value is not known yet
+        assertThat(plugins.lookUpBeforeRun("addQtyToCart", values("product", "Gel pen, black", "qty", "${qty}")).sentence)
+                .isEqualTo("Add ${qty} × Gel pen, black to the cart");
+        for (String notAnInt : Arrays.asList("three", "$${qty}")) {
+            assertThatThrownBy(() -> plugins.lookUpBeforeRun("addQtyToCart", values("product", "Gel pen, black", "qty", notAnInt)))
+                    .hasMessage("BAD_INPUT: param 'qty' of addQtyToCart is INT: a whole number in int range, not '"
+                            + notAnInt + "'");
+        }
+        // at run: the resolved value is checked as any other
+        assertThatThrownBy(() -> plugins.lookUp("addQtyToCart", values("product", "Gel pen, black", "qty", "${qty}")))
+                .hasMessage("BAD_INPUT: param 'qty' of addQtyToCart is INT: a whole number in int range, not '${qty}'");
+        assertThatThrownBy(() -> plugins.runStep("addQtyToCart", values("product", "Gel pen, black", "qty", "three")))
+                .hasMessage("BAD_INPUT: param 'qty' of addQtyToCart is INT: a whole number in int range, not 'three'");
+        assertThat(verbs.calls).isEmpty();
+    }
+
+    @Test
     void anIdTwoPluginsOfferNeedsThePluginsName() {
         Plugins plugins = new Plugins(verbs);
         readyWith(plugins, "order-desk", addToCart());

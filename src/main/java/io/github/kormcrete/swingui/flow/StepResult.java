@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.PendingDialog;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 
 import java.util.List;
+import java.util.Map;
 
 public class StepResult {
     public int index;
@@ -37,6 +38,11 @@ public class StepResult {
     public List<StepResult> steps;
     /** A child's step as do_action takes it, as JSON text; null for a step of the run itself. */
     public String json;
+    /**
+     * The value each reference of the step stood for in this run, by the reference as written ({@code ${run.id}} to
+     * {@code a1b2c3d4}), in the step's order; null when the step has none.
+     */
+    public Map<String, String> resolved;
 
     public static StepResult pass(int index, String action) {
         StepResult r = new StepResult();

@@ -51,6 +51,22 @@ public final class JsonPaths {
     parse(path);
   }
 
+  /**
+   * The keys the path names one after another, indexes skipped, up to its first step of another kind
+   * ({@code [*]}, {@code ..}, a filter): {@code $.rows.Orders.added[0].Number} gives rows, Orders, added, Number.
+   */
+  static List<String> keys(String path) {
+    List<String> out = new ArrayList<String>();
+    for (Step s : parse(path)) {
+      if (s.kind == Kind.KEY) {
+        out.add(s.key);
+      } else if (s.kind != Kind.INDEX) {
+        break;
+      }
+    }
+    return out;
+  }
+
   private static void apply(Step s, JsonNode n, List<JsonNode> out) {
     switch (s.kind) {
       case KEY:
