@@ -45,7 +45,9 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
  * The whole product on this OS and Java: FixtureApp starts in its own JVM with the packaged agent jar
  * ({@code -javaagent}, so on Java 9+ the agent opens java.desktop itself), and the CLI drives it the way a coding
  * agent does - typing, clicking, keys that follow focus the app moved itself, Tab, a modal dialog, a drop and a
- * context menu - with the person's palette shown in the window, as it is by default. Run by failsafe after
+ * context menu - with the person's palette shown in the window, as it is by default. In the Register window the agent
+ * records tests whose steps use what earlier steps made (a copied record, a new tag and folder) and a text unique per
+ * run; a new app and agent replay them from their files alone, as recorded tests and as Java tests. Run by failsafe after
  * {@code package}; on every OS CI covers, this is what makes the platform green.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -61,17 +63,23 @@ class FixtureAppDriveIT {
 
     @BeforeAll
     static void startTheAppWithTheAgent() throws Exception {
+        startApp();
+    }
+
+    /** Starts FixtureApp with the packaged agent jar and waits until the agent listens ({@link #port}). */
+    private static void startApp() throws Exception {
         Path agentJar = Paths.get(System.getProperty("swingui.agentJar", "missing: set swingui.agentJar"));
         assertThat(Files.isRegularFile(agentJar)).as("agent jar %s (run through mvn verify)", agentJar).isTrue();
         String java = Paths.get(System.getProperty("java.home"), "bin", "java").toString();
         // only the fixture's own classes: the agent must come from the packaged jar, not from target/classes
         String fixtureClasses = Paths.get(FixtureApp.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                 .toString();
-        app = new ProcessBuilder(java, "-javaagent:" + agentJar + "=port=0", "-cp", fixtureClasses,
+        Process started = new ProcessBuilder(java, "-javaagent:" + agentJar + "=port=0", "-cp", fixtureClasses,
                 FixtureApp.class.getName()).redirectErrorStream(true).start();
+        app = started;
         CountDownLatch listening = new CountDownLatch(1);
         Thread drain = new Thread(() -> {
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(app.getInputStream(), StandardCharsets.UTF_8))) {
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(started.getInputStream(), StandardCharsets.UTF_8))) {
                 for (String line; (line = in.readLine()) != null; ) {
                     appOutput.append(line).append('\n');
                     Matcher m = LISTENING.matcher(line);
@@ -89,16 +97,11 @@ class FixtureAppDriveIT {
         assertThat(listening.await(60, TimeUnit.SECONDS)).as("the agent never listened:\n" + appOutput).isTrue();
     }
 
-    @AfterAll
-    static void stopTheApp() throws Exception {
-        if (testsDir != null) {
-            try (Stream<Path> all = Files.walk(testsDir)) {
-                all.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
-            }
-        }
+    private static void stopApp() throws Exception {
         if (app == null) return;
         app.destroy();
         if (!app.waitFor(10, TimeUnit.SECONDS)) app.destroyForcibly();
+        app = null;
     }
 
     @Test
@@ -498,6 +501,243 @@ class FixtureAppDriveIT {
         assertThat(ran.path("ran").asInt()).isEqualTo(2);
     }
 
+    /** Where the Register window's elements are: its own window, beside the main one. */
+    private static final String REGISTER = "'window':'window:Register'";
+
+    /** The copy recorded test of {@link #aRecordingThatCopiesARowReplaysTwiceEachOnItsOwnCopy}, for the broken link after it. */
+    private static Path copyTest;
+
+    @Test
+    @Order(20)
+    void aRecordingThatCopiesARowReplaysTwiceEachOnItsOwnCopy() throws Exception {
+        Path folder = Files.createDirectories(testsDir.resolve("copied"));
+        Path javaRoot = Files.createDirectories(testsDir.resolve("copied-java"));
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            step("menu", "{'path':['Window','Register']}");
+            step("click", "{'target':{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1001'},'column':'Number'}}");
+            step("click", "{'target':{" + REGISTER + ",'role':'button','name':'Copy'}}");
+            // the copy comes in 150 ms after the click: the agent looks for it before it clicks it, and it is what Copy
+            // changed (read again until the agent's next action)
+            awaitFound("{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1003'}}");
+            step("click", "{'target':{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1003'},'column':'Number'}}");
+            JsonNode remembered = call("recording", "{'op':'remember','target':{" + REGISTER + ",'name':'Register',"
+                    + "'column':'Number'},'selected':true,'as':'copyNumber'}");
+            assertThat(remembered.path("did").asText()).as(remembered.path("why").asText())
+                    .isEqualTo("remembered REG-1003 as copyNumber (check 4.1)");
+            step("type", "{'target':{" + REGISTER + ",'role':'text','name':'Note'},'text':'Copied note'}");
+            JsonNode unique = call("recording", "{'op':'unique','n':5,'where':'end'}");
+            assertThat(unique.path("did").asText()).as(unique.path("why").asText())
+                    .isEqualTo("made the text of step 5 unique per run");
+            step("click", "{'target':{" + REGISTER + ",'role':'button','name':'Save note'}}");
+            step("expect", "{'target':{" + REGISTER + ",'name':'Register'},'cell':{'row':{'Number':'REG-1003'},"
+                    + "'column':'Note','expected':'Copied note'}}");
+
+            // the person's words for each step, and the note's two steps under one sentence
+            String[][] said = {{"1", "Open the register"}, {"2", "Pick the first record"}, {"3", "Copy it"},
+                    {"4", "Open the copy"}, {"5", "Write a note of this run"}, {"6", "Save the note"},
+                    {"'6.1'", "The copy keeps the note"}};
+            for (String[] say : said) call("recording", "{'op':'edit','n':" + say[0] + ",'say':'" + say[1] + "'}");
+            call("recording", "{'op':'group','from':5,'to':6,'say':'Note the copy'}");
+
+            JsonNode list = call("recording", "{'op':'list'}");
+            String why = list.path("why").asText();
+            JsonNode steps = list.path("steps");
+            assertThat(steps).as(why).hasSize(6);
+            // the copy's number came from what Copy changed: linked at once, as the click on it was recorded
+            assertThat(steps.path(3).path("step").path("target").path("row").path("Number").asText()).as(why)
+                    .isEqualTo("${copy.rows.Register.added[0].Number}");
+            assertThat(steps.path(4).path("step").path("text").asText()).as(why).isEqualTo("Copied note ${run.id}");
+            JsonNode check = steps.path(5).path("checks").path(0).path("step");
+            // the check names the row by the remembered number and expects the unique note
+            assertThat(check.path("cell").path("row").path("Number").asText()).as(why).isEqualTo("${copyNumber}");
+            assertThat(check.path("cell").path("expected").asText()).as(why).isEqualTo("Copied note ${run.id}");
+            call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
+        }
+
+        JsonNode exported = call("recording", "{'op':'export','as':'recorded','name':'copy-a-row','dir':'"
+                + slashes(folder) + "'}");
+        String why = exported.path("why").asText();
+        copyTest = Paths.get(exported.path("savedTo").asText());
+        assertThat(copyTest).as(why).isRegularFile();
+        String file = new String(Files.readAllBytes(copyTest), StandardCharsets.UTF_8);
+        JsonNode json = JSON.readTree(file);
+        assertThat(json.path("version").asInt()).as(file).isEqualTo(4);
+        // everything the agent built is in the file: sentences, the group, the links, the remembered name, the run's id
+        assertThat(file).as(file).contains("\"Open the register\"", "\"Pick the first record\"", "\"Copy it\"",
+                "\"Open the copy\"", "\"Write a note of this run\"", "\"Save the note\"", "\"The copy keeps the note\"",
+                "\"Note the copy\"", "\"id\" : \"copy\"", "\"${copy.rows.Register.added[0].Number}\"",
+                "\"as\" : \"copyNumber\"", "\"${copyNumber}\"", "\"Copied note ${run.id}\"")
+                .doesNotContain("REG-1003");
+        JsonNode javaExport = call("recording", "{'op':'export','as':'java','class':'CopyARowUiIT','package':'copied',"
+                + "'dir':'" + slashes(javaRoot) + "'}");
+        Path javaFile = Paths.get(javaExport.path("savedTo").asText());
+        assertThat(javaFile).as(javaExport.path("why").asText()).isRegularFile();
+
+        // nothing of the recording session is left: a new app with a new agent, only the file
+        stopApp();
+        startApp();
+        assertThat(call("recording", "{'op':'list'}").path("steps")).isEmpty();
+        JsonNode first = runCopy();
+        JsonNode second = runCopy();
+        String number1 = resolved(first, "${copy.rows.Register.added[0].Number}");
+        String number2 = resolved(second, "${copy.rows.Register.added[0].Number}");
+        String id1 = resolved(first, "${run.id}");
+        String id2 = resolved(second, "${run.id}");
+        // each run copied a record of its own, under its own number, and noted it with its own id
+        assertThat(number1).matches("REG-\\d{4}");
+        assertThat(number2).matches("REG-\\d{4}").isNotEqualTo(number1);
+        assertThat(id1).matches("[a-z0-9]{8}");
+        assertThat(id2).matches("[a-z0-9]{8}").isNotEqualTo(id1);
+        assertThat(second.path("report").asText()).as(second.path("why").asText()).contains(number2, id2);
+        assertThat(resolved(second, "${copyNumber}")).isEqualTo(number2);
+
+        String source = new String(Files.readAllBytes(javaFile), StandardCharsets.UTF_8);
+        assertThat(source).as(source).contains("Outcome copy = ui.outcomeOf(", "ui.run().id()", ".selectedText()");
+        runExportedJava(javaRoot, javaFile, "copied.CopyARowUiIT");
+    }
+
+    /** Runs the copy recorded test from its file and requires it to pass; its result. */
+    private static JsonNode runCopy() throws Exception {
+        JsonNode ran = call("run_recorded_test", "{'path':'" + slashes(copyTest) + "'}");
+        String why = ran.path("why").asText();
+        assertThat(ran.path("passed").asBoolean()).as(why).isTrue();
+        assertThat(ran.path("ran").asInt()).as(why).isEqualTo(6);
+        return ran;
+    }
+
+    @Test
+    @Order(21)
+    void aListItemAndATreeItemAddedByAStepAreClickedThroughALink() throws Exception {
+        Path folder = Files.createDirectories(testsDir.resolve("entries"));
+        Path javaRoot = Files.createDirectories(testsDir.resolve("entries-java"));
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            step("menu", "{'path':['Window','Register']}");
+            // what each button added, as the agent learns it: the outcome of its click
+            JsonNode tagAdded = call("click", "{'target':{" + REGISTER + ",'role':'button','name':'Add tag'},'outcome':true}");
+            String tag = tagAdded.path("outcome").path("items").path("Tags").path("added").path(0).asText();
+            assertThat(tag).as(tagAdded.path("why").asText()).matches("TAG-\\d+");
+            step("click", "{'target':{" + REGISTER + ",'name':'Tags','item':['" + tag + "']}}");
+            JsonNode folderAdded = call("click", "{'target':{" + REGISTER + ",'role':'button','name':'New folder'},"
+                    + "'outcome':true}");
+            String path = folderAdded.path("outcome").path("items").path("Folders").path("added").path(0).asText();
+            assertThat(path).as(folderAdded.path("why").asText()).matches("Folders > Folder \\d+");
+            String folderName = path.substring("Folders > ".length());
+            step("click", "{'target':{" + REGISTER + ",'name':'Folders','item':['Folders','" + folderName + "']}}");
+
+            JsonNode list = call("recording", "{'op':'list'}");
+            String why = list.path("why").asText();
+            JsonNode steps = list.path("steps");
+            assertThat(steps).as(why).hasSize(5);
+            assertThat(steps.path(2).path("step").path("target").path("item").toString()).as(why)
+                    .isEqualTo("[\"${addTag.items.Tags.added[0]}\"]");
+            assertThat(steps.path(4).path("step").path("target").path("item").toString()).as(why)
+                    .contains("${newFolder.items.Folders.added[0]");
+            call("recording", "{'op':'stop'}");
+        } finally {
+            stopIfStillRecording();
+        }
+
+        JsonNode exported = call("recording", "{'op':'export','as':'recorded','name':'click-the-new-entries','dir':'"
+                + slashes(folder) + "'}");
+        Path file = Paths.get(exported.path("savedTo").asText());
+        assertThat(file).as(exported.path("why").asText()).isRegularFile();
+        JsonNode javaExport = call("recording", "{'op':'export','as':'java','class':'NewEntriesUiIT','package':'entries',"
+                + "'dir':'" + slashes(javaRoot) + "'}");
+        Path javaFile = Paths.get(javaExport.path("savedTo").asText());
+        assertThat(javaFile).as(javaExport.path("why").asText()).isRegularFile();
+
+        JsonNode first = call("run_recorded_test", "{'path':'" + slashes(file) + "'}");
+        assertThat(first.path("passed").asBoolean()).as(first.path("why").asText()).isTrue();
+        JsonNode second = call("run_recorded_test", "{'path':'" + slashes(file) + "'}");
+        assertThat(second.path("passed").asBoolean()).as(second.path("why").asText()).isTrue();
+        String tag1 = resolved(first, "${addTag.items.Tags.added[0]}");
+        String tag2 = resolved(second, "${addTag.items.Tags.added[0]}");
+        assertThat(tag1).matches("TAG-\\d+");
+        assertThat(tag2).matches("TAG-\\d+").isNotEqualTo(tag1);
+        assertThat(second.path("report").asText()).as(second.path("why").asText()).contains(tag2);
+        runExportedJava(javaRoot, javaFile, "entries.NewEntriesUiIT");
+    }
+
+    @Test
+    @Order(22)
+    void aBrokenLinkFailsInWords() throws Exception {
+        // the step Copy was recorded on now clicks Save note, which adds no record: the copy it opens is not there
+        ObjectNode test = (ObjectNode) JSON.readTree(new String(Files.readAllBytes(copyTest), StandardCharsets.UTF_8));
+        ObjectNode copy = stepWithId(test.path("steps"), "copy");
+        assertThat(copy).as(test.toString()).isNotNull();
+        ((ObjectNode) copy.path("target")).put("name", "Save note");
+        Path broken = Files.createDirectories(testsDir.resolve("broken")).resolve("copy-a-row.json");
+        Files.write(broken, JSON.writerWithDefaultPrettyPrinter().writeValueAsBytes(test));
+
+        JsonNode ran = callExpecting(4, "run_recorded_test", "{'path':'" + slashes(broken) + "'}");
+        String why = ran.path("why").asText();
+        assertThat(ran.path("passed").asBoolean()).as(why).isFalse();
+        JsonNode failed = null;
+        for (JsonNode s : ran.path("steps")) if (!s.path("passed").asBoolean()) failed = s;
+        assertThat(failed).as(why).isNotNull();
+        assertThat(failed.path("n").asText()).as(why).isEqualTo("4");
+        assertThat(failed.path("message").asText()).as(why).contains("Step 3 (Save note) added no row to Register");
+        assertThat(ran.path("stderr").asText()).as(why).contains("Step 3 (Save note) added no row to Register");
+    }
+
+    /** The step of a recorded test's steps (groups searched too) that has {@code id}; null when none has. */
+    private static ObjectNode stepWithId(JsonNode steps, String id) {
+        for (JsonNode s : steps) {
+            if (id.equals(s.path("id").asText())) return (ObjectNode) s;
+            ObjectNode inGroup = stepWithId(s.path("steps"), id);
+            if (inGroup != null) return inGroup;
+        }
+        return null;
+    }
+
+    /** What {@code reference} stood for in a run: the first step or check of its result that used it. */
+    private static String resolved(JsonNode ran, String reference) {
+        for (JsonNode s : ran.path("steps")) {
+            JsonNode value = s.path("resolved").get(reference);
+            if (value != null) return value.asText();
+        }
+        throw new AssertionError("no step used " + reference + ": " + ran.path("why").asText());
+    }
+
+    /**
+     * Compiles the exported Java test {@code source} (under the test sources root {@code root}) against this test's own
+     * class path and runs class {@code name} through the JUnit launcher on the live app, as a build would.
+     */
+    private static void runExportedJava(Path root, Path source, String name) throws Exception {
+        javax.tools.JavaCompiler javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertThat(javac).as("ITs run on a JDK").isNotNull();
+        Path classes = Files.createDirectories(root.resolve("classes"));
+        ByteArrayOutputStream errors = new ByteArrayOutputStream();
+        int rc = javac.run(null, errors, errors, "-encoding", "UTF-8", "-classpath", System.getProperty("java.class.path"),
+                "-d", classes.toString(), source.toString());
+        String text = new String(Files.readAllBytes(source), StandardCharsets.UTF_8);
+        assertThat(rc).as("the exported test compiles:\n%s\n%s", errors.toString("UTF-8"), text).isZero();
+        try (java.net.URLClassLoader loader = new java.net.URLClassLoader(new java.net.URL[] {classes.toUri().toURL()},
+                FixtureAppDriveIT.class.getClassLoader())) {
+            SummaryGeneratingListener listener = new SummaryGeneratingListener();
+            LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
+                    .selectors(selectClass(loader.loadClass(name)))
+                    .configurationParameter("swingui.agents", "127.0.0.1:" + port).build(), listener);
+            TestExecutionSummary summary = listener.getSummary();
+            StringBuilder failures = new StringBuilder();
+            for (TestExecutionSummary.Failure f : summary.getFailures()) {
+                java.io.StringWriter trace = new java.io.StringWriter();
+                f.getException().printStackTrace(new java.io.PrintWriter(trace));
+                failures.append(f.getTestIdentifier().getDisplayName()).append(": ").append(trace).append('\n');
+            }
+            assertThat(summary.getFailures()).as("failures:\n%s\n%s\napp output:\n%s", failures, text, appOutput).isEmpty();
+            assertThat(summary.getTestsSucceededCount()).as(text).isEqualTo(1);
+        }
+    }
+
+    private static String slashes(Path p) {
+        return p.toString().replace('\\', '/');
+    }
+
     /** Cleanup that never replaces the assertion that failed: stops only a recording still running. */
     private static void stopIfStillRecording() {
         try {
@@ -529,6 +769,17 @@ class FixtureAppDriveIT {
     private static void step(String tool, String args) throws Exception {
         JsonNode result = call(tool, args);
         assertThat(result.path("passed").asBoolean()).as(result.path("why").asText()).isTrue();
+    }
+
+    /** Reads {@code target} until it is there; a read is not one of the agent's steps. */
+    private static void awaitFound(String target) throws Exception {
+        long end = System.currentTimeMillis() + 10_000;
+        while (true) {
+            JsonNode read = call("read", "{'target':" + target + "}");
+            if (read.path("found").asBoolean()) return;
+            assertThat(System.currentTimeMillis()).as("%s never there: %s", target, read.path("why").asText()).isLessThan(end);
+            Thread.sleep(50);
+        }
     }
 
     /** Reads {@code name} until it shows enabled; a read is not one of the agent's steps. */

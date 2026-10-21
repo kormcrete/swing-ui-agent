@@ -1,11 +1,15 @@
 package io.github.kormcrete.swingui.fixture;
 
 import javax.swing.AbstractCellEditor;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
+import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -15,18 +19,25 @@ import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JTree;
+import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellEditor;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import java.awt.Point;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
@@ -48,6 +59,8 @@ import java.util.function.Consumer;
  * would: the palette's default spot covers no button). That button is enabled once the palette is in the window.
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
+ * <p>Its one menu, {@code Window › Register}, opens the Register window ({@link #showRegister}): records the agent
+ * copies, so that each run of a recorded test makes a record with a new number.
  */
 public final class FixtureApp {
 
@@ -181,10 +194,107 @@ public final class FixtureApp {
             content.add(form, BorderLayout.CENTER);
             content.add(south, BorderLayout.SOUTH);
             frame.setContentPane(content);
-            frame.setSize(760, 260);
+            JMenuBar menuBar = new JMenuBar();
+            JMenu windowMenu = new JMenu("Window");
+            JMenuItem registerItem = new JMenuItem("Register");
+            registerItem.addActionListener(e -> showRegister());
+            windowMenu.add(registerItem);
+            menuBar.add(windowMenu);
+            frame.setJMenuBar(menuBar);
+            // the menu bar takes its own height: the content keeps the size the other cases were written against
+            frame.setSize(760, 260 + menuBar.getPreferredSize().height);
             frame.setLocation(40, 40);
             frame.setVisible(true);
         });
+    }
+
+    /** The Register window: made the first time {@code Window › Register} is chosen, shown again after that. EDT. */
+    private static JFrame register;
+
+    /**
+     * Opens the Register window, or brings it back as it was: its records stay, so a second run begins with the ones
+     * the first made. Copy copies the selected record under the next number, late (a timer, as an app saving in the
+     * background does); Save note writes the Note field into the selected record. Add tag and New folder add an entry
+     * with the next number to the Tags list and the Folders tree.
+     */
+    static void showRegister() {
+        if (register == null) register = registerFrame();
+        register.setVisible(true);
+        register.toFront();
+    }
+
+    private static JFrame registerFrame() {
+        JFrame frame = new JFrame("Register");
+        frame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+        DefaultTableModel records = new DefaultTableModel(new Object[][] {{"REG-1001", "Paper order"},
+                {"REG-1002", "Pens order"}}, new Object[] {"Number", "Note"}) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable table = new JTable(records);
+        table.setName("Register");
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        int[] lastNumber = {1002};
+        JButton copy = new JButton("Copy");
+        copy.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row < 0) return;
+            Object[] copied = {"REG-" + ++lastNumber[0], records.getValueAt(row, 1)};
+            Timer later = new Timer(150, done -> records.addRow(copied));
+            later.setRepeats(false);
+            later.start();
+        });
+        JLabel noteCaption = new JLabel("Note");
+        JTextField note = new JTextField(14);
+        noteCaption.setLabelFor(note);
+        JButton saveNote = new JButton("Save note");
+        saveNote.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row >= 0) records.setValueAt(note.getText(), row, 1);
+        });
+
+        DefaultListModel<String> tagModel = new DefaultListModel<String>();
+        tagModel.addElement("TAG-1");
+        tagModel.addElement("TAG-2");
+        JList<String> tags = new JList<String>(tagModel);
+        tags.setName("Tags");
+        JButton addTag = new JButton("Add tag");
+        addTag.addActionListener(e -> tagModel.addElement("TAG-" + (tagModel.getSize() + 1)));
+
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Folders");
+        root.add(new DefaultMutableTreeNode("Folder 1"));
+        root.add(new DefaultMutableTreeNode("Folder 2"));
+        DefaultTreeModel folderModel = new DefaultTreeModel(root);
+        JTree folders = new JTree(folderModel);
+        folders.setName("Folders");
+        JButton newFolder = new JButton("New folder");
+        newFolder.addActionListener(e -> {
+            folderModel.insertNodeInto(new DefaultMutableTreeNode("Folder " + (root.getChildCount() + 1)), root,
+                    root.getChildCount());
+            folders.expandPath(new TreePath(root));
+        });
+
+        JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        for (Component c : new Component[] {copy, noteCaption, note, saveNote}) recordButtons.add(c);
+        JPanel recordsPanel = new JPanel(new BorderLayout());
+        recordsPanel.add(new JScrollPane(table), BorderLayout.CENTER);
+        recordsPanel.add(recordButtons, BorderLayout.SOUTH);
+        JPanel tagsPanel = new JPanel(new BorderLayout());
+        tagsPanel.add(new JScrollPane(tags), BorderLayout.CENTER);
+        tagsPanel.add(addTag, BorderLayout.SOUTH);
+        JPanel foldersPanel = new JPanel(new BorderLayout());
+        foldersPanel.add(new JScrollPane(folders), BorderLayout.CENTER);
+        foldersPanel.add(newFolder, BorderLayout.SOUTH);
+        JPanel entries = new JPanel(new GridLayout(1, 2));
+        entries.add(tagsPanel);
+        entries.add(foldersPanel);
+        entries.setPreferredSize(new Dimension(520, 150));
+        JPanel content = new JPanel(new BorderLayout());
+        content.add(recordsPanel, BorderLayout.CENTER);
+        content.add(entries, BorderLayout.SOUTH);
+        frame.setContentPane(content);
+        frame.setSize(560, 420);
+        frame.setLocation(40, 340);
+        return frame;
     }
 
     /**
