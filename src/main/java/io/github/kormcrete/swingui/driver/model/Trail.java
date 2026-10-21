@@ -37,7 +37,7 @@ public final class Trail {
      * number, a name) and can never replay against a different run, so the strip itself
      * contributes no scope step - only its content does.
      */
-    private static boolean isDocumentHost(JTabbedPane tabs) {
+    public static boolean isDocumentHost(JTabbedPane tabs) {
         int count = tabs.getTabCount();
         if (count == 0) return false;
         for (int i = 0; i < count; i++) {

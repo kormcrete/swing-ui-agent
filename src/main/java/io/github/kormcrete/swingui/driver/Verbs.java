@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.driver;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 
@@ -195,6 +196,14 @@ public interface Verbs {
     /** The clipboard's text - e.g. what a copy in the app left there; null when it holds none. A read. */
     default String clipboardText() {
         throw missing("clipboardText");
+    }
+
+    /**
+     * What the app's windows show now, once the event queue is drained: a step's outcome is the difference of a reading
+     * before it and one after it ({@code Outcomes.diff}). A read; nothing is recorded.
+     */
+    default UiReading readUi() {
+        throw new DriverException(Reason.CAPABILITY_GAP, "this client cannot read the UI's changes");
     }
 
     static DriverException missing(String verb) {

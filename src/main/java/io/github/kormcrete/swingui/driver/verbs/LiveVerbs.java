@@ -27,6 +27,8 @@ import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.model.Section;
 import io.github.kormcrete.swingui.driver.model.Visibility;
 import io.github.kormcrete.swingui.driver.model.WindowRef;
+import io.github.kormcrete.swingui.driver.outcome.UiReader;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 import io.github.kormcrete.swingui.driver.widgets.ClipboardText;
@@ -305,6 +307,21 @@ public final class LiveVerbs implements Verbs {
     @Override
     public String clipboardText() {
         return Edt.call(() -> ClipboardText.get(Toolkit.getDefaultToolkit().getSystemClipboard()));
+    }
+
+    @Override
+    public UiReading readUi() {
+        driver.settle().drain();
+        return Edt.call(() -> UiReader.standard().read(appWindows()));
+    }
+
+    /** The app's windows and dialogs, not its popups and never the palette's own. EDT. */
+    private List<Window> appWindows() {
+        List<Window> out = new ArrayList<Window>();
+        for (WindowRoot root : driver.windows().roots()) {
+            if (root.content instanceof Window) out.add((Window) root.content);
+        }
+        return out;
     }
 
     @Override

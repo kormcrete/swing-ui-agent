@@ -15,6 +15,14 @@ public interface Visibility {
     boolean isVisible(Component c);
 
     /**
+     * Whether a label search walks into {@code c} and counts it among its siblings: a hidden component and what it
+     * holds take no part. A reading of every tab page widens it for the page it searches from.
+     */
+    default boolean walks(Component c) {
+        return c.isVisible();
+    }
+
+    /**
      * Live rule: showing, with a non-empty size. A zero-height native screen menu bar is not visible.
      * An emptied table, list or tree is the one exception - see {@link #isEmptyDataView}.
      */

@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 import io.github.kormcrete.swingui.junit.ClientApp;
@@ -92,6 +93,7 @@ public final class TracingVerbs implements Verbs {
         throw read("screenshot");
     }
     @Override public String clipboardText() { throw read("clipboard"); }
+    @Override public UiReading readUi() { throw read("reading of the UI"); }
     @Override public FileChooserState fileChooser(Long timeout) { throw read("file chooser"); }
 
     /** Asked only after a failed step, which a trace has none of: nothing to suggest. */

@@ -132,7 +132,7 @@ public final class LabelProximity {
     }
 
     private static <T> void collect(Component c, Class<T> type, List<? super T> out, Visibility visibility) {
-        if (!c.isVisible() || Roles.agentOwn(c)) return;
+        if (!visibility.walks(c) || Roles.agentOwn(c)) return;
         if (type.isInstance(c) && visibility.isVisible(c)) {
             out.add(type.cast(c));
         }
@@ -324,7 +324,7 @@ public final class LabelProximity {
         Component input = null;
         int labelCount = 0;
         for (Component c : panel.getComponents()) {
-            if (!c.isVisible() || !visibility.isVisible(c)) continue;
+            if (!visibility.walks(c) || !visibility.isVisible(c)) continue;
             if (c instanceof JLabel) labelCount++;
             else if (c instanceof JTextComponent || c instanceof JComboBox) {
                 if (input != null) return null;

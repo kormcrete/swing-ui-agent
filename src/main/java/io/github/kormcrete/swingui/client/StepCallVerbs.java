@@ -12,6 +12,7 @@ import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.driver.model.Geometry;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
+import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
 import io.github.kormcrete.swingui.flow.Action;
@@ -118,6 +119,7 @@ public final class StepCallVerbs implements Verbs {
     @Override public List<String> menuItems(List<String> path) { return verbs.menuItems(path); }
     @Override public FileChooserState fileChooser(Long timeout) { return verbs.fileChooser(timeout); }
     @Override public String clipboardText() { return verbs.clipboardText(); }
+    @Override public UiReading readUi() { return verbs.readUi(); }
     @Override public void resetPointer() { verbs.resetPointer(); }
 
     // ---- verbs: one kept step each
