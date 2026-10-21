@@ -30,6 +30,11 @@ public final class Target {
     final int column;
     /** The element as it was seen when this target was made ({@code Recorder.seen}); null when not known. */
     final Locator seen;
+    /**
+     * For a tab: its tabbed pane by its own locator (what the selected tab is read from), null when none finds it; null
+     * for anything else.
+     */
+    Locator whole;
 
     Target(Locator locator, boolean fragile, String element, String shown, String role, Component component,
            Integer tab, int row, int column) {

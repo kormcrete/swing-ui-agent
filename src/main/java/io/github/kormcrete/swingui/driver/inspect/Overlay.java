@@ -862,6 +862,13 @@ final class Overlay extends JComponent {
         if (m.tab != null && c instanceof JTabbedPane && m.tab < ((JTabbedPane) c).getTabCount()) {
             Rectangle t = ((JTabbedPane) c).getBoundsAt(m.tab);
             if (t != null) r = t;
+        } else if (c instanceof JList && m.row >= 0 && m.row < ((JList<?>) c).getModel().getSize()) {
+            // a list entry: its own box
+            Rectangle entry = ((JList<?>) c).getCellBounds(m.row, m.row);
+            if (entry != null) r = entry;
+        } else if (c instanceof JTree && m.row >= 0 && m.row < ((JTree) c).getRowCount()) {
+            Rectangle row = ((JTree) c).getRowBounds(m.row);
+            if (row != null) r = row;
         } else if (c instanceof JTable && m.column >= 0 && m.column < ((JTable) c).getColumnCount()) {
             JTable table = (JTable) c;
             if (m.row >= 0 && m.row < table.getRowCount()) {

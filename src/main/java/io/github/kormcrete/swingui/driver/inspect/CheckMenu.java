@@ -1,7 +1,11 @@
 package io.github.kormcrete.swingui.driver.inspect;
 
+import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.model.Locator;
+import io.github.kormcrete.swingui.driver.model.Names;
+import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
+import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
 import javax.swing.AbstractButton;
@@ -11,12 +15,14 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JMenuItem;
+import javax.swing.JPasswordField;
 import javax.swing.JPopupMenu;
 import javax.swing.JRootPane;
 import javax.swing.SwingUtilities;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JToggleButton;
+import javax.swing.JTree;
 import javax.swing.text.JTextComponent;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -29,6 +35,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -36,19 +43,33 @@ import java.util.function.BiConsumer;
  * The checks a person can record for one element, offered from what it shows NOW: a cell's text, a field's
  * value, a check box's state, a table's row count. Each is one {@code expect} step. A check {@code expect} cannot
  * express yet is listed greyed, so the gap is visible. The app plugin's domain checks those checks fit come first, in
- * the plugin's words ("✓ The cart total is €31.32"), each a {@code do} check ({@link Inspector.Sink#domainChecks}). EDT.
+ * the plugin's words ("✓ The cart total is €31.32"), each a {@code do} check ({@link Inspector.Sink#domainChecks}). Last,
+ * Remember this as…, which keeps the element's text for later steps ({@link #remember}). EDT.
  */
 final class CheckMenu extends JPopupMenu {
 
     static final class Choice {
         final String label;
+        /** The step it records; null for a choice that is greyed. */
         final Map<String, Object> step;
+        /** Why it is greyed, shown beside it; null: expect cannot check this yet. */
+        final String reason;
 
         Choice(String label, Map<String, Object> step) {
+            this(label, step, null);
+        }
+
+        Choice(String label, Map<String, Object> step, String reason) {
             this.label = label;
             this.step = step;
+            this.reason = reason;
         }
     }
+
+    /** The choice that keeps a value for later steps: it opens a name field, then records a {@code remember} entry. */
+    static final String REMEMBER = "Remember this as…";
+    /** Why a row, list entry or tab is not remembered: nothing but its own value would find it again. */
+    static final String SELECT_FIRST = "select the row first, or remember a field";
 
     /** {@link #of(Target, List, List, BiConsumer)} with the element's own checks only. */
     static CheckMenu of(Target t, BiConsumer<Map<String, Object>, Target> run) {
@@ -80,7 +101,8 @@ final class CheckMenu extends JPopupMenu {
             menu.addDomain(domain, 2);
         }
         for (Choice c : choices) {
-            JMenuItem item = new JMenuItem(c.step == null ? c.label + "   (expect cannot check this yet)" : c.label);
+            String why = c.step != null ? null : c.reason != null ? c.reason : "expect cannot check this yet";
+            JMenuItem item = new JMenuItem(why == null ? c.label : c.label + "   (" + why + ")");
             item.setEnabled(c.step != null);
             if (c.step != null) item.addActionListener(x -> run.accept(c.step, t));
             menu.add(item);
@@ -198,11 +220,19 @@ final class CheckMenu extends JPopupMenu {
         throw new IllegalArgumentException("no item '" + label + "' in the check menu, only " + labels());
     }
 
-    /** The steps of {@code choices} that can be recorded (not the greyed ones): what the plugin's checks are matched with. */
+    /**
+     * The checks of {@code choices} that can be recorded (not the greyed ones, not Remember this): what the plugin's
+     * checks are matched with.
+     */
     static List<Map<String, Object>> steps(List<Choice> choices) {
         List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
-        for (Choice c : choices) if (c.step != null) out.add(c.step);
+        for (Choice c : choices) if (c.step != null && !remembers(c.step)) out.add(c.step);
         return out;
+    }
+
+    /** Whether {@code step} is a {@code remember} entry (Remember this), not a check. */
+    static boolean remembers(Map<String, Object> step) {
+        return "remember".equals(step.get("action"));
     }
 
     /** The check also says which view row it is about (see {@link Inspector#ROW_INDEX}). */
@@ -231,6 +261,15 @@ final class CheckMenu extends JPopupMenu {
             String tip = Cells.tableTooltip(table, t.row, t.column);
             if (tip != null && !tip.isEmpty()) out.add(new Choice("Its tooltip is “" + tip + "”", expect(t.locator, "tooltip", tip)));
             rows(out, element, table.getRowCount());
+            out.add(remember(t));
+            return out;
+        }
+        if ((c instanceof JList || c instanceof JTree) && t.locator.item != null && t.row >= 0) {
+            boolean on = c instanceof JList ? ((JList<?>) c).isSelectedIndex(t.row) : ((JTree) c).isRowSelected(t.row);
+            if (on) out.add(new Choice("This item is selected", expect(t.locator, "state", list("selected"))));
+            rows(out, element, c instanceof JList ? ((JList<?>) c).getModel().getSize() : ((JTree) c).getRowCount());
+            out.add(new Choice("Is shown", expect(t.locator, "shown", true)));
+            out.add(remember(t));
             return out;
         }
         if (t.wholeColumn() && c instanceof JTable) {
@@ -279,7 +318,185 @@ final class CheckMenu extends JPopupMenu {
         }
         // anything the person can click is there to be seen: "absent" has no gesture (nothing to click), the agent writes it
         out.add(new Choice("Is shown", expect(t.locator, "shown", true)));
+        Choice remember = remember(t);
+        if (remember != null) out.add(remember);
         return out;
+    }
+
+    /**
+     * Remember this for {@code t}: a {@code remember} entry with the name to suggest ({@code as}: the field's label or
+     * the column's header, as a name), or greyed with why; null for an element with no text to keep (a check box, a
+     * table, a password field). The entry's target never holds the value it keeps, or a later run could not find it
+     * with another value: a cell's row is found by its other columns when they tell it from the rest, else as the
+     * selected row, else by its place (-1 for the last); a list entry, tree row or tab only as the selected one. A field,
+     * label, button or drop-down keeps its own locator.
+     */
+    static Choice remember(Target t) {
+        Component c = t.component;
+        Locator target;
+        String value;
+        String name;
+        boolean selected = false;
+        if (t.cell() && c instanceof JTable) {
+            JTable table = (JTable) c;
+            value = Cells.table(table, t.row, t.column).text;
+            name = t.locator.column;
+            target = t.locator.element();
+            target.column = t.locator.column;
+            Map<String, Object> others = isBlank(value) ? null : otherColumns(table, t.row, t.column, value);
+            if (others != null) {
+                target.row = others;
+            } else if (table.getSelectedRow() == t.row) {
+                selected = true;
+            } else {
+                target.row = Collections.<String, Object>singletonMap("index",
+                        t.row == table.getRowCount() - 1 ? -1 : t.row);
+            }
+        } else if ((c instanceof JList || c instanceof JTree) && t.locator.item != null && t.row >= 0) {
+            value = c instanceof JList ? Cells.list((JList<?>) c, t.row).text : Cells.tree((JTree) c, t.row).text;
+            if (selectedItem(c) != t.row) return greyed(SELECT_FIRST);
+            target = t.locator.element();
+            name = nameOf(target, "item");
+            selected = true;
+        } else if (c instanceof JTabbedPane && t.tab != null) {
+            JTabbedPane tabs = (JTabbedPane) c;
+            value = Names.tabTitle(tabs, t.tab);
+            if (tabs.getSelectedIndex() != t.tab || t.whole == null) return greyed(SELECT_FIRST);
+            target = t.whole;
+            name = nameOf(target, "tab");
+            selected = true;
+        } else if (c instanceof JPasswordField || c instanceof JCheckBox || c instanceof JToggleButton) {
+            return null;
+        } else if (c instanceof JTextComponent || c instanceof JComboBox || c instanceof AbstractButton || c instanceof JLabel) {
+            value = ownText(c);
+            target = t.locator;
+            name = nameOf(target, "value");
+        } else {
+            return null;
+        }
+        if (isBlank(value)) return greyed("it is empty");
+        if (holds(target, value)) return greyed("it is found by its own text");
+        Map<String, Object> step = new LinkedHashMap<String, Object>();
+        step.put("action", "remember");
+        step.put("target", target);
+        step.put("as", name(name));
+        if (selected) step.put("selected", true);
+        return new Choice(REMEMBER, step);
+    }
+
+    private static Choice greyed(String why) {
+        return new Choice(REMEMBER, null, why);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    /** The text a field, drop-down, button or label shows, as {@code remember} reads it. */
+    private static String ownText(Component c) {
+        if (c instanceof JTextComponent) return ((JTextComponent) c).getText();
+        if (c instanceof JComboBox) {
+            JComboBox<?> combo = (JComboBox<?>) c;
+            return combo.getSelectedIndex() < 0 ? (combo.getSelectedItem() == null ? null : String.valueOf(combo.getSelectedItem()))
+                    : Cells.combo(combo, new JList<Object>(), combo.getSelectedIndex()).text;
+        }
+        return Names.clean(Names.ownText(c));
+    }
+
+    /** The view row of list or tree {@code c} that {@code remember} with {@code selected} reads; -1 none. */
+    private static int selectedItem(Component c) {
+        if (c instanceof JList) return ((JList<?>) c).getSelectedIndex();
+        JTree tree = (JTree) c;
+        int[] rows = tree.getSelectionRows();
+        if (rows == null || rows.length == 0) return -1;
+        int lead = tree.getLeadSelectionRow();
+        if (lead >= 0 && tree.isRowSelected(lead)) return lead;
+        int min = rows[0];
+        for (int r : rows) min = Math.min(min, r);
+        return min;
+    }
+
+    /**
+     * Row {@code row} of {@code table} by columns other than {@code skip} that tell it from every other row: one column,
+     * else two, else all of them; null when they do not. A column that is empty, shares its header or holds {@code value}
+     * is never one of them.
+     */
+    private static Map<String, Object> otherColumns(JTable table, int row, int skip, String value) {
+        List<String> headers = TableWidget.headers(table);
+        List<Integer> usable = new ArrayList<Integer>();
+        List<String> texts = new ArrayList<String>();
+        for (int k = 0; k < table.getColumnCount(); k++) {
+            String v = Cells.table(table, row, k).text;
+            if (k == skip || isBlank(v) || v.contains(value) || headers.indexOf(headers.get(k)) != k) continue;
+            usable.add(k);
+            texts.add(v);
+        }
+        int n = usable.size();
+        for (int i = 0; i < n; i++) {
+            Map<String, Object> key = key(headers, usable, texts, i);
+            if (finds(table, key, row)) return key;
+        }
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                Map<String, Object> key = key(headers, usable, texts, i, j);
+                if (finds(table, key, row)) return key;
+            }
+        }
+        if (n > 2) {
+            int[] all = new int[n];
+            for (int i = 0; i < n; i++) all[i] = i;
+            Map<String, Object> key = key(headers, usable, texts, all);
+            if (finds(table, key, row)) return key;
+        }
+        return null;
+    }
+
+    private static Map<String, Object> key(List<String> headers, List<Integer> columns, List<String> texts, int... at) {
+        Map<String, Object> key = new LinkedHashMap<String, Object>();
+        for (int i : at) key.put(headers.get(columns.get(i)), texts.get(i));
+        return key;
+    }
+
+    /** Whether {@code key} names row {@code row} of {@code table} and no other. */
+    private static boolean finds(JTable table, Map<String, Object> key, int row) {
+        try {
+            return TableWidget.row(table, RowSpec.of(key)) == row;
+        } catch (DriverException notOne) {
+            return false;
+        }
+    }
+
+    /** Whether locator {@code l} finds its element by {@code value}: in its name, scope, row or item. */
+    private static boolean holds(Locator l, String value) {
+        if (l.name != null && l.name.contains(value)) return true;
+        if (l.scope != null) for (String s : l.scope) if (s.contains(value)) return true;
+        if (l.row != null) for (Object v : l.row.values()) if (String.valueOf(v).contains(value)) return true;
+        if (l.item != null) for (String s : l.item) if (s.contains(value)) return true;
+        return false;
+    }
+
+    /** What a locator calls its element, for a name: its name, else its id, else {@code otherwise}. */
+    private static String nameOf(Locator l, String otherwise) {
+        if (l.name != null && !l.name.trim().isEmpty()) return l.name;
+        return l.id != null && !l.id.trim().isEmpty() ? l.id : otherwise;
+    }
+
+    /**
+     * {@code text} as a name a later step can use ({@code ${name}}): its words joined, the first in lower case
+     * ("Order total" → {@code orderTotal}), a letter first, at most 36 characters (room for a number after it);
+     * {@code value} when it has no letter or digit.
+     */
+    static String name(String text) {
+        StringBuilder out = new StringBuilder();
+        for (String word : (text == null ? "" : text).split("[^A-Za-z0-9]+")) {
+            if (word.isEmpty()) continue;
+            out.append(out.length() == 0 ? word.substring(0, 1).toLowerCase(Locale.ROOT) + word.substring(1)
+                    : word.substring(0, 1).toUpperCase(Locale.ROOT) + word.substring(1));
+        }
+        String name = out.toString();
+        if (name.isEmpty()) return "value";
+        if (!Character.isLetter(name.charAt(0))) name = "value" + name;
+        return name.length() > 36 ? name.substring(0, 36) : name;
     }
 
     private static void rows(List<Choice> out, Locator element, int n) {

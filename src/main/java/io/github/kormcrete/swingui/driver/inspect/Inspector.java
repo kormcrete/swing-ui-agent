@@ -141,8 +141,19 @@ public final class Inspector {
          */
         Result refused(String line);
 
-        /** A check the person chose: run it, record it when it passes. */
+        /**
+         * A check the person chose: run it, record it when it passes. A {@code remember} entry is one too: refused, with
+         * why, when its {@code as} is no name or a name the recording already has.
+         */
         Result check(Map<String, Object> step);
+
+        /**
+         * The name to suggest for a value the person remembers, from {@code base} (a valid name): {@code base} when the
+         * recording has no step or remembered value by that name, else {@code base2}, {@code base3}, ...
+         */
+        default String freeName(String base) {
+            return base;
+        }
 
         /**
          * Every step of the recording so far, agent's and person's, as one line each with its id and author. Never
@@ -1549,8 +1560,51 @@ public final class Inspector {
         if (rec.locator.column != null) s.append(" · ").append(rec.locator.column);
         s.append(suffix(rec));
         // the agent reads the locator; the person reads the name they see, also when the locator goes by id
-        return new Target(rec.locator, rec.fragile, s.toString(), Target.shown(r.role, resolver.seenName(r), rec.locator), role,
-                r.component, r.tab, row, column, rec.seen);
+        Target t = new Target(rec.locator, rec.fragile, s.toString(), Target.shown(r.role, resolver.seenName(r), rec.locator),
+                role, r.component, r.tab, row, column, rec.seen);
+        if (r.tab != null) t.whole = wholeOf(r.component);
+        return t;
+    }
+
+    /** The locator the recorder writes for {@code c} itself (a tab's tabbed pane), null when none finds it. EDT. */
+    private Locator wholeOf(Component c) {
+        try {
+            return recorder.record(resolver.resolve(Locator.ofRef(refs.add(c, null)))).locator;
+        } catch (DriverException notAddressable) {
+            return null;
+        }
+    }
+
+    /**
+     * The catcher's mouse event in Check mode, snapped: the list entry or tree row under it is a target of its own (its
+     * checks are the entry's), else as {@link #snapIn}. An entry that reads like another one is the whole list's. EDT.
+     */
+    Target snapItemIn(Overlay o, MouseEvent e) {
+        Point p = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), o.layers());
+        Component under = o.appComponentAt(p);
+        if (under == null) return null;
+        Point in = SwingUtilities.convertPoint(o.layers(), p, under);
+        Target item = null;
+        try {
+            if (under instanceof JList) {
+                JList<?> list = (JList<?>) under;
+                int index = list.locationToIndex(in);
+                Rectangle cell = index < 0 ? null : list.getCellBounds(index, index);
+                if (cell != null && cell.contains(in)) item = listItem(list, index);
+            } else if (under instanceof JTree) {
+                int row = treeRowAt((JTree) under, in);
+                if (row >= 0) item = treeRow((JTree) under, row);
+            }
+        } catch (NotRecordable twin) {
+            item = null;
+        }
+        return item != null ? item : snap(under, in);
+    }
+
+    /** {@link #hoverIn} for Check mode: the box is on what {@link #snapItemIn} gives. */
+    void hoverItemIn(Overlay o, MouseEvent e) {
+        Target t = snapItemIn(o, e);
+        o.hover(t == null ? null : Overlay.Mark.of(t, t.shown, Overlay.HOVER, false));
     }
 
     private static String suffix(Recorder.Recorded rec) {

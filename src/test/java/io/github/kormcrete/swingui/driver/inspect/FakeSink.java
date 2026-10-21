@@ -161,7 +161,20 @@ final class FakeSink implements Inspector.Sink {
         replays.add(from + "-" + to);
         return replaying;
     }
-    @Override public Inspector.Result check(Map<String, Object> step) { return done(step); }
+    /** The checks the person chose, as they came; why one is refused (null: it is not). */
+    final List<Map<String, Object>> checked = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
+    volatile String refuseCheck;
+    @Override public Inspector.Result check(Map<String, Object> step) {
+        checked.add(new java.util.LinkedHashMap<String, Object>(step));
+        if (refuseCheck != null) return new Inspector.Result(false, step.get("action") + " - " + refuseCheck);
+        return done(step);
+    }
+    /** The free name {@link #freeName} answers for a base, by base; none: the base. */
+    final Map<String, String> freeNames = new java.util.concurrent.ConcurrentHashMap<String, String>();
+    @Override public String freeName(String base) {
+        String free = freeNames.get(base);
+        return free != null ? free : base;
+    }
     @Override public Inspector.Result refused(String line) { log.add("refused " + line); return new Inspector.Result(false, line); }
     @Override public List<Inspector.StepLine> steps() {
         synchronized (steps) {

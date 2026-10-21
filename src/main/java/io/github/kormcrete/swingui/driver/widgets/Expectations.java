@@ -115,6 +115,10 @@ public final class Expectations {
             // A tree ROW's own state - the same node Snapshot.describe reads for that item.
             JTree tree = (JTree) r.component;
             TreeWidget.itemState(tree, TreeWidget.row(tree, r.item()), n);
+        } else if (r.component instanceof JList && r.item() != null) {
+            // a list ENTRY's own state, as a tree row's: selected or not
+            JList<?> list = (JList<?>) r.component;
+            if (list.isSelectedIndex(entry(list, r.item()))) n.addState("selected");
         } else if (liveSection == null || Roles.of(r.component) != null) {
             // A component with a derived role is described by it, as the snapshot does. A claimed one with
             // no derived role is a section node with no derived state: the source's state is all it has.

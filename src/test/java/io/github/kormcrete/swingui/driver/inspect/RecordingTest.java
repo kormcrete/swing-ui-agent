@@ -3535,6 +3535,59 @@ class RecordingTest {
     }
 
     @Test
+    void rememberThisAsRecordsANamedCheckEntry() throws Exception {
+        sink.freeNames.put("customer", "customer2");
+        List<CheckMenu> shown = Collections.synchronizedList(new java.util.ArrayList<CheckMenu>());
+        recordInFrame();
+        sink.person("click(#copy)");
+        SwingUtilities.invokeAndWait(() -> {
+            recording.showMenu = (m, e) -> shown.add(m);
+            recording.mode(true);
+            scene.customer.setText("Ada Shop Ltd");
+        });
+        Target customer = onEdt(() -> scene.inspector.component(scene.customer));
+        MouseEvent click = new MouseEvent(scene.customer, MouseEvent.MOUSE_PRESSED, 0, 0, 5, 5, 1, false);
+        Overlay o = onEdt(() -> scene.inspector.overlay(frame.getRootPane()));
+        SwingUtilities.invokeAndWait(() -> recording.offerChecks(customer, click, o));
+        SwingUtilities.invokeAndWait(() -> shown.get(0).choose("Remember this as…"));
+
+        // the steps list opens with a name field in a row of its own under the last step, the free name suggested
+        JTextField field = eventually(() -> recording.panel != null ? recording.panel.nameField() : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(field.getText()).isEqualTo("customer2");
+            assertThat(recording.panel.namingRow()).isEqualTo(1);
+            assertThat(recording.panel.stepsList().getModel().getElementAt(1)).contains("remember as");
+            assertThat(recording.state).isEqualTo(Recording.State.CHECKING);
+        });
+        // refused (a name the recording has): the field stays open with the name, the bar says why
+        sink.refuseCheck = "'customer2' is already the name of step 1; choose another name";
+        enter(field, "customer2");
+        eventually(() -> recording.bar.text().contains("already the name") ? Boolean.TRUE : null);
+        SwingUtilities.invokeAndWait(() -> {
+            assertThat(recording.panel.nameField()).isSameAs(field);
+            assertThat(field.getText()).isEqualTo("customer2");
+            assertThat(field.isEditable()).isTrue();
+        });
+        sink.refuseCheck = null;
+        enter(field, " customerName ");
+        closed();
+        java.util.Map<String, Object> kept = sink.checked.get(sink.checked.size() - 1);
+        assertThat(kept).containsEntry("action", "remember").containsEntry("as", "customerName")
+                .containsEntry("target", customer.locator);
+        eventually(() -> recording.bar.text().startsWith("recorded: ") ? Boolean.TRUE : null);
+
+        // Esc: nothing is kept
+        int before = sink.checked.size();
+        SwingUtilities.invokeAndWait(() -> recording.offerChecks(customer, click, o));
+        SwingUtilities.invokeAndWait(() -> shown.get(1).choose("Remember this as…"));
+        JTextField again = eventually(() -> recording.panel.nameField());
+        SwingUtilities.invokeAndWait(() -> key(again, KeyEvent.VK_ESCAPE));
+        closed();
+        Thread.sleep(100);
+        assertThat(sink.checked).hasSize(before);
+    }
+
+    @Test
     void theCheckMenuOpensAtOnceWhileTheSinkThreadIsBusy() throws Exception {
         sink.domainChecks = Collections.singletonList(new Inspector.DomainCheck("The order is placed",
                 Collections.<String, Object>singletonMap("action", "do")));

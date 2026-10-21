@@ -291,6 +291,21 @@ class ExpectationsTest {
         assertThat(Expectations.check(birch, absent())).isNull();
     }
 
+    /** A list entry's {@code selected} is the entry's own, as a tree row's is: another entry selected does not count. */
+    @Test
+    void aListEntryIsSelectedOnlyWhileItIs() {
+        javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<String>();
+        model.addElement("Ada Shop Ltd");
+        model.addElement("Birch & Co");
+        javax.swing.JList<String> list = new javax.swing.JList<String>(model);
+        Resolved birch = entry(list, "Birch & Co");
+        list.setSelectedIndex(0);
+        assertThat(Expectations.check(birch, state("selected"))).contains("expected state selected");
+        assertThat(Expectations.check(birch, state("!selected"))).isNull();
+        list.setSelectedIndex(1);
+        assertThat(Expectations.check(birch, state("selected"))).isNull();
+    }
+
     /** {@code shown} is {@code state ["!hidden"]}: on a list entry it needs the entry, not only the list. */
     @Test
     void aRemovedListEntryIsNotShown() {

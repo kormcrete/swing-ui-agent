@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 
@@ -62,7 +63,8 @@ import java.util.function.Predicate;
  * field over the row's text holds its sentence (Enter saves, Esc cancels, a click elsewhere saves a change); several
  * steps get a header row of their own for a group's sentence. A step that uses what an earlier one changed shows 🔗 and
  * where from, in words (the value it stood for on hover); its row menu links it by hand, goes back to the exact value,
- * and makes a typed text unique per run; deleting a step others use asks first. Rows know their record's id: what the
+ * and makes a typed text unique per run; deleting a step others use asks first. The Check menu's Remember this as… types
+ * its name in a field of the same kind, in a row of its own under the last step. Rows know their record's id: what the
  * person deletes, redoes or describes is what they saw, even when the agent changed the recording since. The callbacks
  * get flat record indexes (the session's order), never rows: a header row is no record.
  */
@@ -167,8 +169,19 @@ final class StepsPanel extends JPanel {
         final String initial;
         /** What the empty field shows greyed: the row's technical line, or a new group's steps. */
         final String hint;
+        /**
+         * For Remember this: what records the remember entry under the name typed (a row of its own under the last
+         * step holds the field); null for a sentence.
+         */
+        final Function<String, CompletableFuture<Inspector.Result>> keep;
 
         Spec(String item, boolean group, int fromId, int toId, int hostId, int groupId, String initial, String hint) {
+            this(item, group, fromId, toId, hostId, groupId, initial, hint, null);
+        }
+
+        private Spec(String item, boolean group, int fromId, int toId, int hostId, int groupId, String initial, String hint,
+                     Function<String, CompletableFuture<Inspector.Result>> keep) {
+            this.keep = keep;
             this.item = item;
             this.group = group;
             this.fromId = fromId;
@@ -183,8 +196,14 @@ final class StepsPanel extends JPanel {
             return group && groupId == 0;
         }
 
-        /** Whether {@code o} names the same records in the same row. */
+        /** The name of a value to remember, not a sentence: saved even unchanged, under the last step. */
+        boolean remembering() {
+            return keep != null;
+        }
+
+        /** Whether {@code o} names the same records in the same row (a name to remember is only ever itself). */
         boolean same(Spec o) {
+            if (remembering() || o.remembering()) return this == o;
             return group == o.group && fromId == o.fromId && toId == o.toId && hostId == o.hostId && groupId == o.groupId;
         }
     }
@@ -207,6 +226,11 @@ final class StepsPanel extends JPanel {
 
         boolean changed() {
             return !field.getText().trim().equals(spec.initial.trim());
+        }
+
+        /** Whether ending the field hands on what it holds: a changed sentence, any name to remember. */
+        boolean toSave() {
+            return spec.remembering() || changed();
         }
     }
 
@@ -800,8 +824,10 @@ final class StepsPanel extends JPanel {
         field.setFont(list.getFont());
         field.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Overlay.NAVY),
                 BorderFactory.createEmptyBorder(0, 2, 0, 2)));
-        field.setToolTipText("Enter saves, Esc cancels. One line, at most 200 characters. " + (s.group
-                ? "A group keeps a sentence: Ungroup ends it." : "Empty removes the sentence."));
+        field.setToolTipText(s.remembering()
+                ? "Enter keeps the value under this name, Esc keeps nothing. A letter, then letters, digits or _."
+                : "Enter saves, Esc cancels. One line, at most 200 characters. " + (s.group
+                        ? "A group keeps a sentence: Ungroup ends it." : "Empty removes the sentence."));
         // the field's own keys: Enter never reaches the window's default button, nor Esc the app's dialog
         field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "save");
         field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancel");
@@ -832,13 +858,13 @@ final class StepsPanel extends JPanel {
      */
     private void save(Naming n, boolean giveBack) {
         if (naming != n || n.saving) return;
-        if (!n.changed()) {
+        if (!n.toSave()) {
             end(n, giveBack);
             return;
         }
         n.saving = true;
         n.field.setEditable(false);
-        edits.describe(n.spec.fromId, n.spec.toId, n.field.getText().trim()).thenAccept(r -> SwingUtilities.invokeLater(() -> {
+        hand(n).thenAccept(r -> SwingUtilities.invokeLater(() -> {
             if (naming != n) return;
             n.saving = false;
             n.field.setEditable(true);
@@ -889,8 +915,27 @@ final class StepsPanel extends JPanel {
     /** Closes {@code n}, its change handed on without waiting for the answer. */
     private void commit(Naming n, boolean giveBack) {
         // saving: Enter or a click elsewhere handed it on already
-        if (n.changed() && !n.saving) edits.describe(n.spec.fromId, n.spec.toId, n.field.getText().trim());
+        if (n.toSave() && !n.saving) hand(n);
         end(n, giveBack);
+    }
+
+    /** Hands on what {@code n} holds: the sentence of its records, or the name to remember a value under. */
+    private CompletableFuture<Inspector.Result> hand(Naming n) {
+        String text = n.field.getText().trim();
+        return n.spec.remembering() ? n.spec.keep.apply(text) : edits.describe(n.spec.fromId, n.spec.toId, text);
+    }
+
+    /** The text of the row the name of a value to remember is typed in, before the field. */
+    static final String REMEMBER_ROW = "      └ remember as ";
+
+    /**
+     * Remember this as…: a name field in a row of its own under the last step, {@code name} in it ({@code hint} greyed
+     * while it is empty). Enter, or a click elsewhere, hands the name to {@code keep}, which records the remember entry;
+     * a refusal keeps the field open. Esc keeps nothing. A field open for another row ends first, as a click elsewhere
+     * ends it. Nothing opens while the person may not name rows (a replay runs).
+     */
+    void rememberAs(String name, String hint, Function<String, CompletableFuture<Inspector.Result>> keep) {
+        open(new Spec(CheckMenu.REMEMBER, false, -1, -1, -1, 0, name, hint, keep));
     }
 
     /**
@@ -959,7 +1004,8 @@ final class StepsPanel extends JPanel {
     /** The text before a row's sentence: number, mark and who for a record, the fold mark for a header. */
     private String prefixAt(int row) {
         Row r = rows.get(row);
-        return r.line == null ? "▾ " : lead(r);
+        if (r.line != null) return lead(r);
+        return r.fresh && naming != null && naming.row == row && naming.spec.remembering() ? REMEMBER_ROW : "▾ ";
     }
 
     /** What {@code row}'s text begins with before its sentence: number, mark, who, and a domain step's ▸ and ◆. */
@@ -1210,12 +1256,13 @@ final class StepsPanel extends JPanel {
         // an open field stays with the records it names, by their ids; when the agent took them out it closes
         boolean lost = false;
         if (naming != null) {
-            int at = hostIn(shown, naming.spec);
+            // a name to remember goes under the last step, above what the person is still doing
+            int at = naming.spec.remembering() ? shown.size() - (pending != null ? 1 : 0) : hostIn(shown, naming.spec);
             if (at < 0) {
                 lost = true;
-            } else if (naming.spec.fresh()) {
+            } else if (naming.spec.fresh() || naming.spec.remembering()) {
                 shown.add(at, new Row(-1, null, null, null, 0, true));
-                texts.add(at, "▾ ");
+                texts.add(at, naming.spec.remembering() ? REMEMBER_ROW : "▾ ");
             }
             naming.row = at;
         }

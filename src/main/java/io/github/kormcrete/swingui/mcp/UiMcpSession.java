@@ -1019,7 +1019,39 @@ public class UiMcpSession {
                     return new Inspector.Result(false, json + " - " + e.getMessage());
                 }
             }
+
+            @Override
+            public String freeName(String base) {
+                synchronized (UiMcpSession.this) {
+                    String name = base;
+                    for (int n = 2; nameHolder(name) >= 0 || "run".equals(name); n++) name = base + n;
+                    return name;
+                }
+            }
         };
+    }
+
+    /** The flat index of the record a reference names {@code name} by (a step's id, a remember entry's name); -1 none. */
+    private int nameHolder(String name) {
+        List<RecordedStep> steps = model.records();
+        for (int i = 0; i < steps.size(); i++) if (name.equals(RecordingModel.nameOf(steps.get(i)))) return i;
+        return -1;
+    }
+
+    /**
+     * Why the recording cannot take a remember entry named {@code as}: no name, not a valid one, or the name of a step or
+     * value it has already ("'number' is already the name of check 1.1"); null when it can.
+     */
+    private String rememberNameProblem(String as) {
+        if (as == null || as.isEmpty()) return "remember needs 'as', the name to keep the value under";
+        String problem = RecordedTestFiles.idProblem(as);
+        if (problem != null) return problem;
+        int at = nameHolder(as);
+        if (at < 0) return null;
+        List<Action> actions = model.actions();
+        String label = StepNumbers.labels(actions).get(at);
+        return "'" + as + "' is already the name of " + (StepNumbers.isCheck(actions.get(at)) ? "check " : "step ") + label
+                + "; choose another name";
     }
 
     /** The palette's line for a written export: where it went (relative to the working directory when below it). */
@@ -1355,6 +1387,12 @@ public class UiMcpSession {
             }
             resolved = Resolution.resolved(recorded, model.runValues());
         }
+        if (record && replayed == null && action instanceof RememberVerb
+                && model.state() == RecordingModel.State.RECORDING) {
+            // a name the recording cannot take is refused before the step reads anything: nothing is recorded
+            String problem = rememberNameProblem(((RememberVerb) action).as);
+            if (problem != null) return refusedName(action, problem, started);
+        }
         Flow flow = new Flow();
         flow.name = "step";
         flow.steps = new ArrayList<Action>();
@@ -1438,6 +1476,17 @@ public class UiMcpSession {
 
     /** A result field only the palette reads: a replayed step failed for a value an earlier step did not make, in words. */
     private static final String UNRESOLVED = "unresolved";
+
+    /** A remember entry the recording does not take: {@code problem} says why, in plain words. */
+    private StepRun refusedName(Action action, String problem, long started) {
+        ObjectNode r = mapper.createObjectNode();
+        r.put("passed", false);
+        r.put("action", action.describe());
+        r.put("reason", Reason.BAD_INPUT.name());
+        r.put("message", problem);
+        r.put("ms", System.currentTimeMillis() - started);
+        return new StepRun(r, null);
+    }
 
     /** A replayed step that never ran: a reference of it has no value ({@code e} says which, in words). */
     private StepRun unresolved(Action action, DriverException e, long started) {

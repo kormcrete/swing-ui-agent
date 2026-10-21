@@ -2231,6 +2231,44 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aRememberEntryIsRecordedLoadedAndExportedAsARecordedTestButNotAsJava() throws Exception {
+        backend.verbs.remembered = "ORD-1641";
+        assertThat(sink.done(step("click", Locator.of("button", "Copy"))).ok).isTrue();
+        Map<String, Object> remember = step("remember", Locator.of("label", "Number"));
+        remember.put("as", "number");
+        Inspector.Result kept = sink.check(remember);
+        assertThat(kept.ok).as(kept.line).isTrue();
+        assertThat(lines()).hasSize(2);
+        assertThat(sink.steps().get(1).check).isTrue();
+
+        // the same name twice, or the run's own, is refused in plain words: nothing is recorded
+        Inspector.Result twice = sink.check(remember);
+        assertThat(twice.ok).isFalse();
+        assertThat(twice.line).contains("'number' is already the name of check 1.1");
+        remember.put("as", "run");
+        assertThat(sink.check(remember).line).contains("'run' is reserved");
+        assertThat(lines()).hasSize(2);
+        // a free name for a suggestion: the one asked for, else numbered
+        assertThat(sink.freeName("number")).isEqualTo("number2");
+        assertThat(sink.freeName("total")).isEqualTo("total");
+
+        // a recorded test keeps it; the Java export says plainly it has no form for it yet
+        JsonNode file = mapper.readTree(session.exportRecordedTest("copy", quoted(dir), null, false)).path("test");
+        assertThat(file.path("version").asInt()).isEqualTo(4);
+        JsonNode check = file.path("steps").get(0).path("checks").get(0);
+        assertThat(check.path("action").asText()).isEqualTo("remember");
+        assertThat(check.path("as").asText()).isEqualTo("number");
+        ExportRefused java = catchThrowableOfType(() -> session.exportTest("CopyUiIT", null, "demo", false),
+                ExportRefused.class);
+        assertThat(java.problems()).anySatisfy(p -> assertThat(p).contains("check 1.1", "remember", "no Java form yet"));
+
+        // and it loads again, the remember entry with it
+        session.loadRecordedTest(dir.resolve("copy.json"));
+        assertThat(session.recordedSteps()).hasSize(2);
+        assertThat(lines().get(1)).contains("remember");
+    }
+
+    @Test
     void anIntParamThatUsesAnEarlierValueIsCheckedAtRunNotAtLoad() throws Exception {
         UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("setQty", "Set the quantity to {qty}")
                 .param("qty", ParamType.INT)

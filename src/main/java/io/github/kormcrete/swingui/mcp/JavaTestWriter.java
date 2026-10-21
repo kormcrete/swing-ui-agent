@@ -28,6 +28,7 @@ import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.PickVerb;
 import io.github.kormcrete.swingui.flow.verb.PressVerb;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.flow.verb.ScreenshotVerb;
 import io.github.kormcrete.swingui.flow.verb.ScrollVerb;
 import io.github.kormcrete.swingui.flow.verb.SelectVerb;
@@ -307,6 +308,14 @@ public final class JavaTestWriter {
                 String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
                 Action a = steps.get(i);
                 stepLines.add(null);
+                if (a instanceof RememberVerb) {
+                    // kept by a recording like a step that uses earlier values: only the Java export has no form for it yet
+                    if (!doForms.keepsReferences()) {
+                        problems.add(what + ": " + a.describe()
+                                + " keeps a value for later steps (remember), which has no Java form yet");
+                    }
+                    continue;
+                }
                 if (hasReferences(a)) {
                     if (!doForms.keepsReferences()) {
                         problems.add(what + ": " + a.describe()

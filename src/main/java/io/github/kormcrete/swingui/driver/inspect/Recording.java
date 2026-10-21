@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -221,8 +222,9 @@ final class Recording {
         for (JRootPane root : inspector.roots.get()) {
             Overlay o = inspector.overlay(root);
             if (check) {
-                o.catcher(e -> inspector.hoverIn(o, e), e -> {
-                    Target t = inspector.snapIn(o, e);
+                // a list entry or tree row is checked on its own, not as the whole list
+                o.catcher(e -> inspector.hoverItemIn(o, e), e -> {
+                    Target t = inspector.snapItemIn(o, e);
                     if (t != null) offerChecks(t, e, o);
                 });
             } else {
@@ -492,11 +494,57 @@ final class Recording {
         });
     }
 
-    /** The person chose a check in the check menu: {@code step} for {@code t}, in the window of {@code o}. */
+    /**
+     * The person chose a check in the check menu: {@code step} for {@code t}, in the window of {@code o}. Remember this
+     * asks for a name first ({@link #rememberAs}).
+     */
     void check(Map<String, Object> step, Target t, Overlay o) {
+        if (CheckMenu.remembers(step)) rememberAs(step, t, o); else record(step, t, o);
+    }
+
+    /**
+     * Remember this as…: the steps list opens (when it is closed) with a name field in a row of its own under the last
+     * step, the name the session suggests for {@code step}'s {@code as} in it. Enter, or a click elsewhere, records the
+     * remember entry under that name as a check of the step before it; a refused name keeps the field open and the bar
+     * says why; Esc records nothing. Only while still checking.
+     */
+    private void rememberAs(Map<String, Object> step, Target t, Overlay o) {
+        String base = String.valueOf(step.get("as"));
+        sinkThread.submit(() -> {
+            String free;
+            try {
+                free = sink.freeName(base);
+            } catch (RuntimeException e) {
+                free = base;
+            }
+            String suggested = free;
+            SwingUtilities.invokeLater(() -> {
+                if (state != State.CHECKING || replaying || agentReplay != null) return;
+                if (panel == null) toggleSteps();
+                panel.rememberAs(suggested, "a name for " + t.shown, as -> {
+                    Map<String, Object> named = new LinkedHashMap<String, Object>(step);
+                    named.put("as", as);
+                    return record(named, t, o);
+                });
+            });
+        });
+    }
+
+    /**
+     * Runs and records the check {@code step} for {@code t}, in the window of {@code o}: its result on the bar and as a
+     * mark on the element; completes with it after both, on the EDT.
+     */
+    private CompletableFuture<Inspector.Result> record(Map<String, Object> step, Target t, Overlay o) {
+        CompletableFuture<Inspector.Result> result = new CompletableFuture<Inspector.Result>();
         activeBar.text("checking …");
         sinkThread.submit(() -> {
-            Inspector.Result r = sink.check(step);
+            Inspector.Result checked;
+            try {
+                checked = sink.check(step);
+            } catch (RuntimeException e) {
+                checked = new Inspector.Result(false, why(e));
+            }
+            Inspector.Result r = checked;
             SwingUtilities.invokeLater(() -> {
                 show(r);
                 hintBack(activeBar.text());
@@ -506,8 +554,10 @@ final class Recording {
                 Timer clear = new Timer(1500, e -> { if (!replaying) o.clearMarks(); });
                 clear.setRepeats(false);
                 clear.start();
+                result.complete(r);
             });
         });
+        return result;
     }
 
     /** A check's result {@code shown} on the bar: after a while, if the bar still says it, Check mode's way out again. */

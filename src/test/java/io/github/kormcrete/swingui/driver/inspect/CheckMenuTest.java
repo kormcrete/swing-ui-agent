@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import javax.swing.JTree;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -169,7 +171,7 @@ class CheckMenuTest {
         // the plugin's checks are matched against the checks offered for the element, as it shows now
         List<CheckMenu.Choice> choices = CheckMenu.choices(target);
         List<Map<String, Object>> asked = CheckMenu.steps(choices);
-        assertThat(asked).hasSize((int) choices.stream().filter(c -> c.step != null).count());
+        assertThat(asked).hasSize((int) choices.stream().filter(c -> c.step != null && !CheckMenu.remembers(c.step)).count());
         assertThat(asked.get(0)).containsEntry("action", "expect").containsEntry("text", "€31.32");
 
         Map<String, Object> cartTotal = new LinkedHashMap<String, Object>();
@@ -195,6 +197,147 @@ class CheckMenuTest {
         // without a plugin's check the menu is as before
         assertThat(CheckMenu.of(target, choices, Collections.<Inspector.DomainCheck>emptyList(), (step, t) -> { }).labels())
                 .noneMatch(l -> l.startsWith("✓"));
+    }
+
+    // ---- Remember this: a value kept for later steps, found without its own value
+
+    @Test
+    void rememberACellUsesTheOtherColumnsNotItsOwnValue() {
+        // ORD-1640's other columns: neither Acme nor Open alone tells it from the others, together they do
+        Target cell = scene.inspector.cell(scene.orders, 0, 0);
+        assertThat(cell.locator.row).containsEntry("Order", "ORD-1640");
+        CheckMenu.Choice remember = remember(CheckMenu.choices(cell));
+        assertThat(remember.step).containsEntry("action", "remember").containsEntry("as", "order")
+                .doesNotContainKey("selected").doesNotContainKey(Inspector.ROW_INDEX);
+        Locator target = (Locator) remember.step.get("target");
+        Map<String, Object> row = new LinkedHashMap<String, Object>();
+        row.put("Customer", "Acme");
+        row.put("Status", "Open");
+        assertThat(target.row).isEqualTo(row);
+        assertThat(target.column).isEqualTo("Order");
+        assertThat(target.toString()).doesNotContain("ORD-1640");
+        // one other column is enough when it is unique: Shipped
+        Locator shipped = (Locator) remember(CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 0))).step.get("target");
+        assertThat(shipped.row).isEqualTo(Collections.<String, Object>singletonMap("Status", "Shipped"));
+    }
+
+    @Test
+    void rememberASelectedRowUsesSelected() {
+        sameOtherColumns();
+        scene.orders.setRowSelectionInterval(1, 1);
+        CheckMenu.Choice remember = remember(CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 0)));
+        assertThat(remember.step).containsEntry("selected", true).containsEntry("as", "order");
+        Locator target = (Locator) remember.step.get("target");
+        assertThat(target.row).isNull();
+        assertThat(target.column).isEqualTo("Order");
+        // a selected list entry the same way: the list, selected
+        JList<String> list = customers();
+        list.setSelectedIndex(1);
+        CheckMenu.Choice entry = remember(CheckMenu.choices(scene.inspector.listItem(list, 1)));
+        assertThat(entry.step).containsEntry("selected", true).containsEntry("as", "customers");
+        assertThat(((Locator) entry.step.get("target")).item).isNull();
+    }
+
+    @Test
+    void rememberTheLastRowUsesMinusOne() {
+        sameOtherColumns();
+        Locator last = (Locator) remember(CheckMenu.choices(scene.inspector.cell(scene.orders, 2, 0))).step.get("target");
+        assertThat(last.row).isEqualTo(Collections.<String, Object>singletonMap("index", -1));
+        Locator second = (Locator) remember(CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 0))).step.get("target");
+        assertThat(second.row).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
+    }
+
+    @Test
+    void rememberIsDisabledWithAReasonWhenNothingIdentifiesTheRow() {
+        JList<String> list = customers();
+        Target ada = scene.inspector.listItem(list, 0);
+        CheckMenu.Choice remember = remember(CheckMenu.choices(ada));
+        assertThat(remember.step).isNull();
+        assertThat(remember.reason).isEqualTo("select the row first, or remember a field");
+        CheckMenu menu = CheckMenu.of(ada, (step, t) -> { });
+        assertThat(menu.labels()).contains("Remember this as…   (select the row first, or remember a field)");
+        // a button found by its own text would need the value to find it again
+        CheckMenu.Choice save = remember(CheckMenu.choices(scene.inspector.component(scene.save)));
+        assertThat(save.step).isNull();
+        assertThat(save.reason).isEqualTo("it is found by its own text");
+    }
+
+    @Test
+    void rememberAFieldKeepsItsNameAndSuggestsItsLabel() {
+        scene.customer.setText("Ada Shop Ltd");
+        CheckMenu.Choice remember = remember(CheckMenu.choices(scene.inspector.component(scene.customer)));
+        assertThat(remember.step).containsEntry("action", "remember").containsEntry("as", "customer");
+        assertThat(remember.step.get("target")).isEqualTo(scene.inspector.component(scene.customer).locator);
+        // the Check menu asks the plugin about its checks, never about a remember entry
+        assertThat(CheckMenu.steps(CheckMenu.choices(scene.inspector.component(scene.customer))))
+                .noneMatch(s -> "remember".equals(s.get("action")));
+        // an empty field has nothing to remember
+        scene.customer.setText("");
+        assertThat(remember(CheckMenu.choices(scene.inspector.component(scene.customer))).reason).isEqualTo("it is empty");
+    }
+
+    @Test
+    void listAndTreeItemsGetShownAndSelectedChecks() {
+        JList<String> list = customers();
+        list.setSelectedIndex(1);
+        Target birch = scene.inspector.listItem(list, 1);
+        List<CheckMenu.Choice> choices = CheckMenu.choices(birch);
+        CheckMenu.Choice shown = choice(choices, "Is shown");
+        assertThat(((Locator) shown.step.get("target")).item).containsExactly("Birch & Co");
+        assertThat(shown.step).containsEntry("shown", true);
+        CheckMenu.Choice selected = choice(choices, "This item is selected");
+        assertThat(((Locator) selected.step.get("target")).item).containsExactly("Birch & Co");
+        assertThat(selected.step).containsEntry("state", Collections.singletonList("selected"));
+        // an entry that is not selected offers no such check
+        assertThat(CheckMenu.choices(scene.inspector.listItem(list, 0))).extracting(c -> c.label)
+                .contains("Is shown").doesNotContain("This item is selected");
+
+        javax.swing.tree.DefaultMutableTreeNode office = new javax.swing.tree.DefaultMutableTreeNode("Office");
+        office.add(new javax.swing.tree.DefaultMutableTreeNode("Pens"));
+        office.add(new javax.swing.tree.DefaultMutableTreeNode("Paper"));
+        JTree tree = new JTree(office);
+        tree.setName("categories");
+        tree.setBounds(10, 220, 200, 80);
+        scene.content.add(tree);
+        tree.setSelectionRow(2);
+        List<CheckMenu.Choice> paper = CheckMenu.choices(scene.inspector.treeRow(tree, 2));
+        assertThat(((Locator) choice(paper, "This item is selected").step.get("target")).item).containsExactly("Office", "Paper");
+        assertThat(((Locator) choice(paper, "Is shown").step.get("target")).item).containsExactly("Office", "Paper");
+        CheckMenu.Choice remember = remember(paper);
+        assertThat(remember.step).containsEntry("selected", true);
+        assertThat(((Locator) remember.step.get("target")).item).isNull();
+    }
+
+    /** Every order is Acme's and Open: only the order number tells the rows apart. */
+    private void sameOtherColumns() {
+        scene.orders.setValueAt("Shipped", 0, 2);
+        scene.orders.setValueAt("Shipped", 1, 2);
+        scene.orders.setValueAt("Shipped", 2, 2);
+        scene.orders.setValueAt("Acme", 2, 1);
+    }
+
+    /** A customers list in the scene, nothing selected. */
+    private JList<String> customers() {
+        JList<String> list = new JList<String>(new String[] {"Ada Shop Ltd", "Birch & Co", "Acme"});
+        list.setName("customers");
+        list.setBounds(10, 130, 200, 60);
+        scene.content.add(list);
+        return list;
+    }
+
+    private static CheckMenu.Choice remember(List<CheckMenu.Choice> choices) {
+        return choice(choices, "Remember this as…");
+    }
+
+    private static CheckMenu.Choice choice(List<CheckMenu.Choice> choices, String label) {
+        for (CheckMenu.Choice c : choices) if (c.label.equals(label)) return c;
+        throw new AssertionError("no '" + label + "' in " + labels(choices));
+    }
+
+    private static List<String> labels(List<CheckMenu.Choice> choices) {
+        List<String> out = new ArrayList<String>();
+        for (CheckMenu.Choice c : choices) out.add(c.label);
+        return out;
     }
 
     private static CheckMenu.Choice first(List<CheckMenu.Choice> choices) {
