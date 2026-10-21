@@ -1047,6 +1047,28 @@ class RecordingTest {
                 .containsExactly("step 1", "outcome 1 [ORD-1641]", "step 2");
     }
 
+    @Test
+    void whatThePersonsLastStepChangedReachesTheSessionBeforeTheirReplay() throws Exception {
+        JButton save = appButton();
+        List<io.github.kormcrete.swingui.driver.outcome.UiReading> readings = Collections.synchronizedList(
+                new ArrayList<io.github.kormcrete.swingui.driver.outcome.UiReading>(Arrays.asList(
+                        orders("ORD-1640"), orders("ORD-1640", "ORD-1641"))));
+        scene.inspector.reader = () -> readings.size() > 1 ? readings.remove(0) : readings.get(0);
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> dispatch(esc(save, KeyEvent.KEY_PRESSED)));
+        eventually(() -> sink.changes.contains("step 1") ? Boolean.TRUE : null);
+
+        SwingUtilities.invokeAndWait(() -> {
+            recording.panel.speed(0);
+            recording.panel.press("▶ Replay all");
+        });
+        eventually(() -> !recording.replaying && sink.log.contains("replay 0") ? Boolean.TRUE : null);
+
+        // read before the reset, and handed over ahead of it: never on the screen the replay made
+        assertThat(sink.log).containsExactly("outcome 1", "reset", "replay 0");
+        assertThat(sink.changes).containsExactly("step 1", "outcome 1 [ORD-1641]");
+    }
+
     /** {@code e} as the toolkit hands it to the person's recorder. EDT. */
     private static void dispatch(java.awt.AWTEvent e) {
         for (AWTEventListener l : Toolkit.getDefaultToolkit().getAWTEventListeners()) {

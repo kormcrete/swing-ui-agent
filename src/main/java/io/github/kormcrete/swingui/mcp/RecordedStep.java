@@ -153,12 +153,6 @@ final class RecordedStep {
                 : new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, null, newValues, linkSeen);
     }
 
-    /** The same step knowing nothing of what it changed. */
-    RecordedStep withoutOutcome() {
-        return outcome == null && newValues.isEmpty() ? this
-                : new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, null, null, linkSeen);
-    }
-
     /** The same step with the values its references stood for when it last ran. */
     RecordedStep withLinkSeen(Map<String, String> seenValues) {
         return new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, outcome, newValues, seenValues);

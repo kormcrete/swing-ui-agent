@@ -358,9 +358,9 @@ final class Recording {
     /** {@link #stop(boolean)}; {@code why}: what the stopped bar says instead of the step count, null for the count. */
     private void stop(boolean person, String why) {
         steps.flush();
+        // what the last step changed reaches the session before the stop, which keeps the steps' value index
+        readNow();
         steps.active(false);
-        // the session forgets what the steps changed at Done: the last one's comes too late
-        awaiting = 0;
         stopListeningForEscape();
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         state = State.STOPPED;
@@ -391,6 +391,8 @@ final class Recording {
         // the agent's replay is not the person's doing: what they typed goes, the keyboard goes back to the app
         if (panel != null) panel.cancelNaming();
         steps.flush();
+        // the agent's replay has begun: a reading now would be of its screen, not of what the person's step did
+        awaiting = 0;
         steps.active(false);
         for (Overlay o : inspector.overlays()) o.removeCatcher();
         marks.clear();
@@ -854,6 +856,8 @@ final class Recording {
         // a sentence being typed is saved before the cut, which may take its records
         panel.commitNaming();
         steps.flush();
+        // what the person's last step changed goes to the session ahead of the cut and the replay
+        readNow();
         sinkThread.submit(() -> {
             Inspector.Result cut = sink.cutFrom(id);
             // the records before the cut, as the recording is now: the agent may have changed it since the person looked
@@ -927,6 +931,8 @@ final class Recording {
         stopped = false;
         next.drainPermits();
         steps.flush();
+        // what the person's last step changed goes to the session ahead of the reset and the replay
+        readNow();
         steps.active(false);
         String why = run ? "a person is running " + loadedName + " in the app" : "a person is replaying their recording in the app";
         inspector.recordingBusy(why);

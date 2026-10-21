@@ -131,9 +131,12 @@ final class RecordingModel {
         changed("the " + by.json + " resumed the recording");
     }
 
-    /** Ends the recording: no further step joins it, and what its steps changed is forgotten. */
+    /**
+     * Ends the recording: no further step joins it. What its steps changed shrinks to their value index, which links
+     * made afterwards still use.
+     */
     void stop() {
-        forgetOutcomes();
+        shrinkOlderThan(0);
         state = State.STOPPED;
         changed("the recording stopped");
     }
@@ -940,15 +943,6 @@ final class RecordingModel {
                 if (s.outcome != null && !whole.contains(s.id)) e.before.set(i, s.shrunk());
             }
         }
-    }
-
-    /** Forgets what every step changed (Done, stop): their outcomes, value indexes and the session's values. */
-    private void forgetOutcomes() {
-        for (int i = 0; i < steps.size(); i++) steps.set(i, steps.get(i).withoutOutcome());
-        for (Edit e : history) {
-            for (int i = 0; i < e.before.size(); i++) e.before.set(i, e.before.get(i).withoutOutcome());
-        }
-        runValues = freshValues();
     }
 
     /** An outcome holding only the values of a value index, each at its path. */

@@ -509,6 +509,7 @@ public class UiMcpSession {
                 synchronized (UiMcpSession.this) {
                     if (model.state() != RecordingModel.State.RECORDING) return;
                     model.stop();
+                    replayBefore.clear();
                     publish();
                 }
             }
@@ -553,6 +554,8 @@ public class UiMcpSession {
             public void outcome(int seq, Map<String, Object> outcome, Map<String, String> newValues) {
                 synchronized (UiMcpSession.this) {
                     if (seq != personSeq || personRecord == 0 || model.state() != RecordingModel.State.RECORDING) return;
+                    // read after a replay began, on the screen the replay made: the replay's own outcome stays
+                    if (personRecord <= model.replayFloor()) return;
                     model.outcome(personRecord, FlowJson.mapper().valueToTree(outcome), newValues);
                 }
             }
@@ -1444,7 +1447,7 @@ public class UiMcpSession {
                 }
                 for (Refs.Ref ref : refs) {
                     Integer at = madeAt.get(ref.id);
-                    if (at == null || model.runValues().has(ref.id)) continue;
+                    if (at == null || model.runValues().resolve(ref).isPresent()) continue;
                     String source = stepNumber(labels.get(at));
                     return "Step " + stepNumber(labels.get(i)) + " uses what step " + source
                             + (remembered.contains(ref.id) ? " remembered" : " changed") + "; replay from step " + source
@@ -1957,6 +1960,7 @@ public class UiMcpSession {
         String startWarning = startWarning();
         if (clear) {
             model.clear();
+            replayBefore.clear();
             recordingFromReset = false;
             freshStart = false;
             forgetLoadedTest();
@@ -2085,6 +2089,7 @@ public class UiMcpSession {
         result.set("test", mapper.readTree(text));
         if (clear) {
             model.clear();
+            replayBefore.clear();
             recordingFromReset = false;
             freshStart = false;
             forgetLoadedTest();
@@ -2341,6 +2346,7 @@ public class UiMcpSession {
         }
         Path abs = file.toAbsolutePath().normalize();
         model.load(flow, RecordedStep.Author.LOADED);
+        replayBefore.clear();
         model.loaded();
         foldNotes.clear();
         foldHint = null;
@@ -2402,6 +2408,7 @@ public class UiMcpSession {
      */
     synchronized void startRecording(boolean fromReset, boolean definedStart, RecordedStep.Author by, boolean explicit) {
         model.clear();
+        replayBefore.clear();
         foldNotes.clear();
         foldHint = null;
         model.start(by, explicit, explicit && palette, System.currentTimeMillis());
@@ -2466,6 +2473,7 @@ public class UiMcpSession {
                     }
                     boolean shared = model.shared();
                     model.stop();
+                    replayBefore.clear();
                     publish();
                     if (shared) view.agentStopped();
                 }
@@ -2795,6 +2803,7 @@ public class UiMcpSession {
     private void stopAfterFailedRedo() {
         boolean shared = model.shared();
         model.stop();
+        replayBefore.clear();
         publish();
         if (shared) view.agentStopped();
     }

@@ -3212,11 +3212,61 @@ class UiMcpRecordingTest {
 
         assertThat(session.recordedSteps()).isEmpty();
         assertThat(session.runValues().has("#" + id)).isFalse();
-        // and Done (or stop) forgets what the steps changed too
+        // Done (or stop) keeps only the value index: links made afterwards still find the values
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
         session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
         call("{\"op\":\"stop\"}");
         assertThat(session.recordedSteps().get(0).outcome).isNull();
-        assertThat(session.recordedSteps().get(0).newValues).isEmpty();
+        assertThat(session.recordedSteps().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+        // and a new recording forgets that too
+        session.startRecording(true);
+        assertThat(session.runValues().has("#" + (id + 1))).isFalse();
+    }
+
+    @Test
+    void aPersonsOutcomeReadAfterAReplayBeganLeavesTheReplaysOutcome() throws Exception {
+        noReset(session);
+        Map<String, Object> copy = step("click", Locator.of("button", "Copy"));
+        copy.put(Inspector.SEQ, 1);
+        assertThat(sink.done(copy).ok).isTrue();
+        Map<String, Object> stale = io.github.kormcrete.swingui.driver.outcome.Outcomes.diff(orders(), orders("ORD-1999"));
+        Map<String, String> staleValues = io.github.kormcrete.swingui.driver.outcome.Outcomes.newValues(orders(), stale);
+
+        // the agent replays while the person records; the person's reading comes once the replay let go
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        sink.outcome(1, stale, staleValues);
+        assertThat(session.recordedSteps().get(0).newValues).containsOnlyKeys("ORD-1641");
+
+        // the palette's replay alike
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1642")));
+        assertThat(sink.replaying(0, 1).ok).isTrue();
+        assertThat(sink.replay(0).ok).isTrue();
+        sink.outcome(1, stale, staleValues);
+        assertThat(session.recordedSteps().get(0).newValues).containsOnlyKeys("ORD-1642");
+        assertThat(session.runValues().has("#" + session.recordedSteps().get(0).id)).isTrue();
+    }
+
+    @Test
+    void replayFromTheMiddleIsRefusedWhenTheValueIndexLacksTheValueAStepUses() throws Exception {
+        noReset(session);
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.doAction(mapper.readTree("{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\","
+                + "\"name\":\"Copy\"}}"));
+        call("{\"op\":\"insert\",\"at\":2,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"count\"},"
+                + "\"text\":\"${copy.rows.Orders.count}\"}}");
+        call("{\"op\":\"insert\",\"at\":3,\"step\":{\"action\":\"type\",\"target\":{\"id\":\"search\"},"
+                + "\"text\":\"" + NUMBER + "\"}}");
+        call("{\"op\":\"stop\"}");   // the outcome shrinks to its value index: the new number, not the row count
+        backend.verbs.calls.clear();
+
+        DriverException refused = catchThrowableOfType(() -> call("{\"op\":\"replay\",\"from\":2}"), DriverException.class);
+
+        assertThat(refused.getMessage()).endsWith("Step 2 uses what step 1 changed; replay from step 1 or earlier");
+        assertThat(backend.verbs.calls).isEmpty();
+        // the number is in the index: step 3 alone may replay
+        assertThat(call("{\"op\":\"replay\",\"from\":3}").path("passed").asBoolean()).isTrue();
+        assertThat(typed()).containsExactly("type #search ORD-1641 null null");
     }
 
     @Test

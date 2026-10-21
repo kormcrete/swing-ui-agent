@@ -137,6 +137,7 @@ final class FakeSink implements Inspector.Sink {
     final List<String> changes = Collections.synchronizedList(new ArrayList<String>());
     @Override public void outcome(int seq, Map<String, Object> outcome, Map<String, String> newValues) {
         changes.add("outcome " + seq + " " + newValues.keySet());
+        log.add("outcome " + seq);
     }
     /** What a replay's start answers; and the ranges replays started with ("0-2"). */
     volatile Inspector.Result replaying = new Inspector.Result(true, "");

@@ -832,13 +832,13 @@ class RecordingModelTest {
     }
 
     @Test
-    void clearStopAndLoadForgetEveryOutcome() {
+    void stopKeepsOnlyTheValueIndexClearAndLoadForgetEverything() {
         RecordedStep copy = model.append(withId(click("Copy"), "copy"), AGENT);
         model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
         model.stop();
         assertThat(model.records().get(0).outcome).isNull();
-        assertThat(model.records().get(0).newValues).isEmpty();
-        assertThat(model.runValues().has("copy")).isFalse();
+        assertThat(model.records().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+        assertThat(model.runValues().fill("${copy.rows.Orders.added[0].Number}")).isEqualTo("ORD-1641");
 
         model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
         model.clear();
