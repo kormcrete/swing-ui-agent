@@ -849,4 +849,92 @@ class RecordingModelTest {
         model.load(java.util.Arrays.<Action>asList(withId(click("Copy"), "copy")), RecordedStep.Author.LOADED);
         assertThat(model.runValues().has("copy")).isFalse();
     }
+
+    private static io.github.kormcrete.swingui.flow.verb.TypeVerb type(String text) {
+        io.github.kormcrete.swingui.flow.verb.TypeVerb t = new io.github.kormcrete.swingui.flow.verb.TypeVerb();
+        t.target = Locator.ofId("search");
+        t.text = text;
+        return t;
+    }
+
+    private static final String NUMBER = "${copy.rows.Orders.added[0].Number}";
+
+    @Test
+    void aLinkGivesTheSourceItsIdKeepsWhatItChangedUnderItAndUndoesAsOneEdit() {
+        RecordedStep copy = model.append(click("Copy"), PERSON);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        RecordedStep search = model.append(type("Copy of ORD-1641"), PERSON);
+        int rev = model.rev();
+
+        String did = model.link(search.id, type("Copy of " + NUMBER), Collections.singletonMap(NUMBER, "ORD-1641"),
+                Collections.singletonMap(copy.id, "copy"));
+
+        assertThat(did).isEqualTo("linked step 2 to what step 1 changed");
+        assertThat(model.rev()).isGreaterThan(rev);
+        assertThat(model.records().get(0).action.id).isEqualTo("copy");
+        assertThat(model.records().get(0).outcome).isNotNull();
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) model.records().get(1).action).text)
+                .isEqualTo("Copy of " + NUMBER);
+        assertThat(model.records().get(1).linkSeen).containsEntry(NUMBER, "ORD-1641");
+        assertThat(model.records().get(1).edited).isFalse();
+        assertThat(model.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+        assertThat(model.undoLabel()).isEqualTo("link of step 2 by the person");
+
+        model.undo(PERSON);
+        assertThat(model.records()).hasSize(2);
+        assertThat(model.records().get(0).action.id).isNull();
+        assertThat(model.records().get(0).outcome).isNotNull();
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) model.records().get(1).action).text)
+                .isEqualTo("Copy of ORD-1641");
+        assertThat(model.undoLabel()).isNull();
+    }
+
+    @Test
+    void aSourceThatShrankIsFoundUnderItsNewIdFromItsValueIndex() {
+        RecordedStep copy = model.append(click("Copy"), PERSON);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        RecordedStep search = model.append(type("ORD-1641"), PERSON);
+        model.shrinkOlderThan(0);
+
+        model.link(search.id, type(NUMBER), Collections.singletonMap(NUMBER, "ORD-1641"), Collections.singletonMap(copy.id, "copy"));
+
+        assertThat(model.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+    }
+
+    @Test
+    void unlinkPutsTheSeenValuesBackAsOneEdit() {
+        RecordedStep copy = model.append(click("Copy"), PERSON);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        RecordedStep search = model.append(type("x"), PERSON);
+        model.link(search.id, type("$${a} " + NUMBER), Collections.singletonMap(NUMBER, "ORD-${1641}"),
+                Collections.singletonMap(copy.id, "copy"));
+
+        assertThat(model.unlink(search.id, AGENT)).isEqualTo("used the exact value in step 2");
+
+        RecordedStep now = model.records().get(1);
+        // the value seen is text again, escaped like any typed text
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) now.action).text).isEqualTo("$${a} ORD-$${1641}");
+        assertThat(now.linkSeen).isEmpty();
+        assertThat(model.undoLabel()).isEqualTo("exact value of step 2 by the agent");
+        model.undo(AGENT);
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) model.records().get(1).action).text)
+                .isEqualTo("$${a} " + NUMBER);
+    }
+
+    @Test
+    void aRememberedValueIsTheValueIndexOfItsStep() {
+        model.append(click("Open"), PERSON);
+        io.github.kormcrete.swingui.flow.verb.RememberVerb r = new io.github.kormcrete.swingui.flow.verb.RememberVerb();
+        r.target = Locator.of("label", "Number");
+        r.as = "orderNo";
+        RecordedStep remember = model.append(r, PERSON);
+        int rev = model.rev();
+
+        model.remembered(remember.id, "ORD-1650");
+
+        assertThat(model.records().get(1).newValues).containsExactly(new java.util.AbstractMap.SimpleEntry<String, String>(
+                "ORD-1650", ""));
+        assertThat(model.records().get(1).outcome).isNull();
+        assertThat(model.rev()).isEqualTo(rev);
+    }
 }

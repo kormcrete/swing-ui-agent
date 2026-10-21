@@ -3039,6 +3039,73 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void anAutoLinkIsOneUndoableEdit() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+
+        JsonNode typed = mapper.readTree(session.verb("type",
+                mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"Copy of ORD-1641\"}")));
+
+        // the agent learns the step as the recording keeps it
+        assertThat(typed.at("/recorded/text").asText()).isEqualTo("Copy of " + NUMBER);
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(steps.get(0).action.id).isEqualTo("copy");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) steps.get(1).action).text).isEqualTo("Copy of " + NUMBER);
+        assertThat(steps.get(1).linkSeen).containsEntry(NUMBER, "ORD-1641");
+        assertThat(steps.get(1).edited).isFalse();
+        // what Copy changed is known under its new id: a replay from step 2 finds it
+        assertThat(session.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+        assertThat(sink.undoLabel()).isEqualTo("link of step 2 by the agent");
+
+        // Undo takes back the link only: the step stays, with the value as typed
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the link of step 2 by the agent");
+        steps = session.recordedSteps();
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).action.id).isNull();
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) steps.get(1).action).text).isEqualTo("Copy of ORD-1641");
+        assertThat(steps.get(1).linkSeen).isEmpty();
+        assertThat(sink.undoLabel()).isNull();
+    }
+
+    @Test
+    void thePersonsStepIsLinkedToWhatTheirEarlierStepMadeAndReplaysWithTheNewValue() throws Exception {
+        io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
+        io.github.kormcrete.swingui.driver.outcome.UiReading after = orders("ORD-1640", "ORD-1641");
+        Map<String, Object> copy = step("click", Locator.of("button", "Copy"));
+        copy.put(Inspector.SEQ, 1);
+        Map<String, Object> search = step("type", Locator.ofId("search"));
+        search.put("text", "ORD-1641");
+        search.put(Inspector.SEQ, 2);
+
+        assertThat(sink.done(copy).ok).isTrue();
+        Map<String, Object> outcome = io.github.kormcrete.swingui.driver.outcome.Outcomes.diff(before, after);
+        sink.outcome(1, outcome, io.github.kormcrete.swingui.driver.outcome.Outcomes.newValues(before, outcome));
+        assertThat(sink.done(search).ok).isTrue();
+
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(steps.get(0).action.id).isEqualTo("copy");
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) steps.get(1).action).text).isEqualTo(NUMBER);
+        assertThat(sink.undoLabel()).isEqualTo("link of step 2 by the person");
+
+        // the next run copies another order: the search follows it
+        noReset(session);
+        session.reader(readings(orders("ORD-1640", "ORD-1641"), orders("ORD-1640", "ORD-1641", "ORD-1642")));
+        backend.verbs.calls.clear();
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        assertThat(typed()).containsExactly("type #search ORD-1642 null null");
+    }
+
+    @Test
+    void aStepWithNothingToLinkMakesNoEdit() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1640\"}"));
+
+        assertThat(session.recordedSteps().get(0).action.id).isNull();
+        assertThat(sink.undoLabel()).isNull();
+    }
+
+    @Test
     void anAgentStepGetsItsOutcomeAtOnce() throws Exception {
         session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
 

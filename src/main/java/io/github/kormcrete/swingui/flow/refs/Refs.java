@@ -31,8 +31,10 @@ public final class Refs {
     public final String id;
     /** Empty, or the path after the id, e.g. {@code .rows.Orders.added[0].Number}. */
     public final String path;
-    final int start;
-    final int end;
+    /** Where the reference starts in the text it was found in. */
+    public final int start;
+    /** Just after its closing brace. */
+    public final int end;
 
     Ref(String source, String id, String path, int start, int end) {
       this.source = source;

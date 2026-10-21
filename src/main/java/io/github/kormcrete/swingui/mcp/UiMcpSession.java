@@ -541,6 +541,7 @@ public class UiMcpSession {
                             personSeq = ((Number) seq).intValue();
                             personRecord = added.id;
                         }
+                        autoLink(added);
                         publish();
                         scheduleFolding();
                         return new Inspector.Result(true, action.describe());
@@ -1326,7 +1327,7 @@ public class UiMcpSession {
                     RecordedStep added = model.append(recordedAction, author, row,
                             action instanceof DoAction ? null : seenOf(step.outcome));
                     keepOutcome(added, before, after, step);
-                    r.set("recorded", mapper.valueToTree(recordedAction));
+                    r.set("recorded", mapper.valueToTree(autoLink(added)));
                     scheduleFolding();
                 } else {
                     model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
@@ -1380,7 +1381,29 @@ public class UiMcpSession {
         if (s.action instanceof RememberVerb && ((RememberVerb) s.action).as != null && step.outcome != null
                 && step.outcome.note != null) {
             model.runValues().remember(((RememberVerb) s.action).as, step.outcome.note);
+            model.remembered(s.id, step.outcome.note);
         }
+    }
+
+    /**
+     * Links the values of the record just added to what earlier steps made ({@link Linker}): one edit after the append,
+     * so Undo takes back the link and leaves the step with its exact values. Returns the step's action as the recording
+     * now keeps it.
+     */
+    private Action autoLink(RecordedStep added) {
+        List<RecordedStep> records = model.records();
+        int at = 0;
+        while (at < records.size() && records.get(at).id != added.id) at++;
+        if (at == records.size()) return added.action;
+        Linker.Linked linked;
+        try {
+            linked = Linker.link(added.action, records.subList(0, at));
+        } catch (RuntimeException e) {
+            return added.action;   // linking is a help: the step stays exact rather than going unrecorded
+        }
+        if (!linked.linked()) return added.action;
+        model.link(added.id, linked.action, linked.seen, linked.ids);
+        return linked.action;
     }
 
     /** The app as it is now, for what a step changed; null when it cannot be read (no driver, a remote one). */

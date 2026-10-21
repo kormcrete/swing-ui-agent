@@ -314,7 +314,7 @@ public final class Outcomes {
     }
 
     /** {@code .key}, or {@code ['key']} with {@code \} before a quote or backslash in it. */
-    static String key(String key) {
+    public static String key(String key) {
         if (PLAIN_KEY.matcher(key).matches()) return "." + key;
         return "['" + key.replace("\\", "\\\\").replace("'", "\\'") + "']";
     }

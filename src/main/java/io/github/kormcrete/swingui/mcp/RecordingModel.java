@@ -10,7 +10,10 @@ import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.refs.JsonPaths;
+import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.refs.RunValues;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -25,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * The records made so far, each with an id that is never reused and an author. In memory the list is flat, one record
@@ -913,6 +917,107 @@ final class RecordingModel {
         steps.set(i, s);
         runValues.put(key(s), outcome);
         shrinkOlderThan(FULL_OUTCOMES);
+    }
+
+    /**
+     * The value the remember record {@code id} took: its value index, for links made later ({@code ${name}} alone). Not
+     * an edit.
+     */
+    void remembered(int id, String value) {
+        int i = indexOf(id);
+        if (i >= 0 && value != null) steps.set(i, steps.get(i).withOutcome(null, Collections.singletonMap(value, "")));
+    }
+
+    // ------------------------------------------------------------------ links (references to what earlier steps made)
+
+    /** {@link #link(int, Action, Map, Map)} for sources that all have their id already. */
+    String link(int stepId, Action linked, Map<String, String> seen) {
+        return link(stepId, linked, seen, Collections.<Integer, String>emptyMap());
+    }
+
+    /**
+     * Rewrites the record {@code stepId} as {@code linked}, the same step with references to what earlier steps made
+     * ({@code seen}: the value each stood for), and gives each source in {@code sourceIds} (record id → step id) its id;
+     * what a source changed is then found under that id too. One edit, made for the step's author: undo takes back the
+     * link and the ids, and the step stays with its exact values.
+     */
+    String link(int stepId, Action linked, Map<String, String> seen, Map<Integer, String> sourceIds) {
+        int i = indexOf(stepId);
+        if (i < 0) throw bad("that step is gone: the recording changed since (nothing linked)");
+        List<RecordedStep> before = copyOfRecords();
+        RecordedStep s = steps.get(i);
+        steps.set(i, s.with(linked, s.edited).withLinkSeen(seen));
+        for (Map.Entry<Integer, String> e : sourceIds.entrySet()) {
+            int k = indexOf(e.getKey());
+            if (k < 0) continue;
+            RecordedStep source = steps.get(k);
+            Action named = FlowJson.mapper().convertValue(source.action, Action.class);
+            named.id = e.getValue();
+            steps.set(k, source.with(named, source.edited));
+            runValues.put(e.getValue(), source.outcome != null ? source.outcome : indexTree(source.newValues));
+        }
+        String what = describe(i);
+        return finish("link of " + what, "linked " + what + " to " + sourcesText(linked), s.author, before, false);
+    }
+
+    /** "what step 1 changed", "what steps 1 and 3 changed", "a remembered value", "the run's values". */
+    private String sourcesText(Action linked) {
+        Set<String> ids = new HashSet<String>();
+        for (Refs.Ref r : Refs.of(linked)) ids.add(r.id);
+        TreeSet<Integer> changed = new TreeSet<Integer>();
+        boolean remembered = false;
+        for (RecordedStep r : steps) {
+            if (r.action instanceof RememberVerb && ids.contains(((RememberVerb) r.action).as)) {
+                remembered = true;
+            } else if (r.action.id != null && ids.contains(r.action.id)) {
+                changed.add(addressOf(r.id).step);
+            }
+        }
+        if (changed.isEmpty()) return remembered ? "a remembered value" : "the run's values";
+        List<String> numbers = new ArrayList<String>();
+        for (int n : changed) numbers.add(String.valueOf(n));
+        String list = numbers.size() == 1 ? numbers.get(0)
+                : String.join(", ", numbers.subList(0, numbers.size() - 1)) + " and " + numbers.get(numbers.size() - 1);
+        return "what " + (numbers.size() == 1 ? "step " : "steps ") + list + " changed";
+    }
+
+    /**
+     * Turns every reference of the record {@code stepId} back into the value it stood for when the step last ran (else
+     * what this session knows now), kept as text. One edit by {@code by}; null when the step has no reference.
+     */
+    String unlink(int stepId, RecordedStep.Author by) {
+        int i = indexOf(stepId);
+        if (i < 0) throw bad("that step is gone: the recording changed since (nothing changed)");
+        final RecordedStep s = steps.get(i);
+        JsonNode tree = FlowJson.mapper().valueToTree(s.action);
+        JsonNode exact = Refs.mapValues(tree, text -> exactText(text, s.linkSeen));
+        if (exact.equals(tree)) return null;
+        Action a;
+        try {
+            a = FlowJson.mapper().treeToValue(exact, Action.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("a step written to JSON does not read back: " + e.getOriginalMessage(), e);
+        }
+        List<RecordedStep> before = copyOfRecords();
+        steps.set(i, s.with(a, s.edited).withLinkSeen(Collections.<String, String>emptyMap()));
+        String what = describe(i);
+        return finish("exact value of " + what, "used the exact value in " + what, by, before, false);
+    }
+
+    /** {@code text} with each reference replaced by the value it stood for, escaped like any typed text. */
+    private String exactText(String text, Map<String, String> seen) {
+        List<Refs.Ref> refs = Refs.scan(text);
+        if (refs.isEmpty()) return text;
+        StringBuilder sb = new StringBuilder();
+        int last = 0;
+        for (Refs.Ref r : refs) {
+            String value = seen.get(r.source);
+            if (value == null) value = runValues.resolve(r).orElse(null);
+            if (value == null) throw bad("no value is known for " + r.source + ": replay the steps before it first");
+            sb.append(text, last, r.start).append(Refs.escape(value));
+            last = r.end;
+        }
+        return sb.append(text.substring(last)).toString();
     }
 
     /** The values the references of record {@code id} stood for when it ran just now. Not an edit. */
