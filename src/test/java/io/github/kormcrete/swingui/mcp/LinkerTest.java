@@ -93,19 +93,39 @@ class LinkerTest {
 
     @Test
     void aClickOnARowTheCopyAddedLinksThatRow() {
+        // the number shows in a field too, which the value index lists first
         RecordedStep copy = step(2, COPY, "{'fields':{'Number':'ORD-1644'},'rows':{'Orders':{'added':["
-                        + "{'Order':'ORD-1643','Customer':'Ada Lovelace'},{'Order':'ORD-1644','Customer':'Ada Lovelace'}],"
-                        + "'removed':[],'changed':[],'count':5}}}",
-                "ORD-1644", ".fields.Number", "ORD-1643", ".rows.Orders.added[0].Order");
+                        + "{'Order':'ORD-1644','Customer':'Ada Lovelace'}],'removed':[],'changed':[],'count':5}}}",
+                "ORD-1644", ".fields.Number");
 
         Linker.Linked l = Linker.link(action("{'action':'click','count':2,'target':{'role':'table','name':'Orders',"
                 + "'row':{'Order':'ORD-1644'}}}"), steps(copy));
 
         // the row the copy added, by the column that holds its new value (not the field that shows it too)
-        assertThat(tree(l.action).at("/target/row/Order").asText()).isEqualTo("${copy.rows.Orders.added[1].Order}");
-        assertThat(l.seen).containsExactly(entry("${copy.rows.Orders.added[1].Order}", "ORD-1644"));
+        assertThat(tree(l.action).at("/target/row/Order").asText()).isEqualTo("${copy.rows.Orders.added[0].Order}");
+        assertThat(l.seen).containsExactly(entry("${copy.rows.Orders.added[0].Order}", "ORD-1644"));
         // typed, the same value comes from the field
         assertThat(typed("ORD-1644", steps(copy))).isEqualTo("${copy.fields.Number}");
+    }
+
+    @Test
+    void aSearchThatAddedSeveralRowsIsNeverLinkedByPosition() {
+        String found = "{'rows':{'Orders':{'added':[{'Order':'ORD-1643'},{'Order':'ORD-1700'},{'Order':'ORD-1701'}],"
+                + "'removed':[],'changed':[],'count':3}},'items':{'Recent':{'added':['ORD-1700','ORD-1701'],'removed':[]}}}";
+        RecordedStep search = step(3, "{'action':'click','target':{'role':'button','name':'Search'}}", found,
+                "ORD-1643", ".rows.Orders.added[0].Order", "ORD-1700", ".rows.Orders.added[1].Order",
+                "ORD-1701", ".rows.Orders.added[2].Order");
+
+        unchanged(type("ORD-1700"), steps(search));
+        unchanged("{'action':'click','target':{'role':'table','name':'Orders','row':{'Order':'ORD-1701'}}}", steps(search));
+        unchanged("{'action':'select','target':{'role':'list','name':'Recent'},'item':'ORD-1700'}", steps(search));
+        // once the search's outcome shrank, its index no longer offers them either
+        assertThat(search.shrunk().newValues).isEmpty();
+        // a value an earlier step made alone is still linked to that step
+        assertThat(typed("ORD-1643", steps(copy(), search))).isEqualTo(ORDER);
+        Linker.Linked click = Linker.link(action("{'action':'click','target':{'role':'table','name':'Orders',"
+                + "'row':{'Order':'ORD-1643'}}}"), steps(copy(), search));
+        assertThat(tree(click.action).at("/target/row/Order").asText()).isEqualTo(ORDER);
     }
 
     @Test
@@ -165,18 +185,31 @@ class LinkerTest {
     }
 
     @Test
-    void aFieldBeatsATitle() {
+    void theMostRecentStepBeatsAFieldOfAnOlderOne() {
         RecordedStep copy = step(1, COPY, "{'fields':{'Number':'ORD-1643'}}", "ORD-1643", ".fields.Number");
         RecordedStep close = step(2, "{'action':'click','target':{'role':'button','name':'Close'}}", "{}");
         RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
                 "{'opened':{'tabs':['ORD-1643']}}", "ORD-1643", ".opened.tabs[0]");
 
-        assertThat(typed("ORD-1643", steps(copy, close, open))).isEqualTo("${copy.fields.Number}");
+        assertThat(typed("ORD-1643", steps(copy, close, open))).isEqualTo("${open.opened.tabs[0]}");
         Linker.Linked tab = Linker.link(action("{'action':'click','target':{'role':'tab','name':'ORD-1643'}}"),
                 steps(copy, close, open));
-        assertThat(tree(tab.action).at("/target/name").asText()).isEqualTo("${copy.fields.Number}");
-        // a title alone is used when nothing better made the value
-        assertThat(typed("ORD-1643", steps(close, open))).isEqualTo("${open.opened.tabs[0]}");
+        assertThat(tree(tab.action).at("/target/name").asText()).isEqualTo("${open.opened.tabs[0]}");
+    }
+
+    @Test
+    void aFieldBeatsATitle() {
+        // one step shows the new number in a field and as a tab title: its value index keeps the field
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outcome = FlowJson.mapper().convertValue(
+                read("{'fields':{'Number':'ORD-1643'},'opened':{'tabs':['ORD-1643']}}"), Map.class);
+        Map<String, String> index = io.github.kormcrete.swingui.driver.outcome.Outcomes.newValues(
+                io.github.kormcrete.swingui.driver.outcome.UiReading.builder().build(), outcome);
+        RecordedStep open = new RecordedStep(1, RecordedStep.Author.PERSON,
+                action("{'action':'click','target':{'role':'button','name':'Open'}}"), false)
+                .withOutcome((ObjectNode) FlowJson.mapper().valueToTree(outcome), index);
+
+        assertThat(typed("ORD-1643", steps(open))).isEqualTo("${open.fields.Number}");
     }
 
     @Test

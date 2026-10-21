@@ -147,10 +147,14 @@ final class RecordedStep {
         return new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, outcome, newValues, linkSeen);
     }
 
-    /** The same step with only its value index of what it changed (no whole outcome). */
+    /**
+     * The same step with only its value index of what it changed (no whole outcome). A value whose position among
+     * several added or changed rows or items is all that names it leaves the index: without the outcome no one can tell.
+     */
     RecordedStep shrunk() {
         return outcome == null ? this
-                : new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, null, newValues, linkSeen);
+                : new RecordedStep(id, author, action, edited, group, row, seen, raw, keepRaw, null,
+                        Linker.singles(outcome, newValues), linkSeen);
     }
 
     /** The same step with the values its references stood for when it last ran. */

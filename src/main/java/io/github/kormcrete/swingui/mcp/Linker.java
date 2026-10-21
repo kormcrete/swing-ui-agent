@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.driver.outcome.Outcomes;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.refs.JsonPaths;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.RememberVerb;
@@ -33,9 +34,10 @@ import java.util.regex.Pattern;
  * The recorder's automatic links: a value in a new step that an earlier step made is written as a reference to it
  * ({@code ${copy.rows.Orders.added[0].Order}}), so a replay uses what that step makes then. Strict on purpose: only a
  * value that was new in that step's outcome (its value index), distinctive (4 characters or more, no yes/no/true/false,
- * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text. A remembered
- * value and a text made unique per run are linked alike. Several sources: a field, row, item or remembered value beats
- * a text or a title; then the most recent step wins.
+ * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text. A row or item
+ * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
+ * is. A remembered value and a text made unique per run are linked alike. Several sources: the most recent step wins;
+ * within one step a field beats a row, an item, then a text or a title (the order of its value index).
  */
 final class Linker {
 
@@ -165,10 +167,10 @@ final class Linker {
             this.earlier = earlier;
             List<Candidate> all = new ArrayList<Candidate>();
             for (int i = earlier.size() - 1, age = 0; i >= 0; i--, age++) candidates(earlier.get(i), age, all);
-            // stable: within a kind, the most recent step first, and a step's own order (its value index's) after that
+            // stable: the most recent step first, then by kind, then in the order of the step's value index
             Collections.sort(all, new Comparator<Candidate>() {
                 @Override public int compare(Candidate x, Candidate y) {
-                    return x.kind != y.kind ? x.kind - y.kind : x.age - y.age;
+                    return x.age != y.age ? x.age - y.age : x.kind - y.kind;
                 }
             });
             for (Candidate c : all) if (!best.containsKey(c.value)) best.put(c.value, c);
@@ -185,8 +187,8 @@ final class Linker {
             Set<String> own = ownValues(s);
             for (Map.Entry<String, String> e : s.newValues.entrySet()) {
                 String v = e.getKey();
-                if (!distinctive(v) || own.contains(v)) continue;
                 String p = e.getValue();
+                if (!distinctive(v) || own.contains(v) || several(s.outcome, p)) continue;
                 int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") ? 0 : 1;
                 out.add(new Candidate(v, s, p, null, kind, age));
             }
@@ -267,6 +269,8 @@ final class Linker {
                 RecordedStep s = earlier.get(i);
                 if (s.outcome == null) continue;
                 JsonNode added = s.outcome.path("rows").path(table).path("added");
+                // a row among several the step added is never linked by its position (an older step may have made it)
+                if (added.size() > 1) continue;
                 for (int k = 0; k < added.size(); k++) {
                     if (!sameRow(keys, added.get(k))) continue;
                     Set<String> own = ownValues(s);
@@ -478,6 +482,31 @@ final class Linker {
 
     private static String capital(String w) {
         return w.substring(0, 1).toUpperCase(Locale.ROOT) + w.substring(1);
+    }
+
+    private static final String KEY = "(?:\\.[A-Za-z_][A-Za-z0-9_-]*|\\['(?:[^'\\\\]|\\\\.)*'\\])";
+    /** A path into a list of rows or items a step added or changed, e.g. {@code .rows.Orders.added[2].Order}. */
+    private static final Pattern LISTED = Pattern.compile("^(\\.(?:rows|items)" + KEY + "\\.(?:added|changed))\\[\\d+\\]");
+
+    /**
+     * Whether {@code path} (in {@code outcome}) is in a list of added or changed rows or items with more than one entry:
+     * its position there says nothing a replay can count on. False when the outcome is not known.
+     */
+    static boolean several(ObjectNode outcome, String path) {
+        if (outcome == null) return false;
+        java.util.regex.Matcher m = LISTED.matcher(path);
+        if (!m.find()) return false;
+        List<JsonNode> list = JsonPaths.select(outcome, "$" + m.group(1));
+        return list.size() == 1 && list.get(0).size() > 1;
+    }
+
+    /** {@code newValues} without the values {@link #several} leaves out, for a step about to lose its outcome. */
+    static Map<String, String> singles(ObjectNode outcome, Map<String, String> newValues) {
+        Map<String, String> out = new LinkedHashMap<String, String>();
+        for (Map.Entry<String, String> e : newValues.entrySet()) {
+            if (!several(outcome, e.getValue())) out.put(e.getKey(), e.getValue());
+        }
+        return out;
     }
 
     /** At least 4 characters, no yes/no/true/false, no integer below 1000. */

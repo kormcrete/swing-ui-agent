@@ -884,6 +884,9 @@ class RecordingModelTest {
         assertThat(model.records()).hasSize(2);
         assertThat(model.records().get(0).action.id).isNull();
         assertThat(model.records().get(0).outcome).isNotNull();
+        // the id is gone: nothing is kept under it any more
+        assertThat(model.runValues().has("copy")).isFalse();
+        assertThat(model.runValues().has("#" + copy.id)).isTrue();
         assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) model.records().get(1).action).text)
                 .isEqualTo("Copy of ORD-1641");
         assertThat(model.undoLabel()).isNull();
@@ -936,5 +939,45 @@ class RecordingModelTest {
                 "ORD-1650", ""));
         assertThat(model.records().get(1).outcome).isNull();
         assertThat(model.rev()).isEqualTo(rev);
+    }
+
+    @Test
+    void aShrinkingSourceKeepsTheRowPathALinkUsesThoughItsIndexNamesTheField() {
+        RecordedStep copy = model.append(click("Copy"), PERSON);
+        com.fasterxml.jackson.databind.node.ObjectNode outcome =
+                io.github.kormcrete.swingui.flow.FlowJson.mapper().createObjectNode();
+        outcome.putObject("fields").put("Number", "ORD-1641");
+        outcome.putObject("rows").putObject("Orders").putArray("added").addObject().put("Number", "ORD-1641");
+        model.outcome(copy.id, outcome, Collections.singletonMap("ORD-1641", ".fields.Number"));
+        RecordedStep open = model.append(click("Open"), PERSON);
+        model.link(open.id, rowClick(NUMBER), Collections.singletonMap(NUMBER, "ORD-1641"),
+                Collections.singletonMap(copy.id, "copy"));
+
+        model.stop();   // Done: what the steps changed shrinks to the value index
+
+        assertThat(model.records().get(0).outcome).isNull();
+        assertThat(model.records().get(0).newValues).containsExactly(
+                new java.util.AbstractMap.SimpleEntry<String, String>("ORD-1641", ".fields.Number"));
+        assertThat(model.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+        assertThat(model.runValues().fill("${copy.fields.Number}")).isEqualTo("ORD-1641");
+    }
+
+    private static ClickVerb rowClick(String number) {
+        ClickVerb c = new ClickVerb();
+        c.target = Locator.of("table", "Orders");
+        c.target.row = Collections.<String, Object>singletonMap("Number", number);
+        return c;
+    }
+
+    @Test
+    void aSecondLinkKeepsTheValuesTheFirstOneSaw() {
+        RecordedStep copy = model.append(withId(click("Copy"), "copy"), PERSON);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        RecordedStep search = model.append(type("x"), PERSON);
+        model.link(search.id, type(NUMBER), Collections.singletonMap(NUMBER, "ORD-1641"));
+
+        model.link(search.id, type(NUMBER + " ${run.id}"), Collections.singletonMap("${run.id}", "k3j9x2ab"));
+
+        assertThat(model.records().get(1).linkSeen).containsEntry(NUMBER, "ORD-1641").containsEntry("${run.id}", "k3j9x2ab");
     }
 }

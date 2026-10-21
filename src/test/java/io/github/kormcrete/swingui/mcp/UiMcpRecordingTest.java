@@ -3068,6 +3068,29 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aRowLinkStillResolvesAfterDoneFromTheMiddle() throws Exception {
+        io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
+        // the new number shows in a field as well: the value index names the field, the click names the row
+        io.github.kormcrete.swingui.driver.outcome.UiReading after = io.github.kormcrete.swingui.driver.outcome.UiReading
+                .builder().field("Number", "ORD-1641").table("Orders", java.util.Collections.singletonList("Number"),
+                        Arrays.asList(java.util.Collections.singletonList("ORD-1640"),
+                                java.util.Collections.singletonList("ORD-1641"))).build();
+        session.reader(readings(before, after));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("click", mapper.readTree(
+                "{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":\"ORD-1641\"}}}"));
+        JsonNode row = mapper.valueToTree(session.recordedSteps().get(1).action).at("/target/row/Number");
+        assertThat(row.asText()).isEqualTo(NUMBER);
+
+        call("{\"op\":\"stop\"}");
+        noReset(session);
+        backend.verbs.calls.clear();
+
+        assertThat(call("{\"op\":\"replay\",\"from\":2}").path("passed").asBoolean()).isTrue();
+        assertThat(backend.verbs.calls.toString()).contains("ORD-1641").doesNotContain(NUMBER);
+    }
+
+    @Test
     void thePersonsStepIsLinkedToWhatTheirEarlierStepMadeAndReplaysWithTheNewValue() throws Exception {
         io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
         io.github.kormcrete.swingui.driver.outcome.UiReading after = orders("ORD-1640", "ORD-1641");

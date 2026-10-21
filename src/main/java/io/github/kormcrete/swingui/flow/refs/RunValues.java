@@ -61,6 +61,15 @@ public final class RunValues {
     remembered.add(name);
   }
 
+  /** Forgets what is kept under the id (never the {@code run} values). */
+  public synchronized void remove(String id) {
+    if ("run".equals(id)) {
+      return;
+    }
+    outcomes.remove(id);
+    remembered.remove(id);
+  }
+
   public synchronized boolean has(String id) {
     return outcomes.containsKey(id);
   }

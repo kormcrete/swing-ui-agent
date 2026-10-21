@@ -91,6 +91,8 @@ final class RecordingModel {
     private int replayFloor;
     /** What the steps changed and remembered, by step id (or {@link #key}), and this run's {@code run} values. */
     private RunValues runValues = freshValues();
+    /** By record id: the paths links made to that step use, with their values (see {@link #link}). */
+    private final Map<Integer, Map<String, String>> linkedPaths = new HashMap<Integer, Map<String, String>>();
 
     State state() {
         return state;
@@ -115,6 +117,7 @@ final class RecordingModel {
     /** Begins a fresh recording: no steps, none left unrecorded, taking steps. */
     void start(RecordedStep.Author by, boolean explicit, boolean shared, long now) {
         steps.clear();
+        linkedPaths.clear();
         notRecorded.clear();
         history.clear();
         state = State.RECORDING;
@@ -255,6 +258,7 @@ final class RecordingModel {
         notRecorded.clear();
         history.clear();
         runValues = freshValues();
+        linkedPaths.clear();
         state = State.IDLE;
         explicit = false;
         shared = false;
@@ -276,6 +280,7 @@ final class RecordingModel {
         history.clear();
         steps.addAll(loaded);
         runValues = freshValues();
+        linkedPaths.clear();
         changed("a recorded test was loaded");
     }
 
@@ -946,7 +951,9 @@ final class RecordingModel {
         if (i < 0) throw bad("that step is gone: the recording changed since (nothing linked)");
         List<RecordedStep> before = copyOfRecords();
         RecordedStep s = steps.get(i);
-        steps.set(i, s.with(linked, s.edited).withLinkSeen(seen));
+        Map<String, String> allSeen = new LinkedHashMap<String, String>(s.linkSeen);
+        allSeen.putAll(seen);
+        steps.set(i, s.with(linked, s.edited).withLinkSeen(allSeen));
         for (Map.Entry<Integer, String> e : sourceIds.entrySet()) {
             int k = indexOf(e.getKey());
             if (k < 0) continue;
@@ -954,7 +961,18 @@ final class RecordingModel {
             Action named = FlowJson.mapper().convertValue(source.action, Action.class);
             named.id = e.getValue();
             steps.set(k, source.with(named, source.edited));
-            runValues.put(e.getValue(), source.outcome != null ? source.outcome : indexTree(source.newValues));
+            runValues.put(e.getValue(), source.outcome != null ? source.outcome
+                    : keptTree(source.newValues, linkedPaths.get(source.id)));
+        }
+        // the paths the link uses stay with their source when it shrinks to its value index
+        for (Map.Entry<String, String> e : seen.entrySet()) {
+            List<Refs.Ref> refs = Refs.scan(e.getKey());
+            if (refs.size() != 1 || refs.get(0).path.isEmpty()) continue;
+            for (RecordedStep r : steps) {
+                if (r.action instanceof RememberVerb || !refs.get(0).id.equals(r.action.id)) continue;
+                if (!linkedPaths.containsKey(r.id)) linkedPaths.put(r.id, new LinkedHashMap<String, String>());
+                linkedPaths.get(r.id).put(refs.get(0).path, e.getValue());
+            }
         }
         String what = describe(i);
         return finish("link of " + what, "linked " + what + " to " + sourcesText(linked), s.author, before, false);
@@ -1039,8 +1057,9 @@ final class RecordingModel {
         for (int i = 0; i < steps.size(); i++) {
             RecordedStep s = steps.get(i);
             if (s.outcome == null || whole.contains(s.id)) continue;
-            steps.set(i, s.shrunk());
-            runValues.put(key(s), indexTree(s.newValues));
+            RecordedStep shrunk = s.shrunk();
+            steps.set(i, shrunk);
+            runValues.put(key(s), keptTree(shrunk.newValues, linkedPaths.get(s.id)));
         }
         for (Edit e : history) {
             for (int i = 0; i < e.before.size(); i++) {
@@ -1048,6 +1067,23 @@ final class RecordingModel {
                 if (s.outcome != null && !whole.contains(s.id)) e.before.set(i, s.shrunk());
             }
         }
+    }
+
+    /**
+     * What a step that shrinks keeps for references: its value index, and each path a link made to it uses (a link may
+     * name a row by a path the index does not hold, the value being indexed under a field).
+     */
+    private static ObjectNode keptTree(Map<String, String> newValues, Map<String, String> linkedPaths) {
+        ObjectNode tree = indexTree(newValues);
+        if (linkedPaths == null) return tree;
+        for (Map.Entry<String, String> e : linkedPaths.entrySet()) {
+            try {
+                JsonPaths.put(tree, "$" + e.getKey(), e.getValue());
+            } catch (IllegalArgumentException clash) {
+                // the index holds the place already
+            }
+        }
+        return tree;
     }
 
     /** An outcome holding only the values of a value index, each at its path. */
@@ -1115,6 +1151,11 @@ final class RecordingModel {
             for (RecordedStep s : steps) if (s.id > e.maxIdAfter) dropped++;
         }
         history.removeFirst();
+        Set<String> gone = new HashSet<String>();
+        for (RecordedStep s : steps) if (s.action.id != null) gone.add(s.action.id);
+        for (RecordedStep s : after) gone.remove(s.action.id);
+        // an id the undo takes away (a link's new id) names nothing any more
+        for (String id : gone) runValues.remove(id);
         steps.clear();
         steps.addAll(after);
         String did = "undid the " + e.label;
