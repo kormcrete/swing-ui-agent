@@ -64,7 +64,7 @@ Then it checks what you can see on screen, with `expect`: the cart total is the 
 $UI expect '{"target":{"role":"label","name":"Total"},"text":"€17.64"}'
 ```
 
-A step that fails is not recorded. If an `expect` runs too early, before the quantity is set, the answer is `EXPECTATION: expected text '€17.64' but was '€5.88'` and nothing is recorded. The agent checks only values you can see; they are exact and static, see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+A step that fails is not recorded. If an `expect` runs too early, before the quantity is set, the answer is `EXPECTATION: expected text '€17.64' but was '€5.88'` and nothing is recorded. The agent checks only values you can see. A value an earlier step made, such as a new order's number, is linked to that step, so the next run checks its own; see [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 ```sh
 $UI recording '{"op":"stop"}'

@@ -2,7 +2,7 @@
 title: Leases and several clients
 description: One owner drives the app at a time; how tests, the CLI and a person at the app share it.
 sidebar:
-  order: 10
+  order: 11
 ---
 
 One app has one mouse, one keyboard focus and one set of open dialogs. If a test run and an agent's CLI call acted at the same time, each would break the other. So the agent lets one owner drive at a time, through a lease. This page shows how the lease works, how tests and a person at the app take turns, and how one test drives several apps.

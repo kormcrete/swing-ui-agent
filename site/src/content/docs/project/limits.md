@@ -32,6 +32,19 @@ swing-ui-agent is early (`0.1.0-SNAPSHOT`). This page lists what it covers today
 - **Screenshots in a recording:** a recorded `screenshot` step, and `saveScreenshot` in Java, always take the whole window: no region.
 - **Starting screen:** without a plugin, a reset only closes modal dialogs, so the app may be on any screen. Each test reaches its own starting screen through the menu bar or a shortcut, and the exports warn when a recording starts any other way.
 
+## Values from earlier steps
+
+How links work is in [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/). What they do not cover yet:
+
+- **Not linked automatically:** values shorter than 4 characters, yes/no/true/false, whole numbers below 1000; a value in another form (`ORD 1640` for `ORD-1640`, another date format, a number inside a longer text); a row or item when the step added several. Short values can be linked by hand. A value in another form or from several added rows cannot: remember it from the screen, or write a Java test.
+- **A check against its own element:** a check of the label, field or cell that the earlier step itself changed is never linked (it would compare the value with itself). A new number shown only in its own label therefore stays an exact value and fails on the next run. Do not check it as an exact value: remember it and use it where it matters, or check something that is the same on every run.
+- **Late changes:** while recording, a step keeps collecting what changes until the next step, however long that takes. Something that changes by itself, such as a clock, can join it. Such values rarely stand out enough to be linked.
+- **What is read:** text fields (also a spinner's), drop-downs, check boxes, radio buttons, toggles, labels, buttons, tables, lists, trees, tabs, window and dialog titles, and message dialogs. Not read: password fields, menus, and components the app paints itself, such as charts, canvases or a grid that is not a table. They give no values to link.
+- **Large tables:** a reading has 40 ms. Past that, a table, list or tree is read only around what is in view and the selection (five rows on either side), and the outcome says `"partial": true`. A change outside that may be missing, and a value there is then not linked.
+- **Caps:** at most 50 entries per added, removed or changed list (the `count` stays true), texts cut at 500 characters. While recording, the last 20 steps keep everything they changed; older ones keep only their new values.
+- **Moved rows:** a row the app moves to another place, for example to the top, can look like an added one.
+- **Plugin step values:** in a Java export, a `do` step whose Java form is a typed call or several steps cannot be the source of a later step's value. The recorded test runs it.
+
 ## The palette and recording by showing it
 
 - **Small dialogs:** the palette follows an open modal dialog. One too small to hold it (a short confirmation) gets it in a small window of its own just under the dialog. That window never takes the keyboard from the dialog, so a step's sentence cannot be typed in the Steps list while the palette is there.

@@ -12,8 +12,8 @@ A recording can be kept in two ways: as a **recorded test**, a JSON file that th
 | | Recorded test | Java test |
 | --- | --- | --- |
 | Who makes it | A person showing the app, often not technical: a tester, an actual user | An engineer, with the coding agent |
-| What it can check | Exact values that are visible on screen | Anything: dynamic values, and technical checks such as a database, files, logs or HTTP |
-| Values | Static: exactly what the person saw | Computed, parameterised, read from the app |
+| What it can check | Values that are visible on screen | Anything, also technical checks such as a database, files, logs or HTTP |
+| Values | What the person saw, or a value an earlier step made, remembered or unique per run | Also computed, reformatted, parameterised, in loops and branches |
 | Where it lives | `uitest/<name>.json` | `src/test/java/.../PlaceOrderUiIT.java` |
 | How it runs | Palette (**Load recorded test…**, then **▶ Run**), the agent (`run_recorded_test`), a shell, Maven or CI | Maven, your IDE or CI, like any JUnit test |
 | Needs a compiler | No | Yes |
@@ -21,9 +21,10 @@ A recording can be kept in two ways: as a **recorded test**, a JSON file that th
 
 ## Who each is for
 
-- **Recorded tests are for people who show the app.** A tester or a user presses **● Record**, uses Order Desk, adds checks of what they see, and presses **Done**. They need no Java and no IDE. The agent can also record one from your instructions in chat.
+- **Recorded tests are for people who show the app.** A tester or a user presses **● Record**, uses Order Desk, adds checks of what they see, and presses **Done**. They need no Java and no IDE. The agent can also record one from your instructions in chat. Then it keeps everything in the file, the links between steps, the step sentences and groups, so the file is the whole test: it replays on its own, and the person reads and changes it in the palette.
 - **Java tests are for engineers.** The coding agent writes a `@UiTest` class from a recording or from a conversation, and an engineer reviews it, keeps it in the repository and extends it.
-- **What a recorded test checks:** exact values that are visible, for example that the cart's **Total** reads `€31.32`. A value that changes from run to run, or a check on something the screen does not show, is a Java test.
+- **What a recorded test checks:** values that are visible, for example that the cart's **Total** reads `€31.32`. A value that changes from run to run is fine when a step made it: a new order's number, a value remembered from the screen, a text made unique per run. The person does not have to link anything; see [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
+- **What needs a Java test:** a value computed from others or cut out of a longer text, loops and branches, and checks on something the screen does not show.
 - **Data is the user's job.** See [Data is yours](#data-is-yours).
 - **They do not mix.** See [They do not mix](#they-do-not-mix).
 
@@ -86,11 +87,11 @@ Left out of the quote: the file's `description` and `savedTo` in the export, and
 
 ## Data is yours
 
-A recorded test holds exact values, so the data behind them has to be right every time. That is your job, not the tool's.
+A recorded test checks the values it holds, so the data behind them has to be right every time. That is your job, not the tool's.
 
 - Check data **the test creates**, such as a customer it adds and then finds, or **data you know exists**, such as Ada Shop Ltd.
 - Tests do not reuse each other's data, unless you arrange it.
-- A value the app makes up, such as a new order number or today's date, can be checked **only when the start makes it predictable**. Otherwise check something else, or write a Java test.
+- A value the app makes up, such as a new order number, can be used by later steps: the recorder links them to the step that made it, or you **Remember** it. A value that only its own label shows stays an exact value, so check it only when the start makes it predictable. A typed text that must not repeat can be made **Unique per run**. See [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 ## They do not mix
 

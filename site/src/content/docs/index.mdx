@@ -59,7 +59,7 @@ It connects three things that usually happen apart:
 		<p><a href="/swing-ui-agent/start/record-together/">Record together with your agent</a></p>
 	</OverviewItem>
 	<OverviewItem image={javaTest} alt="A JUnit 5 UiTest class that reads the new order's number from the status bar and asserts its row in the Orders table" title="Writes a Java test when you need more">
-		<p>A recorded test holds exact values and checks what is on screen. When a test must read a value that changes from run to run, such as the new order's number, or check a database, files or logs, the agent writes a JUnit 5 <code>@UiTest</code> class instead, with the same driving API. The two kinds do not mix.</p>
+		<p>A recorded test checks what is on screen, and a step can use what an earlier step made, such as the new order's number, on every run. When a test must compute a value or cut one out of a longer text, loop, or check a database, files or logs, the agent writes a JUnit 5 <code>@UiTest</code> class instead, with the same driving API. The two kinds do not mix.</p>
 		<p><a href="/swing-ui-agent/start/choose-test-kind/">Recorded tests or Java tests</a> · <a href="/swing-ui-agent/demo/two-files/">One order, two files</a></p>
 	</OverviewItem>
 	<OverviewItem image={howItFits} alt="How it fits together: a person at the app or a coding agent, over the palette or the CLI and MCP on loopback, reach the agent jar inside the app's JVM; it writes recorded tests to uitest, which the palette, the agent, Maven and CI replay" title="Drives the real app, from a shell or over MCP">
@@ -108,8 +108,9 @@ Then [take the tour](/swing-ui-agent/demo/tour/), or open Order Desk's source in
   [Waiting](/swing-ui-agent/guides/waiting/)
 - **Finds what a person sees.** Labels, button text, column headers and cell text, not pixel positions.
   [Targets](/swing-ui-agent/guides/targets/)
-- **Exact values, your data.** A recorded test checks what is on screen, such as the cart's **Total** `€31.32`. It
-  creates the data it checks or uses data you know exists.
+- **What you see, your data.** A recorded test checks what is on screen, such as the cart's **Total** `€31.32`. It
+  creates the data it checks or uses data you know exists; a step can use what an earlier step made.
+  [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/)
 - **Built for agents.** An element tree instead of screenshots, errors that list the near misses, and three skills
   and a driver sub-agent that teach the workflow. [Skills](/swing-ui-agent/agents/skills/)
 - **Local only.** It listens on `127.0.0.1`, refuses any other address, and no tool runs commands, loads a class or

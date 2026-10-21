@@ -87,9 +87,9 @@ of these. The answer goes into the recording.
 
 <a href="site/src/assets/overview/java-test.svg"><img src="site/src/assets/overview/java-test.svg" width="560" alt="A JUnit 5 UiTest class that reads the new order's number from the status bar and asserts its row in the Orders table"></a>
 
-A recorded test holds exact values and checks what is on screen. When a test must read a value that changes from run to
-run, such as the new order's number, or check a database, files or logs, the agent writes a JUnit 5 `@UiTest` class
-instead, with the same driving API. The two kinds do not mix.
+A recorded test checks what is on screen, and a step can use what an earlier step made, such as the new order's number,
+on every run. When a test must compute a value or cut one out of a longer text, loop, or check a database, files or
+logs, the agent writes a JUnit 5 `@UiTest` class instead, with the same driving API. The two kinds do not mix.
 [Recorded tests or Java tests](https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/) ·
 [One order, two files](https://kormcrete.github.io/swing-ui-agent/demo/two-files/)
 
@@ -131,8 +131,9 @@ Order Desk's CI runs its recorded tests on every change, on Linux under a virtua
 - **No changes to the app.** Add `-javaagent:`. Java 8 to 25, macOS, Linux and Windows.
 - **Waits for the app, not a timer.** Every step lets the app settle; checks retry until they hold.
 - **Finds what a person sees.** Labels, button text, column headers and cell text, not pixel positions.
-- **Exact values, your data.** A recorded test checks what is on screen, such as the cart total `€31.32`. It creates
-  the data it checks or uses data you know exists.
+- **What you see, your data.** A recorded test checks what is on screen, such as the cart total `€31.32`. It creates
+  the data it checks or uses data you know exists; a step can use what an earlier step made.
+  [Values from earlier steps](https://kormcrete.github.io/swing-ui-agent/guides/values-from-earlier-steps/)
 - **Local only.** It listens on `127.0.0.1`, refuses any other address, and no tool runs commands, loads a class or
   evaluates code. [Security](https://kormcrete.github.io/swing-ui-agent/agents/security/)
 - **Your app's words (optional).** A small plugin adds reset, login and named steps such as "Add Gel pen, black to the

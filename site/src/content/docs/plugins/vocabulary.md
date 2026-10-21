@@ -54,12 +54,32 @@ DomainStep.act("addToCart", "Add {product} to the cart")
 | `param` | A value the step takes. `ParamType.TEXT` or `ParamType.INT`; `optional(default)` lets a call leave it out. |
 | `choices` | A supplier of the values that fit right now, for example the product names the app lists. The agent sees them when it looks the step up. They help it pick; a call may pass others. They are asked on a thread of their own and given up after 5 seconds. |
 | `code` | The Java body. Runs on the agent's request thread, not on the event thread. |
+| `codeWithOutcome` | Instead of `code`: a Java body that also returns what the step made, for later steps (see [Values a step makes](#values-a-step-makes)). |
 | `steps` | Instead of `code`: the body as step JSON with `{param}` placeholders, as a recorded test holds it. |
 | `match`, `matchAlso` | The clicks a recording must contain to fold into the step (see below). |
 | `java` | The typed call a Java test makes for the step. A recorded test can hold any step; only an export as a Java test needs this. |
 | `autoFold(false)` | A recording only suggests the step instead of folding into it. |
 
-A step's values are concrete. Nothing is captured or kept between steps, and a recorded test holds no placeholders. A value the app makes up, such as a new order's number, is read by a helper method that returns it (`String placeOrder(Client ui)` in the steps class) for Java tests; the body returns nothing.
+A call gives the step concrete values. A later step can still use what the step made, as it can after any action; see below.
+
+### Values a step makes
+
+A `do` step changes the screen like any action, so a later step of a recorded test can use what it changed: the row it added, the tab it opened (see [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/)). A value the screen does not show whole, such as a number the body reads out of a longer text, can be returned by the body itself. Use `codeWithOutcome` in place of `code`:
+
+```java
+DomainStep.act("placeOrder", "Place the order")
+        .about("Places the open order and returns its number")
+        .codeWithOutcome((ui, p) -> Collections.<String, Object>singletonMap("number", OrderDeskSteps.placeOrder(ui)))
+        .java(STEPS, "placeOrder(ui)")
+        .build(),
+```
+
+- The body returns JSON-like values: text, numbers, booleans, and lists and maps of them, or null for none. Anything else fails the step in words.
+- The values go under `step` in what the step changed. A later step uses them as `${placeOrder.step.number}`, and the recorder links them automatically like a field's value. An agent gets them with `"outcome": true`.
+- The runs that learn a step's pattern or its Java form run the body too, and leave its values out.
+- **In a Java export** a `do` step whose Java form is a typed call (`java(...)`) or several steps cannot be the source of a later step's value, and its `step` values have no Java form: `outcomeOf` takes exactly one action. The export names the problem; the recorded test is not affected. A Java test takes the value from what the helper returns: `String number = OrderDeskSteps.placeOrder(ui);`.
+
+(Order Desk's own `placeOrder` uses `code`: its recorded tests check the order without its number.)
 
 ### Change one place
 

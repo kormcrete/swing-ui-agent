@@ -7,7 +7,7 @@ sidebar:
 
 A recorded test shows its steps as the technical line (`click(button 'Add to cart')`). A **sentence** replaces that line with words a person reads: "Add it to the cart". It is optional and changes nothing about what the test does. A **group** puts several steps under one sentence.
 
-A sentence is only words. The values a test checks stay exact and static; see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/).
+A sentence is only words: it changes nothing about the values a step uses or checks. How a step uses a value an earlier step made is in [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 ## Write sentences in the Steps list
 
@@ -101,5 +101,6 @@ Left out: the imports and the class around the method.
 
 ## What's next
 
+- [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/)
 - [Recorded test format](/swing-ui-agent/reference/recorded-test-format/)
 - [Tables](/swing-ui-agent/guides/tables/) for rows by value and by position in a locator.

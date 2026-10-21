@@ -16,8 +16,8 @@ They differ in what they may check at the end.
 
 ## What the recorded test checks
 
-A recorded test holds exact values only: what a person could read off the screen when it was recorded. At the end of
-`place-order`, the agent confirms the order and checks the order's tab that opens, then the Invoice tab:
+A recorded test holds what a person could read off the screen when it was recorded, and it can use a value an earlier
+step made. At the end of `place-order`, the agent confirms the order and checks the order's tab that opens, then the Invoice tab:
 
 <!-- snippet: uitest/place-order.json#L283-L323 -->
 ```json
@@ -67,9 +67,15 @@ A recorded test holds exact values only: what a person could read off the screen
 The file holds no date, so `place-order` passes on any day. The invoice total, €37.20, is what the order adds up to.
 
 There is no order number in the file. The app gives each new order the next number, `ORD-1640` on a fresh start and a
-different one after that, so the recorded test cannot know it. It checks what is predictable: **Placed**, the PO line
-and the invoice total. A recorded test never reads a value from the app to use later; it has no parameters or captures. That
-is on purpose. It keeps the file readable by anyone who can use the app, and it is why the two kinds do not mix.
+different one after that. `place-order` checks what is the same on every run: **Placed**, the PO line and the invoice
+total.
+
+A recorded test can follow the number too. Record one more step after **Confirm the order**: open the **Orders** tab and
+check the new order's **Status**. The check finds its row by `ORD-1640`, and that row is what confirming the order
+added, so the recorder links the two. The file then holds
+`"Order" : "${answer.rows['Orders › table'].added[0].Order}"` instead of the number, and each run checks its own new
+order: `ORD-1641`, then `ORD-1642`. Nobody types that line; the palette shows the step with 🔗. See
+[Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 ## What the Java test checks
 
@@ -98,8 +104,9 @@ assertThat(ui.tab("Orders").table().cell("Status")).hasCell(row("Order", order),
 ui.inWindow("main").saveScreenshot("PlaceOrderUiIT/10-orders-after.png", 2);
 ```
 
-That is Java: a variable (`order`), a wait for a value that changes, and a lookup with it. A recorded test cannot do
-that. The Java test is also where a 2x screenshot is taken after every step.
+That is Java: the number is cut out of the status bar's text (`Order ORD-1640 placed`), with a wait written for it. A
+recorded test uses values whole, as a step made them, and never cuts one out of a longer text. The Java test is also
+where a 2x screenshot is taken after every step.
 
 ## Where a technical check would go
 
@@ -111,7 +118,8 @@ for it. The UI steps can come from a recording; the technical check is code that
 ## Which one to write
 
 - Start with a recorded test. It covers what a person can see, it is cheap to fix, and it replays from the palette.
-- Write a Java test when the test must read a value that changes per run, or check something the screen does not show.
+- Write a Java test when the test must compute a value or cut one out of a longer text, or check something the screen
+  does not show.
 
 [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/) has the longer comparison.
 

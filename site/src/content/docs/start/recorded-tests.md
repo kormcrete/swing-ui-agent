@@ -5,7 +5,7 @@ sidebar:
   order: 11
 ---
 
-A recorded test is a JSON file, one step per action, with its checks under the step. It holds exact values that were visible when it was recorded. For when to choose one over a Java test, see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). This page is about using one.
+A recorded test is a JSON file, one step per action, with its checks under the step. It holds the values that were visible when it was recorded. A step can also use a value an earlier step made, such as a new order's number, so the test works on its own new record on every run; see [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/). For when to choose one over a Java test, see [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). This page is about using one.
 
 ## Where they live
 
@@ -93,6 +93,7 @@ In **Steps**, the same tools as when recording:
 
 - Name a step or a check: double click, **F2** or **Enter**, or right click (**Shift+F10** from the keyboard) → **Describe this step…**. See [Sentences and groups](/swing-ui-agent/guides/sentences/).
 - **Delete** a step, or **↺ Redo from selected**: go back to that step and record again from there.
+- **Use a value from an earlier step…**, **Use the exact value** and **Unique per run** in the row menu link a step to a value, or undo the link. A linked step shows 🔗. See [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/#in-the-palette).
 - Replay all, or from a step, to see the effect of a change.
 
 To keep the change, press **Export…**. If the name is the test you loaded, the button reads **Save** and writes over it. With any other name it reads **Export** and writes a new file, so the original stays.
@@ -110,6 +111,7 @@ $UI run_recorded_test '{"name":"cart-totals"}'
  "report":"Recorded test 'cart-totals' passed:\n  driver: …\n  [1] PASS Open a new order  ms=451 … menu([File, New order]) …"}
 ```
 
+- A step that uses a value from an earlier step carries `resolved`: each reference with the value it stood for in this run. The report shows it after the step: `(answer.rows['Orders › table'].added[0].Order = ORD-1641)`, or `(run.id = k3x9a2bq)`.
 - `ran` and `total` count steps. A check is not counted; it is listed with the label `9.5` (step 9, check 5). The same numbers are in the palette and the file.
 - Left out of the quote: the per-step timings and the `driver:` line of the report.
 - The CLI exits `0` when it passed. `4` means the recorded test ran and failed; the report is on stderr. See [Exit codes](/swing-ui-agent/reference/cli/#exit-codes).

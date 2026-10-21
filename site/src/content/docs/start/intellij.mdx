@@ -109,8 +109,9 @@ compiling. See [Run and edit a recorded test](/swing-ui-agent/start/recorded-tes
 
 ## 5. Java tests, for more checks
 
-When a test must read a value that changes per run, or check something the screen does not show, it is a Java test:
-a JUnit class. In **Export…** choose **Java test**, enter a class name ending in `UiIT`, for example `CancelOrderUiIT`
+A recorded test already follows a value an earlier step made, such as a new order's number (see
+[Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/)). When a test must compute a value, cut
+one out of a longer text, or check something the screen does not show, it is a Java test: a JUnit class. In **Export…** choose **Java test**, enter a class name ending in `UiIT`, for example `CancelOrderUiIT`
 (the package is the app's own), and press **Export**. The palette says where the file went:
 `src/test/java/io/github/kormcrete/orderdesk/CancelOrderUiIT.java`. For which kind to pick, see
 [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/); the same order as both kinds is on

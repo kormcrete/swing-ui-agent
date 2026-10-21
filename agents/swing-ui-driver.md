@@ -68,7 +68,9 @@ The project's instructions and the hand-over name these; they win over the defau
   intends (`answer {"button":"Cancel"}` or `"escape"`), never by clicking whatever is offered.
 - **No export unless asked** (`export_recorded_test`, `export_test`). Steps are recorded either way; exporting
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
-  the first step reaches the start screen; `recording` `edit`/`group` with `say` for names).
+  the first step reaches the start screen; `recording` `edit`/`group` with `say` for names). A step that uses what an
+  earlier step made (a new order number) is linked by the recorder or with `recording` `link`/`remember`/`unique`;
+  never type `${...}` yourself (typed text is literal). `"outcome": true` on a step returns what it changed.
 - **Busy agent.** `BUSY: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
   run still going. If that run is dead, retry after 15 s idle, or `$UI session '{"op":"lease","owner":"driver"}'`,
   pass `--lease <token>` before the tool name on each call, and release it at the end.
@@ -79,7 +81,9 @@ The project's instructions and the hand-over name these; they win over the defau
 
 A recorded test file: `$UI run_recorded_test '{"name":"place-order"}'`. It starts with a reset and reports
 `passed`, `ran`/`total` steps and every step and check by its number (`7`, `7.2`); the failing one carries what its
-locators match now and a picture under `evidence`. The CLI exits 4 when the test fails.
+locators match now and a picture under `evidence`. The CLI exits 4 when the test fails. A step that uses an
+earlier step's value carries `resolved` (what each reference stood for in this run); a link with no value fails its
+step in words ("Step 3 (Copy) added no row to Orders"): report it like any failure.
 
 A Java test: run the given `*UiIT` class alone while the app is up, the project's way (default
 `mvn -Dtest=PlaceOrderUiIT verify`; failsafe uses `-Dit.test=`). On a failure read

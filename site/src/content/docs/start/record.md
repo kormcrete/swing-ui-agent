@@ -81,7 +81,7 @@ Put the app on some other screen, such as another tab, then run only the new tes
 
 ## Java tests, for more checks
 
-When a test must read a value that changes per run, or check something the screen does not show, the same recording can be exported as a Java class instead. Which one to choose: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). `export_test` writes it as a JUnit 5 `@UiTest` class, which you review like any other code.
+A recorded test can use a value that changes per run when an earlier step made it, such as the new order's number: the recorder links the steps for you (see [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/)). When a test must compute a value, cut one out of a longer text, or check something the screen does not show, the same recording can be exported as a Java class instead. Which one to choose: [Recorded tests or Java tests](/swing-ui-agent/start/choose-test-kind/). `export_test` writes it as a JUnit 5 `@UiTest` class, which you review like any other code.
 
 ### Export a Java test
 

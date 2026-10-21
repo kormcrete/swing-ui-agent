@@ -163,9 +163,9 @@ public interface Vocabulary {
 }
 ```
 
-A `DomainStep` has an id, a sentence with `{param}` placeholders, its params and a body that does the step through the same `Client` a UI test uses. `steps()` is read once, on the plugin's start thread. A step that fails its checks is dropped and listed under `vocabularyProblems` in `session`; the others stay and the plugin stays ready. The steps are served by the `vocabulary` tool and `do_action`, folded from recordings, and called from Java tests. A vocabulary adds no `host`, so the agent's own reset stays. How to write steps, patterns and typed calls: [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/).
+A `DomainStep` has an id, a sentence with `{param}` placeholders, its params and a body that does the step through the same `Client` a UI test uses. A body given with `codeWithOutcome` also returns what the step made, as JSON-like values under `step` in its outcome, for later steps of a recorded test. `steps()` is read once, on the plugin's start thread. A step that fails its checks is dropped and listed under `vocabularyProblems` in `session`; the others stay and the plugin stays ready. The steps are served by the `vocabulary` tool and `do_action`, folded from recordings, and called from Java tests. A vocabulary adds no `host`, so the agent's own reset stays. How to write steps, patterns and typed calls: [Plugin vocabulary](/swing-ui-agent/plugins/vocabulary/).
 
-`DomainStep.Body` takes a `Client`, which lives in `io.github.kormcrete.swingui.junit`: that is the one class outside `spi` and `driver` the SPI uses.
+`DomainStep.Body` (and `DomainStep.OutcomeBody`) takes a `Client`, which lives in `io.github.kormcrete.swingui.junit`: that is the one class outside `spi` and `driver` the SPI uses.
 
 ## A sketch
 

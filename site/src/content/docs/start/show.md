@@ -100,6 +100,7 @@ Which checks you get depends on the element. For example:
   when it is; Has exactly N rows; Has at least 1 row.
 - **Any control with a tooltip:** Its tooltip is “…”.
 - **Every element you can click:** Is shown. There is no menu item for “is gone”: the agent writes that check (`absent`), for example after a tab is closed.
+- **Remember this as…**, last in the menu, keeps what the element shows under a name, so later steps can use it (an order number, an account number). See [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/#remember-this).
 
 Column checks such as "Every row's Status is …" and "Sorted by …" are greyed out, marked "(expect cannot check this
 yet)".
@@ -125,6 +126,10 @@ Press **Steps** to open the list of what has been recorded so far, your steps an
 - **✕ Delete** removes one step with its checks, or one check. **↶ Undo** takes back the last edit, yours or the
   agent's.
 - **Name** a step, a check or several steps: see [Name the steps](#name-the-steps) below.
+- **🔗 on a step** means it uses a value an earlier step made, such as the number of the order it placed, so each run
+  uses its own. The recorder links these for you. The row menu has **Use a value from an earlier step…**, **Use the
+  exact value** and, on a typing step, **Unique per run**. See
+  [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 Results stay on the steps as ✓ and ✗ until the next replay. **Replay all** and a redo begin with a reset, as the test
 will; without a plugin that only closes dialogs, so the first step has to get to the starting screen.

@@ -27,10 +27,16 @@ The project's instructions (its `CLAUDE.md`, `AGENTS.md` or the like) name these
 ## Which kind?
 
 - **Recorded test** (the default, unless the project's test kind says otherwise) when the person shows or
-  describes behaviour that is visible on screen: exact values, the way a tester or user would check them. It is for
-  people showing the app, mostly not technical.
-- **Java `@UiTest`** when they ask for something dynamic (a computed or app-made value), or a technical check such
-  as a database. It is for engineers working with you.
+  describes behaviour that is visible on screen, the way a tester or user would check it. It is for people showing
+  the app, mostly not technical. It holds what they saw, and steps may use what an earlier step made (a new order's
+  number), a remembered value or a text unique per run (see "Values from earlier steps" below).
+- **Java `@UiTest`** when they ask for what a file cannot hold: a value computed from others or cut out of a longer
+  text (`ORD-1640` out of "Order ORD-1640 placed"), loops, branches, or a technical check such as a database. It is
+  for engineers working with you.
+- **A test for a person stays a recorded test, whole.** Everything you build for them (links, sentences, groups,
+  remembered values, unique texts) goes into the JSON file with the `recording` ops, and replays from that file
+  alone: they never link or name a step, and the file is the only kind of test they have. Stay within what the file
+  holds; if the test needs more, say so and ask whether they want a Java test.
 - The two do not mix; a recorded test is not a base for a Java test. Data is the user's job: the test creates the
   data it checks or uses data the user knows exists. More: https://kormcrete.github.io/swing-ui-agent/start/choose-test-kind/
   and https://kormcrete.github.io/swing-ui-agent/start/recorded-tests/
@@ -83,7 +89,9 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
   shows its params, with `choices` for the values that fit in the app right now. Run it as one step:
   `$UI do_action '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`; in a
   `batch` it is `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`.
-  Values are always concrete: no placeholders, nothing carried from one step to the next.
+  Params are the concrete values you choose. A value an earlier step made is linked by the recorder (or with
+  `link`), never typed as `${...}`. A step's own values (`codeWithOutcome` in the plugin) are under `step` in its
+  outcome: `${placeOrder.step.number}`.
 - **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
   say so.
@@ -122,9 +130,10 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
    ```
    Check a value shown next to a caption (a total, a status) by that caption: `label 'Total'` + `text`.
-   A recorded test holds exact values: check data the test creates or data known to exist. Check a value the app
-   makes up (a new order number, today's date) only when the start makes it predictable; otherwise check something
-   else, or write a Java test.
+   Check data the test creates or data known to exist. A value the app makes up (a new order number) is fine in a
+   LATER step: the recorder links it to the step that made it (see "Values from earlier steps"). A check of the very
+   label or field that showed the new value is NOT linked (it would compare it with itself): it stays exact and
+   fails on the next run. Do not check such a value exactly; remember it and use it where it matters.
 6. **A step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'` cuts step 3
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
    with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
@@ -134,10 +143,46 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
    and keeps the recording.
 8. **Verify** (below).
 
-## Name the steps (when asked)
+## Values from earlier steps
 
-"Name the steps" or "describe the test": `$UI recording '{"op":"list"}'` first, then one edit per sentence,
-each with the `rev` of the list the last edit returned:
+A recorded test is replayed again and again, and each run makes its own records (`ORD-1640`, then `ORD-1641`). A
+step that uses what an earlier step made is LINKED: the file holds `${<id><path>}` and each run fills in that run's
+value, or the step fails in words. Never the recorded value.
+
+- **Automatic links.** While recording, a value you click, type, pick or check is linked when it is new in an
+  earlier step's outcome, 4 characters or more, not yes/no/true/false, not a whole number below 1000, whole (or a
+  whole part of typed text). Most recent step first; a row or item only when that step added exactly ONE. Not
+  linked: a check against its own element's new text, field or cell (see step 5 above), a value in another form,
+  rows from a search.
+- **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
+  until the new row is there, then click it. A row you click before it appears is not linked.
+- **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later
+  step may use), `uses` [{from, value}], `usedBy` and `unique`.
+- **Link by hand** when the rules do not fire but the value is surely the same (short values too; never a row among
+  several a step added, nor a value in another form: those are refused):
+  `$UI recording '{"op":"link","n":"7.1","ref":"${3.rows.Orders.added[0].Order}"}'` (a step number or id, then a
+  path from its `changed`; or a remembered name, `"ref":"orderNumber"`). `unlink {n}` turns links back into values.
+- **Remember** a value already on screen (not a change): `$UI recording
+  '{"op":"remember","target":{"role":"table","scope":["tab:Orders"],"column":"Order"},"selected":true,"as":"orderNumber"}'`
+  (a check-like entry under the last step, or under step `n`; refused when missing or empty). Later steps link to
+  `${orderNumber}`.
+- **Unique per run** for typed text that must not repeat (a note, a new customer's name):
+  `$UI recording '{"op":"unique","n":5,"where":"end"}'` adds `${run.id}` (8 letters and digits, new per run); later
+  steps that use that text follow it. Nothing is typed again.
+- **Never type `${...}` yourself.** What you type is taken as typed (a literal); links come only from the recorder and
+  `link`.
+- **See what a step changed:** `"outcome": true` on `do_action`, `batch` steps or a verb tool returns
+  `outcome` (only what changed, keyed by visible names) and `outcomeHandle`; `read {"form":"outcome","handle":N}`
+  reads it again for a late change.
+- **Prove it:** save, then `run_recorded_test` TWICE; each run must pass on its own new record (the report shows each
+  resolved value, e.g. `(copy.rows.Orders.added[0].Order = ORD-1642)`).
+- More: https://kormcrete.github.io/swing-ui-agent/guides/values-from-earlier-steps/
+
+## Name the steps
+
+Name every step and check before you save a recorded test for a person, unasked: they should never have to. "Name
+the steps" or "describe the test" asks for it too. `$UI recording '{"op":"list"}'` first, then one edit per
+sentence, each with the `rev` of the list the last edit returned:
 
 ```sh
 $UI recording '{"op":"edit","n":2,"say":"Open a new order for Ada Shop Ltd","rev":14}'
@@ -209,8 +254,14 @@ file goes under `-Dswingui.testsDir` of the app JVM, else `src/test/java` of the
 working directory; `dir` (the test sources root, e.g. `<project>/src/test/java`) wins over both, and `warning` names the path when the app's working directory is no project; `savedTo` names the file. A refusal names each problem and keeps the recording: fix and retry. Read
 `warning` (where the file went) and `startWarning` (reset and re-record with a `menu`/`press` first step).
 
+Links export as code: a source step as `Outcome copy = ui.outcomeOf(() -> ...)` and its values as
+`copy.text("$.rows.Orders.added[0].Order")` (waits for a late value, up to the client's timeout), a remember entry as
+`String orderNumber = ....selectedText()` / `.shownText()`, run values as `ui.run().id()`. A `do` step whose Java
+form is a typed call or several steps cannot be a source; the export says so.
+
 Review the source. Rename the method if useful. Add by hand only checks no verb expresses, with the Client API
-(`ui.describeModal()`, `ui.clipboardText()`, `UiAssertions.eventually(...)`) or the plugin's `ui.hooks(...)`.
+(`ui.describeModal()`, `ui.clipboardText()`, `UiAssertions.eventually(...)`, `ui.outcomeOf(...)`) or the plugin's
+`ui.hooks(...)`.
 Fix a wrong step in the recording before the export (step 6); after a clearing export, reset and record again
 rather than hand-editing recorded steps.
 
