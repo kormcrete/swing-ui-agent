@@ -3309,19 +3309,81 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void aReplayedUniqueTextIsExactWithTheValueItTyped() throws Exception {
+    void theExactValueOfAUniqueTextIsTheTextAsTypedAndItsUsesFollow() throws Exception {
         assertThat(sink.done(typing("customer", "Al", 1)).ok).isTrue();
+        assertThat(sink.done(typing("search", "Orders of Al", 2)).ok).isTrue();
         assertThat(sink.unique(id(0), "end").ok).isTrue();
         call("{\"op\":\"stop\"}");
         noReset(session);
         assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
         String typedNow = typed().get(0);
         String runId = typedNow.substring("type #customer Al ".length(), "type #customer Al ".length() + 8);
+        // the person reads what the replay typed
         assertThat(sink.steps().get(0).line).isEqualTo("type(#customer 'Al " + runId + "')");
         assertThat(sink.steps().get(0).links).extracting(l -> l.words + " = " + l.seen)
                 .containsExactly("unique per run = " + runId);
-        assertThat(sink.unlink(id(0)).ok).isTrue();
-        assertThat(text(session.recordedSteps().get(0))).isEqualTo("Al " + runId);
+
+        // the exact value of a text made unique is the text as typed, and its uses follow: the steps never drift apart
+        Inspector.Result r = sink.unlink(id(0));
+        assertThat(r.ok).as(r.line).isTrue();
+        assertThat(r.line).isEqualTo("used the exact value in step 1; step 2 uses the plain text again");
+        assertThat(text(session.recordedSteps().get(0))).isEqualTo("Al");
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo("Orders of Al");
+        assertThat(session.recordedSteps().get(1).linkSeen).isEmpty();
+        assertThat(sink.undoLabel()).isEqualTo("exact value of step 1 by the person");
+        assertThat(sink.undo().ok).isTrue();
+        assertThat(text(session.recordedSteps().get(1))).isEqualTo("Orders of Al ${run.id}");
+    }
+
+    /** A recorded test file with {@code texts} typed one after the other into #t1, #t2, ... (format 4: references). */
+    private Path typedFile(String... texts) throws Exception {
+        StringBuilder steps = new StringBuilder();
+        for (int i = 0; i < texts.length; i++) {
+            if (i > 0) steps.append(',');
+            steps.append("{\"action\":\"type\",\"target\":{\"id\":\"t").append(i + 1).append("\"},\"text\":\"")
+                    .append(texts[i]).append("\"}");
+        }
+        Path file = dir.resolve("typed.json");
+        Files.write(file, ("{\"version\":4,\"name\":\"typed\",\"start\":\"reset\",\"steps\":[" + steps + "]}")
+                .getBytes(StandardCharsets.UTF_8));
+        return file;
+    }
+
+    @Test
+    void uniquePerRunIsOfferedOnTheTextItselfAndItsUsesFollowByWholeWords() throws Exception {
+        session.loadRecordedTest(typedFile("Al ${run.id}", "XAl ${run.id}", "Orders of Al ${run.id}"));
+        // a text of its own (even one that holds the other's at the end of a word); a use of step 1's text has none
+        assertThat(sink.steps()).extracting(l -> l.unique).containsExactly("end", "end", null);
+        Inspector.Result there = sink.unique(id(2), "off");
+        assertThat(there.ok).isFalse();
+        assertThat(there.line).isEqualTo("step 3 uses the unique text of step 1: change it there");
+
+        assertThat(sink.unique(id(0), "start").ok).isTrue();
+        List<RecordedStep> steps = session.recordedSteps();
+        assertThat(text(steps.get(0))).isEqualTo("${run.id} Al");
+        // XAl is another word: it stays
+        assertThat(text(steps.get(1))).isEqualTo("XAl ${run.id}");
+        assertThat(text(steps.get(2))).isEqualTo("Orders of ${run.id} Al");
+        assertThat(sink.steps()).extracting(l -> l.unique).containsExactly("start", "end", null);
+    }
+
+    @Test
+    void aValueNotKnownYetIsSaidInWordsAndNothingChanges() throws Exception {
+        // a loaded recorded test that has not run: step 2 uses what step 1 changed, which no run has shown yet
+        session.loadRecordedTest(copyAndSearch());
+        List<String> before = kept();
+        String why = "Step 2 uses what step 1 changed, and that value is not known yet: replay up to step 1 first";
+        // the exact value: greyed in the palette, saying why
+        assertThat(sink.steps().get(1).links).extracting(l -> l.unknown).containsExactly(why);
+        Inspector.Result exact = sink.unlink(id(1));
+        assertThat(exact.ok).isFalse();
+        assertThat(exact.line).isEqualTo(why).doesNotContain("${");
+        // deleting step 1 cannot keep a value no one knows: refused before anything changes
+        Inspector.Result delete = sink.delete(id(0));
+        assertThat(delete.ok).isFalse();
+        assertThat(delete.line).isEqualTo(why + " (nothing deleted)");
+        assertThat(kept()).isEqualTo(before);
+        assertThat(sink.undoLabel()).isNull();
     }
 
     @Test

@@ -420,15 +420,22 @@ public final class Inspector {
     /**
      * A value a step uses of an earlier one, as the person reads it: {@code words} say where it comes from ("from step 3:
      * Copy added", "orderNumber (remembered)", "unique per run"), {@code seen} is the value it stood for when the step
-     * last ran (null: it has not run since).
+     * last ran (null: it has not run since). {@code unknown}: why its exact value cannot be used, in words, while no
+     * value is known for it ("… replay up to step 3 first"); null when it can.
      */
     public static final class LinkLine {
         public final String words;
         public final String seen;
+        public final String unknown;
 
         public LinkLine(String words, String seen) {
+            this(words, seen, null);
+        }
+
+        public LinkLine(String words, String seen, String unknown) {
             this.words = words;
             this.seen = seen;
+            this.unknown = unknown;
         }
     }
 

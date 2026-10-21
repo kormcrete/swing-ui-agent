@@ -586,6 +586,30 @@ final class Linker {
         return Character.isLetterOrDigit(outside) && Character.isLetterOrDigit(edge);
     }
 
+    /** Whether {@code part} is in {@code text} whole: the whole text, or with no letter or digit glued to either end. */
+    static boolean wholeIn(String text, String part) {
+        for (int i = text.indexOf(part); i >= 0; i = text.indexOf(part, i + 1)) if (wholeAt(text, i, part)) return true;
+        return false;
+    }
+
+    /** {@code text} with each whole {@code part} in it ({@link #wholeIn}) replaced by {@code by}. */
+    static String replaceWhole(String text, String part, String by) {
+        StringBuilder out = new StringBuilder();
+        int last = 0;
+        for (int i = text.indexOf(part); i >= 0; i = text.indexOf(part, i + 1)) {
+            if (i < last || !wholeAt(text, i, part)) continue;
+            out.append(text, last, i).append(by);
+            last = i + part.length();
+        }
+        return last == 0 ? text : out.append(text.substring(last)).toString();
+    }
+
+    private static boolean wholeAt(String text, int i, String part) {
+        int end = i + part.length();
+        return !(i > 0 && glued(text.charAt(i - 1), part.charAt(0)))
+                && !(end < text.length() && glued(text.charAt(end), part.charAt(part.length() - 1)));
+    }
+
     // ------------------------------------------------------------------ what the person may link a step to
 
     /**

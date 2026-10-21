@@ -32,11 +32,11 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The palette's own popups - the row menu, the replay speed's list, a tooltip - show above the palette in a window on
- * screen, where Swing would put them under it; the app's own popups stay where Swing puts them. Every click goes to the
- * window, which hands it to whatever lies on top at that point, as a click of the person's. Swing's own popup factory
- * throughout: it puts a popup that fits in the window into the window, as Metal, Windows and FlatLaf do (Aqua's makes
- * every popup a window of its own, on top anyway).
+ * The palette's own popups - the row menu, a tooltip - show above the palette in a window on screen, where Swing would
+ * put them under it; the replay speed's list is a window of its own (on top anyway, and never painted with the window);
+ * the app's own popups stay where Swing puts them. Every click goes to the window, which hands it to whatever lies on
+ * top at that point, as a click of the person's. Swing's own popup factory throughout: it puts a popup that fits in the
+ * window into the window, as Metal, Windows and FlatLaf do (Aqua's makes every popup a window of its own, on top anyway).
  */
 class PalettePopupsTest {
 
@@ -120,7 +120,8 @@ class PalettePopupsTest {
             SwingUtilities.invokeAndWait(() -> {
                 Rectangle cell = choices.getCellBounds(pick, pick);
                 Point at = new Point(cell.x + cell.width / 2, cell.y + cell.height / 2);
-                assertThat(topAt(SwingUtilities.convertPoint(choices, at, frame.getLayeredPane()))).isSameAs(choices);
+                // a window of its own, on top of the window and the palette, never in a capture of the window
+                assertThat(SwingUtilities.getWindowAncestor(choices)).isNotSameAs(frame);
                 click(choices, at);
             });
             eventually(() -> panel.speed() == pick ? Boolean.TRUE : null);
@@ -224,14 +225,18 @@ class PalettePopupsTest {
         mouse(on, at, MouseEvent.BUTTON3, InputEvent.BUTTON3_DOWN_MASK);
     }
 
-    /** A press, release and click at {@code at} on {@code on}, sent to the window, which finds what lies on top there. */
+    /**
+     * A press, release and click at {@code at} on {@code on}, sent to its window (the frame, or a popup's own), which
+     * finds what lies on top there.
+     */
     private void mouse(Component on, Point at, int button, int down) {
-        Point p = SwingUtilities.convertPoint(on, at, frame);
+        java.awt.Window w = SwingUtilities.getWindowAncestor(on);
+        Point p = SwingUtilities.convertPoint(on, at, w);
         boolean popup = button == MouseEvent.BUTTON3;
         long now = System.currentTimeMillis();
-        frame.dispatchEvent(new MouseEvent(frame, MouseEvent.MOUSE_PRESSED, now, down, p.x, p.y, 1, popup, button));
-        frame.dispatchEvent(new MouseEvent(frame, MouseEvent.MOUSE_RELEASED, now, 0, p.x, p.y, 1, false, button));
-        frame.dispatchEvent(new MouseEvent(frame, MouseEvent.MOUSE_CLICKED, now, 0, p.x, p.y, 1, false, button));
+        w.dispatchEvent(new MouseEvent(w, MouseEvent.MOUSE_PRESSED, now, down, p.x, p.y, 1, popup, button));
+        w.dispatchEvent(new MouseEvent(w, MouseEvent.MOUSE_RELEASED, now, 0, p.x, p.y, 1, false, button));
+        w.dispatchEvent(new MouseEvent(w, MouseEvent.MOUSE_CLICKED, now, 0, p.x, p.y, 1, false, button));
     }
 
     private static java.util.List<Component> buttonsOf(java.awt.Container c) {

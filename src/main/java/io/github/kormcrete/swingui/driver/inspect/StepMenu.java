@@ -27,6 +27,18 @@ final class StepMenu extends JPopupMenu {
         return add(item, enabled, action);
     }
 
+    /** {@link #item}, with {@code tip} on hover (null: none): why it is greyed. */
+    StepMenu item(String label, boolean enabled, String tip, Runnable action) {
+        JMenuItem item = new JMenuItem(label);
+        item.setToolTipText(tip);
+        return add(item, enabled, action);
+    }
+
+    /** What hovering {@code label} says; null when nothing. */
+    String tip(String label) {
+        return item(label).getToolTipText();
+    }
+
     /** Adds a choice of one of several ways, {@code selected} for the current one. */
     StepMenu choice(String label, boolean selected, boolean enabled, Runnable action) {
         JRadioButtonMenuItem item = new JRadioButtonMenuItem(label, selected);
@@ -48,6 +60,9 @@ final class StepMenu extends JPopupMenu {
 
     private StepMenu submenu(String label, boolean enabled, List<String> items, int selected, IntConsumer action) {
         Sub sub = new Sub(label);
+        // a window of its own: never painted with the app's window, which a capture paints (it paints nothing of the
+        // palette's own), and on top of it anyway
+        sub.getPopupMenu().setLightWeightPopupEnabled(false);
         for (int i = 0; i < items.size(); i++) {
             int at = i;
             JMenuItem item = selected < 0 ? new JMenuItem(items.get(i)) : new JRadioButtonMenuItem(items.get(i), i == selected);
@@ -119,6 +134,11 @@ final class StepMenu extends JPopupMenu {
         JMenuItem chosen = item(sub, item);
         setVisible(false);
         if (sub.isEnabled() && chosen.isEnabled()) chosen.doClick(0);
+    }
+
+    /** The submenu {@code label}. */
+    JMenu submenu(String label) {
+        return sub(label);
     }
 
     private JMenu sub(String label) {

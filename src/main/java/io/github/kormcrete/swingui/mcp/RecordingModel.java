@@ -309,10 +309,19 @@ final class RecordingModel {
         return viewOf(steps);
     }
 
-    /** A new model holding the same steps and groups (no history): an edit is tried on it before it is made for real. */
+    /**
+     * A new model holding the same records (ids, groups, the values their links stood for) and reading the same values
+     * (no history): an edit is tried on it before it is made for real. The edits tried there only read the values.
+     */
     RecordingModel copy() {
         RecordingModel copy = new RecordingModel();
-        copy.load(flow(), RecordedStep.Author.LOADED);
+        copy.steps.addAll(steps);
+        copy.nextId = nextId;
+        copy.nextGroupId = nextGroupId;
+        copy.runValues = runValues;
+        for (Map.Entry<Integer, Set<String>> e : linkedPaths.entrySet()) {
+            copy.linkedPaths.put(e.getKey(), new HashSet<String>(e.getValue()));
+        }
         return copy;
     }
 
@@ -1015,6 +1024,10 @@ final class RecordingModel {
         int i = indexOf(stepId);
         if (i < 0) throw bad("that step is gone: the recording changed since (nothing changed)");
         final RecordedStep s = steps.get(i);
+        // a text made unique per run goes back to the text as typed, and so do the later uses of it
+        if (uniqueSource(i)) return uniqueChange(i, "off", true, by);
+        String unknown = unknownValue(steps, StepNumbers.labels(actions()), i, null, runValues);
+        if (unknown != null) throw bad(unknown);
         JsonNode tree = FlowJson.mapper().valueToTree(s.action);
         JsonNode exact = Refs.mapValues(tree, text -> exactText(text, s.linkSeen));
         if (exact.equals(tree)) return null;
@@ -1039,8 +1052,6 @@ final class RecordingModel {
     enum Unknown {
         /** BAD_INPUT: replay the steps before it first. */
         REFUSE,
-        /** It stays as it is. */
-        KEEP,
         /** "…" in its place (for the person's eyes only). */
         DOTS
     }
@@ -1084,7 +1095,7 @@ final class RecordingModel {
             } else if (unknown == Unknown.REFUSE) {
                 throw bad("no value is known for " + r.source + ": replay the steps before it first");
             } else {
-                sb.append(unknown == Unknown.DOTS ? "…" : r.source);
+                sb.append("…");
             }
         }
         String rest = text.substring(last);
@@ -1120,8 +1131,9 @@ final class RecordingModel {
 
     /**
      * Before the records at flat {@code from}-{@code to} go: every other record that uses what they changed or
-     * remembered gets the values it used, as text (a value no one knows stays a reference). Returns "; steps 5 and 7 keep
-     * the values they used" (their numbers before the delete), or "" when none uses them.
+     * remembered gets the values it used, as text. Returns "; steps 5 and 7 keep the values they used" (their numbers
+     * before the delete), or "" when none uses them. Refused, nothing changed, when one of those values is not known
+     * yet (a loaded recorded test not replayed): it says which, in words.
      */
     private String keepValues(int from, int to) {
         final Set<String> names = new HashSet<String>();
@@ -1131,12 +1143,19 @@ final class RecordingModel {
         }
         if (names.isEmpty()) return "";
         List<StepNumbers.Step> st = StepNumbers.of(actions());
+        List<String> labels = StepNumbers.labels(actions());
+        // nothing changes when a step that uses it has a value no one knows yet
+        for (int i = 0; i < steps.size(); i++) {
+            if (i >= from && i <= to) continue;
+            String unknown = unknownValue(steps, labels, i, names, runValues);
+            if (unknown != null) throw bad(unknown + " (nothing deleted)");
+        }
         TreeSet<Integer> users = new TreeSet<Integer>();
         for (StepNumbers.Step n : st) {
             for (int i = n.first(); i <= n.last(); i++) {
                 if (i >= from && i <= to) continue;
                 final RecordedStep s = steps.get(i);
-                Action exact = mapped(s.action, text -> filled(text, s.linkSeen, runValues, names, Unknown.KEEP, false));
+                Action exact = mapped(s.action, text -> filled(text, s.linkSeen, runValues, names, Unknown.REFUSE, false));
                 if (exact == s.action) continue;
                 steps.set(i, s.with(exact, s.edited).withLinkSeen(stillUsed(exact, s.linkSeen)));
                 users.add(n.number);
@@ -1147,6 +1166,80 @@ final class RecordingModel {
         for (int n : users) numbers.add(String.valueOf(n));
         return "; " + (numbers.size() == 1 ? "step " + numbers.get(0) + " keeps the values it used"
                 : "steps " + and(numbers) + " keep the values they used");
+    }
+
+    /**
+     * Why the record at flat {@code i} of {@code records} ({@code labels}: their labels) cannot have its references to
+     * {@code only} (null: all) turned into values, in words: the first one no value is known for ("Step 5 uses what
+     * step 3 changed, and that value is not known yet: replay up to step 3 first"); null when every value is known.
+     * A run's id unique per run added and no run used yet is known: it goes.
+     */
+    static String unknownValue(List<RecordedStep> records, List<String> labels, int i, Set<String> only, RunValues values) {
+        RecordedStep s = records.get(i);
+        List<Refs.Ref> refs;
+        try {
+            refs = Refs.of(s.action);
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+        for (Refs.Ref r : refs) {
+            if (only != null && !only.contains(r.id)) continue;
+            if (s.linkSeen.containsKey(r.source) || Linker.RUN_ID.equals(r.source) || values.resolve(r).isPresent()) continue;
+            int source = -1;
+            for (int k = 0; k < records.size() && source < 0; k++) if (r.id.equals(nameOf(records.get(k)))) source = k;
+            return notKnown(stepOf(labels.get(i)), source < 0 ? null : records.get(source),
+                    source < 0 ? null : labels.get(source));
+        }
+        return null;
+    }
+
+    /** {@link #unknownValue} in words: {@code source} (null: gone) at {@code sourceLabel}, used by step {@code user}. */
+    static String notKnown(String user, RecordedStep source, String sourceLabel) {
+        if (source == null) return "Step " + user + " uses a value of a step that is gone";
+        String step = stepOf(sourceLabel);
+        String what = source.action instanceof RememberVerb ? "the remembered " + ((RememberVerb) source.action).as
+                : "what step " + step + " changed";
+        return "Step " + user + " uses " + what + ", and that value is not known yet: replay up to step " + step + " first";
+    }
+
+    /** The step of a label: "7" for "7" and "7.1". */
+    private static String stepOf(String label) {
+        int dot = label.indexOf('.');
+        return dot < 0 ? label : label.substring(0, dot);
+    }
+
+    /**
+     * Whether the record at flat {@code i} is a text made unique per run that is its own: a typed text in the form unique
+     * per run gives ({@link Linker#uniqueForm}) that is no use of an earlier one's ({@link #uniqueUse}).
+     */
+    boolean uniqueSource(int i) {
+        return uniqueSource(steps, i);
+    }
+
+    static boolean uniqueSource(List<RecordedStep> records, int i) {
+        Action a = records.get(i).action;
+        return a instanceof TypeVerb && ((TypeVerb) a).text != null && Linker.uniqueForm(((TypeVerb) a).text) != null
+                && uniqueUse(records, i) < 0;
+    }
+
+    /**
+     * The flat index of the earlier record whose text made unique per run the record at {@code i} uses (that whole text,
+     * on its own or as whole words in a value of its); -1 when it uses none.
+     */
+    static int uniqueUse(List<RecordedStep> records, int i) {
+        final List<String> texts = new ArrayList<String>();
+        Refs.mapValues(FlowJson.mapper().valueToTree(records.get(i).action), t -> {
+            texts.add(t);
+            return t;
+        });
+        for (int k = 0; k < i; k++) {
+            Action a = records.get(k).action;
+            if (!(a instanceof TypeVerb) || ((TypeVerb) a).text == null) continue;
+            String made = ((TypeVerb) a).text;
+            if (Linker.uniqueForm(made) == null) continue;
+            for (String t : texts) if (Linker.wholeIn(t, made)) return k;
+        }
+        return -1;
     }
 
     /** "5", "5 and 7", "4, 5 and 7". */
@@ -1171,12 +1264,31 @@ final class RecordingModel {
         if (!(s.action instanceof TypeVerb) || ((TypeVerb) s.action).text == null) {
             throw bad("only a typed text can be unique per run");
         }
+        int source = uniqueUse(steps, i);
+        if (source >= 0) {
+            throw bad(describe(i) + " uses the unique text of " + describe(source) + ": change it there");
+        }
+        String now = Linker.uniqueForm(((TypeVerb) s.action).text);
+        if (where.equals(now == null ? "off" : now)) return null;
+        return uniqueChange(i, where, false, by);
+    }
+
+    /**
+     * {@link #unique} of the record at flat {@code i}, a text of its own; {@code exact}: "Use the exact value" on it -
+     * off, and what else it uses as the values it used too.
+     */
+    private String uniqueChange(int i, String where, boolean exact, RecordedStep.Author by) {
+        final RecordedStep s = steps.get(i);
         String text = ((TypeVerb) s.action).text;
         String now = Linker.uniqueForm(text);
-        if (where.equals(now == null ? "off" : now)) return null;
         String base = Linker.uniqueBase(text);
         String what = describe(i);
         if (Refs.unescape(base).trim().isEmpty()) throw bad(what + " types no text to make unique");
+        if (exact) {
+            String unknown = unknownValue(steps, StepNumbers.labels(actions()), i, null, runValues);
+            if (unknown != null) throw bad(unknown);
+            base = filled(base, s.linkSeen, runValues, null, Unknown.REFUSE, false);
+        }
         final String made = "off".equals(where) ? base : "end".equals(where) ? base + " " + Linker.RUN_ID
                 : Linker.RUN_ID + " " + base;
         List<RecordedStep> before = copyOfRecords();
@@ -1193,14 +1305,14 @@ final class RecordingModel {
         }
         final String old = now == null ? null : text;
         List<StepNumbers.Step> st = StepNumbers.of(actions());
-        int own = addressOf(stepId).step;
+        int own = addressOf(s.id).step;
         TreeSet<Integer> users = new TreeSet<Integer>();
         for (StepNumbers.Step n : st) {
             for (int k = n.first(); k <= n.last(); k++) {
                 if (k <= i) continue;
                 RecordedStep r = steps.get(k);
                 // a use of the unique text as it was follows it
-                Action a = old == null ? r.action : mapped(r.action, t -> t.replace(old, made));
+                Action a = old == null ? r.action : mapped(r.action, t -> Linker.replaceWhole(t, old, made));
                 Map<String, String> seen = new LinkedHashMap<String, String>(r.linkSeen);
                 if (!"off".equals(where) && plain != null) {
                     Linker.Linked l = Linker.uniqueBack(a, unique, plain, made);
@@ -1216,13 +1328,14 @@ final class RecordingModel {
         }
         List<String> numbers = new ArrayList<String>();
         for (int n : users) numbers.add(String.valueOf(n));
-        String past = "off".equals(where) ? "turned unique per run off in " + what : "made the text of " + what + " unique per run";
+        String past = exact ? "used the exact value in " + what
+                : "off".equals(where) ? "turned unique per run off in " + what : "made the text of " + what + " unique per run";
         if (!numbers.isEmpty()) {
             boolean one = numbers.size() == 1;
             past += "; " + (one ? "step " : "steps ") + and(numbers) + ("off".equals(where)
                     ? (one ? " uses" : " use") + " the plain text again" : (one ? " uses it" : " use it"));
         }
-        return finish("unique per run of " + what, past, by, before, false);
+        return finish((exact ? "exact value of " : "unique per run of ") + what, past, by, before, false);
     }
 
     /** The values the references of record {@code id} stood for when it ran just now. Not an edit. */

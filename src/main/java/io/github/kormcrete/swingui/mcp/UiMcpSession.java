@@ -695,7 +695,12 @@ public class UiMcpSession {
                     StepAddress at = model.addressOf(id);
                     if (at == null) return gone("nothing deleted");
                     RecordingModel scratch = model.copy();
-                    scratch.delete(at, RecordedStep.Author.PERSON);
+                    try {
+                        scratch.delete(at, RecordedStep.Author.PERSON);
+                    } catch (DriverException e) {
+                        // a step that uses it has a value no one knows yet: said in words, nothing changed
+                        return new Inspector.Result(false, message(e));
+                    }
                     Inspector.Result refused = refusedEdit(scratch.actions());
                     if (refused != null) return refused;
                     String did = model.delete(at, RecordedStep.Author.PERSON);
@@ -3729,15 +3734,24 @@ public class UiMcpSession {
         List<Inspector.LinkLine> of(int i) {
             RecordedStep s = records.get(i);
             Map<String, Set<String>> seen = new LinkedHashMap<String, Set<String>>();
+            Map<String, String> unknown = new HashMap<String, String>();
             for (Refs.Ref r : refs.get(i)) {
                 String words = words(r);
                 if (!seen.containsKey(words)) seen.put(words, new LinkedHashSet<String>());
                 String value = s.linkSeen.get(r.source);
                 if (value != null) seen.get(words).add(value);
+                // no exact value to go back to: never seen, not the run's id unique per run added, not known now
+                if (value == null && !Linker.RUN_ID.equals(r.source) && !unknown.containsKey(words)
+                        && !model.runValues().resolve(r).isPresent()) {
+                    Integer source = named.get(r.id);
+                    unknown.put(words, RecordingModel.notKnown(stepOf(labels.get(i)),
+                            source == null ? null : records.get(source), source == null ? null : labels.get(source)));
+                }
             }
             List<Inspector.LinkLine> out = new ArrayList<Inspector.LinkLine>();
             for (Map.Entry<String, Set<String>> e : seen.entrySet()) {
-                out.add(new Inspector.LinkLine(e.getKey(), e.getValue().isEmpty() ? null : String.join(" · ", e.getValue())));
+                out.add(new Inspector.LinkLine(e.getKey(), e.getValue().isEmpty() ? null : String.join(" · ", e.getValue()),
+                        unknown.get(e.getKey())));
             }
             return out;
         }
@@ -3768,6 +3782,12 @@ public class UiMcpSession {
             }
             return new Inspector.LinkOffer(words, o.source.id + "|" + o.group);
         }
+    }
+
+    /** The step of a label: "7" for "7" and "7.1". */
+    private static String stepOf(String label) {
+        int dot = label.indexOf('.');
+        return dot < 0 ? label : label.substring(0, dot);
     }
 
     /** The keys and indexes of a path ({@code .rows['Order lines'].added[0].Qty} → rows, Order lines, [0], added...). */
@@ -3942,8 +3962,9 @@ public class UiMcpSession {
             List<Inspector.LinkOffer> offers = new ArrayList<Inspector.LinkOffer>();
             for (Linker.Offer o : pool.fitting(s.action, MAX_OFFERS)) offers.add(links.offer(o));
             pool.add(s);
+            // a text of its own only: a use of an earlier step's unique text follows that one
             String unique = s.action instanceof TypeVerb && ((TypeVerb) s.action).text != null
-                    ? uniqueOf(((TypeVerb) s.action).text) : null;
+                    && RecordingModel.uniqueUse(snap.steps, i) < 0 ? uniqueOf(((TypeVerb) s.action).text) : null;
             listed.add(new Inspector.StepLine(s.id, s.author.json, shown.describe(), s.edited, labels.get(i), s.action.say,
                     StepNumbers.isCheck(s.action), s.group == null ? 0 : s.group.id, s.group == null ? null : s.group.say,
                     rowLine(s), raw, params, links.of(i), offers, unique, links.usedBy(i)));

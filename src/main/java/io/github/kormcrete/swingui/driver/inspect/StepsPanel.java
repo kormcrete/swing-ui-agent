@@ -323,6 +323,8 @@ final class StepsPanel extends JPanel {
         right.add(new JLabel("Replay speed"));
         speed.setSelectedIndex(1);
         speed.setFocusable(false);
+        // its list in a panel of its own: a capture of the window leaves it out, as it leaves the palette out
+        speed.setLightWeightPopupEnabled(false);
         right.add(speed);
         right.add(x);
         top.add(right, BorderLayout.EAST);
@@ -725,7 +727,10 @@ final class StepsPanel extends JPanel {
         List<String> offered = new ArrayList<String>();
         for (Inspector.LinkOffer o : r.offers) offered.add(o.words);
         m.submenu("Use a value from an earlier step…", true, offered, i -> edits.link(r.id, r.offers.get(i).ref));
-        m.item("Use the exact value", !r.links.isEmpty(), () -> edits.unlink(r.id));
+        // greyed while a value it uses is not known yet: the hover says which, and what to do
+        String unknown = null;
+        for (Inspector.LinkLine l : r.links) if (unknown == null) unknown = l.unknown;
+        m.item("Use the exact value", !r.links.isEmpty() && unknown == null, unknown, () -> edits.unlink(r.id));
         if (r.unique == null) return;
         int now = UNIQUE.indexOf(r.unique);
         m.choices("Unique per run", UNIQUE_LABELS, now, i -> {

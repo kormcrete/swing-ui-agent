@@ -253,6 +253,75 @@ class PaletteShotTest {
         });
     }
 
+    @Test
+    void aCaptureLeavesTheStepMenusSubmenuAndTheSpeedListOut() throws Exception {
+        // Swing's own popups under Metal, which put a popup that fits into the window, as FlatLaf and Windows do (Aqua's
+        // are each a window of their own, never in a capture of the window)
+        PopupFactory before = PopupFactory.getSharedInstance();
+        javax.swing.LookAndFeel laf = javax.swing.UIManager.getLookAndFeel();
+        SwingUtilities.invokeAndWait(() -> {
+            PopupFactory.setSharedInstance(new PopupFactory());
+            try {
+                javax.swing.UIManager.setLookAndFeel(new javax.swing.plaf.metal.MetalLookAndFeel());
+            } catch (javax.swing.UnsupportedLookAndFeelException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        try {
+            submenuAndSpeedList();
+        } finally {
+            SwingUtilities.invokeAndWait(() -> {
+                PopupFactory.setSharedInstance(before);
+                try {
+                    javax.swing.UIManager.setLookAndFeel(laf);
+                } catch (javax.swing.UnsupportedLookAndFeelException e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+        }
+    }
+
+    private static void submenuAndSpeedList() throws Exception {
+        inFrameOnScreen((frame, content) -> {
+            StepMenu menu = new StepMenu().item("Describe this step…", true, () -> { })
+                    .submenu("Use a value from an earlier step…", true,
+                            java.util.Arrays.asList("ORD-1643"), i -> { });
+            // short, so that the submenu fits beside the menu in the window
+            menu.show(content, 0, 20);
+            javax.swing.JMenu sub = menu.submenu("Use a value from an earlier step…");
+            javax.swing.MenuSelectionManager.defaultManager().setSelectedPath(
+                    new javax.swing.MenuElement[] {menu, sub, sub.getPopupMenu()});
+            try {
+                JMenuItem choice = (JMenuItem) sub.getMenuComponent(0);
+                assertThat(choice.isShowing()).isTrue();
+                // the row menu too
+                Point m = onScreenCentre(menu.getComponent(0), frame);
+                assertThat(at(decode(Screenshots.of(frame, null, null, null)), m)).isEqualTo(0xFF0000);
+                Point c = onScreenCentre(choice, frame);
+                assertThat(at(decode(Screenshots.of(frame, null, null, null)), c)).isEqualTo(0xFF0000);
+                assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), c)).isNotEqualTo(0xFF0000);
+            } finally {
+                menu.setVisible(false);
+                javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath();
+            }
+            StepsPanel steps = new StepsPanel("▶ Replay all", () -> { }, i -> { }, i -> { }, i -> { }, () -> { }, () -> { });
+            steps.setBounds(10, 20, 460, 200);
+            content.add(steps);
+            layOut(steps);
+            javax.swing.JComboBox<String> speed = steps.speedChoice();
+            speed.setPopupVisible(true);
+            try {
+                javax.swing.JList<?> list = ((javax.swing.plaf.basic.ComboPopup) speed.getUI().getAccessibleChild(speed, 0)).getList();
+                assertThat(list.isShowing()).isTrue();
+                Point l = onScreenCentre(list, frame);
+                assertThat(at(decode(Screenshots.of(frame, null, null, null)), l)).isEqualTo(0xFF0000);
+                assertThat(at(decode(Screenshots.of(frame, null, null, null, true)), l)).isNotEqualTo(0xFF0000);
+            } finally {
+                speed.setPopupVisible(false);
+            }
+        });
+    }
+
     private static void layOut(java.awt.Container c) {
         c.doLayout();
         for (Component k : c.getComponents()) if (k instanceof java.awt.Container) layOut((java.awt.Container) k);

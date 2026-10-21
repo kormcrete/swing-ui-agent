@@ -2393,6 +2393,21 @@ class RecordingTest {
     }
 
     @Test
+    void theExactValueIsGreyedWhileAValueItUsesIsNotKnownYet() throws Exception {
+        String why = "Step 2 uses what step 1 changed, and that value is not known yet: replay up to step 1 first";
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("2"));
+        sink.linked("2", "type(#search '…')", Collections.singletonList(new Inspector.LinkLine("from step 1: Copy added",
+                null, why)), NO_OFFERS, "off", UNUSED);
+        withSteps();
+        StepMenu menu = menuOn(1);
+        assertThat(menu.enabled("Use the exact value")).isFalse();
+        assertThat(menu.tip("Use the exact value")).isEqualTo(why);
+        SwingUtilities.invokeAndWait(() -> menu.choose("Use the exact value"));
+        settle();
+        assertThat(sink.log).isEmpty();
+    }
+
+    @Test
     void uniquePerRunAddsRunIdAndLinksLaterUses() throws Exception {
         int customer = sink.linked("1", "type(#customer 'Ada')", NO_LINKS, NO_OFFERS, "off", UNUSED);
         sink.linked("2", "click(#save)", NO_LINKS, NO_OFFERS, null, UNUSED);
