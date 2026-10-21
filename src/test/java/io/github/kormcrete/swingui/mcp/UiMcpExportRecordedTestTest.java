@@ -323,4 +323,16 @@ class UiMcpExportRecordedTestTest {
         assertThat(catchThrowable(() -> session.exportRecordedTest("save-order", "", "", true)))
                 .hasMessageContaining("already exists");
     }
+
+    @Test
+    void aV3FileWithLiteralDollarBraceLoadsAndExportsAsJava() throws Exception {
+        Files.write(testsDir.resolve("note.json"), ("{\"version\":3,\"name\":\"note\",\"start\":\"reset\",\"steps\":["
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"a ${b}\"}]}")
+                .getBytes(StandardCharsets.UTF_8));
+        session.startRecording(true);
+        JsonNode loaded = mapper.readTree(session.loadRecordedTest(testsDir.resolve("note.json")));
+        assertThat(loaded.path("steps").asInt()).isEqualTo(1);
+        String java = mapper.readTree(session.exportTest("NoteUiIT", "note", "p", false, testsDir.resolve("java").toString())).path("source").asText();
+        assertThat(java).contains(".type(\"a ${b}\")");
+    }
 }

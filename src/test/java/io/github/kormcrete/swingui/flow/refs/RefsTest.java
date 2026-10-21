@@ -2,6 +2,8 @@ package io.github.kormcrete.swingui.flow.refs;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.FlowJson;
 import io.github.kormcrete.swingui.flow.NavigateAction;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,20 @@ class RefsTest {
     assertEquals("copy", refs.get(1).id);
     assertEquals(".rows.Orders.added[0].Number", refs.get(1).path);
     assertEquals("${copy.rows.Orders.added[0].Number}", refs.get(1).source);
+  }
+
+  @Test
+  void onlyValueFieldsAreScanned() throws Exception {
+    Action a =
+        FlowJson.mapper()
+            .readValue(
+                "{\"action\":\"click\",\"id\":\"copy\",\"say\":\"Opens ${a}\","
+                    + "\"target\":{\"window\":\"${w}\",\"role\":\"table\",\"name\":\"Orders\","
+                    + "\"scope\":[\"${s}\"],\"column\":\"${c}\",\"row\":{\"role\":\"${copy.x}\"}}}",
+                Action.class);
+    List<Refs.Ref> refs = Refs.of(a);
+    assertEquals(1, refs.size());
+    assertEquals("${copy.x}", refs.get(0).source);
   }
 
   @Test

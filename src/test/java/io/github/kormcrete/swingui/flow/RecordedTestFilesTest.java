@@ -1,5 +1,8 @@
 package io.github.kormcrete.swingui.flow;
 
+import io.github.kormcrete.swingui.flow.refs.Refs;
+import io.github.kormcrete.swingui.flow.verb.TypeVerb;
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -657,6 +660,18 @@ class RecordedTestFilesTest {
         badSay.groups.add(new FlowGroup(2, 3, ""));
         assertThat(RecordedTestFiles.structureProblems(badSay)).hasSize(2);
 
+        Flow dangling = copy(base);
+        dangling.steps.add(FlowJson.mapper().readValue(
+                "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"${nope}\"}", Action.class));
+        assertThat(RecordedTestFiles.structureProblems(dangling)).anyMatch(p -> p.contains("${nope}") && p.contains("step 4"));
+        assertThatThrownBy(() -> RecordedTestFiles.write(dangling)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no earlier step is named 'nope'");
+        Flow unclosed = copy(base);
+        unclosed.steps.add(FlowJson.mapper().readValue(
+                "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"Copy ${x\"}", Action.class));
+        assertThatThrownBy(() -> RecordedTestFiles.write(unclosed)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unclosed reference");
+
         Flow fine = copy(base);
         fine.groups.add(new FlowGroup(0, 3, "All"));
         assertThat(RecordedTestFiles.structureProblems(fine)).isEmpty();
@@ -695,7 +710,7 @@ class RecordedTestFilesTest {
         assertThat(back.steps).hasSameSizeAs(flow.steps);
         assertThat(RecordedTestFiles.write(back)).isEqualTo(text);
         assertThat(back.steps.get(1).id).isEqualTo("copy");
-        assertThat(back.steps.get(5)).isInstanceOf(io.github.kormcrete.swingui.flow.verb.RememberVerb.class);
+        assertThat(back.steps.get(5)).isInstanceOf(RememberVerb.class);
         // the remember step is a check, written under the action before it
         assertThat(text.indexOf("\"checks\"")).isGreaterThan(text.indexOf("\"Save\""));
     }
@@ -744,8 +759,8 @@ class RecordedTestFilesTest {
                 + "{\"action\":\"do\",\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"${c\"}}]}";
         Flow flow = RecordedTestFiles.parse(json, "x");
         // in memory the text is in its escaped form, never a reference
-        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) flow.steps.get(0)).text).isEqualTo("a $${b}");
-        assertThat(io.github.kormcrete.swingui.flow.refs.Refs.of(flow.steps.get(0))).isEmpty();
+        assertThat(((TypeVerb) flow.steps.get(0)).text).isEqualTo("a $${b}");
+        assertThat(Refs.of(flow.steps.get(0))).isEmpty();
         assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(3);
         String back = RecordedTestFiles.write(flow);
         assertThat(back).contains("\"text\" : \"a ${b}\"").contains("\"product\" : \"${c\"").doesNotContain("$${")
@@ -787,5 +802,20 @@ class RecordedTestFilesTest {
     void aRememberStepIsACheckNotAStep() {
         refused(V4 + "\"steps\":[{\"action\":\"remember\",\"as\":\"n\",\"target\":{\"role\":\"label\",\"name\":\"Number\"}}]}",
                 "step 1", "a check goes under the step it checks");
+    }
+
+    @Test
+    void sentencesAndLocatorNamesAreNeverReferences() throws Exception {
+        String json = "{\"version\":2,\"name\":\"x\",\"start\":\"reset\",\"steps\":[{\"say\":\"Opens ${total}\","
+                + "\"action\":\"click\",\"target\":{\"window\":\"${w\",\"role\":\"button\",\"name\":\"Save\"}},"
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Note\"},\"text\":\"a ${b}\"}]}";
+        Flow flow = RecordedTestFiles.parse(json, "x");
+        assertThat(flow.steps.get(0).say).isEqualTo("Opens ${total}");
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(2);
+        String back = RecordedTestFiles.write(flow);
+        assertThat(back).contains("\"say\" : \"Opens ${total}\"").contains("\"window\" : \"${w\"").contains("\"text\" : \"a ${b}\"");
+        // a v4 file keeps them as text too
+        Flow v4 = RecordedTestFiles.parse(json.replace("\"version\":2", "\"version\":4").replace("a ${b}", "a $${b}"), "x");
+        assertThat(v4.steps.get(0).say).isEqualTo("Opens ${total}");
     }
 }

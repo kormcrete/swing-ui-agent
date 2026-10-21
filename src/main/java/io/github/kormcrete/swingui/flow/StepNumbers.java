@@ -54,7 +54,8 @@ public final class StepNumbers {
      * domain check ({@code do} marked {@link DoAction#check}). Every other step is an action.
      */
     public static boolean isCheck(Action a) {
-        return a instanceof ExpectVerb || a instanceof RememberVerb || a instanceof DoAction && Boolean.TRUE.equals(((DoAction) a).check);
+        return a instanceof ExpectVerb || a instanceof RememberVerb
+                || a instanceof DoAction && Boolean.TRUE.equals(((DoAction) a).check);
     }
 
     /** The steps of {@code flat}, in order. */

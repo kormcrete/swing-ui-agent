@@ -1,11 +1,19 @@
 package io.github.kormcrete.swingui.flow.refs;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.FlowJson;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 
 /**
  * References to values of earlier steps inside a text: {@code ${id}} or {@code ${id.path}}, where
@@ -72,25 +80,61 @@ public final class Refs {
     return text.replace("$${", "${");
   }
 
-  /** The references in every string value of the action, as it is written to JSON. */
+  /**
+   * The references in the value strings of the action, as it is written to JSON (see {@link #mapValues}). Throws when
+   * one is unclosed or its path is invalid.
+   */
   public static List<Ref> of(Action a) {
-    List<Ref> out = new ArrayList<Ref>();
-    walk(FlowJson.mapper().valueToTree(a), out);
+    final List<Ref> out = new ArrayList<Ref>();
+    mapValues(
+        FlowJson.mapper().valueToTree(a),
+        text -> {
+          out.addAll(scan(text));
+          return text;
+        });
     return out;
   }
 
-  private static void walk(JsonNode n, List<Ref> out) {
+  /** Field names whose strings are never values: a sentence, the step type, names and the locator's identity. */
+  private static final Set<String> NOT_VALUES = new HashSet<String>(Arrays.asList(
+      "say", "action", "id", "as", "window", "role", "scope", "column", "match", "ref"));
+
+  /**
+   * A copy of {@code node} with {@code fn} applied to every string value, in objects, arrays and the node itself. The
+   * strings of the fields in {@code NOT_VALUES} are left alone (references live in value fields only), except
+   * inside {@code params} and {@code row}, whose keys are the app's. The one walk that scanning, escaping and
+   * unescaping share.
+   */
+  public static JsonNode mapValues(JsonNode node, Function<String, String> fn) {
+    return map(node, fn, false);
+  }
+
+  private static JsonNode map(JsonNode n, Function<String, String> fn, boolean free) {
     if (n.isTextual()) {
-      out.addAll(scan(n.asText()));
-    } else if (n.isContainerNode()) {
-      for (Iterator<JsonNode> it = n.elements(); it.hasNext(); ) {
-        walk(it.next(), out);
-      }
+      return TextNode.valueOf(fn.apply(n.textValue()));
     }
+    if (n.isObject()) {
+      ObjectNode out = FlowJson.mapper().createObjectNode();
+      for (Iterator<Map.Entry<String, JsonNode>> it = n.fields(); it.hasNext(); ) {
+        Map.Entry<String, JsonNode> f = it.next();
+        boolean skip = !free && NOT_VALUES.contains(f.getKey());
+        boolean appKeys = free || "params".equals(f.getKey()) || "row".equals(f.getKey());
+        out.set(f.getKey(), skip ? f.getValue() : map(f.getValue(), fn, appKeys));
+      }
+      return out;
+    }
+    if (n.isArray()) {
+      ArrayNode out = FlowJson.mapper().createArrayNode();
+      for (JsonNode e : n) {
+        out.add(map(e, fn, free));
+      }
+      return out;
+    }
+    return n;
   }
 
   /** Text with every reference replaced by what {@code values} gives and escapes undone. */
-  static String replace(String text, java.util.function.Function<Ref, String> values) {
+  static String replace(String text, Function<Ref, String> values) {
     StringBuilder sb = new StringBuilder();
     int last = 0;
     for (Ref r : scan(text)) {

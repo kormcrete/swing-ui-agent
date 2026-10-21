@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.model.Locator;
@@ -397,8 +398,13 @@ class JavaTestWriterTest {
         ExportRefused e = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), t), ExportRefused.class);
         assertThat(e.problems().get(0)).contains("step 2", "${...}", "no Java form yet");
 
-        io.github.kormcrete.swingui.flow.verb.RememberVerb r = new io.github.kormcrete.swingui.flow.verb.RememberVerb();
+        RememberVerb r = new RememberVerb();
         r.target = Locator.of("label", "Number"); r.as = "number";
+        TypeVerb literal = new TypeVerb(); literal.target = Locator.of("text", "Note"); literal.text = "a $${b}";
+        assertThat(write(click(Locator.of("button", "Copy")), literal)).contains(".type(\"a ${b}\")");
+        TypeVerb broken = new TypeVerb(); broken.target = Locator.of("text", "Note"); broken.text = "Copy ${x";
+        assertThat(catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), broken), ExportRefused.class)
+                .problems().get(0)).contains("step 2", "no Java form yet");
         ExportRefused remember = catchThrowableOfType(() -> write(click(Locator.of("button", "Copy")), r), ExportRefused.class);
         assertThat(remember.problems().get(0)).contains("check 1.1", "remember", "no Java form");
     }

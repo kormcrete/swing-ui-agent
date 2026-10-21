@@ -16,7 +16,6 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.TextNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
@@ -83,7 +82,10 @@ import java.util.regex.Pattern;
  */
 public final class RecordedTestFiles {
 
-    /** The newest format this agent reads and writes: a recorded test with ids, remember checks or references is written in it. */
+    /**
+     * The newest format this agent reads and writes: a recorded test with ids, remember checks or references is
+     * written in it.
+     */
     public static final int VERSION = 4;
     /** The format a recorded test with {@code do} steps (and no links) is written in. */
     public static final int VERSION_WITH_DO = 3;
@@ -105,12 +107,14 @@ public final class RecordedTestFiles {
     private static final List<String> TOP_FIELDS = Arrays.asList("version", "name", "description", "start", "steps");
     private static final String DO = "do";
     private static final String NEEDS_V3 = "needs format version 3 (\"version\": 3), the format of a recorded test with do steps";
-    private static final String NEEDS_V4 = "needs format version 4 (\"version\": 4), the format of a recorded test that uses values from earlier steps";
+    private static final String NEEDS_V4 = "needs format version 4 (\"version\": 4), "
+            + "the format of a recorded test that uses values from earlier steps";
     private static final String RUN = "run";
     private static final String REMEMBER = "remember";
     private static final Pattern ID = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,39}");
     private static final String NEWER = "belongs to a newer recorded test format; update swing-ui-agent";
-    private static final String STATIC = "a recorded test takes values from earlier steps with ${...} references (format 4), not 'capture'/'params'";
+    private static final String STATIC = "a recorded test takes values from earlier steps with ${...} references "
+            + "(format 4), not 'capture'/'params'";
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 ._-]{0,99}");
     private static final Pattern DEVICE = Pattern.compile("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])");
     private static final String NAME_RULE = "a recorded test name is 1-100 characters: letters, digits, space, '.', '_', '-', "
@@ -165,7 +169,8 @@ public final class RecordedTestFiles {
         if (root == null || !root.isObject()) throw bad(source, "not a recorded test file (a JSON object is expected)");
 
         JsonNode version = root.get("version");
-        if (version == null) throw bad(source, "needs \"version\": " + VERSION_WITHOUT_DO + " (" + VERSION_WITH_DO + " with do steps, " + VERSION
+        if (version == null) throw bad(source, "needs \"version\": " + VERSION_WITHOUT_DO + " (" + VERSION_WITH_DO
+                + " with do steps, " + VERSION
                 + " with values from earlier steps)");
         if (!version.isIntegralNumber() || !version.canConvertToInt() || version.intValue() < 1) {
             throw bad(source, "\"version\" must be a whole number of 1 or more, not " + version);
@@ -235,43 +240,54 @@ public final class RecordedTestFiles {
         return flow;
     }
 
-    /**
-     * Version 4: every step id and remember name is valid and used once, and every reference in a step names the id or
-     * name of an EARLIER step, or {@code run}; a reference whose path does not parse is refused too. BAD_INPUT names the
-     * step and its line.
-     */
+    /** Version 4: the first of {@link #linkProblems} is the refusal, with the line the step starts at. */
     private static void links(Reading r) {
+        List<String> problems = linkProblems(r.flow, true);
+        if (!problems.isEmpty()) throw bad(r.source, problems.get(0));
+    }
+
+    /**
+     * Every step id and remember name is valid and used once, and every reference in a step names the id or name of an
+     * EARLIER step, or {@code run}; a reference whose path does not parse is a problem too. Each names the step (and its
+     * line when {@code withLines} and the recorded test was read from a file).
+     */
+    private static List<String> linkProblems(Flow flow, boolean withLines) {
+        List<String> problems = new ArrayList<String>();
+        List<String> labels = StepNumbers.labels(flow.steps);
         Map<String, String> defined = new HashMap<String, String>();
-        for (int i = 0; i < r.flow.steps.size(); i++) {
-            Action a = r.flow.steps.get(i);
-            Integer line = i < r.flow.lines.size() ? r.flow.lines.get(i) : null;
-            String where = r.labels.get(i) + " (" + typeName(a) + ")" + (line == null ? "" : " (line " + line + ")");
-            List<Refs.Ref> refs;
+        for (int i = 0; i < flow.steps.size(); i++) {
+            Action a = flow.steps.get(i);
+            String label = (StepNumbers.isCheck(a) ? "check " : "step ") + labels.get(i);
+            Integer line = withLines && i < flow.lines.size() ? flow.lines.get(i) : null;
+            String where = label + " (" + typeName(a) + ")" + (line == null ? "" : " (line " + line + ")");
             try {
-                refs = Refs.of(a);
-            } catch (IllegalArgumentException e) {
-                throw bad(r.source, where + ": " + e.getMessage());
-            }
-            for (Refs.Ref ref : refs) {
-                if (!defined.containsKey(ref.id) && !RUN.equals(ref.id)) {
-                    throw bad(r.source, where + ": " + ref.source + " refers to '" + ref.id + "', but no earlier step is named '"
-                            + ref.id + "'");
+                for (Refs.Ref ref : Refs.of(a)) {
+                    if (!defined.containsKey(ref.id) && !RUN.equals(ref.id)) {
+                        problems.add(where + ": " + ref.source + " refers to '" + ref.id
+                                + "', but no earlier step is named '" + ref.id + "'");
+                    }
                 }
+            } catch (IllegalArgumentException e) {
+                problems.add(where + ": " + e.getMessage());
             }
             String name = a.id;
             if (a instanceof RememberVerb) {
-                if (a.id != null) throw bad(r.source, where + ": a remember check is named by \"as\", not \"id\"");
                 name = ((RememberVerb) a).as;
-                if (name == null) throw bad(r.source, where + ": needs \"as\", the name to keep the value under");
+                if (a.id != null) problems.add(where + ": a remember check is named by \"as\", not \"id\"");
+                else if (name == null) problems.add(where + ": needs \"as\", the name to keep the value under");
             }
             if (name == null) continue;
             String problem = idProblem(name);
-            if (problem != null) throw bad(r.source, where + ": " + problem);
-            if (defined.containsKey(name)) {
-                throw bad(r.source, where + ": '" + name + "' is already the name of " + defined.get(name));
+            if (problem == null && defined.containsKey(name)) {
+                problem = "'" + name + "' is already the name of " + defined.get(name);
             }
-            defined.put(name, r.labels.get(i));
+            if (problem != null) {
+                problems.add(where + ": " + problem);
+            } else {
+                defined.put(name, label);
+            }
         }
+        return problems;
     }
 
     private static String typeName(Action a) {
@@ -471,7 +487,7 @@ public final class RecordedTestFiles {
         if (DO.equals(type) && r.version < VERSION_WITH_DO) throw bad(source, label + ": 'do' " + NEEDS_V3);
         if (r.version < VERSION && REMEMBER.equals(type)) throw bad(source, label + " (" + type + "): 'remember' " + NEEDS_V4);
         if (r.version < VERSION && node.has("id")) throw bad(source, label + " (" + type + "): 'id' " + NEEDS_V4);
-        if (r.version < VERSION) node = escaped(node);
+        if (r.version < VERSION) node = Refs.mapValues(node, Refs::escape);
         if (DO.equals(type) && node.has("check")) {
             throw bad(source, label + " (do): 'check' is not written in a file: a domain check goes under the step it checks "
                     + "(in its \"checks\")");
@@ -492,29 +508,6 @@ public final class RecordedTestFiles {
         } catch (IOException e) {
             throw bad(source, label + ": " + e.getMessage());
         }
-    }
-
-    /** A copy of {@code node} with {@link Refs#escape} applied to every string value: text of an older file is never a reference. */
-    private static JsonNode escaped(JsonNode node) {
-        return mapStrings(node, true);
-    }
-
-    private static JsonNode mapStrings(JsonNode node, boolean escape) {
-        if (node.isTextual()) return new TextNode(escape ? Refs.escape(node.textValue()) : Refs.unescape(node.textValue()));
-        if (node.isObject()) {
-            ObjectNode out = FlowJson.mapper().createObjectNode();
-            for (Iterator<Map.Entry<String, JsonNode>> it = node.fields(); it.hasNext();) {
-                Map.Entry<String, JsonNode> f = it.next();
-                out.set(f.getKey(), mapStrings(f.getValue(), escape));
-            }
-            return out;
-        }
-        if (node.isArray()) {
-            ArrayNode out = FlowJson.mapper().createArrayNode();
-            for (JsonNode e : node) out.add(mapStrings(e, escape));
-            return out;
-        }
-        return node;
     }
 
     private static void sayOrThrow(String say, String where, String source) {
@@ -560,6 +553,7 @@ public final class RecordedTestFiles {
                 problems.add((StepNumbers.isCheck(a) ? "check " : "step ") + labels.get(i) + ": a do step needs \"step\"");
             }
         }
+        problems.addAll(linkProblems(flow, false));
         List<FlowGroup> groups = new ArrayList<FlowGroup>(flow.groups);
         Collections.sort(groups, new Comparator<FlowGroup>() {
             @Override public int compare(FlowGroup a, FlowGroup b) {
@@ -650,10 +644,12 @@ public final class RecordedTestFiles {
     }
 
     /**
-     * The file text of a recorded test: version 2, version 3 when it has do steps, or version 4 ({@link #versionFor}); with
-     * {@code "requires"} ({@link #requiresOf}) when it has do steps; a version 2 or 3 file has its strings unescaped; steps with their checks nested, groups wrapped, pretty-printed, {@code \n} line feeds on every OS, one final
+     * The file text of a recorded test: version 2, version 3 when it has do steps (with {@code "requires"},
+     * {@link #requiresOf}), or version 4 ({@link #versionFor}); a version 2 or 3 file has its value strings unescaped.
+     * Steps with their checks nested, groups wrapped, pretty-printed, {@code \n} line feeds on every OS, one final
      * line feed. IllegalArgumentException when the reader would refuse the result: a newer version, a start other than
-     * {@code reset}, a bad structure ({@link #structureProblems}), or do steps whose plugins are not known.
+     * {@code reset}, a bad structure ({@link #structureProblems}: groups, sentences, ids and references), or do steps
+     * whose plugins are not known.
      */
     public static String write(Flow flow) {
         Integer newer = flow.version;
@@ -717,7 +713,7 @@ public final class RecordedTestFiles {
     private static ObjectNode stepNode(ObjectMapper mapper, Flow flow, StepNumbers.Step step, boolean unescape) {
         ObjectNode node = step.checkOnly() ? mapper.createObjectNode() : (ObjectNode) mapper.valueToTree(flow.steps.get(step.action));
         node.remove("check");   // a do step's place says whether it checks
-        if (step.checks.isEmpty()) return unescape ? (ObjectNode) mapStrings(node, false) : node;
+        if (step.checks.isEmpty()) return unescape ? (ObjectNode) Refs.mapValues(node, Refs::unescape) : node;
         ArrayNode checks = node.putArray("checks");
         for (int c : step.checks) {
             ObjectNode check = (ObjectNode) mapper.valueToTree(flow.steps.get(c));
@@ -725,7 +721,7 @@ public final class RecordedTestFiles {
             else if (!(flow.steps.get(c) instanceof RememberVerb)) check.remove("action");
             checks.add(check);
         }
-        return unescape ? (ObjectNode) mapStrings(node, false) : node;
+        return unescape ? (ObjectNode) Refs.mapValues(node, Refs::unescape) : node;
     }
 
     /** Validates a recorded test name (a trailing {@code .json} is accepted and stripped); BAD_INPUT states the rule. */

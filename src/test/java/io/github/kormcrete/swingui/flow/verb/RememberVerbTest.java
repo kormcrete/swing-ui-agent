@@ -1,5 +1,7 @@
 package io.github.kormcrete.swingui.flow.verb;
 
+import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.mcp.FakeVerbs;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
@@ -16,6 +18,7 @@ import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JTree;
 import java.awt.Component;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -97,6 +100,27 @@ class RememberVerbTest {
     }
 
     @Test
+    void aComponentWithoutTextNeverFallsBackToTheLocatorsName() {
+        Locator l = locator("panel", "Summary");
+        DriverException e = catchThrowableOfType(() -> Expectations.remembered(on(new JPanel(), l), false), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.EXPECTATION);
+        assertThat(e.getMessage()).endsWith("nothing to remember: " + l + " is empty");
+        DriverException table = catchThrowableOfType(
+                () -> Expectations.remembered(on(orders, locator("table", "Orders")), false), DriverException.class);
+        assertThat(table.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(table.getMessage()).contains("'row'");
+    }
+
+    @Test
+    void theSelectedTreeItemIsTheLeadRow() {
+        JTree tree = new JTree(new String[] {"Paper", "Pens", "Ink"});
+        tree.setSelectionRows(new int[] {3, 1, 2});
+        tree.setLeadSelectionPath(tree.getPathForRow(1));
+        String lead = tree.getPathForRow(1).getLastPathComponent().toString();
+        assertThat(Expectations.remembered(on(tree, locator("tree", "Products")), true)).isEqualTo(lead);
+    }
+
+    @Test
     void anEmptyValueFails() {
         Locator l = locator("text", "Note");
         DriverException e = catchThrowableOfType(() -> Expectations.remembered(on(new JTextField(""), l), false), DriverException.class);
@@ -108,9 +132,9 @@ class RememberVerbTest {
     void theVerbAsksTheDriverAndReportsTheValueAsItsNote() throws Exception {
         RememberVerb v = (RememberVerb) FlowJson.mapper().readValue(
                 "{\"action\":\"remember\",\"as\":\"number\",\"selected\":true,\"timeout\":500,"
-                        + "\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"column\":\"Number\"}}", io.github.kormcrete.swingui.flow.Action.class);
+                        + "\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"column\":\"Number\"}}", Action.class);
         final List<Object> seen = new ArrayList<Object>();
-        Verbs verbs = new io.github.kormcrete.swingui.mcp.FakeVerbs() {
+        Verbs verbs = new FakeVerbs() {
             @Override public String remember(Locator target, boolean selected, Long timeout) {
                 seen.add(target.column);
                 seen.add(selected);
@@ -127,7 +151,7 @@ class RememberVerbTest {
 
     @Test
     void aDriverWithoutItIsACapabilityGap() {
-        DriverException e = catchThrowableOfType(() -> new io.github.kormcrete.swingui.mcp.FakeVerbs().remember(locator("text", "Note"), false, null), DriverException.class);
+        DriverException e = catchThrowableOfType(() -> new FakeVerbs().remember(locator("text", "Note"), false, null), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
     }
 
@@ -135,9 +159,9 @@ class RememberVerbTest {
     void aRememberNeedsATargetAndAName() {
         RememberVerb v = new RememberVerb();
         v.as = "n";
-        assertThat(catchThrowableOfType(() -> v.run(new io.github.kormcrete.swingui.mcp.FakeVerbs()), DriverException.class).reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(catchThrowableOfType(() -> v.run(new FakeVerbs()), DriverException.class).reason()).isEqualTo(Reason.BAD_INPUT);
         RememberVerb w = new RememberVerb();
         w.target = locator("text", "Note");
-        assertThat(catchThrowableOfType(() -> w.run(new io.github.kormcrete.swingui.mcp.FakeVerbs()), DriverException.class).reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(catchThrowableOfType(() -> w.run(new FakeVerbs()), DriverException.class).reason()).isEqualTo(Reason.BAD_INPUT);
     }
 }

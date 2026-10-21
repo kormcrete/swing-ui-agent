@@ -164,7 +164,8 @@ public final class TableWidget {
     }
 
     /**
-     * The row a spec names; an index below zero counts from the end ({@code -1} is the last row). A key column the table does not have is looked up in the table beside it
+     * The row a spec names; an index below zero counts from the end ({@code -1} is the last row).
+     * A key column the table does not have is looked up in the table beside it
      * that serves as its row header - the {@code JScrollPane}'s row-header view, the shape a frozen
      * key column takes (a data grid's "Item" column): that table shows the same rows, so its
      * row {@code r} is this table's row {@code r}.

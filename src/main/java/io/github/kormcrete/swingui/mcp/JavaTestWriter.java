@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.CloseAction;
@@ -7,6 +8,7 @@ import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.ContextMenuAction;
 import io.github.kormcrete.swingui.flow.LoginAsAction;
 import io.github.kormcrete.swingui.flow.NavigateAction;
@@ -286,10 +288,12 @@ public final class JavaTestWriter {
                 String what = (StepNumbers.isCheck(steps.get(i)) ? "check " : "step ") + labels.get(i);
                 Action a = steps.get(i);
                 stepLines.add(null);
-                if (usesValueSyntax(a)) {
-                    problems.add(what + ": " + a.describe() + " uses ${...} (values from earlier steps), which has no Java form yet");
+                if (hasReferences(a)) {
+                    problems.add(what + ": " + a.describe()
+                            + " uses ${...} (values from earlier steps), which has no Java form yet");
                     continue;
                 }
+                a = unescaped(a);
                 if (a instanceof DoAction) {
                     doStep(i, (DoAction) a, what);
                     continue;
@@ -532,15 +536,25 @@ public final class JavaTestWriter {
             return null;
         }
 
-        /** True when a string of the step holds {@code ${} or its escape {@code $${}: the Java export does not know values of earlier steps. */
-        private boolean usesValueSyntax(Action a) {
-            return mentionsDollarBrace(FlowJson.mapper().valueToTree(a));
+        /** True when a step string holds a reference (or a malformed one): the Java export has no form for it yet. */
+        private boolean hasReferences(Action a) {
+            try {
+                return !Refs.of(a).isEmpty();
+            } catch (IllegalArgumentException e) {
+                return true;
+            }
         }
 
-        private boolean mentionsDollarBrace(com.fasterxml.jackson.databind.JsonNode n) {
-            if (n.isTextual()) return n.textValue().contains("${");
-            for (com.fasterxml.jackson.databind.JsonNode child : n) if (mentionsDollarBrace(child)) return true;
-            return false;
+        /** The step with its strings in plain form: in memory a literal {@code ${} is stored as {@code $${}. */
+        private Action unescaped(Action a) {
+            JsonNode tree = FlowJson.mapper().valueToTree(a);
+            JsonNode plain = Refs.mapValues(tree, Refs::unescape);
+            if (plain.equals(tree)) return a;
+            try {
+                return FlowJson.mapper().treeToValue(plain, Action.class);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalStateException("a step written to JSON does not read back: " + e.getMessage(), e);
+            }
         }
 
         // ---- per-verb statements
