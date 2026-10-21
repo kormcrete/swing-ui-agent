@@ -11,7 +11,7 @@ import java.util.List;
  * below) and {@code [?(@.k == 'v')]} / {@code !=} (elements whose field {@code k} has that text).
  * A key or index that is not there selects nothing.
  */
-final class JsonPaths {
+public final class JsonPaths {
   private JsonPaths() {}
 
   private enum Kind { KEY, INDEX, ALL, DEEP_KEY, DEEP_ALL, FILTER }
@@ -33,7 +33,7 @@ final class JsonPaths {
   }
 
   /** The nodes the path selects, in document order. */
-  static List<JsonNode> select(JsonNode root, String path) {
+  public static List<JsonNode> select(JsonNode root, String path) {
     List<JsonNode> current = new ArrayList<JsonNode>();
     current.add(root);
     for (Step step : parse(path)) {
@@ -47,7 +47,7 @@ final class JsonPaths {
   }
 
   /** Parses only; throws {@link IllegalArgumentException} when the path is not valid. */
-  static void check(String path) {
+  public static void check(String path) {
     parse(path);
   }
 

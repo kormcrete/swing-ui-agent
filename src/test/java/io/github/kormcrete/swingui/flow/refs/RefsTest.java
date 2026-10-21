@@ -36,6 +36,9 @@ class RefsTest {
   @Test
   void aPathThatDoesNotParseIsRefused() {
     assertThrows(IllegalArgumentException.class, () -> Refs.scan("${copy.rows[}"));
+    IllegalArgumentException e =
+        assertThrows(IllegalArgumentException.class, () -> Refs.scan("${copy.x[abc]}"));
+    assertTrue(e.getMessage().contains("Bad path"), e.getMessage());
   }
 
   @Test
