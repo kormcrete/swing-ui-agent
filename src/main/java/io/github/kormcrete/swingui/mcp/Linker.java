@@ -107,6 +107,25 @@ final class Linker {
     }
 
     /**
+     * The agent's link: where {@code a} has {@code value} - whole, or whole inside typed text - it becomes a reference
+     * to {@code path} ({@code .rows.Orders.added[0].Number}; "" for a remembered value) of what {@code source} (one of
+     * {@code earlier}) changed or remembered, short values too. {@code field} (null: any place a step has values) names
+     * the one place, as a path into the step's JSON ({@code text}, {@code target.row.Number}, {@code params.qty}).
+     * Nothing linked when the value is not there.
+     */
+    static Linked linkToValue(Action a, List<RecordedStep> earlier, RecordedStep source, String path, String value,
+            String field) {
+        Work work = new Work(earlier, Collections.singletonList(new Candidate(value, source, path, null, 0, 0)), false);
+        work.only = field;
+        return work.run(a);
+    }
+
+    /** Whether {@code value} is one {@code s} itself typed, picked or named (never what the app made). */
+    static boolean ownValue(RecordedStep s, String value) {
+        return ownValues(s, FlowJson.mapper().valueToTree(s.action)).contains(value);
+    }
+
+    /**
      * A later step's use of a text made unique per run: where {@code a} has {@code plain} (the text as typed, references
      * filled), whole or as a whole word in typed text, it gets {@code template} (that text with its {@code run}
      * reference) instead; short texts too. {@code made} is the step made unique: the values its references stood for.
@@ -371,6 +390,8 @@ final class Linker {
         /** The best candidate for each value, best first. */
         final Map<String, Candidate> best = new LinkedHashMap<String, Candidate>();
         final List<Match> matches = new ArrayList<Match>();
+        /** The one place to link, as a path into the step's JSON; null: every place. */
+        String only;
 
         Work(List<RecordedStep> earlier, List<Candidate> all, boolean rows) {
             this.earlier = earlier;
@@ -389,6 +410,15 @@ final class Linker {
             if (best.isEmpty()) return none(a);
             ObjectNode tree = FlowJson.mapper().valueToTree(a);
             walk(tree, a);
+            if (only != null) {
+                List<JsonNode> at = JsonPaths.select(tree, (only.startsWith("[") ? "$" : "$.") + only);
+                JsonNode place = at.size() == 1 ? at.get(0) : null;
+                for (Iterator<Match> it = matches.iterator(); it.hasNext(); ) {
+                    Match m = it.next();
+                    JsonNode node = m.field != null ? m.parent.get(m.field) : m.parent.get(m.index);
+                    if (node != place) it.remove();
+                }
+            }
             return matches.isEmpty() ? none(a) : finish(tree);
         }
 
@@ -704,7 +734,10 @@ final class Linker {
             List<String> path = ((MenuVerb) a).path;
             name = path.get(path.size() - 1);
         }
-        if (name == null && a instanceof DoAction) name = ((DoAction) a).step;
+        if (name == null && a instanceof DoAction && ((DoAction) a).step != null) {
+            String step = ((DoAction) a).step;
+            name = step.substring(step.lastIndexOf(':') + 1);   // the step's own id, not its plugin's name
+        }
         String id = name == null ? "" : camel(Refs.unescape(name));
         if (id.isEmpty() || !Character.isLetter(id.charAt(0))) {
             String kind = camel(FlowJson.mapper().valueToTree(a).path("action").asText("step"));

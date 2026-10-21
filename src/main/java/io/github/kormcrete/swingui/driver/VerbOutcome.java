@@ -31,4 +31,9 @@ public final class VerbOutcome {
     public String sentence;
     /** A plugin's domain step: the steps its body ran, in order; null for a verb. */
     public List<StepCall> calls;
+    /**
+     * A plugin's domain step whose body returns what it made: those values, JSON-like (text, numbers, booleans, lists,
+     * maps); they go under {@code "step"} in the step's outcome. Null when it returned none, and for a verb.
+     */
+    public Map<String, Object> made;
 }

@@ -216,6 +216,55 @@ class PluginsTest {
         assertThat(ranOn.get()).isSameAs(Thread.currentThread()); // the request thread, not the EDT
     }
 
+    /** Places an order for {@code customer}: clicks Place order and returns the number the app gave it. */
+    private static DomainStep placeOrder() {
+        return DomainStep.act("placeOrder", "Place an order for {customer}")
+                .param("customer", ParamType.TEXT)
+                .codeWithOutcome((ui, p) -> {
+                    ui.button("Place order").click();
+                    Map<String, Object> made = new LinkedHashMap<String, Object>();
+                    made.put("number", "ORD-1641");
+                    made.put("lines", Arrays.asList("Gel pen, black"));
+                    made.put("for", p.text("customer"));
+                    return made;
+                })
+                .build();
+    }
+
+    @Test
+    void aDomainStepOutcomeIsUnderStep() {
+        Plugins plugins = new Plugins(verbs);
+        readyWith(plugins, "order-desk", placeOrder());
+
+        // the body's map is the step's own part of its outcome, as JSON values
+        VerbOutcome out = plugins.runStep("placeOrder", values("customer", "Ada Lovelace"));
+        assertThat(out.made).containsEntry("number", "ORD-1641").containsEntry("for", "Ada Lovelace")
+                .containsEntry("lines", Arrays.asList("Gel pen, black"));
+        assertThat(out.calls).hasSize(1);
+        // a body that returns nothing has no part of its own
+        readyWith(plugins, "extras", addToCart());
+        assertThat(plugins.runStep("addToCart", values("product", "Gel pen, black")).made).isNull();
+
+        // in a recorded test, a later step uses it as ${place.step.number}; the UI's own changes sit beside it
+        io.github.kormcrete.swingui.flow.DoAction place = new io.github.kormcrete.swingui.flow.DoAction();
+        place.id = "place";
+        place.step = "placeOrder";
+        place.params = values("customer", "Ada Lovelace");
+        io.github.kormcrete.swingui.flow.verb.TypeVerb search = new io.github.kormcrete.swingui.flow.verb.TypeVerb();
+        search.target = io.github.kormcrete.swingui.driver.model.Locator.ofId("search");
+        search.text = "${place.step.number} for ${place.step.for}";
+        io.github.kormcrete.swingui.flow.Flow flow = new io.github.kormcrete.swingui.flow.Flow();
+        flow.name = "place";
+        flow.steps.add(place);
+        flow.steps.add(search);
+        io.github.kormcrete.swingui.flow.FlowResult result = new io.github.kormcrete.swingui.flow.FlowExecutor()
+                .outcomes(verbs::readUi).run(flow, plugins);
+
+        assertThat(result.passed()).as(result.steps.toString()).isTrue();
+        assertThat(verbs.calls).anySatisfy(c -> assertThat(c).startsWith("type #search ORD-1641 for Ada Lovelace"));
+        assertThat(result.steps.get(1).resolved).containsEntry("${place.step.number}", "ORD-1641");
+    }
+
     @Test
     void anOptionalParamLeftOutHoldsItsDefaultInTheBodyAndTheSentence() {
         Plugins plugins = new Plugins(verbs);

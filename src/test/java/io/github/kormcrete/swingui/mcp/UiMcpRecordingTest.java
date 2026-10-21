@@ -186,7 +186,7 @@ class UiMcpRecordingTest {
             DriverException e = catchThrowableOfType(() -> call(args), DriverException.class);
             assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
             assertThat(e.getMessage()).contains("start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, "
-                    + "fold, unfold, keepRaw, replay, redo, export, load");
+                    + "fold, unfold, keepRaw, link, unlink, remember, unique, replay, redo, export, load");
         }
     }
 
@@ -3715,5 +3715,172 @@ class UiMcpRecordingTest {
 
         assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
         assertThat(backend.verbs.calls).contains("type spinner 'Qty' 3 null null");
+    }
+    // ---- the agent's own links: link, unlink, remember and unique ops of the recording tool ----------------------
+
+    /** Orders: one row per number, with its customer. */
+    private static io.github.kormcrete.swingui.driver.outcome.UiReading ordersOf(String... numberCustomer) {
+        List<List<String>> rows = new java.util.ArrayList<List<String>>();
+        for (int i = 0; i < numberCustomer.length; i += 2) rows.add(Arrays.asList(numberCustomer[i], numberCustomer[i + 1]));
+        return io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Orders", Arrays.asList("Number", "Customer"), rows).build();
+    }
+
+    private String textOf(int flat) {
+        return ((io.github.kormcrete.swingui.flow.verb.TypeVerb) session.recordedSteps().get(flat).action).text;
+    }
+
+    private String why(String json) {
+        return catchThrowableOfType(() -> call(json), DriverException.class).getMessage();
+    }
+
+    @Test
+    void recordingOpsLinkUnlinkRememberUnique() throws Exception {
+        session.reader(readings(ordersOf("ORD-1640", "Bea"), ordersOf("ORD-1640", "Bea", "ORD-1641", "Ada")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        // a short value is never linked by itself
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"Ada\"}"));
+        assertThat(textOf(1)).isEqualTo("Ada");
+        JsonNode list = call("{\"op\":\"list\"}");
+        // what each step changed that a later one may use, by its path
+        assertThat(list.at("/steps/0/changed").toString())
+                .contains("\".rows.Orders.added[0].Number\":\"ORD-1641\"", "\".rows.Orders.added[0].Customer\":\"Ada\"");
+        int rev = list.path("rev").asInt();
+
+        // link: the agent names the value by the step number and its path in what that step changed
+        String customer = "${1.rows.Orders.added[0].Customer}";
+        JsonNode linked = call("{\"op\":\"link\",\"n\":2,\"field\":\"text\",\"ref\":\"" + customer + "\",\"rev\":" + rev + "}");
+        assertThat(linked.path("did").asText()).isEqualTo("linked step 2 to what step 1 changed");
+        assertThat(textOf(1)).isEqualTo("${copy.rows.Orders.added[0].Customer}");
+        assertThat(session.recordedSteps().get(0).action.id).isEqualTo("copy");
+        assertThat(linked.at("/steps/1/uses/0/from").asText()).isEqualTo("from step 1: Copy added");
+        assertThat(linked.at("/steps/1/uses/0/value").asText()).isEqualTo("Ada");
+        assertThat(linked.at("/steps/0/usedBy").toString()).isEqualTo("[\"2\"]");
+        assertThat(sink.undoLabel()).isEqualTo("link of step 2 by the agent");
+
+        // refused in words, nothing changed
+        assertThat(why("{\"op\":\"link\",\"n\":1,\"ref\":\"${2.fields.Note}\"}"))
+                .contains("step 1 can only use what a step before it changed or remembered");
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"ref\":\"nobody\"}"))
+                .contains("no step or remembered value is named 'nobody'");
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"ref\":\"${1.rows.Orders.added[1].Number}\"}"))
+                .contains("what step 1 changed has no value at .rows.Orders.added[1].Number");
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"field\":\"text\",\"ref\":\"${1.rows.Orders.added[0].Number}\"}"))
+                .contains("ORD-1641 is not in step 2's text");
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"ref\":\"${run.id}\"}")).contains("unique");
+        assertThat(why("{\"op\":\"link\",\"n\":2}")).contains("link needs 'n' and 'ref'");
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"ref\":\"" + customer + "\",\"rev\":" + rev + "}"))
+                .contains("the recording changed since revision " + rev);
+
+        // unlink: the value it stood for, as text; one edit the agent can undo
+        assertThat(call("{\"op\":\"unlink\",\"n\":2}").path("did").asText()).isEqualTo("used the exact value in step 2");
+        assertThat(textOf(1)).isEqualTo("Ada");
+        assertThat(why("{\"op\":\"unlink\",\"n\":2}")).contains("step 2 uses no value of an earlier step");
+        call("{\"op\":\"undo\"}");
+        assertThat(textOf(1)).isEqualTo("${copy.rows.Orders.added[0].Customer}");
+
+        // remember: read now from the app, kept under the last action as a check-like entry
+        backend.verbs.remembered = "ORD-1641";
+        JsonNode remembered = call("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Number\"},\"as\":\"number\"}");
+        assertThat(remembered.path("did").asText()).isEqualTo("remembered ORD-1641 as number (check 2.1)");
+        assertThat(remembered.at("/steps/1/checks/0/remembered").asText()).isEqualTo("ORD-1641");
+        assertThat(why("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Number\"},\"as\":\"number\"}"))
+                .contains("'number' is already the name of check 2.1");
+        assertThat(why("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Number\"},\"as\":\"run\"}"))
+                .contains("'run' is reserved");
+        assertThat(why("{\"op\":\"remember\",\"as\":\"x\"}")).contains("remember needs 'target' and 'as'");
+        // under an earlier step: it goes after that step's checks
+        backend.verbs.remembered = "Bea";
+        JsonNode first = call("{\"op\":\"remember\",\"n\":1,\"target\":{\"role\":\"label\",\"name\":\"Customer\"},"
+                + "\"as\":\"customer\",\"selected\":true}");
+        assertThat(first.path("did").asText()).isEqualTo("remembered Bea as customer (check 1.1)");
+        assertThat(first.at("/steps/0/checks/0/step/selected").asBoolean()).isTrue();
+        assertThat(session.runValues().fill("${customer}")).isEqualTo("Bea");
+        // the app has nothing there: refused, nothing recorded
+        backend.verbs.failure = new DriverException(Reason.NOT_FOUND, "no label 'Total'");
+        assertThat(why("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"as\":\"total\"}"))
+                .contains("no label 'Total'", "nothing remembered");
+        backend.verbs.failure = null;
+        assertThat(session.recordedSteps()).hasSize(4);
+
+        // a later step that types the remembered value uses it; the agent can link it by name too
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"note\"},\"text\":\"ORD-1641\"}"));
+        assertThat(textOf(4)).isEqualTo("${number}");
+        call("{\"op\":\"unlink\",\"n\":3}");
+        assertThat(textOf(4)).isEqualTo("ORD-1641");
+        assertThat(call("{\"op\":\"link\",\"n\":3,\"ref\":\"number\"}").path("did").asText())
+                .isEqualTo("linked step 3 to a remembered value");
+        assertThat(textOf(4)).isEqualTo("${number}");
+
+        // unique per run, on a typed text
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"title\"},\"text\":\"Spring sale\"}"));
+        JsonNode unique = call("{\"op\":\"unique\",\"n\":4,\"where\":\"end\"}");
+        assertThat(unique.path("did").asText()).isEqualTo("made the text of step 4 unique per run");
+        assertThat(textOf(5)).isEqualTo("Spring sale ${run.id}");
+        assertThat(unique.at("/steps/3/unique").asText()).isEqualTo("end");
+        assertThat(call("{\"op\":\"unique\",\"n\":4,\"where\":\"end\"}").path("did").asText())
+                .isEqualTo("step 4 is that way already");
+        assertThat(why("{\"op\":\"unique\",\"n\":1,\"where\":\"end\"}")).contains("only a typed text can be unique per run");
+        assertThat(why("{\"op\":\"unique\",\"n\":4,\"where\":\"middle\"}")).contains("\"end\", \"start\" or \"off\"");
+        assertThat(call("{\"op\":\"unique\",\"n\":4,\"where\":\"off\"}").path("did").asText())
+                .isEqualTo("turned unique per run off in step 4");
+        assertThat(textOf(5)).isEqualTo("Spring sale");
+        assertThat(sink.undoLabel()).isEqualTo("unique per run of step 4 by the agent");
+    }
+
+    @Test
+    void aDomainStepsOwnValuesAreUnderStepAndALaterStepLinksToThem() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("placeOrder", "Place the order")
+                .codeWithOutcome((ui, p) -> {
+                    ui.button("Place order").click();
+                    return java.util.Collections.<String, Object>singletonMap("number", "ORD-1641");
+                })
+                .build());
+
+        JsonNode placed = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"placeOrder\"}"), true,
+                true));
+        assertThat(placed.at("/outcome/step/number").asText()).isEqualTo("ORD-1641");
+        assertThat(s.recordedSteps().get(0).outcome.at("/step/number").asText()).isEqualTo("ORD-1641");
+
+        s.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1641\"}"));
+        JsonNode linked = recording(s, "{\"op\":\"link\",\"n\":2,\"ref\":\"${1.step.number}\"}");
+        String text = ((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.recordedSteps().get(1).action).text;
+        assertThat(text).isEqualTo("${placeOrder.step.number}");
+        assertThat(linked.at("/steps/1/uses/0/value").asText()).isEqualTo("ORD-1641");
+    }
+
+    @Test
+    void aLinkBreaksAFold() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        List<String> product = java.util.Collections.singletonList("Product");
+        backend.verbs.readings.add(io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Products", product, java.util.Collections.singletonList(java.util.Collections.singletonList("Ballpoint pen")))
+                .build());
+        backend.verbs.readings.add(io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Products", product, Arrays.asList(java.util.Collections.singletonList("Ballpoint pen"),
+                        java.util.Collections.singletonList("Gel pen, black"))).build());
+        String add = "{\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}";
+        // New product adds Gel pen, black; the row clicked next is linked to it: no fold takes the two clicks after it
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"New product\"}}"));
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Products\","
+                + "\"row\":{\"Product\":\"Gel pen, black\"},\"column\":\"Product\"}}"));
+        s.verb("click", mapper.readTree(add));
+        // a remember entry between them breaks one too, as a check does
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Products\","
+                + "\"row\":{\"Product\":\"Ballpoint pen\"},\"column\":\"Product\"}}"));
+        backend.verbs.remembered = "€2.40";
+        recording(s, "{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Price\"},\"as\":\"price\"}");
+        s.verb("click", mapper.readTree(add));
+        // the same two clicks with nothing linked fold
+        s.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Products\","
+                + "\"row\":{\"Product\":\"Ballpoint pen\"},\"column\":\"Product\"}}"));
+        s.verb("click", mapper.readTree(add));
+
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+
+        assertThat(steps.get(1).path("step").path("target").path("row").path("Product").asText())
+                .isEqualTo("${newProduct.rows.Products.added[0].Product}");
+        assertThat(steps).extracting(st -> st.path("folded").asInt(0)).containsExactly(0, 0, 0, 0, 0, 2);
+        assertThat(steps.get(5).path("step").path("params").path("product").asText()).isEqualTo("Ballpoint pen");
     }
 }

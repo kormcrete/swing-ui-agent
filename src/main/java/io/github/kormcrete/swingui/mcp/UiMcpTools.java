@@ -18,6 +18,17 @@ public final class UiMcpTools {
 
     private UiMcpTools() {}
 
+    /** The {@code outcome} argument of the step tools. */
+    static final String OUTCOME_ARG = "true: the app is read before and after the step, and the result's 'outcome' says what "
+            + "it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app.";
+
+    /** What an outcome holds, for the step tools' descriptions. */
+    static final String OUTCOME_SHAPE = "only what changed, keyed by the names the person sees: opened and closed {windows, "
+            + "dialogs, tabs}, fields {label: value}, texts, rows {table: {added, removed, changed [{before, after}], count}} "
+            + "with each row as {column: value shown}, items {list or tree: {added, removed}}, selected, message, and "
+            + "partial:true when a large table was read only around its view; a plugin's do step adds what its body "
+            + "returned under step";
+
     public static List<McpToolDefinition> build(final UiMcpSession session, final ObjectMapper mapper) {
         List<McpToolDefinition> tools = new ArrayList<McpToolDefinition>();
 
@@ -55,6 +66,8 @@ public final class UiMcpTools {
                 schema.putArray("required").add("action");
                 schema.with("properties").putObject("record").put("type", "boolean").put("default", true)
                         .put("description", "false keeps this step out of export_test's recording (used by tests)");
+                schema.with("properties").putObject("outcome").put("type", "boolean").put("default", false)
+                        .put("description", OUTCOME_ARG);
                 return tool(m, "do_action",
                         "Execute ONE step against the live client and return pass/fail and its "
                         + "duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the "
@@ -66,14 +79,15 @@ public final class UiMcpTools {
                         + "\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step "
                         + "that opens a message or confirmation returns at once with 'dialog' (title, message, "
                         + "buttons); navigate, close and loginAs refuse to run until it is answered with the "
-                        + "'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test).", schema);
+                        + "'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test). "
+                        + "outcome:true adds 'outcome': what the step changed (" + OUTCOME_SHAPE + ").", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 JsonNode action = args.path("action");
                 if (action.isMissingNode() || action.isNull()) {
                     throw new IllegalArgumentException("Missing required 'action' object");
                 }
-                return session.doAction(action, args.path("record").asBoolean(true));
+                return session.doAction(action, args.path("record").asBoolean(true), args.path("outcome").asBoolean(false));
             }
         });
 
@@ -96,7 +110,8 @@ public final class UiMcpTools {
                         + "steps are recorded for export_test exactly as do_action records them. "
                         + "Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},"
                         + "{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},"
-                        + "{\"action\":\"close\"}]}. A step may carry say: its sentence.", schema);
+                        + "{\"action\":\"close\"}]}. A step may carry say: its sentence, and outcome:true: its entry then holds "
+                        + "'outcome', what it changed, as do_action has it.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 JsonNode actions = args.path("actions");
@@ -122,6 +137,7 @@ public final class UiMcpTools {
                 verb.put("type", "string");
                 verb.put("description", "A verb tool's name (" + String.join(", ", VerbSchemas.TOOLS.keySet())
                         + "), 'read', or a step type (navigate, close, loginAs, screenshot, ...).");
+                item.with("properties").putObject("outcome").put("type", "boolean").put("description", OUTCOME_ARG);
                 item.putArray("required").add("verb");
                 ObjectNode snapshot = p.putObject("snapshot");
                 snapshot.put("description", "true, or the snapshot tool's arguments (target, depth, compact, ...): "
@@ -141,7 +157,8 @@ public final class UiMcpTools {
                         + "{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Customer\"},\"text\":\"Ada\"},"
                         + "{\"verb\":\"press\",\"keys\":\"Enter\"},"
                         + "{\"verb\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"New order · Ada Shop Ltd\"},"
-                        + "\"state\":[\"selected\"]}]}.", schema);
+                        + "\"state\":[\"selected\"]}]}. A step with \"outcome\":true has 'outcome' in its entry: what it changed, "
+                        + "as do_action has it (e.g. the new row a Copy added, to use in the next call).", schema);
             }
             @Override public String invoke(JsonNode args) { return session.batch(args); }
         });
@@ -212,11 +229,11 @@ public final class UiMcpTools {
                         + "that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing "
                         + "file is never overwritten - except the recorded test the recording came from (loaded in the "
                         + "palette, or exported before without clear). A folder that cannot be written is refused, "
-                        + "naming it. A recorded test holds exact values: check data the test creates or data known to exist; "
-                        + "a value the app makes up (a new order number, today's date) only when your start makes it "
-                        + "predictable - otherwise check something else or write a Java test. Format version 2 (3 when it holds "
-                        + "do steps, with requires naming their plugins): each step with its checks nested, sentences and groups "
-                        + "kept.", schema);
+                        + "naming it. A recorded test holds exact values except its links (a step that uses what an earlier step "
+                        + "changed or remembered, a text unique per run: see the recording tool), so a record the test creates, "
+                        + "such as a new order number, is found again on each run; check data the test creates or data known to "
+                        + "exist. Format version 2 (3 when it holds do steps, with requires naming their plugins; 4 when it has "
+                        + "links or remember entries): each step with its checks nested, sentences and groups kept.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
@@ -246,8 +263,12 @@ public final class UiMcpTools {
                         + "now, a scoped tree and a picture of the window (written under 'evidence', default "
                         + "target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; ran and total count steps, "
                         + "each entry of steps is a step or a check: "
-                        + "[{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step "
-                        + "number (7) or a check label (\"7.2\"); action is the step's technical line. After a "
+                        + "[{n, say?, action, passed, ms, message?, reason?, details?, warning?, resolved?, diagnostics?}], n a step "
+                        + "number (7) or a check label (\"7.2\"); action is the step's technical line. A step that uses what an "
+                        + "earlier step changed, a remembered value or the run's values (${copy.rows.Orders.added[0].Number}, "
+                        + "${number}, ${run.id}) carries resolved {reference: value}: what each stood for in this run, which "
+                        + "report shows too; run.id is new on each run. A value no earlier step made fails its step, saying "
+                        + "which, never falling back to the recorded one. After a "
                         + "failure take a new snapshot before using refs. Refused (BUSY) while a person records, "
                         + "answers or replays in the palette. A file with do steps is checked before anything runs: a "
                         + "plugin its 'requires' names that is not ready is CAPABILITY_GAP, a step or param that plugin "
@@ -387,7 +408,8 @@ public final class UiMcpTools {
                 ObjectNode p = schema.with("properties");
                 p.putObject("op").put("type", "string").putArray("enum").add("start").add("stop").add("list")
                         .add("insert").add("delete").add("move").add("edit").add("group").add("ungroup").add("row").add("undo")
-                        .add("fold").add("unfold").add("keepRaw").add("replay").add("redo").add("export").add("load");
+                        .add("fold").add("unfold").add("keepRaw").add("link").add("unlink").add("remember").add("unique")
+                        .add("replay").add("redo").add("export").add("load");
                 ObjectNode at = p.putObject("at");
                 at.putArray("type").add("integer").add("string");
                 at.put("description", "insert: where it goes. An action: the step number it gets (1 to steps+1), before "
@@ -396,17 +418,19 @@ public final class UiMcpTools {
                         + "or a check label (\"7.2\").");
                 ObjectNode n = p.putObject("n");
                 n.putArray("type").add("integer").add("string");
-                n.put("description", "delete, move, edit, ungroup, row, unfold: a step number (7) or a check label (\"7.2\"). "
-                        + "delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step "
-                        + "(with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; unfold "
-                        + "takes a folded step.");
+                n.put("description", "delete, move, edit, ungroup, row, unfold, link, unlink, unique: a step number (7) or a "
+                        + "check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move "
+                        + "takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; "
+                        + "unfold takes a folded step; link and unlink the step or check that uses a value; unique a typed step. "
+                        + "remember: the step the entry goes under (default: the last).");
                 p.putObject("from").put("type", "integer").put("description",
                         "delete, group, fold, keepRaw: first step of a range; replay: first step (default 1); redo: the step "
                         + "to record again (steps+1 continues).");
                 p.putObject("speed").put("type", "string").put("description",
                         "replay: pauses for a person watching.").putArray("enum").add("fast").add("normal").add("slow");
-                p.putObject("as").put("type", "string").put("description", "export: the format (required).")
-                        .putArray("enum").add("recorded").add("java");
+                p.putObject("as").put("type", "string").put("description",
+                        "export: the format, recorded or java (required); remember: the name to keep the value under (a "
+                        + "letter, then letters, digits or _; not run; not a name the recording has already).");
                 p.putObject("class").put("type", "string").put("description", "export java: the test class name.");
                 p.putObject("method").put("type", "string").put("description", "export java: the test method (default recorded).");
                 p.putObject("package").put("type", "string").put("description", "export java: the package.");
@@ -435,9 +459,22 @@ public final class UiMcpTools {
                 p.set("target", LocatorSchema.of(m));
                 p.putObject("text").put("type", "string").put("description",
                         "edit: the new text of a type, expect, setClipboard or drop step or check.");
+                p.putObject("ref").put("type", "string").put("description",
+                        "link: the value to use - ${3.rows.Orders.added[0].Number} (step 3 and the path in what it changed, "
+                        + "as list shows it under changed), ${copy.fields.Number} (a step's id) or a remembered name "
+                        + "(number or ${number}).");
+                p.putObject("field").put("type", "string").put("description",
+                        "link: the one place in step or check n to link, a path into its step JSON (text, target.name, "
+                        + "target.row.Number, params.qty); default: wherever it has the value.");
+                p.putObject("where").put("type", "string").put("description",
+                        "unique: where the run's id goes in the typed text: end, start, or off to take it away.")
+                        .putArray("enum").add("end").add("start").add("off");
+                p.putObject("selected").put("type", "boolean").put("description",
+                        "remember: the target's selected row's cell (in the target's column), selected item or selected "
+                        + "tab's title instead of its own text.");
                 p.putObject("rev").put("type", "integer").put("description",
-                        "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, redo: the rev of your "
-                        + "last list; refused if the recording changed since.");
+                        "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, link, unlink, remember, "
+                        + "unique, redo: the rev of your last list; refused if the recording changed since.");
                 p.putObject("reset").put("type", "boolean").put("description",
                         "start: reset the app first, as a test starts (default false).");
                 p.putObject("wait").put("type", "integer").put("description",
@@ -472,12 +509,25 @@ public final class UiMcpTools {
                         + "suggests) or foldUndecided (why). Checks, do steps, an author change, groups, steps with their own "
                         + "sentence, kept raw steps and a replay's start stop a fold. fold {from, to, step?}: folds those "
                         + "steps into the domain step whose pattern they match (step names it when more fit). unfold {n}: "
-                        + "puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. Numbers close up after a delete; deleting or moving a step takes its checks "
+                        + "puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. "
+                        + "Links (the person sees a 🔗 on the step, in words): a step may use what an earlier step changed (its "
+                        + "outcome), a remembered value or a text unique per run, and a replay then uses that run's value, "
+                        + "never the recorded one; a link breaks a fold, as a check does. While recording, a step whose value an "
+                        + "earlier step newly made (4 characters or more, not yes/no or a small number) is linked at once. list "
+                        + "shows on each step or check changed (path: value, what it changed that a later step may use), uses "
+                        + "[{from, value}], usedBy and unique, and on a remember entry remembered. link {n, ref, field?}: n uses "
+                        + "the value ref names where it has that value, whole or whole inside typed text; the source gets an "
+                        + "id. Never type ${...} into a step yourself: a step's text is taken as typed. unlink {n}: its links "
+                        + "become the values they stood for. remember {target, as, n?, selected?}: reads the text target shows "
+                        + "now and keeps it under the name as, a check-like entry (n.k) under step n; missing or empty is refused, nothing "
+                        + "recorded. unique {n, where}: step n's typed text gets the run's id at its end or start (off takes it "
+                        + "away), and the steps that use that text follow; nothing is typed again. Each is one edit undo takes "
+                        + "back. Numbers close up after a delete; deleting or moving a step takes its checks "
                         + "along; pass rev from your last list so an edit is refused if the person changed the recording "
                         + "meanwhile. Every edit returns the new list. While one runs, session reset and test runs are "
                         + "refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again "
                         + "without recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with one {n, action, passed, ms, "
-                        + "message?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo "
+                        + "message?, resolved?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo "
                         + "{from}: cuts step from and the ones after it, replays the steps before it from a reset, and "
                         + "records on (from = the number after the last step continues a stopped recording). export "
                         + "{as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load "

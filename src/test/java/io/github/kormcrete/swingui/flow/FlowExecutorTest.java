@@ -323,6 +323,22 @@ class FlowExecutorTest {
     }
 
     @Test
+    void aDomainStepsOwnValuesStayWhenItsOutcomeIsReadAgain() {
+        // the do step returns the order's customer; the row it adds comes late, and is read again
+        host.verbs.readings.addAll(Arrays.asList(orders("ORD-1642"), orders("ORD-1642"), orders("ORD-1642", "ORD-1643")));
+        host.stepOutcome = new io.github.kormcrete.swingui.driver.VerbOutcome();
+        host.stepOutcome.made = java.util.Collections.<String, Object>singletonMap("customer", "Ada Lovelace");
+
+        FlowResult result = runLinked(linked(),
+                "{\"action\":\"do\",\"id\":\"copy\",\"step\":\"order-desk:copyOrder\"}",
+                "{\"action\":\"type\",\"target\":{\"id\":\"note\"},"
+                        + "\"text\":\"${copy.rows.Orders.added[0].Number} for ${copy.step.customer}\"}");
+
+        assertThat(result.passed()).as(result.steps.toString()).isTrue();
+        assertThat(typed()).containsExactly("type #note ORD-1643 for Ada Lovelace null null");
+    }
+
+    @Test
     void anUnresolvableLinkFailsInWordsAfterTheWait() {
         host.verbs.readings.add(orders("ORD-1642"));
         long started = System.nanoTime();

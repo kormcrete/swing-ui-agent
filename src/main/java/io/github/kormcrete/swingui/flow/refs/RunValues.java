@@ -70,6 +70,11 @@ public final class RunValues {
     remembered.remove(id);
   }
 
+  /** What is kept under the id (an outcome, a remembered value as {@code {"value": ...}}); null when nothing. */
+  public synchronized JsonNode get(String id) {
+    return outcomes.get(id);
+  }
+
   public synchronized boolean has(String id) {
     return outcomes.containsKey(id);
   }

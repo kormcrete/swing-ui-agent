@@ -36,7 +36,8 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Runs one domain step for real, on the calling thread: a Java body on a {@link Client} over the app's verbs (as a
  * UI test's Client, in this JVM), declarative steps one by one. Every step either makes is kept
- * ({@link StepCallVerbs}): the outcome holds the filled sentence and those steps, a failure throws
+ * ({@link StepCallVerbs}): the outcome holds the filled sentence and those steps, and what a body given with
+ * {@link DomainStep.Builder#codeWithOutcome} returned ({@link VerbOutcome#made}); a failure throws
  * {@link DomainStepFailed} with the steps up to it.
  */
 final class StepRunner {
@@ -52,7 +53,9 @@ final class StepRunner {
         VerbOutcome out = new VerbOutcome();
         out.sentence = values.fill(step.sentence());
         try {
-            if (step.body() != null) {
+            if (step.outcomeBody() != null) {
+                out.made = made(step, step.outcomeBody().run(new Client(kept, keptApp, runId()), values));
+            } else if (step.body() != null) {
                 step.body().run(new Client(kept, keptApp, runId()), values);
             } else {
                 for (int i = 0; i < step.steps().size(); i++) runDeclared(step, i, values, kept, keptApp);
@@ -63,6 +66,21 @@ final class StepRunner {
         }
         finish(out, kept.calls());
         return out;
+    }
+
+    /**
+     * What {@code step}'s body returned, as plain JSON values (a copy: the body's map may change later); null for none.
+     * A value that is not JSON-like fails the step, saying so.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> made(DomainStep step, Map<String, Object> returned) {
+        if (returned == null) return null;
+        try {
+            return JSON.convertValue(returned, Map.class);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("the body of " + step.id() + " returned values that are not JSON-like (text, "
+                    + "numbers, booleans, lists and maps of them): " + e.getMessage(), e);
+        }
     }
 
     /** The outcome's steps, the dialog the last one left waiting, and the first warning a step had. */

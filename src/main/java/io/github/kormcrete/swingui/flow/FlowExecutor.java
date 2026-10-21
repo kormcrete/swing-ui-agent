@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.flow;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.driver.DomainStepFailed;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
@@ -225,7 +226,7 @@ public class FlowExecutor {
         void after(int index, Action a, VerbOutcome out) {
             if (pending != null) {
                 before.put(a.id, pending);
-                values.put(a.id, outcome(pending, outcomes.read()));
+                values.put(a.id, outcome(pending, outcomes.read(), out));
                 pending = null;
             }
             if (a instanceof RememberVerb && out != null && out.note != null) values.remember(((RememberVerb) a).as, out.note);
@@ -265,13 +266,26 @@ public class FlowExecutor {
                     Thread.currentThread().interrupt();
                     throw new DriverException(Reason.TIMEOUT, "interrupted while waiting for " + e.ref.source);
                 }
-                values.put(e.ref.id, outcome(was, source.read()));
+                // read again, what the step's own body returned stays
+                JsonNode made = values.get(e.ref.id) == null ? null : values.get(e.ref.id).get(STEP);
+                ObjectNode again = outcome(was, source.read(), null);
+                if (made != null) again.set(STEP, made);
+                values.put(e.ref.id, again);
             }
         }
     }
 
-    private static JsonNode outcome(UiReading before, UiReading after) {
-        return FlowJson.mapper().valueToTree(Outcomes.diff(before, after));
+    /** Where a domain step's own values go in its outcome: {@code ${placeOrder.step.number}}. */
+    public static final String STEP = "step";
+
+    /**
+     * What a step changed ({@link Outcomes#diff} of the readings {@code before} and {@code after} it) as JSON, with what a
+     * domain step's body returned ({@link VerbOutcome#made} of {@code out}, null for none) under {@link #STEP}.
+     */
+    public static ObjectNode outcome(UiReading before, UiReading after, VerbOutcome out) {
+        ObjectNode outcome = FlowJson.mapper().valueToTree(Outcomes.diff(before, after));
+        if (out != null && out.made != null) outcome.set(STEP, FlowJson.mapper().valueToTree(out.made));
+        return outcome;
     }
 
     private static <K, V> Map<K, V> orNull(Map<K, V> m) {

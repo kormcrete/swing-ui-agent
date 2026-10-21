@@ -478,6 +478,79 @@ class UiMcpToolsTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** The tool {@code name} over {@code s}. */
+    private io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition tool(UiMcpSession s, String name) {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(s, mapper)) {
+            if (t.name().equals(name)) return t;
+        }
+        throw new AssertionError("no tool " + name);
+    }
+
+    /** Orders {@code numbers}, one Number column; the app before and after Copy. */
+    private static io.github.kormcrete.swingui.driver.outcome.UiReading orders(String... numbers) {
+        List<List<String>> rows = new ArrayList<List<String>>();
+        for (String n : numbers) rows.add(Collections.singletonList(n));
+        return io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Orders", Collections.singletonList("Number"), rows).build();
+    }
+
+    @Test
+    void doActionReturnsTheOutcomeWhenAsked() throws Exception {
+        UiMcpSession s = session();
+        host.verbs.readings.add(orders("ORD-1640"));
+        host.verbs.readings.add(orders("ORD-1640", "ORD-1641"));
+
+        // outside the recording, as a Java test's step goes: read before and after only because it was asked
+        JsonNode r = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"click\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},\"record\":false,\"outcome\":true}")));
+
+        assertThat(r.path("passed").asBoolean()).isTrue();
+        assertThat(r.at("/outcome/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
+        assertThat(r.at("/outcome/rows/Orders/count").asInt()).isEqualTo(2);
+        assertThat(host.verbs.readUiCalls).isEqualTo(2);
+
+        // not asked: nothing read, no outcome
+        JsonNode plain = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"click\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},\"record\":false}")));
+        assertThat(plain.has("outcome")).isFalse();
+        assertThat(host.verbs.readUiCalls).isEqualTo(2);
+
+        // a check changes nothing: its outcome is empty, and nothing is read for it
+        JsonNode check = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"expect\","
+                + "\"target\":{\"id\":\"status\"},\"text\":\"New\"},\"record\":false,\"outcome\":true}")));
+        assertThat(check.path("outcome").isObject()).isTrue();
+        assertThat(check.path("outcome").size()).isZero();
+        assertThat(host.verbs.readUiCalls).isEqualTo(2);
+
+        // a step that fails has none
+        host.verbs.failure = new DriverException(Reason.NOT_FOUND, "nothing matches");
+        JsonNode failed = mapper.readTree(tool(s, "do_action").invoke(mapper.readTree("{\"action\":{\"action\":\"click\","
+                + "\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},\"record\":false,\"outcome\":true}")));
+        assertThat(failed.path("passed").asBoolean()).isFalse();
+        assertThat(failed.has("outcome")).isFalse();
+    }
+
+    @Test
+    void batchStepOutcome() throws Exception {
+        UiMcpSession s = session();
+        s.reader(() -> {
+            host.verbs.readUiCalls++;
+            return host.verbs.readUiCalls == 1 ? orders("ORD-1640") : orders("ORD-1640", "ORD-1641");
+        });
+
+        JsonNode r = mapper.readTree(tool(s, "batch").invoke(mapper.readTree("{\"steps\":["
+                + "{\"verb\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"},\"outcome\":true},"
+                + "{\"verb\":\"type\",\"target\":{\"id\":\"note\"},\"text\":\"copied\"}]}")));
+
+        assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
+        JsonNode copy = r.path("steps").get(0);
+        assertThat(copy.at("/outcome/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
+        assertThat(r.path("steps").get(1).has("outcome")).isFalse();
+        // the step is recorded as it was given, without the request for its outcome
+        assertThat(copy.path("recorded").has("outcome")).isFalse();
+        assertThat(copy.path("recorded").path("action").asText()).isEqualTo("click");
+    }
+
     @Test
     void doActionWithRecordFalseRunsTheStepAndRecordsNothing() throws Exception {
         io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition doAction = null;
@@ -534,7 +607,7 @@ class UiMcpToolsTest {
                 List<String> ops = new ArrayList<String>();
                 for (JsonNode n : t.descriptor(mapper).path("inputSchema").path("properties").path("op").path("enum")) ops.add(n.asText());
                 assertThat(ops).containsExactly("start", "stop", "list", "insert", "delete", "move", "edit", "group", "ungroup", "row", "undo",
-                        "fold", "unfold", "keepRaw", "replay", "redo", "export", "load");
+                        "fold", "unfold", "keepRaw", "link", "unlink", "remember", "unique", "replay", "redo", "export", "load");
                 JsonNode props = t.descriptor(mapper).path("inputSchema").path("properties");
                 assertThat(props.path("step").path("type").toString()).isEqualTo("[\"object\",\"string\"]");
                 assertThat(props.path("rev").path("description").asText()).contains("fold, unfold, keepRaw");

@@ -42,6 +42,7 @@ import io.github.kormcrete.swingui.spi.StepHost;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.flow.verb.TypeVerb;
+import io.github.kormcrete.swingui.flow.refs.JsonPaths;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.refs.Resolution;
 import io.github.kormcrete.swingui.flow.refs.RunValues;
@@ -80,6 +81,7 @@ import java.util.function.Supplier;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -1342,18 +1344,38 @@ public class UiMcpSession {
      * domain step has no Java form: it is recorded (a recorded test holds it), and only {@code export_test} refuses.
      */
     private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author) {
-        return runStep(actionJson, record, author, null).result;
+        return runAndRecord(actionJson, record, author, false);
+    }
+
+    /** {@link #runAndRecord}; {@code outcome}: the result says what the step changed ({@code "outcome"}). */
+    private ObjectNode runAndRecord(JsonNode actionJson, boolean record, RecordedStep.Author author, boolean outcome) {
+        return runStep(actionJson, record, author, null, null, outcome).result;
     }
 
     /** What one step did: its report, and the alternatives of the table row it names (null when it names none). */
     private static final class StepRun {
         final ObjectNode result;
         final RowChoice row;
+        /** The step's own result; null when it never ran. */
+        final StepResult step;
 
         StepRun(ObjectNode result, RowChoice row) {
+            this(result, row, null);
+        }
+
+        StepRun(ObjectNode result, RowChoice row, StepResult step) {
             this.result = result;
             this.row = row;
+            this.step = step;
         }
+    }
+
+    /** The request for a step's outcome in a step object ({@code "outcome": true}), taken out of it; false when none. */
+    private static boolean takeOutcome(JsonNode step) {
+        if (!(step instanceof ObjectNode) || !step.has("outcome")) return false;
+        boolean wanted = step.path("outcome").asBoolean(false);
+        ((ObjectNode) step).remove("outcome");
+        return wanted;
     }
 
     /**
@@ -1361,7 +1383,7 @@ public class UiMcpSession {
      * when the run's own outcome has none.
      */
     private StepRun runStep(JsonNode actionJson, boolean record, RecordedStep.Author author, RowChoice given) {
-        return runStep(actionJson, record, author, given, null);
+        return runStep(actionJson, record, author, given, null, false);
     }
 
     /**
@@ -1369,10 +1391,12 @@ public class UiMcpSession {
      * again, null for a step the agent or the person runs now. Only a replayed step's references are filled in, from
      * what this session knows ({@link RecordingModel#runValues}, waiting for a value that comes late); the agent's own
      * text is taken as it is. What an action changes is read before and after it - a replayed one's always, a new one's
-     * when the recording takes it - and kept on its record; a check changes nothing and is not read.
+     * when the recording takes it or the caller asks for it ({@code wantOutcome}: the result's {@code outcome}) - and
+     * kept on its record; a check changes nothing and is not read. A replayed step's result says what its references
+     * stood for ({@code resolved}).
      */
     private StepRun runStep(JsonNode actionJson, boolean record, RecordedStep.Author author, RowChoice given,
-                            RecordedStep replayed) {
+                            RecordedStep replayed, boolean wantOutcome) {
         Action action = sentenced(action(actionJson), "the step's sentence");
         long started = System.currentTimeMillis();
         Map<String, String> resolved = null;
@@ -1398,7 +1422,7 @@ public class UiMcpSession {
         flow.steps = new ArrayList<Action>();
         flow.steps.add(action);
         boolean read = !StepNumbers.isCheck(action)
-                && (replayed != null || record && model.state() == RecordingModel.State.RECORDING);
+                && (replayed != null || record && model.state() == RecordingModel.State.RECORDING || wantOutcome);
         UiReading before = null;
         UiReading after = null;
         FlowResult result;
@@ -1423,6 +1447,17 @@ public class UiMcpSession {
             throw new DriverException(reason, DriverException.stripReason(step.message, reason), details);
         }
         boolean passed = step != null && step.passed;
+        // what it changed, once for the record and the caller; with a domain step's own values under "step"
+        ObjectNode changed = null;
+        Map<String, String> newValues = null;
+        if (before != null && after != null) {
+            Map<String, Object> diff = Outcomes.diff(before, after);
+            newValues = Outcomes.newValues(before, diff);
+            changed = FlowJson.mapper().valueToTree(diff);
+            if (step.outcome != null && step.outcome.made != null) {
+                changed.set(FlowExecutor.STEP, FlowJson.mapper().valueToTree(step.outcome.made));
+            }
+        }
         ObjectNode r = mapper.createObjectNode();
         RowChoice row = null;
         r.put("passed", passed);
@@ -1446,7 +1481,7 @@ public class UiMcpSession {
                 if (problems.isEmpty()) {
                     RecordedStep added = model.append(recordedAction, author, row,
                             action instanceof DoAction ? null : seenOf(step.outcome));
-                    keepOutcome(added, before, after, step);
+                    keepOutcome(added, changed, newValues, step);
                     r.set("recorded", mapper.valueToTree(autoLink(added)));
                     scheduleFolding();
                 } else {
@@ -1457,6 +1492,12 @@ public class UiMcpSession {
                 publish();
             }
         }
+        if (wantOutcome && passed) {
+            if (StepNumbers.isCheck(action)) r.putObject("outcome");
+            else if (changed != null) r.set("outcome", changed.deepCopy());
+            else r.putNull("outcome");   // the app could not be read
+        }
+        if (resolved != null && !resolved.isEmpty()) r.set("resolved", mapper.valueToTree(resolved));
         if (step != null && step.pending != null) r.set("pending", mapper.valueToTree(step.pending));
         if (step != null && step.warning != null) r.put("warning", step.warning);
         if (step != null && step.realInput != null) r.set("realInput", mapper.valueToTree(step.realInput));
@@ -1468,10 +1509,10 @@ public class UiMcpSession {
         if (passed && !record) row = rowOf(action, step.outcome, given);
         if (passed && replayed != null) {
             if (action.id != null && before != null) replayBefore.put(action.id, before);
-            keepOutcome(replayed, before, after, step);
+            keepOutcome(replayed, changed, newValues, step);
             if (resolved != null && !resolved.isEmpty()) model.linkSeen(replayed.id, resolved);
         }
-        return new StepRun(r, row);
+        return new StepRun(r, row, step);
     }
 
     /** A result field only the palette reads: a replayed step failed for a value an earlier step did not make, in words. */
@@ -1501,14 +1542,11 @@ public class UiMcpSession {
     }
 
     /**
-     * Keeps what the record {@code s} changed, from the readings {@code before} and {@code after} it ran (none: nothing
+     * Keeps what the record {@code s} changed ({@code outcome}, with its value index {@code newValues}; null: nothing
      * read), and the value a remember step took.
      */
-    private void keepOutcome(RecordedStep s, UiReading before, UiReading after, StepResult step) {
-        if (before != null && after != null) {
-            Map<String, Object> outcome = Outcomes.diff(before, after);
-            model.outcome(s.id, FlowJson.mapper().valueToTree(outcome), Outcomes.newValues(before, outcome));
-        }
+    private void keepOutcome(RecordedStep s, ObjectNode outcome, Map<String, String> newValues, StepResult step) {
+        if (outcome != null) model.outcome(s.id, outcome, newValues);
         if (s.action instanceof RememberVerb && ((RememberVerb) s.action).as != null && step.outcome != null
                 && step.outcome.note != null) {
             model.runValues().remember(((RememberVerb) s.action).as, step.outcome.note);
@@ -1812,7 +1850,7 @@ public class UiMcpSession {
 
     /** The palette's replay of the recorded step {@code step} ({@code json}): it runs, nothing is recorded. */
     private synchronized StepRun replayStep(JsonNode json, RecordedStep step) {
-        return runStep(json, false, RecordedStep.Author.AGENT, null, step);
+        return runStep(json, false, RecordedStep.Author.AGENT, null, step, false);
     }
 
     /** The person's check: it runs and is recorded when it passes. */
@@ -1826,7 +1864,18 @@ public class UiMcpSession {
 
     /** As {@link #doAction(JsonNode)}; with {@code record} false the step runs and nothing is recorded or reported as such. */
     public synchronized String doAction(JsonNode actionJson, boolean record) {
-        return runAndRecord(actionJson, record, RecordedStep.Author.AGENT).toString();
+        return doAction(actionJson, record, false);
+    }
+
+    /**
+     * As {@link #doAction(JsonNode, boolean)}; {@code outcome} true: the app is read before and after the step, and the
+     * result's {@code outcome} says what it changed (a check's is empty; null when the app could not be read).
+     */
+    public synchronized String doAction(JsonNode actionJson, boolean record, boolean outcome) {
+        // asked for inside the step too, as do_actions and batch steps ask
+        JsonNode step = actionJson != null && actionJson.has("outcome") ? actionJson.deepCopy() : actionJson;
+        boolean wanted = takeOutcome(step) || outcome;
+        return runAndRecord(step, record, RecordedStep.Author.AGENT, wanted).toString();
     }
 
     private synchronized String doAction(JsonNode actionJson, boolean record, RecordedStep.Author author) {
@@ -1864,7 +1913,9 @@ public class UiMcpSession {
             String label = (ran + 1) + "/" + actionsJson.size();
             StepClock clock = new StepClock();
             try {
-                step = runAndRecord(node, true, RecordedStep.Author.AGENT);
+                JsonNode one = node.isObject() ? node.deepCopy() : node;
+                boolean outcome = takeOutcome(one);
+                step = runAndRecord(one, true, RecordedStep.Author.AGENT, outcome);
             } catch (DriverException e) {
                 clock.log("do_actions." + node.path("action").asText("?"), label, "error:" + ToolErrors.typeOf(e.reason()), node);
                 throw new DriverException(e.reason(), "step " + (ran + 1) + " of " + actionsJson.size() + ": "
@@ -1895,8 +1946,9 @@ public class UiMcpSession {
         ObjectNode step = args != null && args.isObject() ? ((ObjectNode) args).deepCopy() : mapper.createObjectNode();
         boolean withSnapshot = step.path("snapshot").asBoolean(false);
         step.remove("snapshot");
+        boolean outcome = takeOutcome(step);
         step.put("action", action);
-        ObjectNode result = runAndRecord(step, true, RecordedStep.Author.AGENT);
+        ObjectNode result = runAndRecord(step, true, RecordedStep.Author.AGENT, outcome);
         if (withSnapshot) result.set("snapshot", mapper.valueToTree(driver().snapshot(null, null, null, null)));
         return result;
     }
@@ -1992,6 +2044,7 @@ public class UiMcpSession {
 
     private ObjectNode batchStep(String verb, ObjectNode args) {
         if (READ_STEP.equals(verb)) {
+            args.remove("outcome");   // a read changes nothing
             long started = System.currentTimeMillis();
             ObjectNode read = readNode(args);
             ObjectNode r = mapper.createObjectNode();
@@ -2005,8 +2058,9 @@ public class UiMcpSession {
         if (args.has("action")) {
             throw new DriverException(Reason.BAD_INPUT, "a batch step names its action in 'verb', not 'action'");
         }
+        boolean outcome = takeOutcome(args);
         args.put("action", verb);
-        return runAndRecord(args, true, RecordedStep.Author.AGENT);
+        return runAndRecord(args, true, RecordedStep.Author.AGENT, outcome);
     }
 
     /** Times one batched step against the EDT clock and logs its {@link UiMcpTiming#stepLine}. */
@@ -2722,6 +2776,35 @@ public class UiMcpSession {
                 if (from == null) throw new DriverException(Reason.BAD_INPUT, "redo needs 'from' (the step to record again)");
                 return recordingRedo(from, integer(args, "rev"));
             }
+            case "link": {
+                StepAddress n = address(args, "n");
+                String ref = text(args, "ref");
+                if (n == null || ref == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "link needs 'n' and 'ref' (and may name the 'field')");
+                }
+                return recordingLink(n, text(args, "field"), ref, integer(args, "rev"));
+            }
+            case "unlink": {
+                StepAddress n = address(args, "n");
+                if (n == null) throw new DriverException(Reason.BAD_INPUT, "unlink needs 'n' (a step or check)");
+                return recordingUnlink(n, integer(args, "rev"));
+            }
+            case "remember": {
+                JsonNode target = args.get("target");
+                String as = text(args, "as");
+                if (target == null || !target.isObject() || as == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "remember needs 'target' and 'as' (and may name the step 'n')");
+                }
+                return recordingRemember(address(args, "n"), target, as, bool(args, "selected"), integer(args, "rev"));
+            }
+            case "unique": {
+                StepAddress n = address(args, "n");
+                String where = text(args, "where");
+                if (n == null || where == null) {
+                    throw new DriverException(Reason.BAD_INPUT, "unique needs 'n' (a typed step) and 'where': end, start or off");
+                }
+                return recordingUnique(n, where, integer(args, "rev"));
+            }
             case "export":
                 return recordingExport(args);
             case "load": {
@@ -2739,11 +2822,11 @@ public class UiMcpSession {
 
     /** Every op of the recording tool, as its errors list them. */
     private static final String OPS = "start, stop, list, insert, delete, move, edit, group, ungroup, row, undo, fold, "
-            + "unfold, keepRaw, replay, redo, export, load";
+            + "unfold, keepRaw, link, unlink, remember, unique, replay, redo, export, load";
 
     private static final java.util.Set<String> EDIT_OPS = new java.util.HashSet<String>(
             java.util.Arrays.asList("insert", "delete", "move", "edit", "group", "ungroup", "row", "undo", "fold", "unfold",
-                    "keepRaw"));
+                    "keepRaw", "link", "unlink", "remember", "unique"));
 
     /** "steps a-b" while the agent's replay or redo runs (it holds the session), else null; read without the lock. */
     private volatile String agentReplaying;
@@ -2868,7 +2951,7 @@ public class UiMcpSession {
                 ObjectNode step;
                 RowChoice row;
                 try {
-                    StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null, recorded);
+                    StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null, recorded, false);
                     step = run.result;
                     row = run.row;
                 } catch (DriverException e) {
@@ -2884,6 +2967,7 @@ public class UiMcpSession {
                 o.put("action", recorded.action.describe());
                 o.put("passed", ok);
                 o.put("ms", step.path("ms").asLong());
+                if (step.has("resolved")) o.set("resolved", step.get("resolved"));
                 if (!ok) {
                     o.put("message", step.path("message").asText(""));
                     if (step.has("reason")) o.put("reason", step.path("reason").asText());
@@ -3214,6 +3298,199 @@ public class UiMcpSession {
         return model.row(at, rewritten, author, toPosition);
     }
 
+    // ---- links: the agent's side of the palette's 🔗 (the same model edits, made by the agent) ---------------------
+
+    /**
+     * Links step or check {@code n} to a value an earlier step changed or remembered: {@code ref} names it as a reference
+     * - {@code ${3.rows.Orders.added[0].Number}} (a step number and the path in what it changed),
+     * {@code ${copy.fields.Number}} (a step's id), {@code ${number}} or {@code number} (a remembered value) - and where
+     * {@code n} has that value (whole, or whole inside typed text; at {@code field} only when given) it becomes the
+     * reference, the source getting an id when it has none. One edit by the agent; BAD_INPUT says in words why not.
+     */
+    synchronized String recordingLink(StepAddress n, String field, String ref, Integer rev) {
+        checkRev(rev);
+        RecordedStep target = model.at(n);
+        String what = (n.isCheck() ? "check " : "step ") + n;
+        String inner = ref.trim();
+        if (inner.startsWith("${") && inner.endsWith("}")) inner = inner.substring(2, inner.length() - 1);
+        Refs.Ref named;
+        try {
+            List<Refs.Ref> refs = Refs.scan("${" + inner + "}");
+            if (refs.size() != 1 || refs.get(0).start != 0 || refs.get(0).end != inner.length() + 3) {
+                throw new IllegalArgumentException("not one reference");
+            }
+            named = refs.get(0);
+        } catch (IllegalArgumentException e) {
+            throw new DriverException(Reason.BAD_INPUT, "'ref' names one value, like ${3.rows.Orders.added[0].Number} (step 3, "
+                    + "the path in what it changed) or a remembered name: " + e.getMessage());
+        }
+        if ("run".equals(named.id)) {
+            throw new DriverException(Reason.BAD_INPUT, "the run's values are not linked by hand: unique {n, where} adds "
+                    + "${run.id} to a typed text");
+        }
+        List<RecordedStep> records = model.records();
+        List<Action> actions = model.actions();
+        List<String> labels = StepNumbers.labels(actions);
+        int at = 0;
+        while (records.get(at).id != target.id) at++;
+        int from;
+        if (named.id.matches("[0-9]+")) {
+            int step = Integer.parseInt(named.id);
+            List<StepNumbers.Step> numbered = StepNumbers.of(actions);
+            if (step < 1 || step > numbered.size()) throw new DriverException(Reason.BAD_INPUT, "no step " + step
+                    + " (the recording has " + numbered.size() + ")");
+            if (numbered.get(step - 1).checkOnly()) {
+                throw new DriverException(Reason.BAD_INPUT, "step " + step + " holds only checks: it changed nothing");
+            }
+            from = numbered.get(step - 1).action;
+        } else {
+            from = nameHolder(named.id);
+            if (from < 0) {
+                throw new DriverException(Reason.BAD_INPUT, "no step or remembered value is named '" + named.id + "'; list "
+                        + "shows each step's id and each remember entry's as, or give the step number (${3.fields.Number})");
+            }
+        }
+        RecordedStep source = records.get(from);
+        String sourceWhat = (StepNumbers.isCheck(source.action) ? "check " : "step ") + labels.get(from);
+        if (from >= at) {
+            throw new DriverException(Reason.BAD_INPUT, what + " can only use what a step before it changed or remembered ("
+                    + sourceWhat + " is not before it)");
+        }
+        String value = linkValue(source, sourceWhat, named.path);
+        if (!(source.action instanceof RememberVerb) && Linker.ownValue(source, value)) {
+            throw new DriverException(Reason.BAD_INPUT, value + " is what " + sourceWhat + " itself typed or chose, not what "
+                    + "it changed: nothing to link (unique {n, where} makes a typed text differ per run)");
+        }
+        Linker.Linked linked;
+        try {
+            linked = Linker.linkToValue(target.action, records.subList(0, at), source, named.path, value, field);
+        } catch (IllegalArgumentException e) {
+            throw new DriverException(Reason.BAD_INPUT, "'field' is a path into " + what + "'s step, like text or "
+                    + "target.row.Number: " + e.getMessage());
+        }
+        if (!linked.linked()) {
+            throw new DriverException(Reason.BAD_INPUT, value + " is not in " + what + (field == null ? ""
+                    : "'s " + field) + " where a link can go - whole, or whole inside typed text (nothing linked)");
+        }
+        return edited(model.link(target.id, linked.action, linked.seen, linked.ids, RecordedStep.Author.AGENT));
+    }
+
+    /**
+     * The one value at {@code path} of what {@code source} ({@code sourceWhat} in words) changed, or the value it
+     * remembered (no path); BAD_INPUT in words when there is none, several, or none known in this session.
+     */
+    private String linkValue(RecordedStep source, String sourceWhat, String path) {
+        if (source.action instanceof RememberVerb) {
+            if (!path.isEmpty()) {
+                throw new DriverException(Reason.BAD_INPUT, "a remembered value has no path: ${"
+                        + ((RememberVerb) source.action).as + "}");
+            }
+            if (source.newValues.size() == 1) return source.newValues.keySet().iterator().next();
+            Optional<String> now = model.runValues().resolve(Refs.scan("${" + ((RememberVerb) source.action).as + "}").get(0));
+            if (now.isPresent()) return now.get();
+            throw new DriverException(Reason.BAD_INPUT, "the remembered " + ((RememberVerb) source.action).as
+                    + " has no value in this session yet: replay up to " + sourceWhat + " first");
+        }
+        if (path.isEmpty()) {
+            throw new DriverException(Reason.BAD_INPUT, "name the value in what " + sourceWhat + " changed by its path, like "
+                    + "${" + stepOf(sourceWhat.substring(sourceWhat.indexOf(' ') + 1)) + ".rows.Orders.added[0].Number}; list "
+                    + "shows what each step changed");
+        }
+        if (source.outcome != null) {
+            if (Linker.several(source.outcome, path)) {
+                throw new DriverException(Reason.BAD_INPUT, "at " + path + " " + sourceWhat + " added or changed several "
+                        + "entries: one among several is never linked by its position (a replay may list them otherwise)");
+            }
+            List<JsonNode> hits = JsonPaths.select(source.outcome, "$" + path);
+            if (hits.size() == 1 && hits.get(0).isValueNode() && !hits.get(0).isNull()) return hits.get(0).asText();
+            throw new DriverException(Reason.BAD_INPUT, "what " + sourceWhat + " changed has no value at " + path
+                    + "; list shows what it changed");
+        }
+        for (Map.Entry<String, String> e : source.newValues.entrySet()) if (e.getValue().equals(path)) return e.getKey();
+        throw new DriverException(Reason.BAD_INPUT, "what " + sourceWhat + " changed at " + path + " is not known in "
+                + "this session: replay it, then link");
+    }
+
+    /** Turns the references of step or check {@code n} back into the values they stood for; one edit by the agent. */
+    synchronized String recordingUnlink(StepAddress n, Integer rev) {
+        checkRev(rev);
+        String did = model.unlink(model.at(n).id, RecordedStep.Author.AGENT);
+        if (did == null) {
+            throw new DriverException(Reason.BAD_INPUT, (n.isCheck() ? "check " : "step ") + n + " uses no value of an earlier step");
+        }
+        return edited(did);
+    }
+
+    /**
+     * Unique per run for the typed text of step {@code n}: {@code where} end or start adds the run's id there, off takes
+     * it away, and the later steps that use the text follow; nothing is typed again. One edit by the agent.
+     */
+    synchronized String recordingUnique(StepAddress n, String where, Integer rev) {
+        checkRev(rev);
+        String did = model.unique(model.at(n).id, where, RecordedStep.Author.AGENT);
+        if (did != null) return edited(did);
+        ObjectNode unchanged = (ObjectNode) readTree(published.json);
+        unchanged.put("did", (n.isCheck() ? "check " : "step ") + n + " is that way already");
+        return unchanged.toString();
+    }
+
+    /**
+     * Remembers the text {@code target} shows now (with {@code selected}: its selected row's cell, item or tab) as
+     * {@code as}: a check-like entry under step {@code n}, after its checks (null: the last step - while recording, as
+     * the person's Remember this records it). Read from the app at once; a target that is missing or empty, or a name the
+     * recording cannot take, is refused in words and nothing is recorded.
+     */
+    synchronized String recordingRemember(StepAddress n, JsonNode target, String as, Boolean selected, Integer rev) {
+        checkRev(rev);
+        String problem = rememberNameProblem(as);
+        if (problem != null) throw new DriverException(Reason.BAD_INPUT, problem);
+        int steps = model.steps();
+        if (n != null && n.isCheck()) {
+            throw new DriverException(Reason.BAD_INPUT, "remember goes under a step: 'n' is a step number, not check " + n);
+        }
+        if (n != null && (n.step < 1 || n.step > steps)) model.at(n);   // refused, naming the steps there are
+        ObjectNode json = mapper.createObjectNode();
+        json.put("action", "remember");
+        json.set("target", target);
+        json.put("as", as);
+        if (Boolean.TRUE.equals(selected)) json.put("selected", true);
+        boolean last = n == null || n.step == steps;
+        if (last && model.state() == RecordingModel.State.RECORDING) {
+            ObjectNode r = runAndRecord(json, true, RecordedStep.Author.AGENT);
+            if (!r.has("recorded")) throw notRemembered(r);
+            List<RecordedStep> records = model.records();
+            RecordedStep added = records.get(records.size() - 1);
+            return edited("remembered " + r.path("message").asText() + " as " + as + " (check " + model.addressOf(added.id) + ")");
+        }
+        if (steps == 0) throw new DriverException(Reason.BAD_INPUT, "the recording has no step to remember a value under");
+        int under = n == null ? steps : n.step;
+        StepRun run = runStep(json, false, RecordedStep.Author.AGENT, null, null, false);
+        if (!run.result.path("passed").asBoolean(false)) throw notRemembered(run.result);
+        String value = run.result.path("message").asText();
+        Action action = literal(recordable(action(json), run.step == null ? null : run.step.outcome));
+        StepAddress place = new StepAddress(under, StepNumbers.of(model.actions()).get(under - 1).checks.size() + 1);
+        RecordingModel scratch = model.copy();
+        scratch.insert(place, action, RecordedStep.Author.AGENT);
+        validateEdit(scratch.actions());
+        model.insert(place, action, RecordedStep.Author.AGENT);
+        RecordedStep added = model.at(place);
+        model.runValues().remember(as, value);
+        model.remembered(added.id, value);
+        return edited("remembered " + value + " as " + as + " (check " + place + ")");
+    }
+
+    /** A remember the app could not answer: its words, and that nothing was kept. */
+    private static DriverException notRemembered(JsonNode r) {
+        String why = r.hasNonNull("notRecorded") ? r.path("notRecorded").asText() : r.path("message").asText("");
+        Reason reason = Reason.BAD_INPUT;
+        try {
+            if (r.hasNonNull("reason")) reason = Reason.valueOf(r.path("reason").asText());
+        } catch (IllegalArgumentException unknown) {
+            // BAD_INPUT, then
+        }
+        return new DriverException(reason, DriverException.stripReason(why, reason) + " (nothing remembered)");
+    }
+
     /** Takes back the last edit, whoever made it. */
     synchronized String recordingUndo(Integer rev) {
         checkRev(rev);
@@ -3290,8 +3567,9 @@ public class UiMcpSession {
 
     /**
      * {@code records} as folding sees them, each keyed by its id: a raw step is fresh when its id is above {@code freshAfter}.
-     * A step kept raw, in a group or with a sentence of its own is a barrier, and with {@code replayFloor} one recorded
-     * before the last replay started (a fold: all its raw steps were).
+     * A step kept raw, in a group or with a sentence of its own is a barrier, and so is a link: a step a later one uses
+     * (it has an id) or one that uses an earlier step (it has references); with {@code replayFloor} also one recorded
+     * before the last replay started (a fold: all its raw steps were). A remember entry is a check: it breaks a fold.
      */
     private List<Matcher.Item> foldItems(List<RecordedStep> records, int freshAfter, boolean replayFloor) {
         List<Matcher.Item> items = new ArrayList<Matcher.Item>(records.size());
@@ -3303,7 +3581,7 @@ public class UiMcpSession {
                 newest = 0;
                 for (RecordedStep x : r.raw) newest = Math.max(newest, x.id);
             }
-            boolean barrier = r.keepRaw || newest <= floor || r.group != null;
+            boolean barrier = r.keepRaw || newest <= floor || r.group != null || linked(r.action);
             if (StepNumbers.isCheck(r.action)) {
                 items.add(Matcher.Item.check(r.id, author));
             } else if (r.folded()) {
@@ -3318,6 +3596,16 @@ public class UiMcpSession {
             }
         }
         return items;
+    }
+
+    /** Whether {@code a} is a link's end: a later step uses what it changed (its id), or it uses an earlier one's. */
+    private static boolean linked(Action a) {
+        if (a.id != null) return true;
+        try {
+            return !Refs.of(a).isEmpty();
+        } catch (IllegalArgumentException malformed) {
+            return true;   // a reference it cannot read is still one
+        }
     }
 
     /** A raw step as a pattern matches it: as its elements were seen, its row by position when it names it so. */
@@ -3959,6 +4247,7 @@ public class UiMcpSession {
             groupSteps.get(g.id)[1] = st.number;
         }
         List<String> labels = StepNumbers.labels(actions);
+        Links links = new Links(snap.steps, labels);
         ArrayNode steps = r.putArray("steps");
         for (StepNumbers.Step st : numbered) {
             ObjectNode o = steps.addObject();
@@ -3974,6 +4263,7 @@ public class UiMcpSession {
                 if (a.edited) o.put("edited", true);
                 putRow(o, rowLine(a));
                 putFolding(o, a);
+                putLinks(o, snap.steps, st.first(), links);
             }
             if (first.group != null) o.put("group", groupNumbers.get(first.group.id));
             ArrayNode checks = o.putArray("checks");
@@ -3988,6 +4278,7 @@ public class UiMcpSession {
                 if (c.action.say != null) co.put("say", c.action.say);
                 if (c.edited) co.put("edited", true);
                 putRow(co, rowLine(c));
+                putLinks(co, snap.steps, flat, links);
             }
         }
         ArrayNode groups = r.putArray("groups");
@@ -3998,7 +4289,6 @@ public class UiMcpSession {
             g.put("say", groupSays.get(e.getKey()));
         }
         List<Inspector.StepLine> listed = new ArrayList<Inspector.StepLine>(snap.steps.size());
-        Links links = new Links(snap.steps, labels);
         Linker.Pool pool = new Linker.Pool();
         for (int i = 0; i < snap.steps.size(); i++) {
             RecordedStep s = snap.steps.get(i);
@@ -4042,6 +4332,36 @@ public class UiMcpSession {
             }
         }
         view.changed(notice);
+    }
+
+    /**
+     * What the agent links with, for the record at flat {@code i}: {@code changed} (what it changed that a later step may
+     * use, path → value: the paths a link's {@code ref} takes after the step number), {@code remembered} (a remember
+     * entry's value), {@code uses} ([{from, value}]: what it uses, in words, with the value it stood for when it last
+     * ran), {@code usedBy} (the steps and checks that use it) and {@code unique} (end or start: a typed text made unique
+     * per run).
+     */
+    private void putLinks(ObjectNode into, List<RecordedStep> records, int i, Links links) {
+        RecordedStep s = records.get(i);
+        if (s.action instanceof RememberVerb) {
+            if (s.newValues.size() == 1) into.put("remembered", s.newValues.keySet().iterator().next());
+        } else if (!s.newValues.isEmpty()) {
+            ObjectNode changed = into.putObject("changed");
+            for (Map.Entry<String, String> e : s.newValues.entrySet()) changed.put(e.getValue(), e.getKey());
+        }
+        List<Inspector.LinkLine> uses = links.of(i);
+        if (!uses.isEmpty()) {
+            ArrayNode a = into.putArray("uses");
+            for (Inspector.LinkLine l : uses) {
+                ObjectNode u = a.addObject();
+                u.put("from", l.words);
+                if (l.seen != null) u.put("value", l.seen);
+                if (l.unknown != null) u.put("unknown", l.unknown);
+            }
+        }
+        List<String> usedBy = links.usedBy(i);
+        if (!usedBy.isEmpty()) into.set("usedBy", mapper.valueToTree(usedBy));
+        if (RecordingModel.uniqueSource(records, i)) into.put("unique", Linker.uniqueForm(((TypeVerb) s.action).text));
     }
 
     /**

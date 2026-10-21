@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -28,7 +29,9 @@ import java.util.function.Supplier;
  * the {@link Builder#java} class looks like a class name; exactly one body; each {@link Builder#steps},
  * {@link Builder#match} and {@link Builder#matchAlso} entry is a JSON object; and its match patterns parse (see
  * {@link Builder#match}). A step that fails a check is dropped and listed under {@code session}; the plugin stays ready.
- * A step's values are concrete: nothing is captured or kept between steps.
+ * A step's params are given with each call. What it made for later steps - a new order number - is in its outcome, as
+ * for any action: what the UI shows changed, and, with {@link Builder#codeWithOutcome}, what its body returns, under
+ * {@code "step"} ({@code ${placeOrder.step.number}} in a recorded test).
  */
 public final class DomainStep {
 
@@ -37,10 +40,11 @@ public final class DomainStep {
 
     /**
      * A Java body: does the step through {@code ui}, the same {@link Client} a UI test uses, with the step's values.
-     * A failure throws (a failed action or check of {@code ui} already does). A value the step makes, such as a new
-     * order number, belongs in a helper method that returns it (for Java tests, named by {@link Builder#java}); the
-     * body itself returns nothing. A {@code do} step runs it on the agent's request thread, not on the EDT (as a UI
-     * test's Client runs off the EDT). A {@link Builder#choices} supplier is asked on a thread of its own, given up after 5 s.
+     * A failure throws (a failed action or check of {@code ui} already does). This body returns nothing; a step that
+     * makes a value later steps need, such as a new order number, returns it from an {@link OutcomeBody} instead (and
+     * from the helper method {@link Builder#java} names, for Java tests). A {@code do} step runs it on the agent's
+     * request thread, not on the EDT (as a UI test's Client runs off the EDT). A {@link Builder#choices} supplier is
+     * asked on a thread of its own, given up after 5 s.
      *
      * <p>A body also runs when nobody asked for the step: when the plugin becomes ready, a body without
      * {@link Builder#match} runs twice to learn its pattern, and a step without {@link Builder#java} runs twice to learn
@@ -53,6 +57,18 @@ public final class DomainStep {
      */
     public interface Body {
         void run(Client ui, Params params);
+    }
+
+    /**
+     * A Java body that also says what the step made: as {@link Body}, and it returns JSON-like values (text, numbers,
+     * booleans, lists and maps of them; null for none), e.g. {@code {"number": "ORD-1641"}}. They go under {@code "step"}
+     * in the {@code do} step's outcome, beside what the UI shows changed, so a later step of a recorded test can use
+     * them ({@code ${placeOrder.step.number}}) and an agent reads them with {@code "outcome": true}. Given with
+     * {@link Builder#codeWithOutcome}. The runs that learn a pattern or a Java form ({@link Body}) run it too and leave
+     * its values out.
+     */
+    public interface OutcomeBody {
+        Map<String, Object> run(Client ui, Params params);
     }
 
     /** One declared param. */
@@ -90,6 +106,7 @@ public final class DomainStep {
     private final String about;
     private final List<Param> params;
     private final Body body;
+    private final OutcomeBody outcomeBody;
     private final List<String> steps;
     private final List<String> match;
     private final List<List<String>> matchAlso;
@@ -104,6 +121,7 @@ public final class DomainStep {
         this.about = b.about;
         this.params = Collections.unmodifiableList(new ArrayList<Param>(b.params));
         this.body = b.body;
+        this.outcomeBody = b.outcomeBody;
         this.steps = b.steps;
         this.match = b.match;
         this.matchAlso = Collections.unmodifiableList(new ArrayList<List<String>>(b.matchAlso));
@@ -134,8 +152,13 @@ public final class DomainStep {
     /** One line for the agent on when to use the step; null when not given. */
     public String about() { return about; }
     public List<Param> params() { return params; }
-    /** The Java body; null for a step given as {@link #steps}. */
+    /**
+     * The Java body; null for a step given as {@link #steps}. For a body given with {@link Builder#codeWithOutcome}, that
+     * body with what it returns left out.
+     */
     public Body body() { return body; }
+    /** The Java body given with {@link Builder#codeWithOutcome}, which returns what the step made; null otherwise. */
+    public OutcomeBody outcomeBody() { return outcomeBody; }
     /** The declarative body: step JSON with {@code {param}} placeholders; empty for a Java body. */
     public List<String> steps() { return steps; }
     /** The explicit match pattern, one step JSON each; empty when the pattern is derived from the body. */
@@ -160,6 +183,7 @@ public final class DomainStep {
         private String about;
         private final List<Param> params = new ArrayList<Param>();
         private Body body;
+        private OutcomeBody outcomeBody;
         private List<String> steps = Collections.emptyList();
         private List<String> match = Collections.emptyList();
         private final List<List<String>> matchAlso = new ArrayList<List<String>>();
@@ -206,6 +230,22 @@ public final class DomainStep {
         /** The Java body (recommended): it can wait, read and check through the {@link Client}. */
         public Builder code(Body body) {
             this.body = Objects.requireNonNull(body, "body");
+            this.outcomeBody = null;
+            return this;
+        }
+
+        /**
+         * A Java body that returns what the step made ({@link OutcomeBody}), e.g. the number of the order it placed;
+         * in place of {@link #code}. A name of its own: a lambda would fit both.
+         */
+        public Builder codeWithOutcome(final OutcomeBody body) {
+            Objects.requireNonNull(body, "body");
+            this.outcomeBody = body;
+            this.body = new Body() {
+                @Override public void run(Client ui, Params params) {
+                    body.run(ui, params);
+                }
+            };
             return this;
         }
 

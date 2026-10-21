@@ -21,7 +21,7 @@
     },
     {
       "name": "do_action",
-      "description": "Execute ONE step against the live client and return pass/fail and its duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the app steps navigate, close, loginAs. A successful step is recorded, unless it has no Java form (a loginAs after the first step, a target by ref): it runs but is not recorded, and 'notRecorded' says why. A do step is recorded even when its domain step has no Java form: export_recorded_test writes it, export_test refuses it. The 'action' object uses the step schema, e.g. {\"action\":\"navigate\",\"target\":\"home\"} or {\"action\":\"expect\",\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step that opens a message or confirmation returns at once with 'dialog' (title, message, buttons); navigate, close and loginAs refuse to run until it is answered with the 'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test).",
+      "description": "Execute ONE step against the live client and return pass/fail and its duration ('ms'). A step is a verb (click, type, press, ..., contextMenu) or one of the app steps navigate, close, loginAs. A successful step is recorded, unless it has no Java form (a loginAs after the first step, a target by ref): it runs but is not recorded, and 'notRecorded' says why. A do step is recorded even when its domain step has no Java form: export_recorded_test writes it, export_test refuses it. The 'action' object uses the step schema, e.g. {\"action\":\"navigate\",\"target\":\"home\"} or {\"action\":\"expect\",\"target\":{\"role\":\"table\"},\"rows\":{\"op\":\"gte\",\"value\":1}}. A step that opens a message or confirmation returns at once with 'dialog' (title, message, buttons); navigate, close and loginAs refuse to run until it is answered with the 'answer' verb. A step may carry say: its sentence (one line, kept in the recording and the recorded test). outcome:true adds 'outcome': what the step changed (only what changed, keyed by the names the person sees: opened and closed {windows, dialogs, tabs}, fields {label: value}, texts, rows {table: {added, removed, changed [{before, after}], count}} with each row as {column: value shown}, items {list or tree: {added, removed}}, selected, message, and partial:true when a large table was read only around its view; a plugin's do step adds what its body returned under step).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -56,7 +56,8 @@
                   "navigate",
                   "close",
                   "loginAs",
-                  "do"
+                  "do",
+                  "remember"
                 ]
               }
             },
@@ -68,6 +69,11 @@
             "type": "boolean",
             "default": true,
             "description": "false keeps this step out of export_test's recording (used by tests)"
+          },
+          "outcome": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
           },
           "_lease": {
             "type": "string",
@@ -81,7 +87,7 @@
     },
     {
       "name": "do_actions",
-      "description": "Execute SEVERAL steps in order against the live client, in one call, stopping at the first failure. Prefer this over repeated do_action when the next steps are already known. Returns {passed, ran, total, steps:[{passed, action, message}]}; successful steps are recorded for export_test exactly as do_action records them. Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"action\":\"close\"}]}. A step may carry say: its sentence.",
+      "description": "Execute SEVERAL steps in order against the live client, in one call, stopping at the first failure. Prefer this over repeated do_action when the next steps are already known. Returns {passed, ran, total, steps:[{passed, action, message}]}; successful steps are recorded for export_test exactly as do_action records them. Example: {\"actions\":[{\"action\":\"navigate\",\"target\":\"home\"},{\"action\":\"click\",\"target\":{\"role\":\"tab\",\"name\":\"Customer\"}},{\"action\":\"close\"}]}. A step may carry say: its sentence, and outcome:true: its entry then holds 'outcome', what it changed, as do_action has it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -119,7 +125,8 @@
                     "navigate",
                     "close",
                     "loginAs",
-                    "do"
+                    "do",
+                    "remember"
                   ]
                 }
               },
@@ -140,7 +147,7 @@
     },
     {
       "name": "batch",
-      "description": "Run SEVERAL steps in ONE call, in order, stopping at the first that does not pass - use it whenever the next steps are already known. Each step runs, answers and records exactly as its own tool call would, so export_test writes the same test either way; 'read' steps record nothing, and a 'read' that finds nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, ms, recorded?, notRecorded?, ...}], snapshot?, snapshotError?}. A snapshot that cannot be taken keeps the steps and reports {errorType, message, details} as snapshotError. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool error naming the step; the steps before it ran and were recorded. Example: {\"steps\":[{\"verb\":\"menu\",\"path\":[\"File\",\"New order\"]},{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Customer\"},\"text\":\"Ada\"},{\"verb\":\"press\",\"keys\":\"Enter\"},{\"verb\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"New order · Ada Shop Ltd\"},\"state\":[\"selected\"]}]}.",
+      "description": "Run SEVERAL steps in ONE call, in order, stopping at the first that does not pass - use it whenever the next steps are already known. Each step runs, answers and records exactly as its own tool call would, so export_test writes the same test either way; 'read' steps record nothing, and a 'read' that finds nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, ms, recorded?, notRecorded?, ...}], snapshot?, snapshotError?}. A snapshot that cannot be taken keeps the steps and reports {errorType, message, details} as snapshotError. A harness error (CAPABILITY_GAP, INPUT_ERROR) is a tool error naming the step; the steps before it ran and were recorded. Example: {\"steps\":[{\"verb\":\"menu\",\"path\":[\"File\",\"New order\"]},{\"verb\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Customer\"},\"text\":\"Ada\"},{\"verb\":\"press\",\"keys\":\"Enter\"},{\"verb\":\"expect\",\"target\":{\"role\":\"tab\",\"name\":\"New order · Ada Shop Ltd\"},\"state\":[\"selected\"]}]}. A step with \"outcome\":true has 'outcome' in its entry: what it changed, as do_action has it (e.g. the new row a Copy added, to use in the next call).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -153,6 +160,10 @@
                 "verb": {
                   "type": "string",
                   "description": "A verb tool's name (click, type, press, check, select, pick, menu, context_menu, answer, choose_file, drag, drop, expect, scroll, set_clipboard, hover, resize_column, resize_window, close_window), 'read', or a step type (navigate, close, loginAs, screenshot, ...)."
+                },
+                "outcome": {
+                  "type": "boolean",
+                  "description": "true: the app is read before and after the step, and the result's 'outcome' says what it changed (a check's is {}; null when the app cannot be read). Off by default: it costs a reading of the app."
                 }
               },
               "required": [
@@ -211,7 +222,7 @@
     },
     {
       "name": "export_recorded_test",
-      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values: check data the test creates or data known to exist; a value the app makes up (a new order number, today's date) only when your start makes it predictable - otherwise check something else or write a Java test. Format version 2 (3 when it holds do steps, with requires naming their plugins): each step with its checks nested, sentences and groups kept.",
+      "description": "Write the steps recorded since the last session reset as a recorded test file <recorded tests folder>/<name>.json: UI steps and checks of what is visible, no compiling; run it with run_recorded_test, from the palette, or in Maven with the JUnit runner (RecordedTests). Same rules as export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing file is never overwritten - except the recorded test the recording came from (loaded in the palette, or exported before without clear). A folder that cannot be written is refused, naming it. A recorded test holds exact values except its links (a step that uses what an earlier step changed or remembered, a text unique per run: see the recording tool), so a record the test creates, such as a new order number, is found again on each run; check data the test creates or data known to exist. Format version 2 (3 when it holds do steps, with requires naming their plugins; 4 when it has links or remember entries): each step with its checks nested, sentences and groups kept.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -244,7 +255,7 @@
     },
     {
       "name": "run_recorded_test",
-      "description": "Run a recorded test file on the live app and report it: one of 'name' (in the recorded tests folder), 'path', or 'test' (the file's JSON inline). It begins as every recorded test does, with a reset (dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT recording, and stops at the first that fails; that step carries what its locators match now, a scoped tree and a picture of the window (written under 'evidence', default target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; ran and total count steps, each entry of steps is a step or a check: [{n, say?, action, passed, ms, message?, reason?, details?, warning?, diagnostics?}], n a step number (7) or a check label (\"7.2\"); action is the step's technical line. After a failure take a new snapshot before using refs. Refused (BUSY) while a person records, answers or replays in the palette. A file with do steps is checked before anything runs: a plugin its 'requires' names that is not ready is CAPABILITY_GAP, a step or param that plugin does not offer is BAD_INPUT naming the step and its line. From a shell the CLI exits 4 when the recorded test fails.",
+      "description": "Run a recorded test file on the live app and report it: one of 'name' (in the recorded tests folder), 'path', or 'test' (the file's JSON inline). It begins as every recorded test does, with a reset (dialogs closed; with an app plugin its reset), runs every step as do_action would WITHOUT recording, and stops at the first that fails; that step carries what its locators match now, a scoped tree and a picture of the window (written under 'evidence', default target/ui-screenshots/failures). Returns {passed, ran, total, steps, report}; ran and total count steps, each entry of steps is a step or a check: [{n, say?, action, passed, ms, message?, reason?, details?, warning?, resolved?, diagnostics?}], n a step number (7) or a check label (\"7.2\"); action is the step's technical line. A step that uses what an earlier step changed, a remembered value or the run's values (${copy.rows.Orders.added[0].Number}, ${number}, ${run.id}) carries resolved {reference: value}: what each stood for in this run, which report shows too; run.id is new on each run. A value no earlier step made fails its step, saying which, never falling back to the recorded one. After a failure take a new snapshot before using refs. Refused (BUSY) while a person records, answers or replays in the palette. A file with do steps is checked before anything runs: a plugin its 'requires' names that is not ready is CAPABILITY_GAP, a step or param that plugin does not offer is BAD_INPUT naming the step and its line. From a shell the CLI exits 4 when the recorded test fails.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -808,7 +819,7 @@
     },
     {
       "name": "recording",
-      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its checks nested under it ({n: \"7.1\", ...}), plus groups [{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: an action at a step number (before the step now there) or a check at a label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) and may come with target, text or step. group {from, to, say}: steps from..to (two or more, whole steps, groups do not nest or overlap) under one sentence; the same range renames it. ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a table row names it by value (the key column's text: it still finds the row after a sort or a new row) or by position (its index); list shows each one's row {by, value, index}; the other way is known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, by you or the person (a fold too). With a plugin vocabulary, raw steps fold as they are recorded: a run of one author's steps that is a domain step's pattern becomes one do step (step JSON {action: do, step, params, say}); list shows folded (how many raw steps) and raw (their lines), keepRaw, and where a run did not fold foldCandidates (a tie), foldSuggested (a step that only suggests) or foldUndecided (why). Checks, do steps, an author change, groups, steps with their own sentence, kept raw steps and a replay's start stop a fold. fold {from, to, step?}: folds those steps into the domain step whose pattern they match (step names it when more fit). unfold {n}: puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. Numbers close up after a delete; deleting or moving a step takes its checks along; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again without recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with one {n, action, passed, ms, message?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
+      "description": "The recording the agent and the person at the app make together (works with the palette on or off). start {reset?}: a fresh recording; with the palette on the person's steps join it and the palette shows it; reset:true resets the app first, as a test starts. stop: ends it (the person's Done does too); after it no step joins. Steps are numbered 1..n; a step is an action and the checks after it, numbered n.k (7.2); checks before any action are step 1. list {wait?}: state, who started it, rev, and every step with n, author (person, agent, loaded), line, java, its step JSON, say, edited (changed and not replayed since), group (its number in groups) and its checks nested under it ({n: \"7.1\", ...}), plus groups [{from, to, say}] in step numbers; a check-only step 1 has no line, step or java; wait (ms) waits until it stops (not for a session reset's). insert {at, step}: an action at a step number (before the step now there) or a check at a label (\"7.2\"), NOT run (marked edited until a replay passes it); nothing can go in front of a check-only step 1. delete {n | from, to}: a step goes with its checks, \"7.2\" only that check. move {n, to}: a step with its checks (a check is deleted and inserted again). edit {n, target | text | step | say}: n is a step or a check; say sets its sentence (one line, \"\" removes it) and may come with target, text or step. group {from, to, say}: steps from..to (two or more, whole steps, groups do not nest or overlap) under one sentence; the same range renames it. ungroup {n}: ends the group that holds step n, its steps stay. row {n, by}: a step or check on a table row names it by value (the key column's text: it still finds the row after a sort or a new row) or by position (its index); list shows each one's row {by, value, index}; the other way is known once the step ran (a loaded step: after one passing replay); an edit like the others. undo: takes back the last edit, by you or the person (a fold too). With a plugin vocabulary, raw steps fold as they are recorded: a run of one author's steps that is a domain step's pattern becomes one do step (step JSON {action: do, step, params, say}); list shows folded (how many raw steps) and raw (their lines), keepRaw, and where a run did not fold foldCandidates (a tie), foldSuggested (a step that only suggests) or foldUndecided (why). Checks, do steps, an author change, groups, steps with their own sentence, kept raw steps and a replay's start stop a fold. fold {from, to, step?}: folds those steps into the domain step whose pattern they match (step names it when more fit). unfold {n}: puts a fold's raw steps back, kept raw. keepRaw {from, to}: those steps never fold. Links (the person sees a 🔗 on the step, in words): a step may use what an earlier step changed (its outcome), a remembered value or a text unique per run, and a replay then uses that run's value, never the recorded one; a link breaks a fold, as a check does. While recording, a step whose value an earlier step newly made (4 characters or more, not yes/no or a small number) is linked at once. list shows on each step or check changed (path: value, what it changed that a later step may use), uses [{from, value}], usedBy and unique, and on a remember entry remembered. link {n, ref, field?}: n uses the value ref names where it has that value, whole or whole inside typed text; the source gets an id. Never type ${...} into a step yourself: a step's text is taken as typed. unlink {n}: its links become the values they stood for. remember {target, as, n?, selected?}: reads the text target shows now and keeps it under the name as, a check-like entry (n.k) under step n; missing or empty is refused, nothing recorded. unique {n, where}: step n's typed text gets the run's id at its end or start (off takes it away), and the steps that use that text follow; nothing is typed again. Each is one edit undo takes back. Numbers close up after a delete; deleting or moving a step takes its checks along; pass rev from your last list so an edit is refused if the person changed the recording meanwhile. Every edit returns the new list. While one runs, session reset and test runs are refused; stop it first. replay {from?, to?, speed?}: runs the steps (with their checks) again without recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with one {n, action, passed, ms, message?, resolved?} entry per step or check run (n as in list; action is its technical line); from step 1 it resets the app first, as the exported test starts. redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and records on (from = the number after the last step continues a stopped recording). export {as: recorded|java, ...}: as export_recorded_test / export_test, but keeps the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or insert to add to it).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -829,6 +840,10 @@
               "fold",
               "unfold",
               "keepRaw",
+              "link",
+              "unlink",
+              "remember",
+              "unique",
               "replay",
               "redo",
               "export",
@@ -847,7 +862,7 @@
               "integer",
               "string"
             ],
-            "description": "delete, move, edit, ungroup, row, unfold: a step number (7) or a check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; unfold takes a folded step."
+            "description": "delete, move, edit, ungroup, row, unfold, link, unlink, unique: a step number (7) or a check label (\"7.2\"). delete 7 deletes the step and its checks, delete \"7.2\" only that check; move takes a step (with its checks); edit \"7.2\" edits that check; ungroup takes any step of the group; unfold takes a folded step; link and unlink the step or check that uses a value; unique a typed step. remember: the step the entry goes under (default: the last)."
           },
           "from": {
             "type": "integer",
@@ -864,11 +879,7 @@
           },
           "as": {
             "type": "string",
-            "description": "export: the format (required).",
-            "enum": [
-              "recorded",
-              "java"
-            ]
+            "description": "export: the format, recorded or java (required); remember: the name to keep the value under (a letter, then letters, digits or _; not run; not a name the recording has already)."
           },
           "class": {
             "type": "string",
@@ -1023,9 +1034,30 @@
             "type": "string",
             "description": "edit: the new text of a type, expect, setClipboard or drop step or check."
           },
+          "ref": {
+            "type": "string",
+            "description": "link: the value to use - ${3.rows.Orders.added[0].Number} (step 3 and the path in what it changed, as list shows it under changed), ${copy.fields.Number} (a step's id) or a remembered name (number or ${number})."
+          },
+          "field": {
+            "type": "string",
+            "description": "link: the one place in step or check n to link, a path into its step JSON (text, target.name, target.row.Number, params.qty); default: wherever it has the value."
+          },
+          "where": {
+            "type": "string",
+            "description": "unique: where the run's id goes in the typed text: end, start, or off to take it away.",
+            "enum": [
+              "end",
+              "start",
+              "off"
+            ]
+          },
+          "selected": {
+            "type": "boolean",
+            "description": "remember: the target's selected row's cell (in the target's column), selected item or selected tab's title instead of its own text."
+          },
           "rev": {
             "type": "integer",
-            "description": "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, redo: the rev of your last list; refused if the recording changed since."
+            "description": "insert, delete, move, edit, group, ungroup, row, undo, fold, unfold, keepRaw, link, unlink, remember, unique, redo: the rev of your last list; refused if the recording changed since."
           },
           "reset": {
             "type": "boolean",

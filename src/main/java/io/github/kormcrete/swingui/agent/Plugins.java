@@ -223,7 +223,9 @@ public final class Plugins implements StepHost, UiInventory {
      * Runs the vocabulary step {@code id} ({@code <plugin>:<id>} always works; a bare id two plugins offer must be
      * qualified) with {@code params}, checked first (BAD_INPUT, no body run): a Java body on an in-JVM
      * {@link io.github.kormcrete.swingui.junit.Client} over {@link #verbs()}, whose app steps and hooks are these
-     * plugins' ({@link #clientApp}); declarative steps one by one. On the calling thread, not the EDT.
+     * plugins' ({@link #clientApp}); declarative steps one by one. On the calling thread, not the EDT. What a body given
+     * with {@link DomainStep.Builder#codeWithOutcome} returns comes back as {@link VerbOutcome#made}, for the step's
+     * outcome.
      */
     @Override public VerbOutcome runStep(String id, Map<String, String> params) {
         VocabularyStep found = find(id);
