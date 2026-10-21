@@ -440,6 +440,79 @@ class LinkerTest {
     }
 
     @Test
+    void aCheckIsNeverLinkedToWhatItsOwnElementShows() {
+        // Save changed the status, a field and a cell: a check on one of them compared with itself would check nothing
+        RecordedStep save = step(2, "{'action':'click','target':{'name':'save'}}", "{'texts':{'status':'saved Ada Shop'},"
+                        + "'fields':{'Billing › Customer':'Ada Shop Ltd'},'rows':{'Lines':{'added':[],'removed':[],"
+                        + "'changed':[{'before':{'Ref':'20'},'after':{'Ref':'ORD-1643'}}],'count':1}}}",
+                "saved Ada Shop", ".texts.status", "Ada Shop Ltd", ".fields['Billing › Customer']",
+                "ORD-1643", ".rows.Lines.changed[0].after.Ref");
+        List<RecordedStep> earlier = steps(save);
+
+        unchanged("{'action':'expect','target':{'name':'status'},'text':'saved Ada Shop'}", earlier);
+        unchanged("{'action':'expect','target':{'id':'status'},'text':'saved Ada Shop'}", earlier);
+        unchanged("{'action':'expect','target':{'role':'text','name':'Customer'},'value':'Ada Shop Ltd'}", earlier);
+        unchanged("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':{'index':0},'column':'Ref',"
+                + "'expected':'ORD-1643'}}", earlier);
+        // another element showing the same value is checked against it
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'label','name':'Title'},"
+                + "'text':'saved Ada Shop'}"), earlier).action).path("text").asText()).isEqualTo("${save.texts.status}");
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':"
+                + "{'index':0},'column':'Code','expected':'ORD-1643'}}"), earlier).action).at("/cell/expected").asText())
+                .isEqualTo("${save.rows.Lines.changed[0].after.Ref}");
+    }
+
+    @Test
+    void aTextMadeUniqueIsTheTypingStepsOwnValueNotTheFieldItFilled() {
+        // the field Note shows what step 1 typed, as it was before it was made unique
+        RecordedStep note = step(1, "{'action':'type','target':{'role':'text','name':'Note'},'text':'Copied note ${run.id}'}",
+                "{'fields':{'Note':'Copied note'}}", "Copied note", ".fields.Note");
+
+        Linker.Linked l = Linker.link(action("{'action':'expect','target':{'role':'table','name':'Register'},"
+                + "'cell':{'row':{'Number':'REG-1003'},'column':'Note','expected':'Copied note'}}"), steps(note));
+
+        assertThat(tree(l.action).at("/cell/expected").asText()).isEqualTo("Copied note ${run.id}");
+        assertThat(l.ids).isEmpty();
+    }
+
+    @Test
+    void aTreeItemAStepAddedIsLinkedByItsWholePath() {
+        RecordedStep folder = step(2, "{'action':'click','target':{'role':'button','name':'New folder'}}",
+                "{'items':{'Folders':{'added':['Folders > Folder 3'],'removed':[]}}}",
+                "Folders > Folder 3", ".items.Folders.added[0]");
+        String click = "{'action':'click','target':{'role':'tree','name':'Folders','item':['Folders','Folder 3']}}";
+
+        Linker.Linked l = Linker.link(action(click), steps(folder));
+
+        assertThat(tree(l.action).at("/target/item").toString()).isEqualTo("[\"${newFolder.items.Folders.added[0]}\"]");
+        assertThat(l.seen).containsExactly(entry("${newFolder.items.Folders.added[0]}", "Folders > Folder 3"));
+        // offered by hand too
+        Linker.Pool pool = new Linker.Pool();
+        pool.add(folder);
+        assertThat(pool.fitting(action(click), 10)).hasSize(1);
+        // another path stays as it is
+        unchanged("{'action':'click','target':{'role':'tree','name':'Folders','item':['Folders','Folder 1']}}", steps(folder));
+    }
+
+    @Test
+    void aValueRememberedAfterTheRowItCameFromWins() {
+        RecordedStep remembered = step(3, "{'action':'remember','target':{'role':'table','name':'Orders','column':'Order'},"
+                + "'as':'orderNumber','selected':true}", null, "ORD-1643", "");
+
+        Linker.Linked l = Linker.link(action("{'action':'expect','target':{'role':'table','name':'Orders'},"
+                + "'cell':{'row':{'Order':'ORD-1643'},'column':'Status','expected':'New'}}"), steps(copy(), remembered));
+
+        // the most recent source: the person named the number, so the row is found by that name
+        assertThat(tree(l.action).at("/cell/row/Order").asText()).isEqualTo("${orderNumber}");
+        // remembered before the copy: the row the copy added
+        RecordedStep before = step(1, "{'action':'remember','target':{'role':'label','name':'Last'},'as':'last'}", null,
+                "ORD-1643", "");
+        assertThat(tree(Linker.link(action("{'action':'click','target':{'role':'table','name':'Orders',"
+                + "'row':{'Order':'ORD-1643'}}}"), steps(before, copy())).action).at("/target/row/Order").asText())
+                .isEqualTo(ORDER);
+    }
+
+    @Test
     void aStepThatHasReferencesAlreadyIsLeftAlone() {
         unchanged(type(ORDER), steps(copy()));
     }

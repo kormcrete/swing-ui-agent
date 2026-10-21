@@ -37,10 +37,12 @@ import java.util.regex.Pattern;
  * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text (a domain step's
  * own values, under {@code step} of its outcome, too). A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
- * is. A remembered value and a text made unique per run are linked alike (that text also in its plain form, as typed
- * before it was made unique, short or not: the person asked for it). Several sources: the most recent step wins; within
- * one step a field, a row, an item or a domain step's own value beats a text or a title (then the order of its value
- * index).
+ * is; a tree row a step added is linked by its whole path. What a check expects is never linked to what the element it
+ * checks showed itself (the check would compare it with itself). A remembered value and a text made unique per run are
+ * linked alike (that text also in its plain form, as typed before it was made unique, short or not: the person asked for
+ * it; it is the typing step's own value, never what the field it filled shows). Several sources: the most recent step
+ * wins (a value remembered after the step that added its row too); within one step a field, a row, an item or a domain
+ * step's own value beats a text or a title (then the order of its value index).
  *
  * <p>The person's links go through here too: what earlier steps changed that a step has ({@link Pool}, offered in
  * words), the one they pick ({@link #linkTo}), and the later uses of a text made unique per run ({@link #uniqueBack}).
@@ -287,6 +289,14 @@ final class Linker {
             boolean known = true;
             for (Refs.Ref r : refs) known &= s.linkSeen.containsKey(r.source);
             own.add(known ? fill(text, refs, s.linkSeen) : Refs.unescape(text));
+            // a text made unique per run was typed in its plain form: the field it filled shows that, still its own
+            if (uniqueForm(text) != null) {
+                String base = uniqueBase(text);
+                List<Refs.Ref> inBase = Refs.scan(base);
+                boolean baseKnown = true;
+                for (Refs.Ref r : inBase) baseKnown &= s.linkSeen.containsKey(r.source);
+                if (baseKnown) own.add(fill(base, inBase, s.linkSeen));
+            }
             return text;
         });
         return own;
@@ -319,12 +329,14 @@ final class Linker {
                     wholeEach(tree.get("path"));
                     break;
                 case "expect":
-                    whole(tree, "text");
-                    whole(tree, "value");
+                    JsonNode target = tree.get("target");
+                    expected(tree, "text", target, null);
+                    expected(tree, "value", target, null);
                     JsonNode cell = tree.get("cell");
                     if (cell instanceof ObjectNode) {
-                        whole((ObjectNode) cell, "expected");
-                        JsonNode target = tree.get("target");
+                        JsonNode column = cell.get("column");
+                        expected((ObjectNode) cell, "expected", target, column != null && column.isTextual()
+                                ? column.textValue() : null);
                         row(target == null ? null : target.get("name"), cell.get("row"));
                     }
                     break;
@@ -339,8 +351,21 @@ final class Linker {
         void locator(ObjectNode l) {
             JsonNode role = l.get("role");
             if (role == null || !CAPTIONED.contains(role.asText())) whole(l, "name");
-            wholeEach(l.get("item"));
+            items(l);
             row(l.get("name"), l.get("row"));
+        }
+
+        /** A locator's item: a list or combo item, or a tree path, each part a value of its own. */
+        void items(ObjectNode l) {
+            wholeEach(l.get("item"));
+        }
+
+        /**
+         * What a check expects ({@code parent}'s {@code field}) of {@code target} (a cell in {@code column}, when it has
+         * one): a value linked whole.
+         */
+        void expected(ObjectNode parent, String field, JsonNode target, String column) {
+            whole(parent, field);
         }
 
         /** The keys of a row locator ({@code name}: its table's), each a value of its own. */
@@ -385,6 +410,12 @@ final class Linker {
             add(parent.get(field), typed);
         }
 
+        @Override void items(ObjectNode l) {
+            String path = treePath(l.get("item"));
+            if (path != null) whole.add(path);
+            super.items(l);
+        }
+
         private static void add(JsonNode node, List<String> to) {
             if (node != null && node.isTextual() && !hasRefs(node.textValue())) to.add(Refs.unescape(node.textValue()));
         }
@@ -407,6 +438,8 @@ final class Linker {
         final boolean rows;
         /** The best candidate for each value, best first. */
         final Map<String, Candidate> best = new LinkedHashMap<String, Candidate>();
+        /** Every candidate, best first. */
+        final List<Candidate> sorted;
         final List<Match> matches = new ArrayList<Match>();
         /** The one place to link, as a path into the step's JSON; null: every place. */
         String only;
@@ -421,7 +454,7 @@ final class Linker {
         Work(List<RecordedStep> earlier, List<Candidate> all, boolean rows) {
             this.earlier = earlier;
             this.rows = rows;
-            List<Candidate> sorted = new ArrayList<Candidate>(all);
+            sorted = new ArrayList<Candidate>(all);
             // stable: the most recent step first, then by kind, then in the order of the step's value index
             Collections.sort(sorted, new Comparator<Candidate>() {
                 @Override public int compare(Candidate x, Candidate y) {
@@ -455,6 +488,41 @@ final class Linker {
         // -------------------------------------------------------------- where values are
 
         /**
+         * A tree path the step added links whole, as one item ({@code ["${newFolder.items.Folders.added[0]}"]}: the tree
+         * finds a row by its path in one part as well); otherwise each part is a value of its own.
+         */
+        @Override void items(ObjectNode l) {
+            String path = treePath(l.get("item"));
+            Candidate c = path == null ? null : best.get(path);
+            if (c != null && c.path != null && c.path.startsWith(".items")) {
+                ArrayNode one = l.putArray("item");
+                one.add(Refs.escape(path));
+                matches.add(new Match(one, null, 0, Collections.<Object>singletonList(c)));
+                return;
+            }
+            super.items(l);
+        }
+
+        /**
+         * An automatic link of what a check expects never comes from what the element it checks showed after an earlier
+         * step: compared with itself, the check would check nothing. The person's and the agent's links go where asked.
+         */
+        @Override void expected(ObjectNode parent, String field, JsonNode target, String column) {
+            if (!rows) {
+                whole(parent, field);
+                return;
+            }
+            JsonNode node = parent.get(field);
+            if (node == null || !node.isTextual() || hasRefs(node.textValue())) return;
+            String value = Refs.unescape(node.textValue());
+            for (Candidate c : sorted) {
+                if (!c.value.equals(value) || shows(c, target, column)) continue;
+                matches.add(new Match(parent, field, -1, Collections.<Object>singletonList(c)));
+                return;
+            }
+        }
+
+        /**
          * The keys of a row locator. A row an earlier step added (in its outcome, under the table {@code name}) is linked
          * by that row: each key column that holds a new value, the others exact; when it holds none (a twin of another
          * row), the row stays exact. Any other row has its key values linked one by one.
@@ -477,6 +545,8 @@ final class Linker {
                 if (added.size() > 1) continue;
                 for (int k = 0; k < added.size(); k++) {
                     if (!sameRow(keys, added.get(k))) continue;
+                    // the person (or the agent) remembered its value since: the newer source, linked by that name
+                    if (rememberedSince(keys, i)) return false;
                     Set<String> own = ownValues(s, FlowJson.mapper().valueToTree(s.action));
                     for (Iterator<Map.Entry<String, JsonNode>> it = keys.fields(); it.hasNext(); ) {
                         Map.Entry<String, JsonNode> e = it.next();
@@ -488,6 +558,17 @@ final class Linker {
                     }
                     return true;
                 }
+            }
+            return false;
+        }
+
+        /** Whether a key value of the row locator was remembered after the step at {@code i} of the earlier steps. */
+        private boolean rememberedSince(ObjectNode keys, int i) {
+            for (Iterator<JsonNode> it = keys.elements(); it.hasNext(); ) {
+                JsonNode v = it.next();
+                Candidate c = v.isTextual() ? best.get(Refs.unescape(v.textValue())) : null;
+                if (c == null || !(c.source.action instanceof RememberVerb)) continue;
+                for (int j = i + 1; j < earlier.size(); j++) if (earlier.get(j) == c.source) return true;
             }
             return false;
         }
@@ -839,6 +920,48 @@ final class Linker {
             return true;   // not ours to touch
         }
     }
+
+    /** A tree item of several parts as a tree names a row by its path ({@code Folders > Folder 3}); null for any other. */
+    private static String treePath(JsonNode item) {
+        if (!(item instanceof ArrayNode) || item.size() < 2) return null;
+        StringBuilder path = new StringBuilder();
+        for (JsonNode part : item) {
+            if (!part.isTextual() || hasRefs(part.textValue())) return null;
+            if (path.length() > 0) path.append(" > ");
+            path.append(Refs.unescape(part.textValue()));
+        }
+        return path.toString();
+    }
+
+    /**
+     * Whether candidate {@code c} is what {@code target} itself showed: its field or text (by its name or id, under any
+     * scope), or a cell of its table in {@code column}.
+     */
+    private static boolean shows(Candidate c, JsonNode target, String column) {
+        if (c.path == null || c.path.isEmpty() || target == null) return false;
+        List<String> keys;
+        try {
+            keys = JsonPaths.keys("$" + c.path);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        if (keys.size() < 2) return false;
+        Set<String> names = new HashSet<String>();
+        for (String k : new String[] {"name", "id"}) {
+            JsonNode n = target.get(k);
+            if (n != null && n.isTextual() && !hasRefs(n.textValue())) names.add(Refs.unescape(n.textValue()));
+        }
+        if (column != null) {
+            return "rows".equals(keys.get(0)) && names.contains(keys.get(1)) && column.equals(keys.get(keys.size() - 1));
+        }
+        if (keys.size() != 2 || !"fields".equals(keys.get(0)) && !"texts".equals(keys.get(0))) return false;
+        String key = keys.get(1);
+        int scope = key.lastIndexOf(SCOPE);
+        return names.contains(scope < 0 ? key : key.substring(scope + SCOPE.length()));
+    }
+
+    /** What an outcome key puts between a name and the scopes around it ({@code Billing › Name}). */
+    private static final String SCOPE = " \u203a ";
 
     /** {@code text} with each reference replaced by its value in {@code seen} and escapes undone. */
     private static String fill(String text, List<Refs.Ref> refs, Map<String, String> seen) {
