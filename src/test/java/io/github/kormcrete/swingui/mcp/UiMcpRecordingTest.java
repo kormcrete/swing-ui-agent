@@ -3475,12 +3475,46 @@ class UiMcpRecordingTest {
         assertThat(copy.outcome.at("/rows/Orders/added/0/Number").asText()).isEqualTo("ORD-1641");
         assertThat(copy.newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
         assertThat(reads).isEqualTo(2);   // before and after the step
-        // a check changes nothing: it is not read
+        // a check changes nothing: its own change is not read, only what the action before it made late (one reading)
         session.verb("expect", mapper.readTree("{\"target\":{\"id\":\"status\"},\"text\":\"New\"}"));
-        assertThat(reads).isEqualTo(2);
+        assertThat(reads).isEqualTo(3);
         // a step that is not recorded is not read either
         session.doAction(mapper.readTree("{\"action\":\"click\",\"target\":{\"id\":\"next\"}}"), false);
-        assertThat(reads).isEqualTo(2);
+        assertThat(reads).isEqualTo(3);
+    }
+
+    @Test
+    void anAgentStepGetsWhatItChangesLateUntilTheNextAction() throws Exception {
+        // Copy adds its order a moment after the click settled: the reading after it has none yet
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        assertThat(session.recordedSteps().get(0).newValues).isEmpty();
+
+        // the check waited for it: the copy's step has it now, and the check is linked to it
+        JsonNode checked = mapper.readTree(session.verb("expect", mapper.readTree(
+                "{\"target\":{\"role\":\"label\",\"name\":\"Last order\"},\"text\":\"ORD-1641\"}")));
+        assertThat(checked.at("/recorded/text").asText()).isEqualTo(NUMBER);
+        assertThat(session.recordedSteps().get(0).newValues).containsEntry("ORD-1641", ".rows.Orders.added[0].Number");
+        // the next action is read before it acts, and links to it as well
+        session.verb("click", mapper.readTree(
+                "{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":\"ORD-1641\"}}}"));
+        assertThat(mapper.valueToTree(session.recordedSteps().get(2).action).at("/target/row/Number").asText())
+                .isEqualTo(NUMBER);
+        // after that action, Copy's step keeps what it had: what comes now is the click's
+        session.reader(readings(orders("ORD-1640", "ORD-1641", "ORD-1642")));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"x\"}"));
+        assertThat(session.recordedSteps().get(0).newValues).containsOnlyKeys("ORD-1641");
+    }
+
+    @Test
+    void whatAnUnrecordedActionChangesIsNeverTheRecordedStepBeforeIt() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.doAction(mapper.readTree("{\"action\":\"click\",\"target\":{\"id\":\"new\"}}"), false);
+
+        session.verb("click", mapper.readTree("{\"target\":{\"id\":\"next\"}}"));
+
+        assertThat(session.recordedSteps().get(0).newValues).isEmpty();
     }
 
     @Test

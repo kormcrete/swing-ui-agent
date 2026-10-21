@@ -131,6 +131,26 @@ public class UiMcpSession {
     private Long linkWaitMs;
     /** The app as read before each replayed step that has an id, while a replay runs: a value that comes late is read again. */
     private final Map<String, UiReading> replayBefore = new HashMap<String, UiReading>();
+
+    /**
+     * The agent's last recorded action, which may still change the app after it settled (a timer, a save in the
+     * background): until the agent's next action, what it changed is read again from where it began ({@link
+     * #lateChanges}); null when none waits.
+     */
+    private Late late;
+
+    /** An action that waits for what it changes late: its record, the app before it, a domain step's own values. */
+    private static final class Late {
+        final int id;
+        final UiReading before;
+        final Map<String, Object> made;
+
+        Late(int id, UiReading before, Map<String, Object> made) {
+            this.id = id;
+            this.before = before;
+            this.made = made;
+        }
+    }
     /** The person's last recorded step: its number among their steps ({@link Inspector#SEQ}) and its record id (0: none). */
     private int personSeq;
     private int personRecord;
@@ -534,6 +554,8 @@ public class UiMcpSession {
                         // what the person typed is text: a ${ in it is no reference
                         Action action = literal(action(json));
                         personRecord = 0;
+                        // what the app does from here on may be the person's doing, never the agent's last action's
+                        late = null;
                         List<String> problems = exportProblems(action);
                         if (!problems.isEmpty()) {
                             String line = action.describe() + " - " + String.join("; ", problems);
@@ -1476,16 +1498,27 @@ public class UiMcpSession {
         flow.name = "step";
         flow.steps = new ArrayList<Action>();
         flow.steps.add(action);
-        boolean read = !StepNumbers.isCheck(action)
+        boolean check = StepNumbers.isCheck(action);
+        boolean read = !check
                 && (replayed != null || record && model.state() == RecordingModel.State.RECORDING || wantOutcome);
+        boolean agentRecords = replayed == null && record && author == RecordedStep.Author.AGENT
+                && model.state() == RecordingModel.State.RECORDING;
         UiReading before = null;
         UiReading after = null;
         FlowResult result;
         Inspector.agentActing(true);
         try {
             if (read) before = read();
+            if (!check) {
+                // the agent's next input: what its last recorded action made since then is that action's, and no later
+                if (agentRecords) lateChanges(before);
+                late = null;
+            }
             result = executor.run(flow, host);
-            if (before != null && !result.steps.isEmpty() && result.steps.get(0).passed) after = read();
+            boolean ran = !result.steps.isEmpty() && result.steps.get(0).passed;
+            if (before != null && ran) after = read();
+            // a check that waited for what the action before it made late: that action has it before the check links
+            if (check && agentRecords && ran && late != null) lateChanges(read());
         } finally {
             Inspector.agentActing(false);
         }
@@ -1536,6 +1569,9 @@ public class UiMcpSession {
                     RecordedStep added = model.append(recordedAction, author, row,
                             action instanceof DoAction ? null : seenOf(step.outcome));
                     keepOutcome(added, changed, newValues, step);
+                    if (agentRecords && !check && changed != null) {
+                        late = new Late(added.id, before, step.outcome != null ? step.outcome.made : null);
+                    }
                     r.set("recorded", mapper.valueToTree(autoLink(added)));
                     scheduleFolding();
                 } else {
@@ -1611,6 +1647,31 @@ public class UiMcpSession {
             model.runValues().remember(((RememberVerb) s.action).as, step.outcome.note);
             model.remembered(s.id, step.outcome.note);
         }
+    }
+
+    /**
+     * What the agent's last recorded action ({@link #late}) changed from where it began to {@code now}, when that is more
+     * than it has (nothing it made is gone again or moved: later steps may use that): the app went on after the action settled,
+     * as an app that saves in the background does. Only while that action is the recording's last and no replay began
+     * since.
+     */
+    private void lateChanges(UiReading now) {
+        Late l = late;
+        if (l == null || now == null || model.state() != RecordingModel.State.RECORDING || l.id <= model.replayFloor()) {
+            return;
+        }
+        List<RecordedStep> records = model.records();
+        RecordedStep last = null;
+        for (int i = records.size() - 1; i >= 0 && last == null; i--) {
+            if (!StepNumbers.isCheck(records.get(i).action)) last = records.get(i);
+        }
+        if (last == null || last.id != l.id) return;
+        Map<String, Object> diff = Outcomes.diff(l.before, now);
+        if (l.made != null) diff.put(FlowExecutor.STEP, l.made);
+        Map<String, String> values = Outcomes.newValues(l.before, diff);
+        // what it made stays where it was: a later step may use it by that path
+        if (values.equals(last.newValues) || !values.entrySet().containsAll(last.newValues.entrySet())) return;
+        model.outcome(l.id, FlowJson.mapper().valueToTree(diff), values);
     }
 
     /**
