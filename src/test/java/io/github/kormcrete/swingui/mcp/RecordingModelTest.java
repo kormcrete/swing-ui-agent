@@ -960,6 +960,27 @@ class RecordingModelTest {
                 new java.util.AbstractMap.SimpleEntry<String, String>("ORD-1641", ".fields.Number"));
         assertThat(model.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
         assertThat(model.runValues().fill("${copy.fields.Number}")).isEqualTo("ORD-1641");
+
+        // a replay: Copy makes another order; when it shrinks again, the row path gives that one, never the old
+        model.outcome(copy.id, copied("ORD-1642"), Collections.singletonMap("ORD-1642", ".fields.Number"));
+        model.shrinkOlderThan(0);
+        assertThat(model.runValues().fill(NUMBER)).isEqualTo("ORD-1642");
+        // a run where the row path holds nothing keeps nothing there: the reference fails instead
+        com.fasterxml.jackson.databind.node.ObjectNode fieldOnly =
+                io.github.kormcrete.swingui.flow.FlowJson.mapper().createObjectNode();
+        fieldOnly.putObject("fields").put("Number", "ORD-1643");
+        model.outcome(copy.id, fieldOnly, Collections.singletonMap("ORD-1643", ".fields.Number"));
+        model.shrinkOlderThan(0);
+        assertThat(model.runValues().resolve(io.github.kormcrete.swingui.flow.refs.Refs.scan(NUMBER).get(0))).isEmpty();
+    }
+
+    /** Copy's outcome: the new number in a field and in the one row it added. */
+    private static com.fasterxml.jackson.databind.node.ObjectNode copied(String number) {
+        com.fasterxml.jackson.databind.node.ObjectNode outcome =
+                io.github.kormcrete.swingui.flow.FlowJson.mapper().createObjectNode();
+        outcome.putObject("fields").put("Number", number);
+        outcome.putObject("rows").putObject("Orders").putArray("added").addObject().put("Number", number);
+        return outcome;
     }
 
     private static ClickVerb rowClick(String number) {

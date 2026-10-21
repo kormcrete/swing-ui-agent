@@ -91,8 +91,8 @@ final class RecordingModel {
     private int replayFloor;
     /** What the steps changed and remembered, by step id (or {@link #key}), and this run's {@code run} values. */
     private RunValues runValues = freshValues();
-    /** By record id: the paths links made to that step use, with their values (see {@link #link}). */
-    private final Map<Integer, Map<String, String>> linkedPaths = new HashMap<Integer, Map<String, String>>();
+    /** By record id: the paths links made to that step use (see {@link #link}). */
+    private final Map<Integer, Set<String>> linkedPaths = new HashMap<Integer, Set<String>>();
 
     State state() {
         return state;
@@ -961,17 +961,16 @@ final class RecordingModel {
             Action named = FlowJson.mapper().convertValue(source.action, Action.class);
             named.id = e.getValue();
             steps.set(k, source.with(named, source.edited));
-            runValues.put(e.getValue(), source.outcome != null ? source.outcome
-                    : keptTree(source.newValues, linkedPaths.get(source.id)));
+            runValues.put(e.getValue(), source.outcome != null ? source.outcome : indexTree(source.newValues));
         }
         // the paths the link uses stay with their source when it shrinks to its value index
-        for (Map.Entry<String, String> e : seen.entrySet()) {
-            List<Refs.Ref> refs = Refs.scan(e.getKey());
+        for (String ref : seen.keySet()) {
+            List<Refs.Ref> refs = Refs.scan(ref);
             if (refs.size() != 1 || refs.get(0).path.isEmpty()) continue;
             for (RecordedStep r : steps) {
                 if (r.action instanceof RememberVerb || !refs.get(0).id.equals(r.action.id)) continue;
-                if (!linkedPaths.containsKey(r.id)) linkedPaths.put(r.id, new LinkedHashMap<String, String>());
-                linkedPaths.get(r.id).put(refs.get(0).path, e.getValue());
+                if (!linkedPaths.containsKey(r.id)) linkedPaths.put(r.id, new HashSet<String>());
+                linkedPaths.get(r.id).add(refs.get(0).path);
             }
         }
         String what = describe(i);
@@ -1059,7 +1058,7 @@ final class RecordingModel {
             if (s.outcome == null || whole.contains(s.id)) continue;
             RecordedStep shrunk = s.shrunk();
             steps.set(i, shrunk);
-            runValues.put(key(s), keptTree(shrunk.newValues, linkedPaths.get(s.id)));
+            runValues.put(key(s), keptTree(s.outcome, shrunk.newValues, linkedPaths.get(s.id)));
         }
         for (Edit e : history) {
             for (int i = 0; i < e.before.size(); i++) {
@@ -1070,15 +1069,19 @@ final class RecordingModel {
     }
 
     /**
-     * What a step that shrinks keeps for references: its value index, and each path a link made to it uses (a link may
-     * name a row by a path the index does not hold, the value being indexed under a field).
+     * What a step that shrinks keeps for references: its value index, and the value at each path a link made to it uses,
+     * read from the {@code outcome} it is losing (a link may name a row by a path the index does not hold, the value
+     * being indexed under a field). A path that holds no single value in that outcome is not kept: a reference to it
+     * then fails, never giving a value an earlier run made.
      */
-    private static ObjectNode keptTree(Map<String, String> newValues, Map<String, String> linkedPaths) {
+    private static ObjectNode keptTree(ObjectNode outcome, Map<String, String> newValues, Set<String> paths) {
         ObjectNode tree = indexTree(newValues);
-        if (linkedPaths == null) return tree;
-        for (Map.Entry<String, String> e : linkedPaths.entrySet()) {
+        if (paths == null) return tree;
+        for (String path : paths) {
+            List<JsonNode> hits = JsonPaths.select(outcome, "$" + path);
+            if (hits.size() != 1 || !hits.get(0).isValueNode() || hits.get(0).isNull()) continue;
             try {
-                JsonPaths.put(tree, "$" + e.getKey(), e.getValue());
+                JsonPaths.put(tree, "$" + path, hits.get(0).asText());
             } catch (IllegalArgumentException clash) {
                 // the index holds the place already
             }

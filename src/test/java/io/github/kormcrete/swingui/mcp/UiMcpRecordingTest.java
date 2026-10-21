@@ -3090,6 +3090,38 @@ class UiMcpRecordingTest {
         assertThat(backend.verbs.calls.toString()).contains("ORD-1641").doesNotContain(NUMBER);
     }
 
+    /** Orders {@code numbers}, the last one also in the Number field (Copy shows the order it made). */
+    private static io.github.kormcrete.swingui.driver.outcome.UiReading copiedTo(String... numbers) {
+        List<List<String>> rows = new java.util.ArrayList<List<String>>();
+        for (String n : numbers) rows.add(java.util.Collections.singletonList(n));
+        return io.github.kormcrete.swingui.driver.outcome.UiReading.builder().field("Number", numbers[numbers.length - 1])
+                .table("Orders", java.util.Collections.singletonList("Number"), rows).build();
+    }
+
+    @Test
+    void aRowLinkGivesTheLatestRunsValueAfterItsSourceShrankAgain() throws Exception {
+        session.reader(readings(orders("ORD-1640"), copiedTo("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("click", mapper.readTree(
+                "{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":\"ORD-1641\"}}}"));
+        for (int i = 0; i < RecordingModel.FULL_OUTCOMES; i++) click("next");
+        call("{\"op\":\"stop\"}");
+        assertThat(session.recordedSteps().get(0).outcome).isNull();
+        assertThat(session.runValues().fill(NUMBER)).isEqualTo("ORD-1641");
+
+        // the next run: Copy makes ORD-1642, and shrinks again behind the 20 steps after it
+        noReset(session);
+        session.reader(readings(orders("ORD-1640", "ORD-1641"), copiedTo("ORD-1640", "ORD-1641", "ORD-1642")));
+        backend.verbs.calls.clear();
+        assertThat(call("{\"op\":\"replay\"}").path("passed").asBoolean()).isTrue();
+        assertThat(session.recordedSteps().get(0).outcome).isNull();
+        assertThat(session.runValues().fill(NUMBER)).isEqualTo("ORD-1642");
+
+        backend.verbs.calls.clear();
+        assertThat(call("{\"op\":\"replay\",\"from\":2,\"to\":2}").path("passed").asBoolean()).isTrue();
+        assertThat(backend.verbs.calls.toString()).contains("ORD-1642").doesNotContain("ORD-1641");
+    }
+
     @Test
     void thePersonsStepIsLinkedToWhatTheirEarlierStepMadeAndReplaysWithTheNewValue() throws Exception {
         io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
