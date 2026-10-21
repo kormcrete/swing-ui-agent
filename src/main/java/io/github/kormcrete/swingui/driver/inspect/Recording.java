@@ -506,7 +506,8 @@ final class Recording {
      * Remember this as…: the steps list opens (when it is closed) with a name field in a row of its own under the last
      * step, the name the session suggests for {@code step}'s {@code as} in it. Enter, or a click elsewhere, records the
      * remember entry under that name as a check of the step before it; a refused name keeps the field open and the bar
-     * says why; Esc records nothing. Only while still checking.
+     * says why; Esc records nothing. A Steps list the person had closed closes again when the field ends: an open list
+     * is theirs to choose. Only while still checking; otherwise the bar says why nothing opened.
      */
     private void rememberAs(Map<String, Object> step, Target t, Overlay o) {
         String base = String.valueOf(step.get("as"));
@@ -519,12 +520,25 @@ final class Recording {
             }
             String suggested = free;
             SwingUtilities.invokeLater(() -> {
-                if (state != State.CHECKING || replaying || agentReplay != null) return;
-                if (panel == null) toggleSteps();
+                if (state != State.CHECKING || replaying || agentReplay != null) {
+                    String why = state == State.STOPPED ? "the recording ended" : replaying || agentReplay != null
+                            ? "a replay began" : "Check mode ended";
+                    bar.text("✗ not remembered: " + why + " before the name could be typed");
+                    return;
+                }
+                boolean wasClosed = panel == null;
+                if (wasClosed) toggleSteps();
+                StepsPanel opened = panel;
                 panel.rememberAs(suggested, "a name for " + t.shown, as -> {
                     Map<String, Object> named = new LinkedHashMap<String, Object>(step);
                     named.put("as", as);
                     return record(named, t, o);
+                }, () -> {
+                    if (!wasClosed) return;
+                    // after the field has gone; not when the person names another row in it meanwhile
+                    SwingUtilities.invokeLater(() -> {
+                        if (panel == opened && !opened.naming()) toggleSteps();
+                    });
                 });
             });
         });

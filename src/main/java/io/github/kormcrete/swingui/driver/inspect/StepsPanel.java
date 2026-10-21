@@ -174,14 +174,17 @@ final class StepsPanel extends JPanel {
          * step holds the field); null for a sentence.
          */
         final Function<String, CompletableFuture<Inspector.Result>> keep;
+        /** Runs when the field ends, kept or not; null for none. */
+        final Runnable ended;
 
         Spec(String item, boolean group, int fromId, int toId, int hostId, int groupId, String initial, String hint) {
-            this(item, group, fromId, toId, hostId, groupId, initial, hint, null);
+            this(item, group, fromId, toId, hostId, groupId, initial, hint, null, null);
         }
 
         private Spec(String item, boolean group, int fromId, int toId, int hostId, int groupId, String initial, String hint,
-                     Function<String, CompletableFuture<Inspector.Result>> keep) {
+                     Function<String, CompletableFuture<Inspector.Result>> keep, Runnable ended) {
             this.keep = keep;
+            this.ended = ended;
             this.item = item;
             this.group = group;
             this.fromId = fromId;
@@ -902,6 +905,7 @@ final class StepsPanel extends JPanel {
         }
         list.remove(n.field);
         rerender();
+        if (n.spec.ended != null) n.spec.ended.run();
     }
 
     /**
@@ -931,11 +935,12 @@ final class StepsPanel extends JPanel {
     /**
      * Remember this as…: a name field in a row of its own under the last step, {@code name} in it ({@code hint} greyed
      * while it is empty). Enter, or a click elsewhere, hands the name to {@code keep}, which records the remember entry;
-     * a refusal keeps the field open. Esc keeps nothing. A field open for another row ends first, as a click elsewhere
-     * ends it. Nothing opens while the person may not name rows (a replay runs).
+     * a refusal keeps the field open. Esc keeps nothing. {@code ended} runs when the field ends, kept or not. A field
+     * open for another row ends first, as a click elsewhere ends it. Nothing opens while the person may not name rows (a
+     * replay runs).
      */
-    void rememberAs(String name, String hint, Function<String, CompletableFuture<Inspector.Result>> keep) {
-        open(new Spec(CheckMenu.REMEMBER, false, -1, -1, -1, 0, name, hint, keep));
+    void rememberAs(String name, String hint, Function<String, CompletableFuture<Inspector.Result>> keep, Runnable ended) {
+        open(new Spec(CheckMenu.REMEMBER, false, -1, -1, -1, 0, name, hint, keep, ended));
     }
 
     /**

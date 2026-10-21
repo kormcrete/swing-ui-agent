@@ -3570,13 +3570,18 @@ class RecordingTest {
         });
         sink.refuseCheck = null;
         enter(field, " customerName ");
-        closed();
-        java.util.Map<String, Object> kept = sink.checked.get(sink.checked.size() - 1);
+        java.util.Map<String, Object> kept = eventually(() -> sink.checked.size() == 2 ? sink.checked.get(1) : null);
         assertThat(kept).containsEntry("action", "remember").containsEntry("as", "customerName")
                 .containsEntry("target", customer.locator);
         eventually(() -> recording.bar.text().startsWith("recorded: ") ? Boolean.TRUE : null);
+        // the person had the Steps list closed: it closes again with the field
+        eventually(() -> recording.panel == null ? Boolean.TRUE : null);
 
-        // Esc: nothing is kept
+        // Esc, with the list open on purpose: nothing is kept, the list stays open
+        SwingUtilities.invokeAndWait(() -> {
+            recording.toggleSteps();
+            recording.live.stop();
+        });
         int before = sink.checked.size();
         SwingUtilities.invokeAndWait(() -> recording.offerChecks(customer, click, o));
         SwingUtilities.invokeAndWait(() -> shown.get(1).choose("Remember this as…"));
@@ -3585,6 +3590,17 @@ class RecordingTest {
         closed();
         Thread.sleep(100);
         assertThat(sink.checked).hasSize(before);
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.panel).isNotNull());
+
+        // Check mode left before the field could open: the bar says so
+        SwingUtilities.invokeAndWait(() -> recording.offerChecks(customer, click, o));
+        SwingUtilities.invokeAndWait(() -> {
+            shown.get(2).choose("Remember this as…");
+            recording.mode(false);
+        });
+        assertThat(eventually(() -> recording.bar.text().startsWith("✗ not remembered") ? recording.bar.text() : null))
+                .isEqualTo("✗ not remembered: Check mode ended before the name could be typed");
+        SwingUtilities.invokeAndWait(() -> assertThat(recording.panel.naming()).isFalse());
     }
 
     @Test

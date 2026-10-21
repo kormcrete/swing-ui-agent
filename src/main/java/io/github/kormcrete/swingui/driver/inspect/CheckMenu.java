@@ -5,6 +5,7 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Names;
 import io.github.kormcrete.swingui.driver.model.RowSpec;
 import io.github.kormcrete.swingui.driver.widgets.Cells;
+import io.github.kormcrete.swingui.driver.widgets.ComboWidget;
 import io.github.kormcrete.swingui.driver.widgets.TableWidget;
 import io.github.kormcrete.swingui.driver.widgets.Screenshots;
 
@@ -68,8 +69,13 @@ final class CheckMenu extends JPopupMenu {
 
     /** The choice that keeps a value for later steps: it opens a name field, then records a {@code remember} entry. */
     static final String REMEMBER = "Remember this as…";
-    /** Why a row, list entry or tab is not remembered: nothing but its own value would find it again. */
+    /**
+     * Why a list entry, tree row or tab is not remembered when it is not the selected one: nothing but its own value
+     * would find it again.
+     */
     static final String SELECT_FIRST = "select the row first, or remember a field";
+    static final String SELECT_ITEM_FIRST = "select the item first, or remember a field";
+    static final String SELECT_TAB_FIRST = "select the tab first, or remember a field";
 
     /** {@link #of(Target, List, List, BiConsumer)} with the element's own checks only. */
     static CheckMenu of(Target t, BiConsumer<Map<String, Object>, Target> run) {
@@ -354,14 +360,14 @@ final class CheckMenu extends JPopupMenu {
             }
         } else if ((c instanceof JList || c instanceof JTree) && t.locator.item != null && t.row >= 0) {
             value = c instanceof JList ? Cells.list((JList<?>) c, t.row).text : Cells.tree((JTree) c, t.row).text;
-            if (selectedItem(c) != t.row) return greyed(SELECT_FIRST);
+            if (selectedItem(c) != t.row) return greyed(c instanceof JList ? SELECT_FIRST : SELECT_ITEM_FIRST);
             target = t.locator.element();
             name = nameOf(target, "item");
             selected = true;
         } else if (c instanceof JTabbedPane && t.tab != null) {
             JTabbedPane tabs = (JTabbedPane) c;
             value = Names.tabTitle(tabs, t.tab);
-            if (tabs.getSelectedIndex() != t.tab || t.whole == null) return greyed(SELECT_FIRST);
+            if (tabs.getSelectedIndex() != t.tab || t.whole == null) return greyed(SELECT_TAB_FIRST);
             target = t.whole;
             name = nameOf(target, "tab");
             selected = true;
@@ -395,11 +401,8 @@ final class CheckMenu extends JPopupMenu {
     /** The text a field, drop-down, button or label shows, as {@code remember} reads it. */
     private static String ownText(Component c) {
         if (c instanceof JTextComponent) return ((JTextComponent) c).getText();
-        if (c instanceof JComboBox) {
-            JComboBox<?> combo = (JComboBox<?>) c;
-            return combo.getSelectedIndex() < 0 ? (combo.getSelectedItem() == null ? null : String.valueOf(combo.getSelectedItem()))
-                    : Cells.combo(combo, new JList<Object>(), combo.getSelectedIndex()).text;
-        }
+        // as remember reads it at replay: the renderer's shown value
+        if (c instanceof JComboBox) return ComboWidget.selectedText((JComboBox<?>) c);
         return Names.clean(Names.ownText(c));
     }
 
@@ -466,11 +469,16 @@ final class CheckMenu extends JPopupMenu {
         }
     }
 
-    /** Whether locator {@code l} finds its element by {@code value}: in its name, scope, row or item. */
+    /**
+     * Whether locator {@code l} finds its element by {@code value}: in its name, scope, row key values or item. A row by
+     * its place ({@code {"index": -1}}) holds no value, whatever digits the value has.
+     */
     private static boolean holds(Locator l, String value) {
         if (l.name != null && l.name.contains(value)) return true;
         if (l.scope != null) for (String s : l.scope) if (s.contains(value)) return true;
-        if (l.row != null) for (Object v : l.row.values()) if (String.valueOf(v).contains(value)) return true;
+        if (l.row != null && !l.row.containsKey("index")) {
+            for (Object v : l.row.values()) if (String.valueOf(v).contains(value)) return true;
+        }
         if (l.item != null) for (String s : l.item) if (s.contains(value)) return true;
         return false;
     }

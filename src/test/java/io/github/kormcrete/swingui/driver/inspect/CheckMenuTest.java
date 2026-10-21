@@ -10,6 +10,7 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.JTree;
+import javax.swing.JTable;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -245,6 +246,70 @@ class CheckMenuTest {
         assertThat(last.row).isEqualTo(Collections.<String, Object>singletonMap("index", -1));
         Locator second = (Locator) remember(CheckMenu.choices(scene.inspector.cell(scene.orders, 1, 0))).step.get("target");
         assertThat(second.row).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
+    }
+
+    @Test
+    void aRowByItsPlaceNeverCountsAsHoldingTheValue() {
+        // cart lines that only their place tells apart, each Qty "1": "-1" and "1" are places, not the value
+        JTable lines = new JTable(new Object[][] {{"Gel pen, black", "1"}, {"Gel pen, black", "1"}, {"Gel pen, black", "1"}},
+                new Object[] {"Product", "Qty"});
+        lines.setName("lines");
+        lines.setBounds(10, 320, 300, 48);
+        scene.content.add(lines);
+        CheckMenu.Choice last = remember(CheckMenu.choices(scene.inspector.cell(lines, 2, 1)));
+        assertThat(last.step).as(String.valueOf(last.reason)).isNotNull();
+        assertThat(((Locator) last.step.get("target")).row).isEqualTo(Collections.<String, Object>singletonMap("index", -1));
+        CheckMenu.Choice second = remember(CheckMenu.choices(scene.inspector.cell(lines, 1, 1)));
+        assertThat(second.step).as(String.valueOf(second.reason)).isNotNull();
+        assertThat(((Locator) second.step.get("target")).row).isEqualTo(Collections.<String, Object>singletonMap("index", 1));
+        assertThat(second.step).containsEntry("as", "qty");
+    }
+
+    @Test
+    void aDropDownIsRememberedAsItsRendererShowsItClosed() {
+        javax.swing.JComboBox<String> status = new javax.swing.JComboBox<String>(new String[] {"open", "shipped"});
+        status.setName("status");
+        status.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override public java.awt.Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean s, boolean f) {
+                // the closed drop-down (index -1) shows nothing; only its list shows the entries
+                return super.getListCellRendererComponent(l, i < 0 ? "" : v, i, s, f);
+            }
+        });
+        status.setSelectedIndex(1);
+        status.setBounds(10, 380, 120, 24);
+        scene.content.add(status);
+        // remember reads the closed drop-down at replay: it would find nothing, so the menu says so now
+        assertThat(io.github.kormcrete.swingui.driver.widgets.ComboWidget.selectedText(status)).isEmpty();
+        assertThat(remember(CheckMenu.choices(scene.inspector.component(status))).reason).isEqualTo("it is empty");
+    }
+
+    @Test
+    void aTreeRowOrATabThatIsNotSelectedSaysSoInItsOwnWords() {
+        javax.swing.tree.DefaultMutableTreeNode office = new javax.swing.tree.DefaultMutableTreeNode("Office");
+        office.add(new javax.swing.tree.DefaultMutableTreeNode("Pens"));
+        JTree tree = new JTree(office);
+        tree.setName("categories");
+        tree.setBounds(10, 220, 200, 80);
+        scene.content.add(tree);
+        assertThat(remember(CheckMenu.choices(scene.inspector.treeRow(tree, 1))).reason)
+                .isEqualTo("select the item first, or remember a field");
+
+        javax.swing.JTabbedPane tabs = new javax.swing.JTabbedPane();
+        tabs.setName("orderTabs");
+        tabs.addTab("Orders", new JPanel());
+        tabs.addTab("ORD-1641", new JPanel());
+        tabs.setBounds(320, 130, 300, 120);
+        scene.content.add(tabs);
+        tabs.doLayout();
+        Rectangle second = tabs.getBoundsAt(1);
+        Target tab = scene.inspector.snap(tabs, new Point(second.x + second.width / 2, second.y + second.height / 2));
+        assertThat(tab.tab).isEqualTo(1);
+        assertThat(remember(CheckMenu.choices(tab)).reason).isEqualTo("select the tab first, or remember a field");
+        tabs.setSelectedIndex(1);
+        Target open = scene.inspector.snapNow(tabs, new Point(second.x + second.width / 2, second.y + second.height / 2));
+        CheckMenu.Choice title = remember(CheckMenu.choices(open));
+        assertThat(title.step).containsEntry("selected", true);
+        assertThat(title.step.get("target").toString()).doesNotContain("ORD-1641");
     }
 
     @Test
