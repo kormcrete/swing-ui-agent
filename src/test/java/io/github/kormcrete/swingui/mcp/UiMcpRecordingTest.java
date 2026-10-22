@@ -1538,6 +1538,18 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void replayEntriesCarryEachStepsSentence() throws Exception {
+        fakeReset();
+        four();
+        call("{\"op\":\"edit\",\"n\":1,\"say\":\"Open the Orders list\"}");
+        call("{\"op\":\"insert\",\"at\":\"1.1\",\"step\":{\"action\":\"expect\",\"target\":{\"id\":\"status\"},\"text\":\"ok\"}}");
+        JsonNode r = call("{\"op\":\"replay\",\"from\":1,\"to\":1}");
+        assertThat(r.path("steps").get(0).path("say").asText()).isEqualTo("Open the Orders list");
+        assertThat(r.path("steps").get(1).path("n").asText()).isEqualTo("1.1");
+        assertThat(r.path("steps").get(1).has("say")).isFalse();
+    }
+
+    @Test
     void replayFromALaterStepDoesNotReset() throws Exception {
         fakeReset();
         four();

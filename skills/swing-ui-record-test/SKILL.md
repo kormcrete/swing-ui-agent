@@ -156,10 +156,12 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
 6. **A step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'` cuts step 3
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
    with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
-7. **Stop and save:** `$UI recording '{"op":"stop"}'`, then
-   `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'`, or a Java
-   class with `export_test` (below). `recording '{"op":"export","as":"recorded","name":"place-order"}'` saves
-   and keeps the recording. Leave the screen as you found it: clear what you typed into a search, put a filter back.
+7. **Stop and save:** `$UI recording '{"op":"stop"}'`. Save with
+   `$UI recording '{"op":"export","as":"recorded","name":"place-order"}'` while you still verify; it keeps the
+   recording, so a fix is `insert`/`edit`/`redo`, `replay`, export again over the same file.
+   `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'` empties it
+   (unless `"clear":false`): use it last. After a clearing save, `recording '{"op":"load","name":"place-order"}'`
+   brings the file back. A Java class is `export_test` (below). Leave the screen as you found it: clear what you typed into a search, put a filter back.
 8. **Verify** (below).
 
 ## Values from earlier steps

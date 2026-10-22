@@ -219,8 +219,8 @@ public final class UiMcpTools {
                                 + "-Dswingui.recordedDir, else uitest in the app's working directory");
                 p.putObject("description").put("type", "string").put("description", "What the recorded test does, one sentence");
                 p.putObject("clear").put("type", "boolean").put("default", true)
-                        .put("description", "Empty the recording after exporting (default: true); reset before "
-                                + "recording the next recorded test. Refused while a recording started by recording start or "
+                        .put("description", "Empty the recording after exporting (default: true; false keeps it to fix and save again over "
+                                + "the same file); reset before recording the next recorded test. Refused while a recording started by recording start or "
                                 + "the person's Record runs: export with clear false, or stop it first");
                 schema.putArray("required").add("name");
                 return tool(m, "export_recorded_test",
@@ -235,7 +235,11 @@ public final class UiMcpTools {
                         + "changed or remembered, a text unique per run: see the recording tool), so a record the test creates, "
                         + "such as a new order number, is found again on each run; check data the test creates or data known to "
                         + "exist. Format version 2 (3 when it holds do steps, with requires naming their plugins; 4 when it has "
-                        + "links or remember entries): each step with its checks nested, sentences and groups kept.", schema);
+                        + "links or remember entries): each step with its checks nested, sentences and groups kept. "
+                        + "It empties the recording (clear, default true): use it for the last save. Save while you still fix the "
+                        + "test (run it, edit, run again) with clear:false or recording export, which keep the "
+                        + "recording and may save over the same file; after a clearing save, recording load {name} brings "
+                        + "the file back to edit.", schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {
                 return session.exportRecordedTest(args.path("name").asText(""), args.path("dir").asText(""),
@@ -565,15 +569,16 @@ public final class UiMcpTools {
                         + "refused."
                         + "\n\nReplay: replay {from?, to?, speed?}: runs the steps (with their checks) again without "
                         + "recording them and returns {passed, ran, total, reset, steps}: ran and total count steps, with "
-                        + "one {n, action, passed, ms, message?, resolved?} entry per step or check run (n as in list; "
-                        + "action is its technical line); from step 1 it resets the app first, as the exported test starts, "
+                        + "one {n, say?, action, passed, ms, message?, resolved?} entry per step or check run (n as in "
+                        + "list; say is the step's sentence; action is its technical line); from step 1 it resets the app first, as the exported test starts, "
                         + "and says startNote when the start screen holds a filled search. "
                         + "A replay from the middle that needs a value of an earlier step this session does not know is refused "
                         + "in words (\"Check 7.2 uses what step 3 changed; replay from step 3 or earlier\"). "
                         + "redo {from}: cuts step from and the ones after it, replays the steps before it from a reset, and "
                         + "records on (from = the number after the last step continues a stopped recording)."
                         + "\n\nFiles: export {as: recorded|java, ...}: as export_recorded_test / export_test, but keeps "
-                        + "the recording. load {name | path}: a recorded test file becomes the recording (stopped; redo or "
+                        + "the recording: use it while you still fix the test (export_recorded_test empties it unless "
+                        + "clear:false). load {name | path}: a recorded test file becomes the recording (stopped; redo or "
                         + "insert to add to it).",
                         schema);
             }

@@ -649,6 +649,19 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void theSaveDescriptionsSayWhichKeepsTheRecording() {
+        String export = null;
+        String recording = null;
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (t.name().equals("export_recorded_test")) export = t.descriptor(mapper).path("description").asText();
+            if (t.name().equals("recording")) recording = t.descriptor(mapper).path("description").asText();
+        }
+        assertThat(export).contains("while you still fix the test", "recording load");
+        assertThat(recording).contains("export_recorded_test empties it unless clear:false",
+                "{n, say?, action, passed, ms, message?, resolved?}");
+    }
+
+    @Test
     void theLocatorsNthCountsFromZero() {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
             if (!t.name().equals("click")) continue;
