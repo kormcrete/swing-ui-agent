@@ -307,6 +307,7 @@ public class UiMcpSession {
         this.inventory = inventory;
         this.mapper = FlowJson.registerDriverTypes(mapper);
         this.exportDefaults = exportDefaults;
+        model.sentences(this::followSay);
         synchronized (this) {
             publish();
         }
@@ -1763,6 +1764,7 @@ public class UiMcpSession {
         }
         if (!linked.linked()) return added.action;
         model.link(added.id, linked.action, linked.seen, linked.ids);
+        for (RecordedStep r : model.records()) if (r.id == added.id) return r.action;   // its sentence may follow the link
         return linked.action;
     }
 
@@ -3641,6 +3643,8 @@ public class UiMcpSession {
             }
         }
         Action replaced = sentenced(edited instanceof DoAction ? namedDo((DoAction) edited) : edited, what);
+        // a generated sentence follows the new params, unless the edit says the step another way
+        if (whole && sentence == null && !step.has("say")) replaced = followSay(old, replaced);
         // a domain check edited into another one no longer reads what the old one read
         int id = model.at(n).id;
         List<JsonNode> reads = domainCheckReads.get(id);
@@ -4331,6 +4335,111 @@ public class UiMcpSession {
     }
 
     private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{([A-Za-z]\\w*)\\}");
+
+    /**
+     * The sentence of the domain step {@code d} names, filled with {@code d}'s params (a param left out: its default),
+     * each reference in a value said in words ({@link #sentenceWords}): what a do step's sentence is when the recording
+     * made it. Null without plugins or when no ready plugin offers the step.
+     */
+    String generatedSay(DoAction d) {
+        if (plugins == null || d.step == null) return null;
+        for (Plugins.VocabularyStep v : plugins.vocabulary()) {
+            if (!d.step.equals(v.plugin + ":" + v.step.id())) continue;
+            Map<String, String> defaults = new HashMap<String, String>();
+            for (DomainStep.Param p : v.step.params()) defaults.put(p.name(), p.defaultValue());
+            java.util.regex.Matcher m = PLACEHOLDER.matcher(v.step.sentence());
+            StringBuffer out = new StringBuffer();
+            while (m.find()) {
+                String value = d.params != null && d.params.containsKey(m.group(1)) ? d.params.get(m.group(1))
+                        : defaults.get(m.group(1));
+                String said = value == null ? m.group() : inWords(value);
+                if (said == null) return null;
+                m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(said));
+            }
+            m.appendTail(out);
+            return out.toString();
+        }
+        return null;
+    }
+
+    /** {@code value} as a sentence says it: each reference in words, the rest as typed; null when a reference is bad. */
+    private static String inWords(String value) {
+        List<Refs.Ref> refs;
+        try {
+            refs = Refs.scan(value);
+        } catch (RuntimeException bad) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder();
+        int at = 0;
+        for (Refs.Ref r : refs) {
+            out.append(Refs.unescape(value.substring(at, r.start))).append(sentenceWords(r));
+            at = r.end;
+        }
+        return out.append(Refs.unescape(value.substring(at))).toString();
+    }
+
+    /**
+     * {@code after} with its sentence generated again ({@link #generatedSay}) when it is a do step whose sentence was the
+     * generated one of {@code before} and the change kept it; else {@code after} as it is. A sentence someone wrote stays,
+     * and so does the old one when the new one would be too long for a recorded test.
+     */
+    Action followSay(Action before, Action after) {
+        if (!(before instanceof DoAction) || !(after instanceof DoAction)) return after;
+        if (before.say == null || !before.say.equals(generatedSay((DoAction) before))) return after;
+        if (!before.say.equals(after.say)) return after;
+        String say = generatedSay((DoAction) after);
+        if (say == null || say.equals(before.say) || say.length() > 200) return after;   // RecordedTestFiles.checkSay
+        Action followed = FlowJson.mapper().convertValue(after, Action.class);
+        followed.say = say;
+        return followed;
+    }
+
+    /**
+     * Where the value of reference {@code r} comes from, in words a sentence can hold without step numbers: "the number
+     * placeOrder made", "the Order placeOrder added", "the remembered orderTotal", "this run's id".
+     */
+    static String sentenceWords(Refs.Ref r) {
+        if ("run".equals(r.id) && ".id".equals(r.path)) return "this run's id";
+        if (r.path.isEmpty()) return "the remembered " + r.id;
+        List<String> k = keys(r.path);
+        String last = null;
+        for (String key : k) if (!key.startsWith("[")) last = key;
+        if (last != null && last.contains(" › ")) last = last.substring(last.lastIndexOf(" › ") + 3);
+        String first = k.isEmpty() ? "" : k.get(0);
+        switch (first) {
+            case "rows":
+            case "items":
+                if (k.size() > 2 && ("added".equals(k.get(2)) || "changed".equals(k.get(2)))) {
+                    return "the " + last + " " + r.id + " " + k.get(2);
+                }
+                break;
+            case "fields":
+                if (k.size() > 1) return "the " + last + " " + r.id + " set";
+                break;
+            case "texts":
+                if (k.size() > 1) return "the " + last + " " + r.id + " showed";
+                break;
+            case "step":
+                if (k.size() > 1) return "the " + last + " " + r.id + " made";
+                break;
+            case "opened":
+                String kind = k.size() > 1 ? OPENED.get(k.get(1)) : null;
+                if (kind != null) return "the " + kind + " " + r.id + " opened";
+                break;
+            default:
+                break;
+        }
+        return "a value " + r.id + " made";
+    }
+
+    private static final Map<String, String> OPENED = new HashMap<String, String>();
+
+    static {
+        OPENED.put("tabs", "tab");
+        OPENED.put("dialogs", "dialog");
+        OPENED.put("windows", "window");
+    }
 
     /**
      * The domain checks of the ready plugins whose pattern is one step and fits one of {@code checks} (the Check menu's

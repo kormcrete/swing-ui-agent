@@ -4344,6 +4344,77 @@ class UiMcpRecordingTest {
         assertThat(linked.at("/steps/1/uses/0/value").asText()).isEqualTo("ORD-1641");
     }
 
+    /** Order Desk with placeOrder (it returns the number ORD-1641) and openOrder {order}. */
+    private UiMcpSession placeAndOpen() {
+        return orderDesk(new Plugins(backend.verbs),
+                DomainStep.act("placeOrder", "Place the order")
+                        .codeWithOutcome((ui, p) -> {
+                            ui.button("Place order").click();
+                            return java.util.Collections.<String, Object>singletonMap("number", "ORD-1641");
+                        })
+                        .build(),
+                DomainStep.act("openOrder", "Open order {order}")
+                        .param("order", ParamType.TEXT)
+                        .code((ui, p) -> ui.table().row("Order", p.text("order")).cell("Order").doubleClick())
+                        .build());
+    }
+
+    @Test
+    void aGeneratedSentenceFollowsItsLinkedParam() throws Exception {
+        UiMcpSession s = placeAndOpen();
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"placeOrder\"}"));
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"openOrder\",\"params\":{\"order\":\"ORD-1641\"}}"));
+
+        // the recorder linked the number at once: the saved sentence says where it comes from
+        DoAction open = (DoAction) s.recordedSteps().get(1).action;
+        assertThat(open.params).containsEntry("order", "${placeOrder.step.number}");
+        assertThat(open.say).isEqualTo("Open order the number placeOrder made");
+        recording(s, "{\"op\":\"unlink\",\"n\":2}");
+        assertThat(s.recordedSteps().get(1).action.say).isEqualTo("Open order ORD-1641");
+        recording(s, "{\"op\":\"link\",\"n\":2,\"ref\":\"${1.step.number}\"}");
+        assertThat(s.recordedSteps().get(1).action.say).isEqualTo("Open order the number placeOrder made");
+        // undo takes the sentence back with the link
+        recording(s, "{\"op\":\"undo\"}");
+        assertThat(s.recordedSteps().get(1).action.say).isEqualTo("Open order ORD-1641");
+        // a sentence the agent wrote stays
+        recording(s, "{\"op\":\"edit\",\"n\":2,\"say\":\"Open the new order\"}");
+        recording(s, "{\"op\":\"link\",\"n\":2,\"ref\":\"${1.step.number}\"}");
+        assertThat(((DoAction) s.recordedSteps().get(1).action).params).containsEntry("order", "${placeOrder.step.number}");
+        assertThat(s.recordedSteps().get(1).action.say).isEqualTo("Open the new order");
+    }
+
+    @Test
+    void anEditOfADoStepsParamsRegeneratesAGeneratedSentence() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        s.doAction(mapper.readTree(ADD));
+        assertThat(s.recordedSteps().get(0).action.say).isEqualTo("Add Gel pen, black to the cart");
+
+        recording(s, "{\"op\":\"edit\",\"n\":1,\"step\":{\"action\":\"do\",\"step\":\"order-desk:addToCart\","
+                + "\"params\":{\"product\":\"A4 paper, 500 sheets\"}}}");
+        assertThat(s.recordedSteps().get(0).action.say).isEqualTo("Add A4 paper, 500 sheets to the cart");
+        // a sentence given with the edit is the one kept
+        recording(s, "{\"op\":\"edit\",\"n\":1,\"say\":\"Add paper\",\"step\":{\"action\":\"do\","
+                + "\"step\":\"order-desk:addToCart\",\"params\":{\"product\":\"Gel pen, black\"}}}");
+        assertThat(s.recordedSteps().get(0).action.say).isEqualTo("Add paper");
+    }
+
+    @Test
+    void sentenceWordsSayWhereAValueComesFrom() {
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.rows['Orders › table'].added[0].Order}").get(0)))
+                .isEqualTo("the Order placeOrder added");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${addQtyToCart.texts['New order › Total']}").get(0)))
+                .isEqualTo("the Total addQtyToCart showed");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${open.fields.Number}").get(0))).isEqualTo("the Number open set");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${orderTotal}").get(0))).isEqualTo("the remembered orderTotal");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.opened.tabs[0]}").get(0))).isEqualTo("the tab placeOrder opened");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.step.number}").get(0)))
+                .isEqualTo("the number placeOrder made");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.rows.Orders.changed[0].Status}").get(0)))
+                .isEqualTo("the Status placeOrder changed");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${run.id}").get(0))).isEqualTo("this run's id");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${copy.selected}").get(0))).isEqualTo("a value copy made");
+    }
+
     @Test
     void aLinksNewIdNeverTakesALaterNameAndTheRecordedTestLoads() throws Exception {
         session.reader(readings(ordersOf("ORD-1640", "Bea"), ordersOf("ORD-1640", "Bea", "ORD-1641", "Ada")));

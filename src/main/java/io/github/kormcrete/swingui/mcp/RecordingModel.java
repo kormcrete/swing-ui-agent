@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiFunction;
 
 /**
  * The records made so far, each with an id that is never reused and an author. In memory the list is flat, one record
@@ -97,6 +98,8 @@ final class RecordingModel {
     private boolean trial;
     /** By record id: the paths links made to that step use (see {@link #link}). */
     private final Map<Integer, Set<String>> linkedPaths = new HashMap<Integer, Set<String>>();
+    /** A step's sentence after a link or an unlink ({@link #sentences}); by default the one it has. */
+    private BiFunction<Action, Action, Action> sentences = (before, after) -> after;
 
     State state() {
         return state;
@@ -357,6 +360,7 @@ final class RecordingModel {
         copy.nextId = nextId;
         copy.nextGroupId = nextGroupId;
         copy.runValues = runValues;
+        copy.sentences = sentences;
         for (Map.Entry<Integer, Set<String>> e : linkedPaths.entrySet()) {
             copy.linkedPaths.put(e.getKey(), new HashSet<String>(e.getValue()));
         }
@@ -1103,7 +1107,7 @@ final class RecordingModel {
         RecordedStep s = steps.get(i);
         Map<String, String> allSeen = new LinkedHashMap<String, String>(s.linkSeen);
         allSeen.putAll(seen);
-        steps.set(i, s.with(linked, s.edited).withLinkSeen(allSeen));
+        steps.set(i, s.with(sentences.apply(s.action, linked), s.edited).withLinkSeen(allSeen));
         for (Map.Entry<Integer, String> e : sourceIds.entrySet()) {
             int k = indexOf(e.getKey());
             if (k < 0) continue;
@@ -1126,6 +1130,14 @@ final class RecordingModel {
         String what = describe(i);
         return finish("link of " + what, "linked " + what + " to " + sourcesText(linked), by != null ? by : s.author, before,
                 false);
+    }
+
+    /**
+     * How {@link #link} and {@link #unlink} say a step they change: {@code follow.apply(before, after)} returns
+     * {@code after}, or a copy of it with another sentence (a generated sentence that follows its params).
+     */
+    void sentences(BiFunction<Action, Action, Action> follow) {
+        this.sentences = follow;
     }
 
     /** "what step 1 changed", "what steps 1 and 3 changed", "a remembered value", "the run's values". */
@@ -1171,6 +1183,7 @@ final class RecordingModel {
             throw new IllegalStateException("a step written to JSON does not read back: " + e.getOriginalMessage(), e);
         }
         List<RecordedStep> before = copyOfRecords();
+        a = sentences.apply(s.action, a);
         steps.set(i, s.with(a, s.edited).withLinkSeen(Collections.<String, String>emptyMap()));
         String what = describe(i);
         return finish("exact value of " + what, "used the exact value in " + what, by, before, false);
