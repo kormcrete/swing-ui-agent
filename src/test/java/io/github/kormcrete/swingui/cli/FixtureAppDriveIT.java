@@ -182,6 +182,12 @@ class FixtureAppDriveIT {
         step("expect", "{'target':{'name':'lines'},'selected':[]}");
         step("context_menu", "{'target':{'name':'lines','row':{'Product':'Paper'}},'path':['Copy product']}");
         step("expect", "{'target':{'name':'status'},'text':'copied Paper'}");
+        long started = System.currentTimeMillis();
+        JsonNode wrong = call("context_menu", "{'target':{'name':'lines','row':{'Product':'Paper'}},'path':['Delete product']}");
+        assertThat(wrong.path("passed").asBoolean()).as(wrong.path("why").asText()).isFalse();
+        assertThat(wrong.path("reason").asText()).isEqualTo("NOT_FOUND");
+        assertThat(wrong.path("message").asText()).contains("no item 'Delete product' in the popup; items are [").contains("Copy product");
+        assertThat(System.currentTimeMillis() - started).isLessThan(5_000);
         step("expect", "{'target':{'name':'lines'},'selected':[0]}");
     }
 

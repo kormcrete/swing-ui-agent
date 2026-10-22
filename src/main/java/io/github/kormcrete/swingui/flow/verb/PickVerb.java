@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 @Doc("Clicks down a path of items in the showing popup (a dropdown button's menu, a context menu), opening "
-        + "submenus on the way.")
+        + "submenus on the way. An item that is not in the popup fails after about a second; the message lists the items it has.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class PickVerb extends VerbAction {
     @Required @Doc("Item labels from the popup down; a submenu's label comes before its items.")

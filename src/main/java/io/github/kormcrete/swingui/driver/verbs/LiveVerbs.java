@@ -98,8 +98,11 @@ import java.util.function.Function;
 public final class LiveVerbs implements Verbs {
 
     private static final long POLL_MS = 100;
-    /** An AMBIGUOUS with the same match set for this long is final: waiting longer cannot make it one match. */
-    static final long AMBIGUOUS_STABLE_MS = 1000;
+    /**
+     * An AMBIGUOUS with the same match set, or a popup's missing item with the same item list, for this long is
+     * final: waiting longer will not change it (1 s, not at once: an app may fill a popup a moment after it shows).
+     */
+    static final long STABLE_MS = 1000;
     private static final String POSTED = "posted";
     private static final String API = "api";
 
@@ -994,13 +997,14 @@ public final class LiveVerbs implements Verbs {
     /**
      * Retries {@code probe} on the EDT until it succeeds or {@code millis} elapses, {@code POLL_MS}
      * apart: NOT_FOUND, AMBIGUOUS and NOT_ACTIONABLE (resolve, the modal refusal,
-     * the hit check) are retried, except an AMBIGUOUS whose match set stays the same for {@link #AMBIGUOUS_STABLE_MS}; any other reason propagates at once, and once the deadline passes the
+     * the hit check) are retried, except an AMBIGUOUS whose match set, or a {@link Popups.NoItem} whose item list,
+     * stays the same for {@link #STABLE_MS}; any other reason propagates at once, and once the deadline passes the
      * last DriverException propagates.
      */
     static <T> T retryUntil(long millis, Callable<T> probe) {
         long deadline = System.currentTimeMillis() + millis;
-        String ambiguous = null;
-        long ambiguousSince = 0;
+        String same = null;
+        long sameSince = 0;
         while (true) {
             try {
                 return Edt.call(probe);
@@ -1008,16 +1012,15 @@ public final class LiveVerbs implements Verbs {
                 boolean retry = e.reason() == Reason.NOT_FOUND || e.reason() == Reason.AMBIGUOUS
                         || e.reason() == Reason.NOT_ACTIONABLE;
                 long now = System.currentTimeMillis();
-                if (e.reason() == Reason.AMBIGUOUS) {
-                    String set = e.getMessage() + "\n" + e.details();
-                    if (!set.equals(ambiguous)) {
-                        ambiguous = set;
-                        ambiguousSince = now;
-                    } else if (now - ambiguousSince >= AMBIGUOUS_STABLE_MS) {
-                        throw e;
-                    }
-                } else {
-                    ambiguous = null;
+                String key = e.reason() == Reason.AMBIGUOUS ? e.getMessage() + "\n" + e.details()
+                        : e instanceof Popups.NoItem ? e.getMessage() : null;
+                if (key == null) {
+                    same = null;
+                } else if (!key.equals(same)) {
+                    same = key;
+                    sameSince = now;
+                } else if (now - sameSince >= STABLE_MS) {
+                    throw e;
                 }
                 if (!retry || now >= deadline) throw e;
                 pause(POLL_MS);

@@ -18,6 +18,13 @@ public final class Popups {
 
     private Popups() {}
 
+    /** The popup is showing and its items were read, and none reads the label: waiting for the same items again will not help. */
+    public static final class NoItem extends DriverException {
+        public NoItem(String label, List<String> items) {
+            super(Reason.NOT_FOUND, "no item '" + label + "' in the popup; items are " + items);
+        }
+    }
+
     public static JMenuItem item(JPopupMenu popup, String label) {
         List<JMenuItem> hits = new ArrayList<JMenuItem>();
         List<String> items = new ArrayList<String>();
@@ -27,7 +34,7 @@ public final class Popups {
             items.add(text);
             if (label.equals(text)) hits.add((JMenuItem) c);
         }
-        if (hits.isEmpty()) throw new DriverException(Reason.NOT_FOUND, "no item '" + label + "' in the popup; items are " + items);
+        if (hits.isEmpty()) throw new NoItem(label, items);
         if (hits.size() > 1) throw new DriverException(Reason.AMBIGUOUS, hits.size() + " popup items read '" + label + "'");
         return hits.get(0);
     }

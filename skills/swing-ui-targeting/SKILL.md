@@ -137,6 +137,8 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
   or a plain component inside a scrolling form.
 - `context_menu` on a table row, list item or tree row selects it first, unless it is already part of the
   selection (a multi-selection stays), as a right-click does in most apps; the menu then acts on it.
+- A wrong `context_menu` item fails in about a second and lists the items: use that to read a row's menu (no read
+  lists it without right-clicking).
 - `pending` and `describe_ui`'s `dialog` carry an option pane's whole message, one line per line; for another
   kind of dialog, its first three labels.
 - `realInput` in a step result means real mouse or key input reached the app while the step ran (a person at the

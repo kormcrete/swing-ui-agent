@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Resolved;
+import io.github.kormcrete.swingui.driver.widgets.Popups;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -165,6 +166,37 @@ class LiveVerbsArgumentsTest {
         }), DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.AMBIGUOUS);
         assertThat(System.currentTimeMillis() - start).isGreaterThanOrEqualTo(2_400);
+    }
+
+    @Test
+    void aMissingPopupItemFailsLongBeforeTheDeadline() {
+        long start = System.currentTimeMillis();
+        DriverException e = catchThrowableOfType(() -> LiveVerbs.<Object>retryUntil(10_000, () -> {
+            throw new Popups.NoItem("Cancel order", java.util.Arrays.asList("Open", "Cancel orders…", "Copy order number"));
+        }), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
+        assertThat(e.getMessage()).isEqualTo("NOT_FOUND: no item 'Cancel order' in the popup; items are [Open, Cancel orders…, Copy order number]");
+        assertThat(System.currentTimeMillis() - start).isLessThan(5_000);
+    }
+
+    @Test
+    void aPopupThatGainsTheItemPasses() {
+        AtomicInteger calls = new AtomicInteger();
+        String found = LiveVerbs.retryUntil(10_000, () -> {
+            int n = calls.incrementAndGet();
+            if (n < 3) throw new Popups.NoItem("Copy", java.util.Arrays.asList("Open" + n));
+            return "Copy";
+        });
+        assertThat(found).isEqualTo("Copy");
+    }
+
+    @Test
+    void anElementNotFoundStillWaitsTheWholeTimeout() {
+        long start = System.currentTimeMillis();
+        catchThrowableOfType(() -> LiveVerbs.<Object>retryUntil(1_500, () -> {
+            throw new DriverException(Reason.NOT_FOUND, "no button 'Pay'");
+        }), DriverException.class);
+        assertThat(System.currentTimeMillis() - start).isGreaterThanOrEqualTo(1_400);
     }
 
     @Test
