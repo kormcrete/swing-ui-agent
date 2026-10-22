@@ -96,6 +96,14 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
   say so.
 - **When no step fits, use the raw verbs.** Never stretch a step to do something else.
+- **Try a step on the record at hand before trusting it in a `batch`**: a step may not fit every record (an
+  optional field with another caption).
+- **A `do` step that fails part way** leaves the app where it stopped. The steps of it that ran are recorded as
+  plain steps, so the recording matches the screen: the result has `recordedPart` (the steps) and
+  `recordedPartNote` (in words; for a tool error, the last line of the error's details). A step that cannot be
+  recorded raw (a secret, no Java form) ends what is kept; the note names it and the `recording redo {"from":n}`
+  that records from there again. Finish the rest with raw verbs, or `redo` from the kept steps. A failed check
+  records nothing.
 - **Say which step you used** in your report, as the sentence with its values ("Add 10 × Gel pen, black to the
   cart"). Steps are named `<plugin>:<id>` in the recorded test, even with one plugin.
 - Raw steps that match a step fold into it as they are recorded (`recording list` shows `folded` and `raw`); a check,

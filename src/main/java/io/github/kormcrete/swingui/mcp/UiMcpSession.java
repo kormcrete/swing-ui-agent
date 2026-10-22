@@ -21,6 +21,7 @@ import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.StepNumbers;
+import io.github.kormcrete.swingui.client.StepCallVerbs;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
@@ -1517,6 +1518,9 @@ public class UiMcpSession {
                 && (replayed != null || record && model.state() == RecordingModel.State.RECORDING || wantOutcome);
         boolean agentRecords = replayed == null && record && author == RecordedStep.Author.AGENT
                 && model.state() == RecordingModel.State.RECORDING;
+        // a do step that fails part way: the steps of it that ran are recorded as plain steps (keepRanSubSteps)
+        boolean keepsPart = replayed == null && record && action instanceof DoAction
+                && model.state() == RecordingModel.State.RECORDING;
         UiReading before = null;
         UiReading after = null;
         FlowResult result;
@@ -1530,7 +1534,8 @@ public class UiMcpSession {
             }
             result = executor.run(flow, host);
             boolean ran = !result.steps.isEmpty() && result.steps.get(0).passed;
-            if (before != null && ran) after = read();
+            boolean ranPart = !ran && keepsPart && !result.steps.isEmpty() && ranAnAction(result.steps.get(0));
+            if (before != null && (ran || ranPart)) after = read();
             // the first check after the action, which may have waited for what it made late: that action has it before
             // the check links; the checks after it cost no reading (the next action reads anyway)
             if (check && agentRecords && ran && late != null && !late.checked) {
@@ -1542,16 +1547,6 @@ public class UiMcpSession {
         }
         long elapsed = System.currentTimeMillis() - started;
         StepResult step = result.steps.isEmpty() ? null : result.steps.get(0);
-        if (step != null && !step.passed && step.reason != null && Reason.valueOf(step.reason).isToolError()) {
-            // "The harness can't do this" is a tool error, not a failed step; a do step's details list the steps it ran.
-            Reason reason = Reason.valueOf(step.reason);
-            List<String> details = new ArrayList<String>();
-            if (step.details != null) details.addAll(step.details);
-            if (step.steps != null) {
-                for (StepResult c : step.steps) details.add((c.index + 1) + ". " + c.action + (c.passed ? " passed" : " failed"));
-            }
-            throw new DriverException(reason, DriverException.stripReason(step.message, reason), details);
-        }
         boolean passed = step != null && step.passed;
         // what it changed, once for the record and the caller; with a domain step's own values under "step"
         ObjectNode changed = null;
@@ -1567,6 +1562,25 @@ public class UiMcpSession {
             if (made != null) diff.put(FlowExecutor.STEP, made);
             newValues = Outcomes.newValues(before, diff);
             changed = FlowJson.mapper().valueToTree(diff);
+        }
+        if (step != null && !step.passed && step.reason != null && Reason.valueOf(step.reason).isToolError()) {
+            // "The harness can't do this" is a tool error, not a failed step; a do step's details list the steps it ran,
+            // and end with which of them the recording kept
+            Reason reason = Reason.valueOf(step.reason);
+            List<String> details = new ArrayList<String>();
+            if (step.details != null) details.addAll(step.details);
+            if (step.steps != null) {
+                for (StepResult c : step.steps) details.add((c.index + 1) + ". " + c.action + (c.passed ? " passed" : " failed"));
+            }
+            if (keepsPart) {
+                List<String> note = new ArrayList<String>();
+                if (keepRanSubSteps(step, author, before, changed, newValues, null, note) != null) {
+                    details.addAll(note);
+                    publish();
+                    scheduleFolding();
+                }
+            }
+            throw new DriverException(reason, DriverException.stripReason(step.message, reason), details);
         }
         ObjectNode r = mapper.createObjectNode();
         RowChoice row = null;
@@ -1603,6 +1617,15 @@ public class UiMcpSession {
                             + "); write it by hand into the exported test with the app plugin's test helpers or the Client API");
                 }
                 publish();
+            }
+        } else if (!passed && keepsPart && step != null) {
+            List<String> note = new ArrayList<String>();
+            ArrayNode part = keepRanSubSteps(step, author, before, changed, newValues, r, note);
+            if (part != null) {
+                r.set("recordedPart", part);
+                r.put("recordedPartNote", note.get(0));
+                publish();
+                scheduleFolding();
             }
         }
         if (wantOutcome && passed) {
@@ -1829,6 +1852,112 @@ public class UiMcpSession {
         DoAction kept = namedDo(d);
         if (kept.say == null && sentence != null && !sentence.isEmpty()) kept.say = sentence;
         return kept;
+    }
+
+    /**
+     * Records the steps a failed do step {@code step} ran, in order, as plain steps by {@code author}, each as a single
+     * step of the agent's is recorded, so the recording matches the screen. It stops at the first step that cannot be
+     * kept ({@link #cannotKeep}, or no Java form). What the whole do step changed ({@code changed}, {@code newValues};
+     * {@code before}: the reading before it) goes to the last action kept. Returns the steps as recorded, and puts what
+     * it did in words into {@code note}; null when it keeps nothing (no action of it ran, or the first cannot be kept).
+     * {@code result} (null: none) gets a {@code linkNote} as a single step's would.
+     */
+    private ArrayNode keepRanSubSteps(StepResult step, RecordedStep.Author author, UiReading before, ObjectNode changed,
+                                      Map<String, String> newValues, ObjectNode result, List<String> note) {
+        if (!ranAnAction(step)) return null;
+        ArrayNode out = mapper.createArrayNode();
+        List<Integer> kept = new ArrayList<Integer>();
+        RecordedStep lastAction = null;
+        StepResult unkept = null;
+        String why = null;
+        for (StepResult c : step.steps) {
+            if (!c.passed) break;
+            why = cannotKeep(c.json);
+            Action recorded = null;
+            if (why == null) {
+                try {
+                    recorded = literal(recordable(action(mapper.readTree(c.json)), c.outcome));
+                    List<String> problems = exportProblems(recorded);
+                    if (!problems.isEmpty()) why = "export_test has no Java form for it: " + String.join("; ", problems);
+                } catch (IOException | RuntimeException e) {
+                    why = UNREADABLE_STEP;
+                }
+            }
+            if (why != null) {
+                unkept = c;
+                break;
+            }
+            RecordedStep added = model.append(recorded, author, rowOf(recorded, c.outcome, null), seenOf(c.outcome));
+            kept.add(added.id);
+            if (!StepNumbers.isCheck(recorded)) lastAction = added;
+            out.add(mapper.valueToTree(autoLink(added, result)));
+        }
+        if (kept.isEmpty()) return null;
+        if (unkept != null) model.refused(unkept.action + " - " + why);
+        if (lastAction != null) {
+            keepOutcome(lastAction, changed, newValues, step);
+            if (author == RecordedStep.Author.AGENT && changed != null) late = new Late(lastAction.id, before, null);
+        }
+        // the steps as list numbers them now: folding comes after
+        List<RecordedStep> records = model.records();
+        List<String> labels = StepNumbers.labels(model.actions());
+        String first = null;
+        String last = null;
+        for (int i = 0; i < records.size(); i++) {
+            if (!kept.contains(records.get(i).id)) continue;
+            if (first == null) first = labels.get(i);
+            last = labels.get(i);
+        }
+        StepResult failed = step.steps.get(step.steps.size() - 1);
+        StringBuilder words = new StringBuilder("the domain step failed ");
+        words.append(failed.passed ? "after" : "at").append(" its step ").append(failed.index + 1)
+                .append(" (").append(failed.action).append(")");
+        if (kept.size() == 1) {
+            words.append("; its step 1 ran and is recorded as plain step ").append(first);
+        } else {
+            words.append("; its steps 1-").append(kept.size()).append(" ran and are recorded as plain steps ")
+                    .append(first).append("-").append(last);
+        }
+        words.append(", so the recording matches the screen");
+        if (unkept != null) {
+            words.append("; its step ").append(unkept.index + 1).append(" ran but is not recorded (").append(why)
+                    .append("): recording redo {\"from\":").append(stepNumber(first)).append("} records from there again");
+        }
+        note.add(words.toString());
+        return out;
+    }
+
+    /** Why a step a do step ran cannot be recorded as a plain step. */
+    private static final String UNREADABLE_STEP = "it does not read as a step";
+
+    /**
+     * Why the step a do step ran ({@code json}, as {@link StepResult#json} keeps it) cannot be recorded as a plain step
+     * before its Java form is asked: a secret it read is masked there ({@link StepCallVerbs#MASK}), or it does not read as
+     * a step; null when it may be.
+     */
+    static String cannotKeep(String json) {
+        if (json == null) return UNREADABLE_STEP;
+        if (json.contains(StepCallVerbs.MASK)) return "it holds a secret";
+        try {
+            FlowJson.mapper().readValue(json, Action.class);
+            return null;
+        } catch (IOException | RuntimeException e) {
+            return UNREADABLE_STEP;
+        }
+    }
+
+    /** Whether a step of the do step {@code step} that ran is an action (not a check). */
+    private static boolean ranAnAction(StepResult step) {
+        if (step.steps == null) return false;
+        for (StepResult c : step.steps) {
+            if (!c.passed || c.json == null) continue;
+            try {
+                if (!StepNumbers.isCheck(FlowJson.mapper().readValue(c.json, Action.class))) return true;
+            } catch (IOException | RuntimeException e) {
+                // not a step
+            }
+        }
+        return false;
     }
 
     /**

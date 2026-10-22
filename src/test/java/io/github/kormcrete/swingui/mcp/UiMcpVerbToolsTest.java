@@ -267,9 +267,12 @@ class UiMcpVerbToolsTest {
 
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
         assertThat(e.getMessage()).contains("Add Gel pen, black to the cart: step 2 (click(").endsWith("a locator needs a role or an id");
-        assertThat(e.details()).hasSize(2);
+        assertThat(e.details()).hasSize(3);
         assertThat(e.details().get(0)).startsWith("1. click(").endsWith(") passed");
         assertThat(e.details().get(1)).startsWith("2. click(").endsWith(") failed");
+        // the session records: the step that ran is kept as a plain step
+        assertThat(e.details().get(2)).endsWith("; its step 1 ran and is recorded as plain step 1, so the recording "
+                + "matches the screen");
     }
 
     @Test

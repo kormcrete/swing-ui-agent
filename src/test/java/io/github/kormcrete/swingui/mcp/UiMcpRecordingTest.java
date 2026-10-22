@@ -2272,6 +2272,84 @@ class UiMcpRecordingTest {
         assertThat(run.path("steps").get(0).path("action").asText()).isEqualTo("Add Gel pen, black to the cart");
     }
 
+    private static DomainStep checkOutWithPo() {
+        return DomainStep.act("checkOutWithPo", "Check out with PO number {po}").param("po", ParamType.TEXT)
+                .steps("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Checkout…\"}}",
+                        "{\"action\":\"click\",\"target\":{\"window\":\"dialog\",\"role\":\"button\",\"name\":\"Next\"}}",
+                        "{\"action\":\"click\",\"target\":{\"window\":\"dialog\",\"role\":\"button\",\"name\":\"Next\"}}",
+                        "{\"action\":\"type\",\"target\":{\"window\":\"dialog\",\"role\":\"text\",\"name\":\"PO number\"},\"text\":\"{po}\"}",
+                        "{\"action\":\"click\",\"target\":{\"window\":\"dialog\",\"role\":\"button\",\"name\":\"Next\"}}")
+                .build();
+    }
+
+    @Test
+    void aDomainStepThatFailsPartWayRecordsTheStepsThatRanAsPlainSteps() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), checkOutWithPo());
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 4
+                ? new DriverException(Reason.NOT_FOUND, "nothing matches text 'PO number' in dialog") : null;
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"checkOutWithPo\",\"params\":{\"po\":\"PO-2201\"}}")));
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(s.recordedSteps()).extracting(x -> x.action.describe()).containsExactly(
+                "click(button 'Checkout…')", "click(button 'Next' in dialog)", "click(button 'Next' in dialog)");
+        assertThat(s.recordedSteps()).allMatch(x -> x.author == RecordedStep.Author.AGENT);
+        assertThat(r.path("recordedPart")).hasSize(3);
+        assertThat(r.path("recordedPartNote").asText()).startsWith("the domain step failed at its step 4 (")
+                .endsWith("); its steps 1-3 ran and are recorded as plain steps 1-3, so the recording matches the screen");
+        backend.verbs.during = () -> { };
+        backend.verbs.failure = null;
+        assertThat(mapper.readTree(s.doAction(mapper.readTree(ADD))).has("recorded")).isTrue();   // the next step follows them
+        assertThat(s.recordedSteps()).hasSize(4);
+    }
+
+    @Test
+    void aFailedDomainCheckRecordsNothing() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs));
+        backend.verbs.failure = new DriverException(Reason.EXPECTATION, "expected text '4.99' but was '5.00'");
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"cartTotalIs\",\"params\":{\"total\":\"4.99\"}}")));
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.has("recordedPart")).isFalse();
+        assertThat(s.recordedSteps()).isEmpty();
+    }
+
+    @Test
+    void aSubStepThatCannotBeKeptEndsWhatIsKeptAndSaysWhy() throws Exception {
+        // step 2 names a row by three keys: it has no Java form, so it cannot be recorded raw
+        DomainStep d = DomainStep.act("addAndPay", "Add and pay")
+                .steps("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"table\",\"row\":{\"SKU\":\"PEN-GEL-BLK\",\"Product\":\"Gel pen, black\",\"Price\":\"€1.20\"},\"column\":\"Product\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Pay\"}}").build();
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), d);
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 3
+                ? new DriverException(Reason.NOT_FOUND, "no button 'Pay'") : null;
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addAndPay\"}")));
+        assertThat(s.recordedSteps()).hasSize(1);
+        assertThat(r.path("recordedPartNote").asText()).contains("its step 1 ran and is recorded as plain step 1")
+                .contains("its step 2 ran but is not recorded (").contains("recording redo {\"from\":1}");
+    }
+
+    @Test
+    void aSubStepThatHoldsASecretOrDoesNotReadCannotBeKept() {
+        // a secret the domain step read is masked in its kept step: recorded raw it would type the mask
+        assertThat(UiMcpSession.cannotKeep("{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Password\"},"
+                + "\"text\":\"***\"}")).isEqualTo("it holds a secret");
+        assertThat(UiMcpSession.cannotKeep("{\"action\":\"no such step\"}")).isEqualTo("it does not read as a step");
+        assertThat(UiMcpSession.cannotKeep(null)).isEqualTo("it does not read as a step");
+        assertThat(UiMcpSession.cannotKeep("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Pay\"}}")).isNull();
+    }
+
+    @Test
+    void aDomainStepThatFailsWithBadInputPartWayStillRecordsWhatRan() throws Exception {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), checkOutWithPo());
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 3
+                ? new DriverException(Reason.BAD_INPUT, "'keys' is empty") : null;
+        DriverException e = catchThrowableOfType(() -> s.doAction(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"checkOutWithPo\",\"params\":{\"po\":\"PO-2201\"}}")), DriverException.class);
+        assertThat(e.details().get(e.details().size() - 1)).contains("its steps 1-2 ran and are recorded as plain steps 1-2");
+        assertThat(s.recordedSteps()).hasSize(2);
+    }
+
     @Test
     void aRememberEntryIsRecordedLoadedAndExportedAsARecordedTestAndAsJava() throws Exception {
         backend.verbs.remembered = "ORD-1641";

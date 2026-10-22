@@ -157,6 +157,8 @@ $UI batch '{"steps":[{"verb":"do","step":"addToCart","params":{"product":"Gel pe
 
 - `list` gives every step with its sentence, `about`, params and a one-line summary of what it folds. `describe` gives one step in full, with the values that fit right now. `match {from, to}` is a dry run of what a range of the recording would fold into.
 - `do_action` and `batch` run a `do` step. The step fails like any other: `passed` says so.
+- A `do` step that fails part way leaves the app where it stopped. On a recording, the steps of it that ran are recorded as plain steps, so the recording matches the screen: the result lists them (`recordedPart`) and says so in words (`recordedPartNote`); for a tool error, the error's details end with the same words. A step that cannot be recorded raw (it holds a secret, or has no Java form) ends what is kept, and the words say which one: `recording redo {"from":n}` records from there again. A failed check records nothing. Finish the rest by hand, or `redo` from the kept steps.
+- Try a step on the record at hand before you trust it in a `batch`: a step may not fit every record, such as an optional field with another caption.
 - On a recording: `fold {from, to}` folds steps into the step they match, `unfold {n}` puts them back and `keepRaw {from, to}` keeps them raw. The list shows where a run did not fold and why. See the [tool reference](/swing-ui-agent/reference/tools/).
 
 ## In a recorded test
