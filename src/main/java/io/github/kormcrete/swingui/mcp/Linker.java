@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.driver.outcome.Outcomes;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.FlowJson;
+import io.github.kormcrete.swingui.flow.StepNumbers;
 import io.github.kormcrete.swingui.flow.refs.JsonPaths;
 import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
@@ -46,8 +47,8 @@ import java.util.regex.Pattern;
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
  * is; a tree row a step added to that tree is linked by its whole path. What a check expects is never linked to the
  * checked element's own field or text, or to its cell in a row an earlier step changed, nor a domain check's param to
- * what the check read (the check would compare it with itself); a row or item a step added is new on each run and is
- * linked. A remembered value and a text made unique per run are
+ * what the check read, nor either to a value remembered from that very place under the same step (the check would
+ * compare it with itself); a row or item a step added is new on each run and is linked. A remembered value and a text made unique per run are
  * linked alike (that text also in its plain form, as typed before it was made unique, short or not: the person asked for
  * it; it is the typing step's own value, never what the field it filled shows). Several sources: the most recent step
  * wins (a value remembered after the step that added its row too); within one step a field, a row, an item or a domain
@@ -147,6 +148,34 @@ final class Linker {
             }
         }
         return false;
+    }
+
+    /**
+     * Whether the remember entry {@code a} read its value from the very place one of {@code reads} (expect steps) checks:
+     * an element both name alike ({@link #ownKeys}), and for a cell check the same column of that table (and the same
+     * row, when both name one). With {@code reads} empty (what was read is not known), any remember entry.
+     */
+    static boolean rememberedFrom(Action a, List<JsonNode> reads) {
+        if (!(a instanceof RememberVerb) || ((RememberVerb) a).target == null) return false;
+        if (reads.isEmpty()) return true;
+        JsonNode target = FlowJson.mapper().valueToTree(((RememberVerb) a).target);
+        Set<String> keys = ownKeys(target);
+        String column = text(target.get("column"));
+        for (JsonNode read : reads) {
+            JsonNode cell = read.path("cell");
+            if (column == null ? text(cell.get("column")) != null : !column.equals(text(cell.get("column")))) continue;
+            JsonNode row = target.get("row");
+            JsonNode checkedRow = cell.get("row");
+            if (row != null && !row.isNull() && checkedRow != null && !checkedRow.isNull() && !row.equals(checkedRow)) continue;
+            Set<String> both = ownKeys(read.get("target"));
+            both.retainAll(keys);
+            if (!both.isEmpty()) return true;
+        }
+        return false;
+    }
+
+    private static String text(JsonNode node) {
+        return node != null && node.isTextual() ? node.textValue() : null;
     }
 
     /**
@@ -713,11 +742,12 @@ final class Linker {
 
         /**
          * An automatic link of what a check expects never comes from the checked element's own field or text, or a row of
-         * its table that an earlier step changed, in its column: compared with itself, the check would check nothing (and
-         * a replay where it already showed that value finds no change). Another source of the value is taken instead. A
-         * row or item an earlier step added is new on every run: a check of it is linked. The person's and the agent's
-         * links go where asked, but for a check linked to the very place it reads under the step that made the value
-         * (refused by the session: {@link #readBy}).
+         * its table that an earlier step changed, in its column, or a value remembered from it under the same step
+         * ({@link #rememberedHere}): compared with itself, the check would check nothing (and a replay where it already
+         * showed that value finds no change). Another source of the value is taken instead. A row or item an earlier step
+         * added is new on every run: a check of it is linked. The person's and the agent's links go where asked, but for
+         * a check linked to the very place it reads under the step that made or remembered the value (refused by the
+         * session: {@link #readBy}, {@link #rememberedFrom}).
          */
         @Override void expected(ObjectNode parent, String field, JsonNode target, String column) {
             if (!rows) {
@@ -727,16 +757,21 @@ final class Linker {
             JsonNode node = parent.get(field);
             if (node == null || !node.isTextual() || hasRefs(node.textValue())) return;
             String value = Refs.unescape(node.textValue());
+            ObjectNode read = FlowJson.mapper().createObjectNode();
+            if (target != null) read.set("target", target);
+            if (column != null) read.set("cell", parent);
+            List<JsonNode> reads = Collections.<JsonNode>singletonList(read);
             for (Candidate c : sorted) {
-                if (!c.value.equals(value) || shows(keysOf(c.path), target, column)) continue;
+                if (!c.value.equals(value) || shows(keysOf(c.path), target, column) || rememberedHere(c, reads)) continue;
                 matches.add(new Match(parent, field, -1, Collections.<Object>singletonList(c)));
                 return;
             }
         }
 
         /**
-         * A domain check's automatic links never come from what the check itself reads ({@link #readBy}): compared with
-         * itself, it would pass whatever the app shows. Another source of the value is taken instead.
+         * A domain check's automatic links never come from what the check itself reads ({@link #readBy}), nor from a value
+         * remembered from there under the same step ({@link #rememberedHere}): compared with itself, it would pass
+         * whatever the app shows. Another source of the value is taken instead.
          */
         @Override void params(JsonNode params) {
             if (!rows || reads == null || !(params instanceof ObjectNode)) {
@@ -749,11 +784,25 @@ final class Linker {
                 if (node == null || !node.isTextual() || hasRefs(node.textValue())) continue;
                 String value = Refs.unescape(node.textValue());
                 for (Candidate c : sorted) {
-                    if (!c.value.equals(value) || readBy(c.path, reads)) continue;
+                    if (!c.value.equals(value) || readBy(c.path, reads) || rememberedHere(c, reads)) continue;
                     matches.add(new Match(params, field, -1, Collections.<Object>singletonList(c)));
                     break;
                 }
             }
+        }
+
+        /**
+         * Whether candidate {@code c} is a value remembered from the very place {@code reads} check ({@link
+         * #rememberedFrom}), under the same step as the check: no action between, the value is the one the check reads
+         * at the same moment. Remembered under an earlier step, the check says the value has not changed since.
+         */
+        private boolean rememberedHere(Candidate c, List<JsonNode> reads) {
+            if (c.template != null || !(c.source.action instanceof RememberVerb)) return false;
+            int at = -1;
+            for (int i = 0; i < earlier.size(); i++) if (earlier.get(i) == c.source) at = i;
+            if (at < 0) return false;
+            for (int i = at + 1; i < earlier.size(); i++) if (!StepNumbers.isCheck(earlier.get(i).action)) return false;
+            return rememberedFrom(c.source.action, reads);
         }
 
         /**

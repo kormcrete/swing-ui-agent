@@ -523,6 +523,41 @@ class LinkerTest {
     }
 
     @Test
+    void aCheckIsNeverLinkedToAValueRememberedFromTheVeryPlaceItReadsUnderTheSameStep() {
+        RecordedStep add = step(1, "{'action':'do','step':'order-desk:addQtyToCart','params':{'qty':'12'}}",
+                "{'texts':{'Total':'€16.42'}}", "€16.42", ".texts.Total");
+        RecordedStep total = step(2, "{'action':'remember','target':{'role':'label','name':'Total'},'as':'total'}", null,
+                "€16.42", "");
+        String expect = "{'action':'expect','target':{'role':'label','name':'Total'},'text':'€16.42'}";
+        String check = "{'action':'do','step':'order-desk:cartTotalIs','params':{'total':'€16.42'},'check':true}";
+        List<JsonNode> reads = Collections.singletonList(read(expect));
+
+        // remembered from the label the check reads, under the same step: compared with itself
+        unchanged(expect, steps(add, total));
+        assertThat(Linker.link(action(check), steps(add, total), steps(add, total), reads).linked()).isFalse();
+        assertThat(Linker.link(action(check), steps(add, total), steps(add, total), Collections.<JsonNode>emptyList())
+                .linked()).isFalse();
+        // remembered from another place: linked
+        RecordedStep sub = step(2, "{'action':'remember','target':{'role':'label','name':'Subtotal'},'as':'sub'}", null,
+                "€16.42", "");
+        assertThat(tree(Linker.link(action(expect), steps(add, sub)).action).path("text").asText()).isEqualTo("${sub}");
+        // remembered under an earlier step: the check says the value has not changed since
+        RecordedStep other = step(3, "{'action':'click','target':{'role':'button','name':'Other'}}", null);
+        assertThat(tree(Linker.link(action(expect), steps(add, total, other)).action).path("text").asText())
+                .isEqualTo("${total}");
+        assertThat(tree(Linker.link(action(check), steps(add, total, other), steps(add, total, other), reads).action)
+                .at("/params/total").asText()).isEqualTo("${total}");
+        // a cell: the column remembered is the one checked; another column is another place
+        RecordedStep ref = step(2, "{'action':'remember','target':{'role':'table','name':'Lines','column':'Ref'},"
+                + "'as':'ref','selected':true}", null, "ORD-1643", "");
+        unchanged("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':{'index':0},'column':'Ref',"
+                + "'expected':'ORD-1643'}}", steps(add, ref));
+        assertThat(tree(Linker.link(action("{'action':'expect','target':{'role':'table','name':'Lines'},'cell':{'row':"
+                + "{'index':0},'column':'Code','expected':'ORD-1643'}}"), steps(add, ref)).action).at("/cell/expected")
+                .asText()).isEqualTo("${ref}");
+    }
+
+    @Test
     void readByIsTheExpectSelfRule() {
         List<JsonNode> label = Collections.singletonList(read("{'action':'expect','target':{'role':'label','name':'Total'},'text':'x'}"));
         assertThat(Linker.readBy(".texts.Total", label)).isTrue();

@@ -2774,6 +2774,69 @@ class UiMcpRecordingTest {
         assertThat(later.at("/steps/1/checks/0/uses/0/value").asText()).isEqualTo("€16.42");
     }
 
+    private static final String ADD_QTY = "{\"action\":\"do\",\"step\":\"addQty\",\"params\":{\"qty\":\"12\"}}";
+    private static final String TOTAL_IS = "{\"action\":\"do\",\"step\":\"cartTotalIs\",\"params\":{\"total\":\"€16.42\"}}";
+    private static final String EXPECT_TOTAL = "{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},"
+            + "\"text\":\"€16.42\"}";
+    private static final String CLICK_OTHER = "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Other\"}}";
+
+    @Test
+    void aCheckIsNeverLinkedToAValueRememberedFromItsOwnPlaceUnderTheSameStep() throws Exception {
+        // 1: do addQty; 1.1: remember label Total as total; 1.2: do cartTotalIs €16.42; 1.3: expect label Total €16.42;
+        // 2: click button 'Other'; 2.1: expect label Total €16.42
+        UiMcpSession s = totalAfterAddQty();
+        backend.verbs.remembered = "€16.42";
+        s.doAction(mapper.readTree(ADD_QTY));
+        recording(s, "{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"as\":\"total\"}");
+        s.doAction(mapper.readTree(TOTAL_IS));
+        s.doAction(mapper.readTree(EXPECT_TOTAL));
+        s.doAction(mapper.readTree(CLICK_OTHER));
+        s.doAction(mapper.readTree(EXPECT_TOTAL));
+        JsonNode list = recording(s, "{\"op\":\"list\"}");
+        assertThat(list.at("/steps/0/checks/0/n").asText()).as(list.toString()).isEqualTo("1.1");
+        assertThat(list.at("/steps/1/checks/0/n").asText()).isEqualTo("2.1");
+
+        // under the step that remembered it, both checks stay exact
+        assertThat(((DoAction) s.recordedSteps().get(2).action).params).containsEntry("total", "€16.42");
+        assertThat(mapper.valueToTree(s.recordedSteps().get(3).action).path("text").asText()).isEqualTo("€16.42");
+        // under a later step the check says the value has not changed since
+        assertThat(mapper.valueToTree(s.recordedSteps().get(5).action).path("text").asText()).isEqualTo("${total}");
+
+        DriverException e = catchThrowableOfType(() -> recording(s, "{\"op\":\"link\",\"n\":\"1.2\",\"ref\":\"total\"}"),
+                DriverException.class);
+        assertThat(e.getMessage()).contains("check 1.2 reads the very place check 1.1 remembered this value from (total)")
+                .contains("compare the value with itself").endsWith("(nothing linked)");
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"link\",\"n\":\"1.3\",\"ref\":\"${total}\"}"),
+                DriverException.class).getMessage()).contains("check 1.3 reads the very place check 1.1 remembered");
+    }
+
+    @Test
+    void aCheckWrittenByHandWithItsOwnPlaceUnderTheStepThatMadeItIsRefused() throws Exception {
+        // 1: do addQty; 1.1: do cartTotalIs; 1.2: expect label Total; 2: click button 'Other'; 2.1: expect label Total
+        UiMcpSession s = totalAfterAddQty();
+        s.doAction(mapper.readTree(ADD_QTY));
+        s.doAction(mapper.readTree(TOTAL_IS));
+        s.doAction(mapper.readTree(EXPECT_TOTAL));
+        s.doAction(mapper.readTree(CLICK_OTHER));
+        s.doAction(mapper.readTree(EXPECT_TOTAL));
+        recording(s, "{\"op\":\"link\",\"n\":\"2.1\",\"ref\":\"${1.texts.Total}\"}");   // step 1 is addQty now
+        String self = "{\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"${addQty.texts.Total}\"}";
+
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"insert\",\"at\":\"1.3\",\"step\":" + self + "}"),
+                DriverException.class).getMessage())
+                .contains("check 1.3 reads the very place step 1 showed this value in (.texts.Total)")
+                .endsWith("(nothing linked)");
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"edit\",\"n\":\"1.2\",\"step\":" + self + "}"),
+                DriverException.class).getMessage()).contains("check 1.2 reads the very place step 1");
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"edit\",\"n\":\"1.1\",\"step\":{\"action\":\"do\","
+                + "\"step\":\"order-desk:cartTotalIs\",\"params\":{\"total\":\"${addQty.texts.Total}\"},\"check\":true}}"),
+                DriverException.class).getMessage()).contains("check 1.1 reads the very place step 1");
+        assertThat(s.recordedSteps()).hasSize(5);
+        // under a later step: allowed
+        JsonNode later = recording(s, "{\"op\":\"insert\",\"at\":\"2.2\",\"step\":" + self + "}");
+        assertThat(later.at("/steps/1/checks/1/n").asText()).as(later.toString()).isEqualTo("2.2");
+    }
+
     @Test
     void theAgentsRawStepsFoldButNeverWithThePersons() throws Exception {
         UiMcpSession s = orderDesk(new Plugins(backend.verbs));

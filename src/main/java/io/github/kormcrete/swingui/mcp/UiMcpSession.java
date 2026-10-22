@@ -75,6 +75,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -83,6 +84,7 @@ import java.util.function.Supplier;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -3505,6 +3507,7 @@ public class UiMcpSession {
         RecordingModel scratch = model.copy();
         scratch.insert(at, action, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
+        refuseSelfComparison(scratch.records(), action);
         return edited(model.insert(at, action, RecordedStep.Author.AGENT));
     }
 
@@ -3638,9 +3641,21 @@ public class UiMcpSession {
             }
         }
         Action replaced = sentenced(edited instanceof DoAction ? namedDo((DoAction) edited) : edited, what);
+        // a domain check edited into another one no longer reads what the old one read
+        int id = model.at(n).id;
+        List<JsonNode> reads = domainCheckReads.get(id);
+        boolean stale = reads != null && !(replaced instanceof DoAction && old instanceof DoAction
+                && Objects.equals(((DoAction) replaced).step, ((DoAction) old).step));
+        if (stale) domainCheckReads.remove(id);
         RecordingModel scratch = model.copy();
-        scratch.replace(n, replaced, RecordedStep.Author.AGENT);
-        validateEdit(scratch.actions());
+        try {
+            scratch.replace(n, replaced, RecordedStep.Author.AGENT);
+            validateEdit(scratch.actions());
+            refuseSelfComparison(scratch.records(), replaced);
+        } catch (RuntimeException e) {
+            if (stale) domainCheckReads.put(id, reads);
+            throw e;
+        }
         return edited(model.replace(n, replaced, RecordedStep.Author.AGENT) + kept);
     }
 
@@ -3850,22 +3865,51 @@ public class UiMcpSession {
     }
 
     /**
-     * Refuses (BAD_INPUT) a link of the check {@code stepId} (an expect, or a domain check whose reads are known:
-     * {@link #domainCheckReads}) to what the step it sits under made in the very place the check reads
-     * ({@link Linker#readBy}): it would compare the value with itself at the same moment and pass whatever the app shows.
-     * Under a later step the same link checks that the value has not changed since: allowed.
+     * Refuses (BAD_INPUT) a link of the check {@code stepId} to what it reads itself at the same moment
+     * ({@link #refuseSelfComparison(List, int, Action, Collection, Map)}): the references the link writes.
      */
     private void refuseSelfComparison(int stepId, Linker.Linked linked) {
         List<RecordedStep> records = model.records();
         int at = 0;
         while (at < records.size() && records.get(at).id != stepId) at++;
         if (at == records.size()) return;
-        Action check = records.get(at).action;
+        refuseSelfComparison(records, at, records.get(at).action, linked.seen.keySet(), linked.ids);
+    }
+
+    /**
+     * Refuses (BAD_INPUT) a check written by hand ({@code check}, the record at {@code at} of {@code records}, a
+     * recording as it would be) whose references compare a value with itself ({@link #refuseSelfComparison(List, int,
+     * Action, Collection, Map)}).
+     */
+    private void refuseSelfComparison(List<RecordedStep> records, Action check) {
+        for (int i = 0; i < records.size(); i++) {
+            if (records.get(i).action != check) continue;
+            List<String> written = new ArrayList<String>();
+            try {
+                for (Refs.Ref r : Refs.of(check)) written.add(r.source);
+            } catch (IllegalArgumentException malformed) {
+                return;   // validateEdit says what is wrong with it
+            }
+            refuseSelfComparison(records, i, check, written, Collections.<Integer, String>emptyMap());
+            return;
+        }
+    }
+
+    /**
+     * Refuses (BAD_INPUT) the references {@code written} of the check {@code check} (an expect, or a domain check whose
+     * reads are known: {@link #domainCheckReads}), the record at {@code at} of {@code records}, that name the very place
+     * the check reads under the step it sits under: what that step made there ({@link Linker#readBy}), or a value a
+     * remember entry under that same step read from there ({@link Linker#rememberedFrom}). Linked to it, the check would
+     * compare the value with itself at the same moment and pass whatever the app shows. Under a later step the same link
+     * checks that the value has not changed since: allowed. {@code ids}: the ids a link gives its sources, by record id.
+     */
+    private void refuseSelfComparison(List<RecordedStep> records, int at, Action check, Collection<String> written,
+            Map<Integer, String> ids) {
         List<JsonNode> reads;
         if (check instanceof ExpectVerb) {
             reads = Collections.<JsonNode>singletonList(mapper.valueToTree(check));
         } else if (check instanceof DoAction && Boolean.TRUE.equals(((DoAction) check).check)) {
-            reads = domainCheckReads.get(stepId);
+            reads = domainCheckReads.get(records.get(at).id);
         } else {
             return;
         }
@@ -3874,23 +3918,41 @@ public class UiMcpSession {
         while (under >= 0 && StepNumbers.isCheck(records.get(under).action)) under--;
         if (under < 0) return;
         RecordedStep step = records.get(under);
-        String id = step.action.id != null ? step.action.id : linked.ids.get(step.id);
-        if (id == null) return;
-        for (String written : linked.seen.keySet()) {
+        String id = step.action.id != null ? step.action.id : ids.get(step.id);
+        List<String> labels = null;
+        for (String text : written) {
             List<Refs.Ref> refs;
             try {
-                refs = Refs.scan(written);
+                refs = Refs.scan(text);
             } catch (IllegalArgumentException malformed) {
                 continue;
             }
             for (Refs.Ref ref : refs) {
-                if (!ref.id.equals(id) || !Linker.readBy(ref.path, reads)) continue;
-                List<String> labels = StepNumbers.labels(model.actions());
-                throw new DriverException(Reason.BAD_INPUT, "check " + labels.get(at) + " reads the very place step "
-                        + labels.get(under) + " showed this value in (" + ref.path + "): linked to it, the check would "
-                        + "compare the value with itself and pass whatever the app shows (nothing linked)");
+                String place = null;
+                if (ref.id.equals(id) && Linker.readBy(ref.path, reads)) {
+                    place = "step " + label(records, under) + " showed this value in (" + ref.path + ")";
+                } else {
+                    for (int i = under + 1; i < at && place == null; i++) {
+                        Action a = records.get(i).action;
+                        if (a instanceof RememberVerb && ref.id.equals(((RememberVerb) a).as) && ref.path.isEmpty()
+                                && Linker.rememberedFrom(a, reads)) {
+                            place = "check " + label(records, i) + " remembered this value from (" + ref.id + ")";
+                        }
+                    }
+                }
+                if (place == null) continue;
+                throw new DriverException(Reason.BAD_INPUT, "check " + label(records, at) + " reads the very place "
+                        + place + ": linked to it, the check would compare the value with itself and pass whatever the "
+                        + "app shows (nothing linked)");
             }
         }
+    }
+
+    /** The label of the record at {@code i} of {@code records}, as list numbers it ("1", "1.2"). */
+    private static String label(List<RecordedStep> records, int i) {
+        List<Action> actions = new ArrayList<Action>(records.size());
+        for (RecordedStep r : records) actions.add(r.action);
+        return StepNumbers.labels(actions).get(i);
     }
 
     /**
