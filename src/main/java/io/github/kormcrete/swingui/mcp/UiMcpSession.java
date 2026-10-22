@@ -1930,16 +1930,19 @@ public class UiMcpSession {
             note.add(words.toString());
             return out;
         }
+        String as = lastAction == null ? "check" : "plain step";   // only checks kept: they sit under the step before
         if (kept.size() == 1) {
-            words.append("; its step 1 ran and is recorded as plain step ").append(first);
+            words.append("; its step 1 ran and is recorded as ").append(as).append(" ").append(first);
         } else {
-            words.append("; its steps 1-").append(kept.size()).append(" ran and are recorded as plain steps ")
+            words.append("; its steps 1-").append(kept.size()).append(" ran and are recorded as ").append(as).append("s ")
                     .append(first).append("-").append(last);
         }
         words.append(", so the recording matches the screen");
         if (unkept != null) {
+            // from the first step of the kept part: a check kept first sits under a step from before the do step
+            String from = first.indexOf('.') < 0 ? first : String.valueOf(Integer.parseInt(stepNumber(first)) + 1);
             words.append("; its step ").append(unkept.index + 1).append(" ran but is not recorded (").append(why)
-                    .append("): recording redo {\"from\":").append(stepNumber(first)).append("} records from there again");
+                    .append("): recording redo {\"from\":").append(from).append("} records from there again");
         }
         note.add(words.toString());
         return out;
