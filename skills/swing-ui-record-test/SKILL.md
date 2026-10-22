@@ -56,8 +56,9 @@ Exit codes: 0 ok, 1 tool error (message on stderr), 2 usage, 3 no agent reachabl
 agent: start it the project's way if it says how, else stop and say so). A step that ran and failed exits 0 with
 `"passed":false`: always read `passed`.
 
-An answering `session` means the agent is up, not that the app is ready. With a plugin, wait for its `state`
-`ready`; without one, `expect` something the app enables once it is ready (a toolbar button `!disabled`) first.
+An answering `session` means the agent is up, not that the app is ready. Wait for `ready: true` in `session` (the
+plugin is ready and the main window shows), then `expect` the start screen shown: with a plugin, what its reset shows
+(the Orders tab); without one, something the app enables once it is ready (a toolbar button `!disabled`).
 
 `BUSY: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the
 agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner":"recorder"}'`, pass

@@ -47,4 +47,15 @@ class SessionInfoTest {
         assertThat(i.appPluginReady()).isFalse();
         assertThat(i.appPluginUsable()).isTrue();
     }
+
+    @Test
+    void readyAndTheMainWindowAreRead() throws Exception {
+        SessionInfo i = SessionInfo.parse(new ObjectMapper().readTree("{\"ready\":false,\"app\":{\"mainWindow\":\"not showing\"}}"));
+        assertThat(i.ready).isFalse();
+        assertThat(i.mainWindow).isEqualTo("not showing");
+        // an older agent says nothing about it: ready as far as it knows
+        SessionInfo old = SessionInfo.parse(new ObjectMapper().readTree("{}"));
+        assertThat(old.ready).isTrue();
+        assertThat(old.mainWindow).isNull();
+    }
 }

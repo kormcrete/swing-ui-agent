@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.agent;
 
+import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Verbs;
@@ -20,7 +21,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /**
  * The {@code session} tool: what this agent is, who holds it, and the start of every test. Seven ops: info, lease,
@@ -38,6 +43,14 @@ final class SessionTool implements McpToolDefinition {
     private final IntSupplier boundPort;
     private final long appStartedAt;
     private final ObjectMapper m = new ObjectMapper();
+    /** TRUE when the app's main window shows, FALSE while it does not, null when that cannot be known. */
+    private volatile Supplier<Boolean> mainWindow = SessionTool::mainWindowShowing;
+    /** How long a reset waits for the main window; below 0: the driver's expect timeout. */
+    private volatile long mainWindowWaitMs = -1;
+
+    /** How long a read of the main window waits for a busy event thread before it says "not showing". */
+    static final long EDT_READ_MS = 1_000L;
+    static final long POLL_MS = 100L;
 
     SessionTool(Plugins plugins, Lease lease, UiMcpSession session, Verbs verbs, AgentInfo info, AgentArgs args,
                 IntSupplier boundPort, long appStartedAt) {
@@ -51,6 +64,16 @@ final class SessionTool implements McpToolDefinition {
         this.appStartedAt = appStartedAt;
     }
 
+    /**
+     * What this tool sees of the app's main window (TRUE showing, FALSE not yet, null unknown) and how long a reset
+     * waits for it. For tests; the default reads the installed driver's main window.
+     */
+    SessionTool mainWindow(Supplier<Boolean> showing, long waitMs) {
+        this.mainWindow = showing;
+        this.mainWindowWaitMs = waitMs;
+        return this;
+    }
+
     @Override public String name() { return "session"; }
 
     @Override public ObjectNode descriptor(ObjectMapper mapper) {
@@ -62,7 +85,8 @@ final class SessionTool implements McpToolDefinition {
                 + "test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). "
                 + "Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): "
                 + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
-                + "mid-test. edt: the client's event-thread stack.");
+                + "mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready "
+                + "and the app's main window shows; reset waits for that window");
         ObjectNode schema = d.putObject("inputSchema");
         schema.put("type", "object");
         ObjectNode p = schema.putObject("properties");
@@ -117,6 +141,7 @@ final class SessionTool implements McpToolDefinition {
                 final ResetSpec spec = app == null ? null : who(a);
                 gated(a, new Callable<Object>() {
                     @Override public Object call() {
+                        awaitMainWindow();
                         AgentReset.run(verbs, app, spec);
                         session.startRecording(app != null);
                         session.forgetOutcomeHandles();
@@ -176,6 +201,7 @@ final class SessionTool implements McpToolDefinition {
 
             @Override public void run() {
                 AppHooks hooks = resetHooks(null);
+                awaitMainWindow();
                 // as `session reset` without an alias: the plugin's default user
                 AgentReset.run(verbs, hooks, hooks == null ? null : ResetSpec.alias(null));
             }
@@ -215,6 +241,8 @@ final class SessionTool implements McpToolDefinition {
         }
         if (ai != null && ai.name != null) app.put("name", ai.name); else app.putNull("name");
         if (ai != null && ai.version != null) app.put("version", ai.version); else app.putNull("version");
+        Boolean showing = mainWindowNow();
+        app.put("mainWindow", showing == null ? "unknown" : showing ? "showing" : "not showing");
         Lease.Grant g = lease.holder();
         if (g == null) {
             r.putNull("lease");
@@ -239,7 +267,88 @@ final class SessionTool implements McpToolDefinition {
         } else {
             r.putObject("plugin").put("state", slot.stateName()).put("detail", slot.detail());
         }
+        boolean pluginUsable = slot == null || slot.state() == PluginSlot.State.READY;
+        r.put("ready", pluginUsable && !Boolean.FALSE.equals(showing));
         return r;
+    }
+
+    /**
+     * Waits while the main window is known not to show; fails NOT_FOUND when it never came. An unknown window (no
+     * driver, a headless JVM) never waits.
+     */
+    private void awaitMainWindow() {
+        if (!Boolean.FALSE.equals(mainWindowNow())) return;
+        long wait = mainWindowWaitMs;
+        if (wait < 0) {
+            Driver d = Driver.current();
+            wait = d == null ? 0 : d.settings().expectMillis;
+        }
+        long deadline = System.currentTimeMillis() + wait;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            if (!Boolean.FALSE.equals(mainWindowNow())) return;
+        }
+        throw new DriverException(Reason.NOT_FOUND,
+                "reset: the app's main window is not showing (waited " + seconds(wait) + ")");
+    }
+
+    private Boolean mainWindowNow() {
+        try {
+            return mainWindow.get();
+        } catch (RuntimeException e) {
+            // a main-window supplier that fails cannot say: nothing waits on it
+            return null;
+        }
+    }
+
+    /** A wait as people read it: whole seconds from one second on ("10 s"), one decimal below ("0.3 s"). */
+    static String seconds(long millis) {
+        if (millis >= 1_000L) return Math.round(millis / 1_000.0) + " s";
+        return String.format(java.util.Locale.ROOT, "%.1f s", millis / 1_000.0);
+    }
+
+    /**
+     * The installed driver's main window ({@code Driver.setMainWindow}, else the first showing frame), read on the
+     * event thread as everywhere else: TRUE showing, FALSE not; null without a driver or a screen. An event thread busy
+     * longer than {@link #EDT_READ_MS} (the app still building its window) counts as not showing, so {@code session}
+     * never hangs on it.
+     */
+    static Boolean mainWindowShowing() {
+        final Driver d = Driver.current();
+        if (d == null || java.awt.GraphicsEnvironment.isHeadless()) return null;
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) return showing(d);
+        final AtomicReference<Boolean> answer = new AtomicReference<Boolean>();
+        final CountDownLatch done = new CountDownLatch(1);
+        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+            @Override public void run() {
+                try {
+                    answer.set(showing(d));
+                } finally {
+                    done.countDown();
+                }
+            }
+        });
+        try {
+            return done.await(EDT_READ_MS, TimeUnit.MILLISECONDS) ? answer.get() : Boolean.FALSE;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private static Boolean showing(Driver d) {
+        try {
+            java.awt.Component main = d.windows().main();
+            return main != null && main.isShowing();
+        } catch (RuntimeException e) {
+            // a plugin's main-window supplier that fails cannot say, and must not fail on the app's event thread
+            return null;
+        }
     }
 
     private static Path jarPath() {

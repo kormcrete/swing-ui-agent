@@ -44,4 +44,29 @@ class UiAgentsTest {
         IllegalStateException e = UiAgents.prefix("127.0.0.1:8766", new IllegalStateException("the client started before the last build"));
         assertThat(e).hasMessage("127.0.0.1:8766: the client started before the last build");
     }
+
+    @Test
+    void anAgentWhoseMainWindowNeverShowsIsRefusedAfterItsWait() {
+        InJvmAgent agent = InJvmAgent.start(new RecordingVerbs(), null, () -> false);
+        try {
+            UiAgents agents = new UiAgents("127.0.0.1", agent.port()).readyWait(500);
+            assertThat(catchThrowable(agents)).isInstanceOf(IllegalStateException.class).hasMessage("127.0.0.1:"
+                    + agent.port() + ": the app's main window is not showing after 0.5 s - start the app and wait for "
+                    + "session ready");
+        } finally {
+            agent.stop();
+        }
+    }
+
+    @Test
+    void anAgentWhoseMainWindowShowsSoonIsUsable() {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        InJvmAgent agent = InJvmAgent.start(new RecordingVerbs(), null, () -> asked.incrementAndGet() > 2);
+        try {
+            assertThat(new UiAgents("127.0.0.1", agent.port()).readyWait(5_000).shared()).isNotNull();
+            assertThat(asked.get()).isGreaterThan(2);
+        } finally {
+            agent.stop();
+        }
+    }
 }

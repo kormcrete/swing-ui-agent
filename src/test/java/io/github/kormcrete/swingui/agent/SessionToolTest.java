@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,10 +16,13 @@ import io.github.kormcrete.swingui.spi.StepHost;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -245,6 +249,7 @@ class SessionToolTest {
         McpToolDefinition tool = tool(plugins, null, () -> 0);
         JsonNode info = mapper.readTree(tool.invoke(mapper.readTree("{}")));
         assertThat(info.path("plugin").path("state").asText()).isEqualTo("waiting");
+        assertThat(info.path("ready").asBoolean()).isFalse();
     }
 
     @Test
@@ -451,5 +456,65 @@ class SessionToolTest {
         assertThat(session.recordingReason()).isNull();
         tool.invoke(mapper.readTree("{\"op\":\"reset\"}"));
         assertThat(session.recordingReason()).isNull();
+    }
+
+    @Test
+    void readyWaitsForTheMainWindow() throws Exception {
+        AtomicBoolean showing = new AtomicBoolean(false);
+        SessionTool tool = ((SessionTool) tool(fixture, null, () -> 1)).mainWindow(showing::get, 300);
+        JsonNode info = mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.path("ready").asBoolean()).isFalse();
+        assertThat(info.at("/app/mainWindow").asText()).isEqualTo("not showing");
+        assertThat(info.at("/plugin/state").asText()).isEqualTo("ready");   // the plugin's own state is unchanged
+        showing.set(true);
+        info = mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.path("ready").asBoolean()).isTrue();
+        assertThat(info.at("/app/mainWindow").asText()).isEqualTo("showing");
+    }
+
+    @Test
+    void aResetWaitsForTheMainWindowAndSaysWhenItNeverCame() throws Exception {
+        SessionTool never = ((SessionTool) tool(new Plugins(null), null, () -> 1)).mainWindow(() -> false, 300);
+        DriverException e = catchThrowableOfType(() -> never.invoke(mapper.readTree("{\"op\":\"reset\"}")),
+                DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
+        assertThat(e.getMessage()).contains("reset: the app's main window is not showing (waited 0.3 s)");
+        // nothing was reset while the window was missing
+        assertThat(dialogs.calls).isEmpty();
+        AtomicInteger asked = new AtomicInteger();
+        SessionTool later = ((SessionTool) tool(new Plugins(null), null, () -> 1))
+                .mainWindow(() -> asked.incrementAndGet() > 2, 2000);
+        assertThat(mapper.readTree(later.invoke(mapper.readTree("{\"op\":\"reset\"}"))).path("reset").asText())
+                .isEqualTo("dialogs");
+        assertThat(asked.get()).isGreaterThan(2);
+    }
+
+    @Test
+    void theRecordedTestStartWaitsForTheMainWindowToo() {
+        SessionTool never = new SessionTool(fixture, new Lease(System::currentTimeMillis),
+                new UiMcpSession(fixture, fixture, mapper), dialogs, new AgentInfo("2.0", "x"), AgentArgs.parse(null),
+                () -> 1, STARTED).mainWindow(() -> false, 1200);
+        assertThatThrownBy(() -> never.appReset().run()).isInstanceOf(DriverException.class)
+                .hasMessageContaining("reset: the app's main window is not showing (waited 1 s)");
+        assertThat(app.calls).isEmpty();
+    }
+
+    @Test
+    void withoutADriverReadyFollowsThePluginAndResetDoesNotWait() throws Exception {
+        JsonNode info = call("{\"op\":\"info\"}");   // default supplier, no Driver installed in unit tests
+        assertThat(info.at("/app/mainWindow").asText()).isEqualTo("unknown");
+        assertThat(info.path("ready").asBoolean()).isTrue();
+        assertThat(callOnEmpty("{\"op\":\"info\"}").path("ready").asBoolean()).isTrue();
+        long started = System.currentTimeMillis();
+        assertThat(callOnEmpty("{\"op\":\"reset\"}").path("reset").asText()).isEqualTo("dialogs");
+        assertThat(System.currentTimeMillis() - started).isLessThan(1_000L);
+    }
+
+    @Test
+    void theWaitIsSaidInWholeSecondsFromOneSecondOn() {
+        assertThat(SessionTool.seconds(10_000)).isEqualTo("10 s");
+        assertThat(SessionTool.seconds(1_000)).isEqualTo("1 s");
+        assertThat(SessionTool.seconds(1_500)).isEqualTo("2 s");
+        assertThat(SessionTool.seconds(300)).isEqualTo("0.3 s");
     }
 }

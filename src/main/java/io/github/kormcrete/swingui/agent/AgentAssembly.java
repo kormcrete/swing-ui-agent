@@ -25,11 +25,13 @@ final class AgentAssembly {
     final Lease lease;
     final UiMcpSession session;
     final HttpMcpEndpoint endpoint;
+    final SessionTool sessionTool;
 
-    private AgentAssembly(Lease lease, UiMcpSession session, HttpMcpEndpoint endpoint) {
+    private AgentAssembly(Lease lease, UiMcpSession session, HttpMcpEndpoint endpoint, SessionTool sessionTool) {
         this.lease = lease;
         this.session = session;
         this.endpoint = endpoint;
+        this.sessionTool = sessionTool;
     }
 
     /** The endpoint is built, not started. */
@@ -62,7 +64,7 @@ final class AgentAssembly {
         session.appReset(sessionTool.appReset());
         HttpMcpEndpoint endpoint = new HttpMcpEndpoint(new UiMcpDispatcher(mapper, tools), mapper, args.bind, "/mcp", args.port);
         holder.set(endpoint);
-        return new AgentAssembly(lease, session, endpoint);
+        return new AgentAssembly(lease, session, endpoint, sessionTool);
     }
 
     /** The recorded tests folder: agent option {@code recorded=}, else the system property, else {@code uitest} under {@code cwd}. */

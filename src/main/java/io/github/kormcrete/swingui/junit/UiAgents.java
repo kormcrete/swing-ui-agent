@@ -12,11 +12,14 @@ final class UiAgents {
 
     static final String PORT_PROPERTY = "swingui.port";
     static final int DEFAULT_PORT = 8765;
+    static final long READY_WAIT_MS = 10_000L;
+    static final long READY_POLL_MS = 200L;
 
     private final String host;
     private final int port;
     private AgentClient agent;
     private RuntimeException broken;
+    private long readyWaitMs = READY_WAIT_MS;
 
     UiAgents(String host, int port) {
         this.host = host;
@@ -27,6 +30,12 @@ final class UiAgents {
     UiAgents(String host, int port, AgentClient ready) {
         this(host, port);
         this.agent = ready;
+    }
+
+    /** How long {@link #shared} waits for the app's main window. For tests. */
+    UiAgents readyWait(long ms) {
+        this.readyWaitMs = ms;
+        return this;
     }
 
     String host() { return host; }
@@ -50,6 +59,7 @@ final class UiAgents {
                 throw prefix(where(), new IllegalStateException("the app plugin is " + info.pluginState + ": "
                         + info.pluginDetail + " - wait for 'ready' (java -jar swing-ui-agent.jar session) and retry"));
             }
+            info = awaitReady(a, info);
             try {
                 for (UiRunGuard guard : ServiceLoader.load(UiRunGuard.class)) guard.check(info);
             } catch (IllegalStateException e) {
@@ -62,5 +72,29 @@ final class UiAgents {
             broken = e;
             throw e;
         }
+    }
+
+    /** The plugin is usable; while the app's main window does not show yet, asks again for a short while. */
+    private SessionInfo awaitReady(AgentClient a, SessionInfo info) {
+        long deadline = System.currentTimeMillis() + readyWaitMs;
+        while (!info.ready && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(READY_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            info = SessionInfo.parse(a.callJson("session", a.args().put("op", "info")));
+        }
+        if (!info.ready) {
+            throw prefix(where(), new IllegalStateException("the app's main window is not showing after "
+                    + seconds(readyWaitMs) + " - start the app and wait for session ready"));
+        }
+        return info;
+    }
+
+    private static String seconds(long millis) {
+        if (millis >= 1_000L) return Math.round(millis / 1_000.0) + " s";
+        return String.format(java.util.Locale.ROOT, "%.1f s", millis / 1_000.0);
     }
 }

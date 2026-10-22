@@ -22,6 +22,10 @@ public final class SessionInfo {
     public final String pluginState;
     public final String pluginDetail;
     public final String leaseOwner;
+    /** The app plugin (if any) is ready and the app's main window shows; true when an older agent does not say. */
+    public final boolean ready;
+    /** The app's main window: "showing", "not showing" or "unknown"; null when the agent does not say. */
+    public final String mainWindow;
     public final List<Plugin> plugins;
     private final String appStartedAt;
 
@@ -56,6 +60,8 @@ public final class SessionInfo {
         List<String> cp = new ArrayList<String>();
         for (JsonNode c : app.path("classpath")) cp.add(c.asText());
         appClasspath = Collections.unmodifiableList(cp);
+        mainWindow = text(app, "mainWindow");
+        ready = i.path("ready").asBoolean(true);
         pluginState = text(i.path("plugin"), "state");
         pluginDetail = text(i.path("plugin"), "detail");
         leaseOwner = text(i.path("lease"), "owner");

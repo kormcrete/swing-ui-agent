@@ -35,8 +35,9 @@ The project's instructions and the hand-over name these; they win over the defau
    Exit 0 ok, 1 tool error (stderr), 2 usage, 3 no agent reachable. On exit 3, stop and say so. Do not start,
    stop or restart the app unless the dispatch says to.
 3. A step that ran and failed exits 0 with `"passed":false`. Always read `passed`.
-4. An answering `session` is not a ready app. With a plugin, wait for its `state` `ready`; without one, `expect`
-   something the app enables once it is ready (a toolbar button `!disabled`) before the first item.
+4. An answering `session` is not a ready app. Wait for `ready: true` in `session` (the plugin is ready and the main
+   window shows), then `expect` the start screen shown before the first item: with a plugin, what its reset shows
+   (the Orders tab); without one, something the app enables once it is ready (a toolbar button `!disabled`).
 
 ## Driving rules
 
