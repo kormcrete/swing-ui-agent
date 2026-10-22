@@ -2363,6 +2363,22 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aKeptPartThatOpensWithACheckAndThenActsSaysCheckAndPlainStep() throws Exception {
+        DomainStep d = DomainStep.act("signIn", "Sign in")
+                .steps("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Sign in\"},\"text\":\"Sign in\"}",
+                        "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Password\"},\"text\":\"ada\"}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"OK\"}}").build();
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), d);
+        assertThat(mapper.readTree(s.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Sign in…\"}}")))
+                .path("passed").asBoolean()).isTrue();
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 4
+                ? new DriverException(Reason.NOT_FOUND, "no button 'OK'") : null;
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"signIn\"}")));
+        assertThat(r.path("recordedPartNote").asText()).isEqualTo("the domain step failed at its step 3 (click(button 'OK')); "
+                + "its steps 1-2 ran and are recorded as check 1.1 and plain step 2, so the recording matches the screen");
+    }
+
+    @Test
     void whenNoStepThatRanCanBeKeptTheNoteSaysTheRecordingDoesNotMatchTheScreen() throws Exception {
         // step 1 names a row by three keys: it has no Java form, so nothing of the step can be recorded raw
         DomainStep d = DomainStep.act("payForRow", "Pay for the row")

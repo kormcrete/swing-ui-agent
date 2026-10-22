@@ -39,6 +39,20 @@ public final class InJvmAgent {
         return new InJvmAgent(a);
     }
 
+    /** As {@code start(verbs, null)}, with an app whose event thread never answers: {@code session} sees it busy. */
+    public static InJvmAgent startBusy(Verbs verbs) {
+        Plugins plugins = new Plugins(verbs);
+        AgentAssembly a = AgentAssembly.build(AgentArgs.parse("port=0"), verbs, plugins, AgentInfo.load(),
+                1_700_000_000_000L, new ObjectMapper());
+        a.sessionTool.windows(() -> SessionTool.Seen.BUSY, 10_000L);
+        try {
+            a.endpoint.start();
+        } catch (IOException e) {
+            throw new IllegalStateException("cannot start the in-JVM agent", e);
+        }
+        return new InJvmAgent(a);
+    }
+
     public int port() { return assembly.endpoint.port(); }
 
     Lease lease() { return assembly.lease; }

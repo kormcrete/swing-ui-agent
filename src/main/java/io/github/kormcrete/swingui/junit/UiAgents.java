@@ -87,6 +87,10 @@ final class UiAgents {
             }
             info = SessionInfo.parse(a.callJson("session", a.args().put("op", "info")));
         }
+        if (!info.ready && "busy".equals(info.mainWindow)) {
+            throw prefix(where(), new IllegalStateException("the app did not answer after " + Seconds.of(readyWaitMs)
+                    + " - its event thread is busy; wait until java -jar swing-ui-agent.jar session says ready and retry"));
+        }
         if (!info.ready) {
             throw prefix(where(), new IllegalStateException("no window of the app is showing after "
                     + Seconds.of(readyWaitMs) + " - start the app and wait for session ready"));

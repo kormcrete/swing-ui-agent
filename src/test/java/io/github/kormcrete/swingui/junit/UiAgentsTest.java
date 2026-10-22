@@ -59,6 +59,19 @@ class UiAgentsTest {
     }
 
     @Test
+    void anAgentWhoseEventThreadIsBusyIsRefusedInThoseWords() {
+        InJvmAgent agent = InJvmAgent.startBusy(new RecordingVerbs());
+        try {
+            UiAgents agents = new UiAgents("127.0.0.1", agent.port()).readyWait(500);
+            assertThat(catchThrowable(agents)).isInstanceOf(IllegalStateException.class).hasMessage("127.0.0.1:"
+                    + agent.port() + ": the app did not answer after 0.5 s - its event thread is busy; wait until "
+                    + "java -jar swing-ui-agent.jar session says ready and retry");
+        } finally {
+            agent.stop();
+        }
+    }
+
+    @Test
     void anAgentWhoseMainWindowShowsSoonIsUsable() {
         java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
         InJvmAgent agent = InJvmAgent.start(new RecordingVerbs(), null, () -> asked.incrementAndGet() > 2);

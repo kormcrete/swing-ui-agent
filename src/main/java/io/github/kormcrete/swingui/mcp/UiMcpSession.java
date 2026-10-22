@@ -1984,13 +1984,31 @@ public class UiMcpSession {
             note.add(words.toString());
             return out;
         }
-        String as = lastAction == null ? "check" : "plain step";   // only checks kept: they sit under the step before
-        if (kept.size() == 1) {
-            words.append("; its step 1 ran and is recorded as ").append(as).append(" ").append(first);
-        } else {
-            words.append("; its steps 1-").append(kept.size()).append(" ran and are recorded as ").append(as).append("s ")
-                    .append(first).append("-").append(last);
+        // leading checks sit under the step before the do step; from the first kept action on, plain steps (a trailing
+        // check stays inside the last one)
+        String firstAction = null;
+        String lastCheckBefore = null;
+        String firstCheck = null;
+        for (int i = 0; i < records.size(); i++) {
+            if (!kept.contains(records.get(i).id)) continue;
+            if (firstAction == null && StepNumbers.isCheck(records.get(i).action)) {
+                if (firstCheck == null) firstCheck = labels.get(i);
+                lastCheckBefore = labels.get(i);
+            } else if (firstAction == null) {
+                firstAction = labels.get(i);
+            }
         }
+        List<String> parts = new ArrayList<String>();
+        if (firstCheck != null) {
+            parts.add(firstCheck.equals(lastCheckBefore) ? "check " + firstCheck
+                    : "checks " + firstCheck + "-" + lastCheckBefore);
+        }
+        if (firstAction != null) {
+            String to = stepNumber(last);
+            parts.add(firstAction.equals(to) ? "plain step " + firstAction : "plain steps " + firstAction + "-" + to);
+        }
+        words.append(kept.size() == 1 ? "; its step 1 ran and is recorded as " : "; its steps 1-" + kept.size()
+                + " ran and are recorded as ").append(String.join(" and ", parts));
         words.append(", so the recording matches the screen");
         if (unkept != null) {
             // from the first step of the kept part: a check kept first sits under a step from before the do step

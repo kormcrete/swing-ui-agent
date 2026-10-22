@@ -79,6 +79,17 @@ class LinkerTest {
     }
 
     @Test
+    void aCheckOfALabelShowingWhatAStepTypedStaysExactUntilTheTextIsUniquePerRun() {
+        RecordedStep note = step(5, "{'action':'type','target':{'window':'dialog','role':'text','name':'Delivery note (optional)'},"
+                + "'text':'Leave at reception'}", "{'fields':{'Delivery note (optional)':'Leave at reception'}}",
+                "Leave at reception", ".fields['Delivery note (optional)']");
+        RecordedStep place = step(6, "{'action':'do','step':'order-desk:placeOrder'}",
+                "{'texts':{'Leave at reception':'Leave at reception'}}", "Leave at reception", ".texts['Leave at reception']");
+        unchanged("{'action':'expect','target':{'scope':['tab:Delivery'],'role':'label','name':'Leave at reception'},'shown':true}",
+                steps(note, place));
+    }
+
+    @Test
     void aNewOrderNumberTypedLaterIsLinked() {
         List<RecordedStep> earlier = steps(step(1, "{'action':'click','target':{'role':'button','name':'Orders'}}", "{}"), copy());
 
