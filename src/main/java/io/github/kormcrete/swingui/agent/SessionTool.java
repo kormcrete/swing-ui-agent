@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.agent;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.Seconds;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.flow.FailureDiagnostics;
 import io.github.kormcrete.swingui.mcp.UiMcpSession;
@@ -24,6 +25,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
@@ -43,14 +45,35 @@ final class SessionTool implements McpToolDefinition {
     private final IntSupplier boundPort;
     private final long appStartedAt;
     private final ObjectMapper m = new ObjectMapper();
-    /** TRUE when the app's main window shows, FALSE while it does not, null when that cannot be known. For info. */
-    private volatile Supplier<Boolean> mainWindow = SessionTool::mainWindowShowing;
-    /** TRUE when a window of the app shows (a frame or a dialog), FALSE while none does, null when unknown. Readiness. */
-    private volatile Supplier<Boolean> appWindow = SessionTool::appWindowShowing;
+    /** What a read of the app's windows saw. */
+    enum Seen {
+        SHOWING("showing"), NOT_SHOWING("not showing"),
+        /** The app's event thread did not answer in time: nothing is known of its windows. */
+        BUSY("busy"),
+        /** It cannot be known: no driver, no screen, or the read failed. */
+        UNKNOWN("unknown");
+
+        /** As {@code session info} says it ({@code app.mainWindow}). */
+        final String words;
+
+        Seen(String words) { this.words = words; }
+
+        static Seen of(Boolean showing) {
+            return showing == null ? UNKNOWN : showing ? SHOWING : NOT_SHOWING;
+        }
+
+        /** Whether a reset waits on it and {@code ready} is false: no window known to show, or no answer. */
+        boolean waits() { return this == NOT_SHOWING || this == BUSY; }
+    }
+
+    /** What this tool sees of the app's main window. For info. */
+    private volatile Supplier<Seen> mainWindow = SessionTool::mainWindowShowing;
+    /** What this tool sees of the app's windows (a frame or a dialog shows). Readiness. */
+    private volatile Supplier<Seen> appWindow = SessionTool::appWindowShowing;
     /** How long a reset waits for an app window; below 0: the driver's expect timeout. */
     private volatile long appWindowWaitMs = -1;
 
-    /** How long a read of the app's windows waits for a busy event thread before it says "not showing". */
+    /** How long a read of the app's windows waits for a busy event thread before it says {@link Seen#BUSY}. */
     static final long EDT_READ_MS = 1_000L;
     static final long POLL_MS = 100L;
 
@@ -71,16 +94,21 @@ final class SessionTool implements McpToolDefinition {
      * window shows too unless {@link #appWindow} says otherwise, and how long a reset waits for one. For tests; the
      * defaults read the installed driver.
      */
-    SessionTool mainWindow(Supplier<Boolean> showing, long waitMs) {
-        this.mainWindow = showing;
-        this.appWindow = showing;
+    SessionTool mainWindow(final Supplier<Boolean> showing, long waitMs) {
+        return windows(() -> Seen.of(showing.get()), waitMs);
+    }
+
+    /** What this tool sees of the main window and of any app window ({@link Seen#BUSY} too), and the reset's wait. For tests. */
+    SessionTool windows(Supplier<Seen> seen, long waitMs) {
+        this.mainWindow = seen;
+        this.appWindow = seen;
         this.appWindowWaitMs = waitMs;
         return this;
     }
 
     /** Whether a window of the app shows, apart from the main window (a sign-in dialog before any frame). For tests. */
-    SessionTool appWindow(Supplier<Boolean> showing) {
-        this.appWindow = showing;
+    SessionTool appWindow(final Supplier<Boolean> showing) {
+        this.appWindow = () -> Seen.of(showing.get());
         return this;
     }
 
@@ -96,7 +124,8 @@ final class SessionTool implements McpToolDefinition {
                 + "Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): "
                 + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
                 + "mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready "
-                + "and an app window shows; reset waits for one");
+                + "and an app window shows; reset waits for one. app.mainWindow: the main window is showing, not "
+                + "showing, busy (the app's event thread did not answer) or unknown");
         ObjectNode schema = d.putObject("inputSchema");
         schema.put("type", "object");
         ObjectNode p = schema.putObject("properties");
@@ -251,8 +280,7 @@ final class SessionTool implements McpToolDefinition {
         }
         if (ai != null && ai.name != null) app.put("name", ai.name); else app.putNull("name");
         if (ai != null && ai.version != null) app.put("version", ai.version); else app.putNull("version");
-        Boolean main = ask(mainWindow);
-        app.put("mainWindow", main == null ? "unknown" : main ? "showing" : "not showing");
+        app.put("mainWindow", ask(mainWindow).words);
         Lease.Grant g = lease.holder();
         if (g == null) {
             r.putNull("lease");
@@ -278,22 +306,25 @@ final class SessionTool implements McpToolDefinition {
             r.putObject("plugin").put("state", slot.stateName()).put("detail", slot.detail());
         }
         boolean pluginUsable = slot == null || slot.state() == PluginSlot.State.READY;
-        r.put("ready", pluginUsable && !Boolean.FALSE.equals(ask(appWindow)));
+        r.put("ready", pluginUsable && !ask(appWindow).waits());
         return r;
     }
 
     /**
-     * Waits while no window of the app is known to show; fails NOT_FOUND when none came. Unknown (no driver, a
-     * headless JVM) never waits.
+     * Waits while no window of the app is known to show, or the app does not answer; fails NOT_FOUND when none came,
+     * saying which of the two it was and how long it really waited (a busy event thread makes every read slow).
+     * Unknown (no driver, a headless JVM) never waits.
      */
     private void awaitAppWindow() {
-        if (!Boolean.FALSE.equals(ask(appWindow))) return;
+        long started = System.currentTimeMillis();
+        Seen seen = ask(appWindow);
+        if (!seen.waits()) return;
         long wait = appWindowWaitMs;
         if (wait < 0) {
             Driver d = Driver.current();
             wait = d == null ? 0 : d.settings().expectMillis;
         }
-        long deadline = System.currentTimeMillis() + wait;
+        long deadline = started + wait;
         while (System.currentTimeMillis() < deadline) {
             try {
                 Thread.sleep(POLL_MS);
@@ -301,62 +332,66 @@ final class SessionTool implements McpToolDefinition {
                 Thread.currentThread().interrupt();
                 break;
             }
-            if (!Boolean.FALSE.equals(ask(appWindow))) return;
+            seen = ask(appWindow);
+            if (!seen.waits()) return;
         }
-        throw new DriverException(Reason.NOT_FOUND,
-                "reset: no window of the app is showing (waited " + seconds(wait) + ")");
+        String waited = " (waited " + Seconds.of(System.currentTimeMillis() - started) + ")";
+        throw new DriverException(Reason.NOT_FOUND, seen == Seen.BUSY
+                ? "reset: the app did not answer, its event thread is busy" + waited
+                : "reset: no window of the app is showing" + waited);
     }
 
-    private static Boolean ask(Supplier<Boolean> windows) {
+    private static Seen ask(Supplier<Seen> windows) {
         try {
-            return windows.get();
+            Seen seen = windows.get();
+            return seen == null ? Seen.UNKNOWN : seen;
         } catch (RuntimeException e) {
             // a window read that fails cannot say: nothing waits on it
-            return null;
+            return Seen.UNKNOWN;
         }
-    }
-
-    /** A wait as people read it: whole seconds from one second on ("10 s"), one decimal below ("0.3 s"). */
-    static String seconds(long millis) {
-        if (millis >= 1_000L) return Math.round(millis / 1_000.0) + " s";
-        return String.format(java.util.Locale.ROOT, "%.1f s", millis / 1_000.0);
     }
 
     /** The installed driver's main window ({@code Driver.setMainWindow}, else the first showing frame): {@link #onEdt}. */
-    static Boolean mainWindowShowing() {
+    static Seen mainWindowShowing() {
         return onEdt(false);
     }
 
     /** The main window, or any other frame or dialog of the app (a sign-in dialog before any frame): {@link #onEdt}. */
-    static Boolean appWindowShowing() {
+    static Seen appWindowShowing() {
         return onEdt(true);
     }
 
     /**
-     * Reads the app's windows on the event thread as everywhere else: TRUE showing, FALSE not; null without a driver
-     * or a screen. An event thread busy longer than {@link #EDT_READ_MS} (the app still building its window) counts as
-     * not showing, so {@code session} never hangs on it.
+     * Reads the app's windows on the event thread as everywhere else; {@link Seen#UNKNOWN} without a driver or a screen.
+     * An event thread busy longer than {@link #EDT_READ_MS} (the app still building its window, or stuck) is
+     * {@link Seen#BUSY}, so {@code session} never hangs on it.
      */
-    private static Boolean onEdt(final boolean anyAppWindow) {
+    private static Seen onEdt(final boolean anyAppWindow) {
         final Driver d = Driver.current();
-        if (d == null || java.awt.GraphicsEnvironment.isHeadless()) return null;
-        if (javax.swing.SwingUtilities.isEventDispatchThread()) return showing(d, anyAppWindow);
+        if (d == null || java.awt.GraphicsEnvironment.isHeadless()) return Seen.UNKNOWN;
+        Supplier<Boolean> read = () -> showing(d, anyAppWindow);
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) return Seen.of(read.get());
+        return askOn(javax.swing.SwingUtilities::invokeLater, read, EDT_READ_MS);
+    }
+
+    /** {@code read} handed to {@code edt} to run: what it read, {@link Seen#BUSY} when it did not answer in {@code waitMs}. */
+    static Seen askOn(Consumer<Runnable> edt, final Supplier<Boolean> read, long waitMs) {
         final AtomicReference<Boolean> answer = new AtomicReference<Boolean>();
         final CountDownLatch done = new CountDownLatch(1);
-        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+        edt.accept(new Runnable() {
             @Override public void run() {
                 try {
-                    answer.set(showing(d, anyAppWindow));
+                    answer.set(read.get());
                 } finally {
                     done.countDown();
                 }
             }
         });
         try {
-            return done.await(EDT_READ_MS, TimeUnit.MILLISECONDS) ? answer.get() : Boolean.FALSE;
+            return done.await(waitMs, TimeUnit.MILLISECONDS) ? Seen.of(answer.get()) : Seen.BUSY;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return null;
+            return Seen.UNKNOWN;
         }
     }
 

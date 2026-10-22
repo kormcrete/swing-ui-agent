@@ -59,15 +59,17 @@ java -jar target/swing-ui-agent-agent.jar --port 8770 session
 ```
 
 The answer names the agent, the port and the plugin state (trimmed). Its `app` part also says when the app started,
-which folders are on its classpath (folders only, not jars) and whether an app window shows (`mainWindow`):
+which folders are on its classpath (folders only, not jars) and the state of the app's main window (`mainWindow`:
+`showing`, `not showing`, `busy` when the app's event thread did not answer, or `unknown`):
 
 ```json
 {"agent":{"version":"0.1.0-SNAPSHOT",…},"endpoint":{"bind":"127.0.0.1","port":8770},"mode":"normal","palette":true,…,"app":{…,"mainWindow":"showing"},"lease":null,"plugins":[],"plugin":{"state":"none","detail":"no plugin configured (agent argument plugins=…)"},"ready":true}
 ```
 
-Wait for `"ready": true`: the plugin (if any) is ready and an app window shows (the main window, or a dialog such as
-a sign-in). An agent that answers before that is up, but the app is not ready yet. A `session reset` waits for an app
-window by itself.
+Wait for `"ready": true`: the plugin (if any) is ready and some app window shows (the main window, or a dialog such
+as a sign-in, so `ready` can be true while `mainWindow` is `not showing`). An agent that answers before that is up, but
+the app is not ready yet. A `session reset` waits for an app window by itself, and says so when the app's event thread
+does not answer.
 
 ## The agent jar in your own project
 

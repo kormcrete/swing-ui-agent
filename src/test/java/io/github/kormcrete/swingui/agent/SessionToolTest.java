@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.agent;
 
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.driver.Seconds;
 import io.github.kormcrete.swingui.driver.Verbs;
 import io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -478,7 +479,7 @@ class SessionToolTest {
         DriverException e = catchThrowableOfType(() -> never.invoke(mapper.readTree("{\"op\":\"reset\"}")),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
-        assertThat(e.getMessage()).contains("reset: no window of the app is showing (waited 0.3 s)");
+        assertThat(e.getMessage()).containsPattern("reset: no window of the app is showing \\(waited 0\\.[3-9] s\\)");
         // nothing was reset while the window was missing
         assertThat(dialogs.calls).isEmpty();
         AtomicInteger asked = new AtomicInteger();
@@ -495,7 +496,7 @@ class SessionToolTest {
                 new UiMcpSession(fixture, fixture, mapper), dialogs, new AgentInfo("2.0", "x"), AgentArgs.parse(null),
                 () -> 1, STARTED).mainWindow(() -> false, 1200);
         assertThatThrownBy(() -> never.appReset().run()).isInstanceOf(DriverException.class)
-                .hasMessageContaining("reset: no window of the app is showing (waited 1 s)");
+                .hasMessageMatching("(?s).*reset: no window of the app is showing \\(waited [12] s\\).*");
         assertThat(app.calls).isEmpty();
     }
 
@@ -512,10 +513,52 @@ class SessionToolTest {
 
     @Test
     void theWaitIsSaidInWholeSecondsFromOneSecondOn() {
-        assertThat(SessionTool.seconds(10_000)).isEqualTo("10 s");
-        assertThat(SessionTool.seconds(1_000)).isEqualTo("1 s");
-        assertThat(SessionTool.seconds(1_500)).isEqualTo("2 s");
-        assertThat(SessionTool.seconds(300)).isEqualTo("0.3 s");
+        assertThat(Seconds.of(10_000)).isEqualTo("10 s");
+        assertThat(Seconds.of(1_000)).isEqualTo("1 s");
+        assertThat(Seconds.of(1_500)).isEqualTo("2 s");
+        assertThat(Seconds.of(300)).isEqualTo("0.3 s");
+    }
+
+    @Test
+    void anEventThreadThatDoesNotAnswerIsBusyNotAMissingWindow() {
+        // the read is handed to an event thread that never runs it: it does not answer in time
+        long started = System.currentTimeMillis();
+        assertThat(SessionTool.askOn(r -> { }, () -> true, 200)).isEqualTo(SessionTool.Seen.BUSY);
+        assertThat(System.currentTimeMillis() - started).isGreaterThanOrEqualTo(200L);
+        // one that runs it says what it read
+        assertThat(SessionTool.askOn(Runnable::run, () -> true, 200)).isEqualTo(SessionTool.Seen.SHOWING);
+        assertThat(SessionTool.askOn(Runnable::run, () -> false, 200)).isEqualTo(SessionTool.Seen.NOT_SHOWING);
+        assertThat(SessionTool.askOn(Runnable::run, () -> null, 200)).isEqualTo(SessionTool.Seen.UNKNOWN);
+    }
+
+    @Test
+    void aBusyEventThreadIsNotReadyAndSaidAsBusy() throws Exception {
+        SessionTool tool = ((SessionTool) tool(fixture, null, () -> 1)).windows(() -> SessionTool.Seen.BUSY, 300);
+        JsonNode info = mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.path("ready").asBoolean()).isFalse();
+        assertThat(info.at("/app/mainWindow").asText()).isEqualTo("busy");
+        assertThat(info.at("/plugin/state").asText()).isEqualTo("ready");
+    }
+
+    @Test
+    void aResetOnABusyEventThreadSaysTheAppDidNotAnswerAndHowLongItReallyWaited() {
+        // every read waits for the event thread before it gives up, as the real one does for a second
+        SessionTool busy = ((SessionTool) tool(new Plugins(null), null, () -> 1)).windows(() -> {
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return SessionTool.Seen.BUSY;
+        }, 300);
+        DriverException e = catchThrowableOfType(() -> busy.invoke(mapper.readTree("{\"op\":\"reset\"}")),
+                DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
+        assertThat(e.getMessage()).contains("reset: the app did not answer, its event thread is busy (waited ")
+                .doesNotContain("no window");
+        String waited = e.getMessage().replaceFirst("(?s).*\\(waited ([0-9.]+) s\\).*", "$1");
+        assertThat(Double.parseDouble(waited)).isGreaterThanOrEqualTo(0.4);   // not the 0.3 s it meant to wait
+        assertThat(dialogs.calls).isEmpty();
     }
 
     @Test

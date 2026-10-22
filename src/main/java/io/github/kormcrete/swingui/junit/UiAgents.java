@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.junit;
 
 import io.github.kormcrete.swingui.client.AgentClient;
+import io.github.kormcrete.swingui.driver.Seconds;
 
 import java.util.ServiceLoader;
 
@@ -88,13 +89,8 @@ final class UiAgents {
         }
         if (!info.ready) {
             throw prefix(where(), new IllegalStateException("no window of the app is showing after "
-                    + seconds(readyWaitMs) + " - start the app and wait for session ready"));
+                    + Seconds.of(readyWaitMs) + " - start the app and wait for session ready"));
         }
         return info;
-    }
-
-    private static String seconds(long millis) {
-        if (millis >= 1_000L) return Math.round(millis / 1_000.0) + " s";
-        return String.format(java.util.Locale.ROOT, "%.1f s", millis / 1_000.0);
     }
 }
