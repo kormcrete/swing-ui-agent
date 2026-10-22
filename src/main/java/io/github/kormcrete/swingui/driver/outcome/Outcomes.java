@@ -100,7 +100,8 @@ public final class Outcomes {
                 out.append(k == 0 ? "" : ", ").append(near.get(k).name).append(" holds \"")
                         .append(near.get(k).value).append('"');
             }
-            return out.append(" next to the table ").append(keys.get(i)).append(": a test that leaves it filled may fail "
+            return out.append(" next to the table")
+                    .append(keys.get(i).equals("table") ? "" : " " + keys.get(i)).append(": a test that leaves it filled may fail "
                     + "its next run on this app start; leave the screen as you found it").toString();
         }
         return null;

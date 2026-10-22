@@ -77,8 +77,19 @@ class OutcomesTest {
     void aFilledSearchBesideATableOnTheStartScreenIsNamed() {
         UiReading r = withTable(UiReading.builder().textField(in("Search", "ORD-1640", "Orders")), "Orders");
 
-        assertThat(Outcomes.startHint(r)).isEqualTo("Search holds \"ORD-1640\" next to the table table: a test "
+        assertThat(Outcomes.startHint(r)).isEqualTo("Search holds \"ORD-1640\" next to the table: a test "
                 + "that leaves it filled may fail its next run on this app start; leave the screen as you found it");
+    }
+
+    @Test
+    void aScopedTableKeyIsNamedInTheStartHint() {
+        UiReading.Rows rows = UiReading.builder().table("table", Arrays.asList("Order"),
+                Arrays.asList(Arrays.asList("ORD-1640"))).build().tables.get(0).value;
+        UiReading r = UiReading.builder().textField(in("Search", "x", "Orders"))
+                .rows(true, new UiReading.Named<UiReading.Rows>("table", Arrays.asList("Orders"), "", rows))
+                .rows(true, new UiReading.Named<UiReading.Rows>("table", Arrays.asList("Customers"), "", rows)).build();
+
+        assertThat(Outcomes.startHint(r)).startsWith("Search holds \"x\" next to the table Orders \u203a table: a test");
     }
 
     @Test

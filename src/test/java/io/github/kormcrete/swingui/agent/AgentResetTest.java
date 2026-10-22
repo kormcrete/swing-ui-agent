@@ -30,6 +30,13 @@ class AgentResetTest {
         /** a stubborn dialog that a window close does get rid of */
         boolean closable;
 
+        /** What {@link #readUi} gives when set. */
+        io.github.kormcrete.swingui.driver.outcome.UiReading reading;
+
+        @Override public io.github.kormcrete.swingui.driver.outcome.UiReading readUi() {
+            return reading != null ? reading : Verbs.super.readUi();
+        }
+
         @Override public CapabilityReport capabilities() { throw Verbs.missing("capabilities"); }
         @Override public Watch watch() { throw Verbs.missing("watch"); }
         @Override public Node read(Locator target, Integer maxRows) { throw Verbs.missing("read"); }

@@ -314,6 +314,19 @@ class SessionToolTest {
     }
 
     @Test
+    void aResetThatLeavesASearchFilledSaysSo() throws Exception {
+        dialogs.reading = io.github.kormcrete.swingui.driver.outcome.UiReading.builder().textField("Search", "ORD-1640")
+                .table("Orders", java.util.Arrays.asList("Number"), java.util.Arrays.asList(
+                        java.util.Arrays.asList("ORD-1640"))).build();
+
+        JsonNode reset = mapper.readTree(tool(new Plugins(dialogs), null, () -> 1)
+                .invoke(mapper.readTree("{\"op\":\"reset\"}")));
+
+        assertThat(reset.path("startNote").asText())
+                .startsWith("Search holds \"ORD-1640\" next to the table Orders");
+    }
+
+    @Test
     void aResetStartsAFreshRecordingForExportTest() throws Exception {
         Plugins none = new Plugins(null);
         UiMcpSession recording = new UiMcpSession(none, none, mapper);

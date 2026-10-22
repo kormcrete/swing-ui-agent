@@ -69,8 +69,9 @@ The project's instructions and the hand-over name these; they win over the defau
   intends (`answer {"button":"Cancel"}` or `"escape"`), never by clicking whatever is offered.
 - **No export unless asked** (`export_recorded_test`, `export_test`). Steps are recorded either way; exporting
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
-  the first step reaches the start screen; leave the screen as you found it;
-  `recording` `edit`/`group` with `say` for names). A step that uses what an earlier step made (a new order number) is linked by the recorder or with `recording` `link`/`remember`/`unique`;
+  the first step reaches the start screen; leave the screen as you found it; `recording` `edit`/`group` with `say`
+  for names). A step that uses what an earlier step made (a new order number) is linked by the recorder or with
+  `recording` `link`/`remember`/`unique`;
   never type `${...}` yourself (typed text is literal). Tab, section, dialog and window titles are linked like names. `"outcome": true` on a step returns what it changed.
 - **Busy agent.** `BUSY: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
   run still going. If that run is dead, retry after 15 s idle, or `$UI session '{"op":"lease","owner":"driver"}'`,

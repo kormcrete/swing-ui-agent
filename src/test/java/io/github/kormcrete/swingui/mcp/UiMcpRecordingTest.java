@@ -4164,6 +4164,21 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aRedoFromStepOneThatOnlyResetsSaysWhatTheStartScreenHolds() throws Exception {
+        noReset(session);
+        session.startReader(readings(io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .textField("Search", "ORD-1640").table("Orders", Arrays.asList("Number"),
+                        java.util.Collections.singletonList(java.util.Collections.singletonList("ORD-1640"))).build()));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        call("{\"op\":\"stop\"}");
+
+        JsonNode r = call("{\"op\":\"redo\",\"from\":1}");
+
+        assertThat(r.path("ran").asInt()).isEqualTo(0);
+        assertThat(r.path("startNote").asText()).startsWith("Search holds \"ORD-1640\" next to the table Orders");
+    }
+
+    @Test
     void aResetThatLeavesASearchFilledSaysSo() throws Exception {
         io.github.kormcrete.swingui.driver.outcome.UiReading filled = io.github.kormcrete.swingui.driver.outcome.UiReading
                 .builder().textField("Search", "ORD-1640").table("Orders", Arrays.asList("Number"),
