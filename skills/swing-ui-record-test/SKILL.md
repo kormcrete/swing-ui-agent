@@ -125,7 +125,8 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
 1. **Explore with reads first.** Find the route and every target before recording: scoped `snapshot`, `read`
    (see the swing-ui-targeting skill).
 2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`. (`session '{"op":"reset"}'` starts a
-   recording too, but the palette does not show it.)
+   recording too, but the palette does not show it.) Read `startNote` in the result: a search or filter left filled
+   next to a table on the start screen.
 3. **Reach the start screen** as the first step: `$UI menu '{"path":["File","New order"]}'`.
 4. **Act.** Read each result: `passed`, `message`, `recorded` (the step as it will be saved), `notRecorded`
    (it ran but has no Java form, and why), `linkNote` (a value an earlier step made sits where no link can go: an
@@ -158,7 +159,7 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
 7. **Stop and save:** `$UI recording '{"op":"stop"}'`, then
    `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'`, or a Java
    class with `export_test` (below). `recording '{"op":"export","as":"recorded","name":"place-order"}'` saves
-   and keeps the recording.
+   and keeps the recording. Leave the screen as you found it: clear what you typed into a search, put a filter back.
 8. **Verify** (below).
 
 ## Values from earlier steps
@@ -209,8 +210,10 @@ value, or the step fails in words. Never the recorded value.
 - **See what a step changed:** `"outcome": true` on `do_action`, `batch` steps or a verb tool returns
   `outcome` (only what changed, keyed by visible names) and `outcomeHandle`; `read {"form":"outcome","handle":N}`
   reads it again for a late change.
-- **Prove it:** save, then `run_recorded_test` TWICE; each run must pass on its own new record (the report shows each
-  resolved value, e.g. `(copy.rows['Orders › table'].added[0].Order = ORD-1642)`).
+- **Prove it:** save, then `run_recorded_test` TWICE ON ONE APP START (no restart between): a test that leaves a
+  search or filter filled passes the first time and fails the second. Each run must pass on its own new record (the
+  report shows each resolved value, e.g. `(copy.rows['Orders › table'].added[0].Order = ORD-1642)`). Leave the screen
+  as you found it (clear what you typed into a search, put a filter back), and read `startNote` after a reset.
 - More: https://kormcrete.github.io/swing-ui-agent/guides/values-from-earlier-steps/
 
 ## Name the steps

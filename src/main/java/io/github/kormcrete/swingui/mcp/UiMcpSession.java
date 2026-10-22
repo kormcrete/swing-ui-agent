@@ -136,6 +136,7 @@ public class UiMcpSession {
 
     /** Reads the app for what a step changed ({@link Verbs#readUi}); null when nothing can be read. A seam for tests. */
     private Supplier<UiReading> reader = this::readHost;
+    private Supplier<UiReading> startReader = this::readHost;
     /** How long a replayed step waits for a value an earlier step makes late; null: the driver's expect timeout. */
     private Long linkWaitMs;
 
@@ -380,6 +381,14 @@ public class UiMcpSession {
     /** How the app is read for what a step changed; a seam for tests. */
     void reader(Supplier<UiReading> reader) {
         this.reader = reader;
+    }
+
+    /**
+     * How the app is read for {@link #startNote}, apart from {@link #reader}, which the steps' outcomes take their
+     * readings from in turn; a seam for tests.
+     */
+    void startReader(Supplier<UiReading> reader) {
+        this.startReader = reader;
     }
 
     /** How long a replayed step waits for a late value; a seam for tests. */
@@ -1797,6 +1806,18 @@ public class UiMcpSession {
         }
     }
 
+    /**
+     * What the start screen holds that the next run may trip over, read after a reset ({@link Outcomes#startHint}); null
+     * when there is nothing to say or the app cannot be read.
+     */
+    public String startNote() {
+        try {
+            return Outcomes.startHint(startReader.get());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** The host's driver's reading of the app; null without a driver. */
     private UiReading readHost() {
         Verbs verbs = host.verbs();
@@ -3006,6 +3027,7 @@ public class UiMcpSession {
                 if (busy != null) throw new DriverException(Reason.BUSY, "" + busy + "; stop it first");
                 boolean defined = false;
                 boolean reset = args.path("reset").asBoolean(false);
+                String note = null;
                 if (reset) {
                     Inspector.agentActing(true);
                     try {
@@ -3014,12 +3036,14 @@ public class UiMcpSession {
                         Inspector.agentActing(false);
                     }
                     defined = appReset.defined();
+                    note = startNote();
                 }
                 synchronized (this) {
                     startRecording(reset, defined, RecordedStep.Author.AGENT, true);
                     if (model.shared()) view.agentStarted();
                 }
-                return published.json;
+                if (note == null) return published.json;
+                return ((ObjectNode) readTree(published.json)).put("startNote", note).toString();
             }
             case "stop": {
                 synchronized (this) {
@@ -3278,9 +3302,13 @@ public class UiMcpSession {
         String steps = "steps " + a + "-" + b;
         if (palette) view.agentReplaying(reset ? "resetting the app, then replaying " + steps : "replaying " + steps);
         agentReplaying = steps;
+        String startNote = null;
         Inspector.agentActing(true);
         try {
-            if (reset) appReset.run();
+            if (reset) {
+                appReset.run();
+                startNote = startNote();
+            }
             boolean passed = true;
             java.util.Set<String> reached = new java.util.HashSet<String>();
             java.util.Set<String> inRange = new java.util.HashSet<String>();
@@ -3334,6 +3362,7 @@ public class UiMcpSession {
             r.put("ran", reached.size());   // steps, not records
             r.put("total", inRange.size());
             r.put("reset", reset);
+            if (startNote != null) r.put("startNote", startNote);
             r.set("steps", results);
             return r;
         } finally {
@@ -3410,9 +3439,11 @@ public class UiMcpSession {
         model.replayStarted();
         if (palette) view.agentReplaying("resetting the app");
         agentReplaying = "reset";
+        String note;
         Inspector.agentActing(true);
         try {
             appReset.run();
+            note = startNote();
         } finally {
             if (palette) view.agentReplaying(null);
             Inspector.agentActing(false);
@@ -3423,6 +3454,7 @@ public class UiMcpSession {
         r.put("ran", 0);
         r.put("total", 0);
         r.put("reset", true);
+        if (note != null) r.put("startNote", note);
         r.putArray("steps");
         return r;
     }

@@ -4164,6 +4164,27 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aResetThatLeavesASearchFilledSaysSo() throws Exception {
+        io.github.kormcrete.swingui.driver.outcome.UiReading filled = io.github.kormcrete.swingui.driver.outcome.UiReading
+                .builder().textField("Search", "ORD-1640").table("Orders", Arrays.asList("Number"),
+                        java.util.Collections.singletonList(java.util.Collections.singletonList("ORD-1640"))).build();
+        noReset(session);
+        session.startReader(readings(filled));
+        JsonNode started = call("{\"op\":\"start\",\"reset\":true}");
+        assertThat(started.path("startNote").asText()).startsWith("Search holds \"ORD-1640\" next to the table Orders");
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        call("{\"op\":\"stop\"}");
+        assertThat(call("{\"op\":\"replay\"}").path("startNote").asText())
+                .startsWith("Search holds \"ORD-1640\" next to the table Orders");
+
+        session.startReader(readings(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().textField("Search", "")
+                .table("Orders", Arrays.asList("Number"),
+                        java.util.Collections.singletonList(java.util.Collections.singletonList("ORD-1640"))).build()));
+        assertThat(call("{\"op\":\"replay\"}").has("startNote")).isFalse();
+        assertThat(call("{\"op\":\"start\",\"reset\":true}").has("startNote")).isFalse();
+    }
+
+    @Test
     void anEditedTargetKeepsItsLinkWhereTheValueIsTheSame() throws Exception {
         session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
         session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));

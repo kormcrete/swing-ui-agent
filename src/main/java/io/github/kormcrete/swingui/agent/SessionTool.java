@@ -121,6 +121,8 @@ final class SessionTool implements McpToolDefinition {
                 + "lists every plugin with its state). lease {owner, ttlMs}: take the agent for one owner; pass the token "
                 + "as _lease on every mutating call. release {token}. renew {token}: keep the lease alive while the test makes no call; answers renewed: false once the lease is gone. reset {alias | user+password}: the start of every "
                 + "test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). "
+                + "startNote: a search or filter field left filled next to a table on the start screen (a test that leaves it "
+                + "filled may fail its next run). "
                 + "Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): "
                 + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
                 + "mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready "
@@ -188,7 +190,10 @@ final class SessionTool implements McpToolDefinition {
                     }
                 });
                 String done = spec == null ? "dialogs" : spec.toString();
-                return m.writeValueAsString(m.createObjectNode().put("reset", done));
+                ObjectNode out = m.createObjectNode().put("reset", done);
+                String note = session.startNote();
+                if (note != null) out.put("startNote", note);
+                return m.writeValueAsString(out);
             }
             case "login": {
                 final AppHooks app = app("login");

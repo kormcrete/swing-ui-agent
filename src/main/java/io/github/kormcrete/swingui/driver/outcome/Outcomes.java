@@ -52,20 +52,8 @@ public final class Outcomes {
             if (keys.get(i).equals(tableKey)) table = now.tables.get(i);
         }
         if (table == null) return null;
-        List<UiReading.Named<String>> near = new ArrayList<UiReading.Named<String>>();
-        for (UiReading.Named<String> f : now.textFields) {
-            if (f.value == null || f.value.trim().isEmpty() || !f.window.equals(table.window)) continue;
-            if (f.scopes.size() > table.scopes.size()
-                    || !table.scopes.subList(0, f.scopes.size()).equals(f.scopes)) continue;
-            near.add(f);
-        }
+        List<UiReading.Named<String>> near = fieldsBeside(now, table);
         if (near.isEmpty()) return null;
-        // nearest scope first: the deepest; a stable sort keeps reading order among equals
-        Collections.sort(near, new java.util.Comparator<UiReading.Named<String>>() {
-            @Override public int compare(UiReading.Named<String> a, UiReading.Named<String> b) {
-                return b.scopes.size() - a.scopes.size();
-            }
-        });
         StringBuilder out = new StringBuilder("the table shows ").append(table.value.count)
                 .append(table.value.count == 1 ? " row" : " rows");
         for (int i = 0; i < near.size() && i < 3; i++) {
@@ -73,6 +61,49 @@ public final class Outcomes {
                     .append(near.get(i).value).append('"');
         }
         return out.append(": a filter may hide the new row").toString();
+    }
+
+    /**
+     * The filled text fields beside {@code table}: in its window, their scopes a prefix of its scopes, nearest scope
+     * first (a stable sort keeps reading order among equals).
+     */
+    private static List<UiReading.Named<String>> fieldsBeside(UiReading now, UiReading.Named<UiReading.Rows> table) {
+        List<UiReading.Named<String>> near = new ArrayList<UiReading.Named<String>>();
+        for (UiReading.Named<String> f : now.textFields) {
+            if (f.value == null || f.value.trim().isEmpty() || !f.window.equals(table.window)) continue;
+            if (f.scopes.size() > table.scopes.size()
+                    || !table.scopes.subList(0, f.scopes.size()).equals(f.scopes)) continue;
+            near.add(f);
+        }
+        Collections.sort(near, new java.util.Comparator<UiReading.Named<String>>() {
+            @Override public int compare(UiReading.Named<String> a, UiReading.Named<String> b) {
+                return b.scopes.size() - a.scopes.size();
+            }
+        });
+        return near;
+    }
+
+    /**
+     * What a reset left on the start screen: the first table (reading order) with a filled text field beside it, as
+     * {@code Search holds "ORD-1640" next to the table Orders › table: a test that leaves it filled may fail its next
+     * run on this app start; leave the screen as you found it}. At most three fields. Null without a reading, a table or
+     * such a field.
+     */
+    public static String startHint(UiReading now) {
+        if (now == null) return null;
+        List<String> keys = new ArrayList<String>(Keys.of(now.tables).keySet());
+        for (int i = 0; i < keys.size() && i < now.tables.size(); i++) {
+            List<UiReading.Named<String>> near = fieldsBeside(now, now.tables.get(i));
+            if (near.isEmpty()) continue;
+            StringBuilder out = new StringBuilder();
+            for (int k = 0; k < near.size() && k < 3; k++) {
+                out.append(k == 0 ? "" : ", ").append(near.get(k).name).append(" holds \"")
+                        .append(near.get(k).value).append('"');
+            }
+            return out.append(" next to the table ").append(keys.get(i)).append(": a test that leaves it filled may fail "
+                    + "its next run on this app start; leave the screen as you found it").toString();
+        }
+        return null;
     }
 
     public static Map<String, Object> diff(UiReading before, UiReading after) {

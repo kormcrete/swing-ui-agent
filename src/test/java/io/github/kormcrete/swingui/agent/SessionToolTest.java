@@ -307,7 +307,9 @@ class SessionToolTest {
 
     @Test
     void withoutAPluginAResetClosesDialogsOnly() throws Exception {
-        assertThat(callOnEmpty("{\"op\":\"reset\"}").path("reset").asText()).isEqualTo("dialogs");
+        JsonNode reset = callOnEmpty("{\"op\":\"reset\"}");
+        assertThat(reset.path("reset").asText()).isEqualTo("dialogs");
+        assertThat(reset.has("startNote")).isFalse();
         assertThat(dialogs.calls).containsExactly("resetPointer", "snapshot dialog");
     }
 

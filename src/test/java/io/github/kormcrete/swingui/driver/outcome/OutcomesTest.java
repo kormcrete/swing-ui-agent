@@ -73,6 +73,22 @@ class OutcomesTest {
                 + "Mid holds \"c\", Outer holds \"a\": a filter may hide the new row");
     }
 
+    @Test
+    void aFilledSearchBesideATableOnTheStartScreenIsNamed() {
+        UiReading r = withTable(UiReading.builder().textField(in("Search", "ORD-1640", "Orders")), "Orders");
+
+        assertThat(Outcomes.startHint(r)).isEqualTo("Search holds \"ORD-1640\" next to the table table: a test "
+                + "that leaves it filled may fail its next run on this app start; leave the screen as you found it");
+    }
+
+    @Test
+    void noStartHintWithoutAFilledTextFieldBesideATable() {
+        assertThat(Outcomes.startHint(withTable(UiReading.builder().textField(in("Search", "", "Orders")), "Orders"))).isNull();
+        assertThat(Outcomes.startHint(UiReading.builder().textField(in("Search", "x", "Orders")).build())).isNull();
+        assertThat(Outcomes.startHint(withTable(UiReading.builder().field(in("Status", "Placed", "Orders")), "Orders"))).isNull();
+        assertThat(Outcomes.startHint(null)).isNull();
+    }
+
     /** Time stands still: these readings never run out of budget, however slow the machine. */
     private final UiReader reader = new UiReader(Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), 40);
     private final List<Window> windows = new ArrayList<Window>();
