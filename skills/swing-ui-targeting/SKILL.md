@@ -23,6 +23,10 @@ The project's instructions (its `CLAUDE.md`, `AGENTS.md` or the like) name these
 Clicking the real Place order button proves it exists, is enabled and is wired. Reaching the same effect any other
 way passes even when the button is broken, which makes the test worthless.
 
+**A domain step beats a locator.** When the app's plugin has a step or check for what the user names
+(`vocabulary list`, see the swing-ui-record-test skill), run it (`{"verb":"do","step":...}`) and find no target;
+this skill is for the parts no step covers.
+
 ## A locator
 
 `{window, scope, role, name, match, id, row, column, item, point, nth}`; give at least one of `role`, `name`, `id`.

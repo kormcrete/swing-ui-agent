@@ -25,7 +25,8 @@ The project's instructions and the hand-over name these; they win over the defau
 
 ## First
 
-1. Load the swing-ui-targeting skill: it turns the dispatch's words into locators and lists what needs a plugin.
+1. Load the swing-ui-targeting skill: for the parts no app step covers, it turns the dispatch's words into
+   locators and lists what needs a plugin.
 2. Every tool is one shell call; the same tools exist over MCP at `http://127.0.0.1:<port>/mcp`:
    ```sh
    UI="java -jar swing-ui-agent-0.1.0-SNAPSHOT-agent.jar"   # or the project's agent command; --port N before the tool
@@ -39,14 +40,48 @@ The project's instructions and the hand-over name these; they win over the defau
    window shows), then `expect` the start screen shown before the first item: with a plugin, what its reset shows
    (the Orders tab); without one, something the app enables once it is ready (a toolbar button `!disabled`).
 
+## The app's own steps first
+
+An app plugin may offer a vocabulary: the app's own steps and checks, each a sentence with values ("Add {qty} ×
+{product} to the cart", "The cart total is {total}"). Work in this order, for every item:
+
+1. **Read the vocabulary once.** If the dispatch gives you the vocabulary list, use it. Otherwise call
+   `$UI vocabulary '{"op":"list"}'` once, before any call that drives or reads the app. An empty list (with a hint)
+   means no steps: work as in step 4 for everything. `$UI vocabulary '{"op":"describe","step":"addToCart"}'` shows
+   a step's `choices` (the values that fit right now): call it only for a param you must choose.
+2. **Map the whole item to steps and checks**, the checks included: each action to an `act` step, each check to a
+   `check` step, with concrete values: the app's exact names. A word that is not one ("the gel pens", "A4 paper")
+   is resolved with `describe`'s `choices` before the batch: `Gel pen, black` when that is the only choice that
+   fits; when two fit, report it, do not pick. Never stretch a step to do something else.
+3. **Run the item as ONE `batch`**: `{"verb":"do","step":<id>,"params":{...}}` per step, each check where it belongs.
+   ```sh
+   $UI batch '{"steps":[
+     {"verb":"do","step":"openNewOrder","params":{"customer":"Ada Shop Ltd"}},
+     {"verb":"do","step":"addQtyToCart","params":{"product":"A4 paper, 500 sheets","qty":3}},
+     {"verb":"do","step":"addQtyToCart","params":{"product":"Gel pen, black","qty":10}},
+     {"verb":"do","step":"cartTotalIs","params":{"total":"€31.32"}},
+     {"verb":"expect","target":{"scope":["tab:New order*"],"role":"label","name":"Volume discount"},"text":"−€0.60"}]}'
+   ```
+   A value a step makes (a new order number) comes back in the same call: put `"outcome":true` on that step, no read
+   afterwards. Make a second call only when a later step needs that value; type the value you got (the recorder
+   links it).
+4. **Only for what no step covers**: plain steps (verbs, `expect`) in the same batch when you know the target, else
+   find it first with scoped reads (below). Never refuse a part because no step covers it. Tell the tester in one
+   line which part the plugin lacked, in this form:
+   `Plugin gap: no step or check for <the part, in the tester's words>; done step by step instead.`
+   It is a note, not a GAP: the item still passes or fails on what the app did.
+
+A `do` step that does not pass is the app's answer like any step: report its `message` (and `recordedPartNote`,
+which says how far it got).
+
 ## Driving rules
 
-- **Scope every read.** Never an unscoped `snapshot`: it is the whole app and costs thousands of tokens. Use
-  `snapshot {"target":<locator>,"depth":2-4,"compact":true}` or `{"window":"dialog"}`, `read {"target":...}` for
-  one element, `expect` for a yes/no. With a plugin, `describe_ui {"fields":["dialog"]}` names only what you need.
+- **Scope every read** (for what no step covers). Never an unscoped `snapshot`: it is the whole app and costs
+  thousands of tokens. Use `snapshot {"target":<locator>,"depth":2-4,"compact":true}` or `{"window":"dialog"}`,
+  `read {"target":...}` for one element, `expect` for a yes/no. With a plugin, `describe_ui {"fields":["dialog"]}` names only what you need.
   If an answer says `size.scoped:false`, scope the next one.
-- **Batch what you already know.** Consecutive steps that do not depend on what you are about to read go in ONE
-  `batch` call; it stops at the first step that does not pass and reports each step. Add `"snapshot":{...}` to get
+- **Batch what you already know**, plain steps too. Consecutive steps that do not depend on what you are about to
+  read go in ONE `batch` call; it stops at the first step that does not pass and reports each step. Add `"snapshot":{...}` to get
   a scoped look at the end in the same call. Make a single call only when the next step depends on the last read.
   ```sh
   $UI batch '{"steps":[
@@ -100,5 +135,5 @@ Stop after the passes the hand-over allows (default: two over the checklist) and
 than trying again and again.
 
 Write the results to the file the dispatch names: one line per item (`PASS` / `FAIL` / `GAP` and the item), then
-each failure with its message and what was on screen, each gap verbatim, and any screenshot paths. Reply in at
-most 8 lines: verdict, counts, results file, blockers.
+each failure with its message and what was on screen, each gap verbatim, each `Plugin gap:` line, and any
+screenshot paths. Reply in at most 8 lines: verdict, counts, results file, blockers, the `Plugin gap:` lines.

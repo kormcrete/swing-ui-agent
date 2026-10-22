@@ -83,23 +83,35 @@ agent has been idle 15 s, or take the lease: `$UI session '{"op":"lease","owner"
 
 ## The app's own steps (when a plugin offers a vocabulary)
 
-A plugin may name the app's steps ("Add {product} to the cart"). At a recording start, call
-`$UI vocabulary '{"op":"list"}'`: an empty list (with a hint) means there are none, and you use the raw verbs.
+A plugin may name the app's steps ("Add {product} to the cart") and checks ("The cart total is {total}"). They
+come first, in this order:
 
-- **Map the request to a step and concrete values.** `$UI vocabulary '{"op":"describe","step":"order-desk:addToCart"}'`
-  shows its params, with `choices` for the values that fit in the app right now. Run it as one step:
-  `$UI do_action '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`; in a
-  `batch` it is `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`.
-  Params are the concrete values you choose. A value an earlier step made is linked by the recorder (or with
-  `link`), never typed as `${...}`. A domain check's param is never linked to what the check reads; read
-  `recording list` `uses` to see what was. A step's own values (`codeWithOutcome` in the plugin) are under `step` in
-  its outcome: `${placeOrder.step.number}`.
+1. **Read the vocabulary once per session**, before anything that drives or reads the app:
+   `$UI vocabulary '{"op":"list"}'`. An empty list (with a hint) means there are none: use the raw verbs.
+   `$UI vocabulary '{"op":"describe","step":"order-desk:addToCart"}'` shows a step's params with `choices` (the
+   values that fit in the app right now): call it for a param you must choose.
+2. **Map the whole request to steps and checks**, the checks included, with concrete values: the app's exact
+   names. A word that is not one ("A4 paper") is resolved with `describe`'s `choices` before the batch (below).
+3. **Run it as ONE `batch`**, each check where it belongs:
+   `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`, a check
+   `{"verb":"do","step":"cartTotalIs","params":{"total":"€31.32"}}` (alone: `$UI do_action
+   '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`). A value a step makes
+   comes back in the same call with `"outcome":true` on that step; make a second call only when a later step needs
+   that value. A value an earlier step made is linked by the recorder (or with
+   `link`), never typed as `${...}`. A domain check's param is never linked to what the check reads; read
+   `recording list` `uses` to see what was. A step's own values (`codeWithOutcome` in the plugin) are under `step`
+   in its outcome: `${placeOrder.step.number}`.
+4. **Only for the parts no step covers**: find the targets with scoped reads (`read {"target":...}`, or `snapshot`
+   with a `target` or `{"window":"dialog"}` and a `depth`; never an unscoped `snapshot`: it is the whole app), then
+   raw verbs, in the same batch where you can (swing-ui-targeting). Never refuse a part because no step covers it,
+   and never stretch a step to do something else. In your report, one line per such part, in exactly this form:
+   `Plugin gap: no step or check for <the part, in their words>; done step by step instead.`
+
 - **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
   say so.
-- **When no step fits, use the raw verbs.** Never stretch a step to do something else.
-- **Try a step on the record at hand before trusting it in a `batch`**: a step may not fit every record (an
-  optional field with another caption).
+- **A step may not fit every record** (an optional field with another caption). No separate try first: when a `do`
+  step fails in the batch, read its result (below) and finish with raw verbs.
 - **A `do` step that fails part way** leaves the app where it stopped. The steps of it that ran are recorded as
   plain steps, so the recording matches the screen: the result has `recordedPart` (the steps) and
   `recordedPartNote` (in words; for a tool error, the last line of the error's details). A step that cannot be
@@ -122,8 +134,9 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
 
 ## Steps
 
-1. **Explore with reads first.** Find the route and every target before recording: scoped `snapshot`, `read`
-   (see the swing-ui-targeting skill).
+1. **Plan from the vocabulary; explore only the rest.** Where the app's own steps cover the request, there is
+   nothing to find. For the parts they do not, find the route and every target before recording: scoped
+   `snapshot`, `read` (see the swing-ui-targeting skill).
 2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`. (`session '{"op":"reset"}'` starts a
    recording too, but the palette does not show it.) Read `startNote` in the result: a search or filter left filled
    next to a table on the start screen.
@@ -320,4 +333,5 @@ rather than hand-editing recorded steps.
    beside it; with the run report registered, `target/ui-runs/latest.txt` lists the run (`STARTED`, a
    `PASS`/`FAIL` line per test, `DONE`). Usually the start route is at fault: reset and re-record.
 
-Report the file, the steps, the checks, and the verify result.
+Report the file, the steps, the checks, the verify result, and the `Plugin gap:` lines (step 4 of "The app's own
+steps").

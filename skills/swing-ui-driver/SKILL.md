@@ -19,6 +19,10 @@ recording a test the user is shaping step by step (swing-ui-record-test).
 Hand the driver:
 - **What to walk**, as a checklist of items each with an observable outcome ("File > New order opens a New order
   tab"; "Checkout… stays disabled while a cart line asks for more than is in stock").
+- **The app's vocabulary.** Before the first dispatch, call `vocabulary '{"op":"list"}'` once and paste its
+  result (each step's id, kind, sentence and params) into every hand-over, so the driver does not list it again.
+  The driver maps each item to those steps and checks and runs it as one `batch`; where an item's words match a
+  step's sentence, use them.
 - **The known targets**, if any (locators, menu paths, ids), so it does not rediscover them.
 - **Whether to record and export**, and the class name. Default: no.
 - **Where to write results.**
@@ -28,5 +32,7 @@ Hand the driver:
 - **How many passes** over the checklist at most (e.g. 2). A driver without a limit can loop for a long time on
   an item it cannot get through.
 
-Expect back at most a few lines: verdict, counts (passed / failed / gaps), the results file, any blocker.
+Expect back at most a few lines: verdict, counts (passed / failed / gaps), the results file, any blocker, and a
+`Plugin gap:` line for each part the app's plugin has no step for (done step by step all the same). Pass those
+lines on to the user.
 
