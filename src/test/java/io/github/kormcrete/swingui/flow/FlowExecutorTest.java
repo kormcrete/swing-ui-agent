@@ -362,6 +362,18 @@ class FlowExecutorTest {
     }
 
     @Test
+    void anAddedRowAFilterHidesSaysWhatTheFieldHolds() {
+        host.verbs.readings.add(UiReading.builder().textField("Search", "ORD-1642")
+                .table("Orders", Arrays.asList("Number", "Customer"),
+                        Arrays.asList(Arrays.asList("ORD-1642", "Ada Lovelace"))).build());
+
+        FlowResult result = runLinked(linked().linkWait(0), NAVIGATE, COPY, OPEN_COPY);
+
+        assertThat(result.steps.get(2).message).isEqualTo("NOT_FOUND: Step 2 (Copy) added no row to Orders; the table shows 1 row "
+                + "and Search holds \"ORD-1642\": a filter may hide the new row");
+    }
+
+    @Test
     void anUnresolvableLinkFailsInWordsAfterTheWait() {
         host.verbs.readings.add(orders("ORD-1642"));
         long started = System.nanoTime();

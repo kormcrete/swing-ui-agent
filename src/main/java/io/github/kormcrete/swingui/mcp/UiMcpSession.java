@@ -1496,7 +1496,7 @@ public class UiMcpSession {
         if (replayed != null) {
             Action recorded = action;
             try {
-                action = FlowExecutor.fill(recorded, model.runValues(), model.flow());
+                action = FlowExecutor.fill(recorded, model.runValues(), model.flow(), this::read);
             } catch (DriverException e) {
                 if (e.reason().isToolError()) throw e;
                 return unresolved(action, e, started);

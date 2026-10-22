@@ -219,7 +219,7 @@ public class FlowExecutor {
                 String problem = RecordedTestFiles.idProblem(((RememberVerb) a).as);
                 if (problem != null) throw new DriverException(Reason.BAD_INPUT, "remember as '" + ((RememberVerb) a).as + "': " + problem);
             }
-            return FlowExecutor.fill(a, values, flow);
+            return FlowExecutor.fill(a, values, flow, outcomes);
         }
 
         /** Reads the app before a step that a later step names. */
@@ -259,10 +259,36 @@ public class FlowExecutor {
      * late was waited for right after its step ({@link #settled}). Never the value the recording saw.
      */
     public static Action fill(Action a, RunValues values, Flow steps) {
+        return fill(a, values, steps, null);
+    }
+
+    /**
+     * {@link #fill(Action, RunValues, Flow)}; for a row an earlier step did not add, the message goes on with the
+     * filled text fields beside that table, read from {@code now} ({@link Outcomes#filterHint}).
+     */
+    public static Action fill(Action a, RunValues values, Flow steps, OutcomeSource now) {
         try {
             return Resolution.fill(a, values);
         } catch (RunValues.UnresolvedReference e) {
-            throw new DriverException(Reason.NOT_FOUND, Resolution.inWords(e.ref, steps));
+            String message = Resolution.inWords(e.ref, steps);
+            String hint = now == null ? null : filterHint(e.ref.path, now);
+            throw new DriverException(Reason.NOT_FOUND, hint == null ? message : message + "; " + hint);
+        }
+    }
+
+    /** The filter hint for a path {@code .rows.<table>.added...}, else null. */
+    private static String filterHint(String path, OutcomeSource now) {
+        List<String> keys;
+        try {
+            keys = path.isEmpty() ? Collections.<String>emptyList() : JsonPaths.keys("$" + path);
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+        if (keys.size() < 3 || !"rows".equals(keys.get(0)) || !"added".equals(keys.get(2))) return null;
+        try {
+            return Outcomes.filterHint(now.read(), keys.get(1));
+        } catch (RuntimeException unreadable) {
+            return null;
         }
     }
 

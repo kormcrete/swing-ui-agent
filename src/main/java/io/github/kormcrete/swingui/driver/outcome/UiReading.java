@@ -85,6 +85,8 @@ public final class UiReading {
     final boolean partial;
     final List<Named<String>> fields;
     final List<Named<String>> texts;
+    /** The fields that are text fields (also in {@link #fields}): a combo is not one. */
+    final List<Named<String>> textFields;
     final List<Named<Rows>> tables;
     /** Lists and trees together, as the outcome's {@code items} holds them; a tree's items are "A > B" paths. */
     final List<Named<Rows>> items;
@@ -98,6 +100,7 @@ public final class UiReading {
         this.partial = b.partial;
         this.fields = Collections.unmodifiableList(new ArrayList<Named<String>>(b.fields));
         this.texts = Collections.unmodifiableList(new ArrayList<Named<String>>(b.texts));
+        this.textFields = Collections.unmodifiableList(new ArrayList<Named<String>>(b.textFields));
         this.tables = Collections.unmodifiableList(new ArrayList<Named<Rows>>(b.tables));
         this.items = Collections.unmodifiableList(new ArrayList<Named<Rows>>(b.items));
         this.tabs = Collections.unmodifiableList(new ArrayList<String>(b.tabs));
@@ -157,6 +160,7 @@ public final class UiReading {
         private boolean partial;
         private final List<Named<String>> fields = new ArrayList<Named<String>>();
         private final List<Named<String>> texts = new ArrayList<Named<String>>();
+        private final List<Named<String>> textFields = new ArrayList<Named<String>>();
         private final List<Named<Rows>> tables = new ArrayList<Named<Rows>>();
         private final List<Named<Rows>> items = new ArrayList<Named<Rows>>();
         private final List<String> tabs = new ArrayList<String>();
@@ -178,6 +182,18 @@ public final class UiReading {
 
         Builder field(Named<String> field) {
             fields.add(field);
+            return this;
+        }
+
+        /** A field that is a text field, by its name, in no tab or section. */
+        public Builder textField(String name, String value) {
+            return textField(Named.plain(name, value));
+        }
+
+        /** A field that is also a text field. */
+        Builder textField(Named<String> field) {
+            fields.add(field);
+            textFields.add(field);
             return this;
         }
 

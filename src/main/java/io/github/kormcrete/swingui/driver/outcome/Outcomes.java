@@ -38,6 +38,43 @@ public final class Outcomes {
 
     private Outcomes() {}
 
+    /**
+     * Why a row the app should have added may be missing: the filled text fields beside the table {@code tableKey} (its
+     * key as an outcome path names it) - in its window, in its tab or one around it, nearest first, at most three - as
+     * {@code the table shows 1 row and Search holds "ORD-1640": a filter may hide the new row}. Null without a reading,
+     * a table of that key or such a field. A combo is never named: it always shows a value, and "All" is no filter.
+     */
+    public static String filterHint(UiReading now, String tableKey) {
+        if (now == null) return null;
+        UiReading.Named<UiReading.Rows> table = null;
+        List<String> keys = new ArrayList<String>(Keys.of(now.tables).keySet());
+        for (int i = 0; i < keys.size() && i < now.tables.size(); i++) {
+            if (keys.get(i).equals(tableKey)) table = now.tables.get(i);
+        }
+        if (table == null) return null;
+        List<UiReading.Named<String>> near = new ArrayList<UiReading.Named<String>>();
+        for (UiReading.Named<String> f : now.textFields) {
+            if (f.value == null || f.value.trim().isEmpty() || !f.window.equals(table.window)) continue;
+            if (f.scopes.size() > table.scopes.size()
+                    || !table.scopes.subList(0, f.scopes.size()).equals(f.scopes)) continue;
+            near.add(f);
+        }
+        if (near.isEmpty()) return null;
+        // nearest scope first: the deepest; a stable sort keeps reading order among equals
+        Collections.sort(near, new java.util.Comparator<UiReading.Named<String>>() {
+            @Override public int compare(UiReading.Named<String> a, UiReading.Named<String> b) {
+                return b.scopes.size() - a.scopes.size();
+            }
+        });
+        StringBuilder out = new StringBuilder("the table shows ").append(table.value.count)
+                .append(table.value.count == 1 ? " row" : " rows");
+        for (int i = 0; i < near.size() && i < 3; i++) {
+            out.append(i == 0 ? " and " : ", ").append(near.get(i).name).append(" holds \"")
+                    .append(near.get(i).value).append('"');
+        }
+        return out.append(": a filter may hide the new row").toString();
+    }
+
     public static Map<String, Object> diff(UiReading before, UiReading after) {
         Map<String, Object> out = new LinkedHashMap<String, Object>();
         Map<String, Object> opened = new LinkedHashMap<String, Object>();

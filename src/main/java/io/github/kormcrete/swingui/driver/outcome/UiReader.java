@@ -181,7 +181,7 @@ public final class UiReader {
             switch (role) {
                 case "text":
                     String field = name(c, labelRoot, names);
-                    if (field != null) out.field(named(field, scopes, ((JTextComponent) c).getText()));
+                    if (field != null) out.textField(named(field, scopes, ((JTextComponent) c).getText()));
                     return true;
                 case "combo":
                     String combo = name(c, labelRoot, names);

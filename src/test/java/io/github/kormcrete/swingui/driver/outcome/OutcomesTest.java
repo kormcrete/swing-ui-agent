@@ -37,6 +37,42 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** The outcome of a step: only what changed in the readable UI, keyed by the names a person reads. */
 class OutcomesTest {
 
+    private static UiReading withTable(UiReading.Builder b, String... scopes) {
+        UiReading.Rows rows = UiReading.builder().table("table", Arrays.asList("Order"),
+                Arrays.asList(Arrays.asList("ORD-1640"))).build().tables.get(0).value;
+        return b.rows(true, new UiReading.Named<UiReading.Rows>("table", Arrays.asList(scopes), "", rows)).build();
+    }
+
+    private static UiReading.Named<String> in(String name, String value, String... scopes) {
+        return new UiReading.Named<String>(name, Arrays.asList(scopes), "", value);
+    }
+
+    @Test
+    void aFilledTextFieldOnTheTablesTabIsNamedAsAPossibleFilter() {
+        UiReading r = withTable(UiReading.builder().textField(in("Search", "ORD-1640", "Orders"))
+                .textField(in("Note", "x", "Other")).field(in("Status", "All", "Orders")), "Orders");
+
+        assertThat(Outcomes.filterHint(r, "table"))
+                .isEqualTo("the table shows 1 row and Search holds \"ORD-1640\": a filter may hide the new row");
+    }
+
+    @Test
+    void noHintWithoutAFilledTextField() {
+        assertThat(Outcomes.filterHint(withTable(UiReading.builder().textField(in("Search", " ", "Orders")), "Orders"), "table")).isNull();
+        assertThat(Outcomes.filterHint(withTable(UiReading.builder().field(in("Status", "Cancelled", "Orders")), "Orders"), "table")).isNull();
+        assertThat(Outcomes.filterHint(withTable(UiReading.builder().textField(in("Search", "x", "Orders")), "Orders"), "Customers")).isNull();
+        assertThat(Outcomes.filterHint(null, "table")).isNull();
+    }
+
+    @Test
+    void severalFieldsAreNamedNearestFirstAndAtMostThree() {
+        UiReading r = withTable(UiReading.builder().textField("Outer", "a").textField(in("Search", "b", "Orders"))
+                .textField(in("Mid", "c", "Orders")).textField(in("Far", "d")), "Orders");
+
+        assertThat(Outcomes.filterHint(r, "table")).isEqualTo("the table shows 1 row and Search holds \"b\", "
+                + "Mid holds \"c\", Outer holds \"a\": a filter may hide the new row");
+    }
+
     /** Time stands still: these readings never run out of budget, however slow the machine. */
     private final UiReader reader = new UiReader(Clock.fixed(Instant.EPOCH, ZoneOffset.UTC), 40);
     private final List<Window> windows = new ArrayList<Window>();

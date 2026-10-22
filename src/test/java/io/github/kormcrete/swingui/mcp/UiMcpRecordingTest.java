@@ -3818,6 +3818,21 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aStepWhoseValueNeverCameNamesTheFilledSearch() throws Exception {
+        session.loadRecordedTest(copyAndSearch());
+        noReset(session);
+        session.linkWait(0L);
+        session.reader(readings(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().textField("Search", "ORD-1640")
+                .table("Orders", java.util.Collections.singletonList("Number"),
+                        java.util.Collections.singletonList(java.util.Collections.singletonList("ORD-1640"))).build()));
+
+        JsonNode r = call("{\"op\":\"replay\"}");
+
+        assertThat(r.path("steps").get(1).path("message").asText()).isEqualTo("NOT_FOUND: Step 1 (Copy) added no row to Orders; "
+                + "the table shows 1 row and Search holds \"ORD-1640\": a filter may hide the new row");
+    }
+
+    @Test
     void replayAllAndRedoStartAFreshRunFromTheMiddleKeepsIt() throws Exception {
         session.loadRecordedTest(copyAndSearch());
         noReset(session);

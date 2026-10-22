@@ -178,6 +178,31 @@ class UiReaderTest {
     }
 
     @Test
+    void aTextFieldIsReadAsATextFieldAndAComboIsNot() throws Exception {
+        final JTextField search = new JTextField("ORD-1640");
+        final JComboBox<String> status = new JComboBox<String>(new String[] {"Open", "Shipped"});
+        final JFrame frame = new JFrame("Order Desk");
+        UiReading reading = onEdt(() -> {
+            JPanel content = new JPanel(null);
+            search.setName("Search");
+            status.setName("Status");
+            search.setBounds(10, 10, 200, 30);
+            status.setBounds(10, 50, 200, 30);
+            content.add(search);
+            content.add(status);
+            frame.setContentPane(content);
+            return UiReader.standard().read(Collections.<java.awt.Window>singletonList(frame));
+        });
+        onEdt(() -> {
+            frame.dispose();
+            return null;
+        });
+
+        assertThat(reading.fields()).containsKeys("Search", "Status");
+        assertThat(reading.textFields).extracting(f -> f.name).containsExactly("Search");
+    }
+
+    @Test
     void anErrorDialogTheAppsRulesNameGivesItsMessage() throws Exception {
         final JFrame frame = new JFrame("Order Desk");
         final JDialog error = new JDialog(frame, "Problem");
