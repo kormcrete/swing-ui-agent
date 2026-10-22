@@ -114,8 +114,9 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
    recording too, but the palette does not show it.)
 3. **Reach the start screen** as the first step: `$UI menu '{"path":["File","New order"]}'`.
 4. **Act.** Read each result: `passed`, `message`, `recorded` (the step as it will be saved), `notRecorded`
-   (it ran but has no Java form, and why), `pending` (a dialog waits: `answer` it). Once the next steps are
-   certain, send them as one `batch`; it stops at the first step that does not pass:
+   (it ran but has no Java form, and why), `linkNote` (a value an earlier step made sits where no link can go: an
+   `id:`/`text:` scope step or a column; it stays exact), `pending` (a dialog waits: `answer` it). Once the next
+   steps are certain, send them as one `batch`; it stops at the first step that does not pass:
    ```sh
    $UI batch '{"steps":[
      {"verb":"type","target":{"role":"text","name":"Customer"},"text":"Ada"},
@@ -151,10 +152,12 @@ value, or the step fails in words. Never the recorded value.
 
 - **Automatic links.** While recording, a value you click, type, pick or check is linked when it is new in an
   earlier step's outcome, 4 characters or more, not yes/no/true/false, not a whole number below 1000, whole (or a
-  whole part of typed text). Most recent step first, and within one step a field, then a row, an item, a plugin
-  step's own value, before a text or title; a row or item only when that step added (or changed) that one alone.
-  Not linked: a check against its own element's new text, field or cell (see step 5 above), a value in another form,
-  rows from a search.
+  whole part of typed text). Tab, section, dialog and window titles link whole, like names (`window:${copy...}`),
+  never a `*` title or a value only inside a title. Most recent step first, and within one step a field, then a row,
+  an item, a plugin step's own value, before a text; a row or item only when that step added (or changed) that one
+  alone. Not linked: a title a step opened (tab, dialog, window: link it by hand when it is data), a value through a
+  name made of the value itself (a label known by its own text), a check against its own element's new text, field
+  or cell (see step 5 above), a value in another form, rows from a search.
 - **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later

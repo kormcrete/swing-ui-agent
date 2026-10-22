@@ -38,7 +38,10 @@ A value is linked automatically only when the link is surely right:
 - It **appeared in that step**. It was nowhere on the screen before the step and is there after it.
 - It **stands out**. It has 4 characters or more, is not yes, no, true or false, and is not a whole number below 1000. A quantity of `3` is never linked.
 - It is **the whole value**, or a whole part of what you typed. `Copy of ORD-1640` is linked as the fixed `Copy of ` plus the number.
-- When one step made the same value in several places, a field comes first, then a row, an item, a plugin step's own value, and last a text or a title.
+- The **titles** of tabs, sections, dialogs and windows are linked whole, like names: a window titled `ORD-1640` becomes `window:${copy.rows['Orders › table'].added[0].Order}`. A title with the value only inside it (`Order ORD-1640`), or one that starts or ends with `*`, stays as it is.
+- When one step made the same value in several places, a field comes first, then a row, an item, a plugin step's own value, and last a text.
+- A title a step **opened** (a tab, a dialog, a window) is never linked by itself: most such titles are fixed words of the app, like *Invoice* or *History*. When the title is data, the same value is almost always in a row, a field or a text, which is linked instead. To link to the title, use **Use a value from an earlier step…**.
+- A value is never linked through a name made of the value itself, such as a label known only by its own text: on the next run that name is another one.
 - A row or an item is linked only when the step **added (or changed) that one alone**. A search that filled a table with results is not, because the next run may list them in another order.
 - When several earlier steps made the same value, the **most recent one** wins.
 

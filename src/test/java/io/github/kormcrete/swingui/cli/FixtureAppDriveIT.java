@@ -32,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -711,6 +712,83 @@ class FixtureAppDriveIT {
         assertThat(failed.path("n").asText()).as(why).isEqualTo("4");
         assertThat(failed.path("message").asText()).as(why).contains("Step 3 (Save note) added no row to Register");
         assertThat(ran.path("stderr").asText()).as(why).contains("Step 3 (Save note) added no row to Register");
+    }
+
+    @Test
+    @Order(23)
+    void aRecordOpenedInItsOwnWindowIsFoundByItsNumberOnEveryRun() throws Exception {
+        Path folder = Files.createDirectories(testsDir.resolve("opened"));
+        Path javaRoot = Files.createDirectories(testsDir.resolve("opened-java"));
+        String number = "${copy.rows.Register.added[0].Number}";
+        try {
+            assertThat(call("recording", "{'op':'start','reset':true}").path("state").asText()).isEqualTo("recording");
+            step("menu", "{'path':['Window','Register']}");
+            int records = registerNumbers().size();
+            step("click", "{'target':{" + REGISTER + ",'name':'Register','row':{'Number':'REG-1001'},'column':'Number'}}");
+            step("click", "{'target':{" + REGISTER + ",'role':'button','name':'Copy'}}");
+            // the copy comes in late: its number is the Register's last one once it is there
+            List<String> numbers = registerNumbers();
+            for (long end = System.currentTimeMillis() + 10_000; numbers.size() == records; numbers = registerNumbers()) {
+                assertThat(System.currentTimeMillis()).as("no copy in the Register").isLessThan(end);
+                Thread.sleep(50);
+            }
+            String n = numbers.get(numbers.size() - 1);
+            assertThat(n).matches("REG-\\d{4}");
+            String record = "'window':'window:" + n + "'";
+            step("click", "{'target':{" + REGISTER + ",'name':'Register','row':{'Number':'" + n + "'},'column':'Number'}}");
+            step("click", "{'target':{" + REGISTER + ",'role':'button','name':'Open'}}");
+            step("click", "{'target':{" + record + ",'role':'tab','name':'History'}}");
+            step("click", "{'target':{" + record + ",'role':'tab','name':'" + n + "'}}");
+            step("expect", "{'target':{" + record + ",'scope':['tab:" + n + "'],'role':'label','name':'" + n + "'},"
+                    + "'shown':true}");
+            step("close_window", "{" + record + "}");
+
+            JsonNode list = call("recording", "{'op':'list'}");
+            String why = list.path("why").asText();
+            JsonNode steps = list.path("steps");
+            assertThat(steps).as(why).hasSize(8);
+            // the window's title is the copy's number: found by what Copy added, not by the title Open showed
+            JsonNode history = steps.path(5).path("step").path("target");
+            assertThat(history.path("window").asText()).as(why).isEqualTo("window:" + number);
+            assertThat(history.path("name").asText()).as(why).isEqualTo("History");
+            JsonNode check = steps.path(6).path("checks").path(0).path("step").path("target");
+            assertThat(check.path("scope").path(0).asText()).as(why).isEqualTo("tab:" + number);
+            assertThat(check.path("name").asText()).as(why).isEqualTo(number);
+            assertThat(steps.path(7).path("step").path("window").asText()).as(why).isEqualTo("window:" + number);
+            call("recording", "{'op':'stop'}");
+
+            JsonNode exported = call("recording", "{'op':'export','as':'recorded','name':'open-a-record','dir':'"
+                    + slashes(folder) + "'}");
+            Path file = Paths.get(exported.path("savedTo").asText());
+            assertThat(file).as(exported.path("why").asText()).isRegularFile();
+            String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+            assertThat(text).as(text).contains("\"window:" + number + "\"", "\"tab:" + number + "\"").doesNotContain(n);
+            JsonNode javaExport = call("recording", "{'op':'export','as':'java','class':'OpenARecordUiIT','package':'opened',"
+                    + "'dir':'" + slashes(javaRoot) + "'}");
+            Path javaFile = Paths.get(javaExport.path("savedTo").asText());
+            assertThat(javaFile).as(javaExport.path("why").asText()).isRegularFile();
+
+            JsonNode first = call("run_recorded_test", "{'path':'" + slashes(file) + "'}");
+            assertThat(first.path("passed").asBoolean()).as(first.path("why").asText()).isTrue();
+            JsonNode second = call("run_recorded_test", "{'path':'" + slashes(file) + "'}");
+            assertThat(second.path("passed").asBoolean()).as(second.path("why").asText()).isTrue();
+            String number1 = resolved(first, number);
+            String number2 = resolved(second, number);
+            assertThat(number1).matches("REG-\\d{4}").isNotEqualTo(n);
+            assertThat(number2).matches("REG-\\d{4}").isNotEqualTo(number1);
+            runExportedJava(javaRoot, javaFile, "opened.OpenARecordUiIT");
+        } finally {
+            stopIfStillRecording();
+        }
+    }
+
+    /** The Number column of the Register table, top to bottom; a read is not one of the agent's steps. */
+    private static List<String> registerNumbers() throws Exception {
+        JsonNode read = call("read", "{'target':{" + REGISTER + ",'name':'Register'},'maxRows':500}");
+        assertThat(read.path("found").asBoolean()).as(read.path("why").asText()).isTrue();
+        List<String> out = new java.util.ArrayList<String>();
+        for (JsonNode row : read.path("node").path("rows")) out.add(row.path(0).asText());
+        return out;
     }
 
     /** The step of a recorded test's steps (groups searched too) that has {@code id}; null when none has. */

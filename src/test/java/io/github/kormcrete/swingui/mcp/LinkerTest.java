@@ -189,12 +189,12 @@ class LinkerTest {
         RecordedStep copy = step(1, COPY, "{'fields':{'Number':'ORD-1643'}}", "ORD-1643", ".fields.Number");
         RecordedStep close = step(2, "{'action':'click','target':{'role':'button','name':'Close'}}", "{}");
         RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
-                "{'opened':{'tabs':['ORD-1643']}}", "ORD-1643", ".opened.tabs[0]");
+                "{'texts':{'Number':'ORD-1643'}}", "ORD-1643", ".texts.Number");
 
-        assertThat(typed("ORD-1643", steps(copy, close, open))).isEqualTo("${open.opened.tabs[0]}");
+        assertThat(typed("ORD-1643", steps(copy, close, open))).isEqualTo("${open.texts.Number}");
         Linker.Linked tab = Linker.link(action("{'action':'click','target':{'role':'tab','name':'ORD-1643'}}"),
                 steps(copy, close, open));
-        assertThat(tree(tab.action).at("/target/name").asText()).isEqualTo("${open.opened.tabs[0]}");
+        assertThat(tree(tab.action).at("/target/name").asText()).isEqualTo("${open.texts.Number}");
     }
 
     @Test
@@ -553,6 +553,81 @@ class LinkerTest {
         assertThat(tree(Linker.link(action("{'action':'click','target':{'role':'table','name':'Orders',"
                 + "'row':{'Order':'ORD-1643'}}}"), steps(before, copy())).action).at("/target/row/Order").asText())
                 .isEqualTo(ORDER);
+    }
+
+    @Test
+    void aFreshValueInATabScopeAndTheNameIsLinkedInBoth() {
+        Linker.Linked l = Linker.link(action("{'action':'expect','target':{'scope':['tab:ORD-1643'],'role':'label',"
+                + "'name':'ORD-1643'},'shown':true}"), steps(copy()));
+        assertThat(tree(l.action).at("/target/scope/0").asText()).isEqualTo("tab:" + ORDER);
+        assertThat(tree(l.action).at("/target/name").asText()).isEqualTo(ORDER);
+        assertThat(l.seen).containsExactly(entry(ORDER, "ORD-1643"));
+    }
+
+    @Test
+    void aWindowTitleThatIsTheFreshValueIsLinkedInALocatorAndInCloseWindow() {
+        assertThat(tree(Linker.link(action("{'action':'click','target':{'window':'window:ORD-1643','role':'button',"
+                + "'name':'Save'}}"), steps(copy())).action).at("/target/window").asText()).isEqualTo("window:" + ORDER);
+        assertThat(tree(Linker.link(action("{'action':'closeWindow','window':'dialog:ORD-1643'}"), steps(copy())).action)
+                .path("window").asText()).isEqualTo("dialog:" + ORDER);
+    }
+
+    @Test
+    void aGlobTitleIsNeverLinked() {
+        unchanged("{'action':'click','target':{'window':'dialog:ORD-1643*','scope':['tab:ORD-1643*'],'role':'button',"
+                + "'name':'Save'}}", steps(copy()));
+        unchanged("{'action':'click','target':{'window':'window:*ORD-1643','role':'button','name':'Save'}}", steps(copy()));
+    }
+
+    @Test
+    void aValueOnlyInsideATitleIsNotLinked() {
+        unchanged("{'action':'click','target':{'scope':['tab:Order ORD-1643'],'role':'button','name':'Save'}}", steps(copy()));
+    }
+
+    @Test
+    void idAndTextScopeStepsAndColumnsStayExactAndSaySo() {
+        Linker.Linked l = Linker.link(action("{'action':'click','target':{'scope':['id:ORD-1643'],'role':'button',"
+                + "'name':'Save'}}"), steps(copy()));
+        assertThat(l.linked()).isFalse();
+        assertThat(l.notLinked).containsExactly("scope step 'id:ORD-1643'");
+        assertThat(Linker.link(action("{'action':'click','target':{'role':'table','name':'Orders','column':'ORD-1643'}}"),
+                steps(copy())).notLinked).containsExactly("column 'ORD-1643'");
+    }
+
+    @Test
+    void aTitleAStepOpenedIsNeverLinkedByItself() {
+        RecordedStep open = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
+                "{'opened':{'tabs':['ORD-1643','Items','Invoice'],'dialogs':['Copy order']}}",
+                "ORD-1643", ".opened.tabs[0]", "Invoice", ".opened.tabs[2]", "Copy order", ".opened.dialogs[0]");
+        unchanged("{'action':'click','target':{'role':'tab','name':'Invoice'}}", steps(open));
+        unchanged("{'action':'click','target':{'role':'tab','name':'ORD-1643'}}", steps(open));
+        unchanged("{'action':'click','target':{'scope':['tab:Invoice'],'role':'button','name':'Print'}}", steps(open));
+        unchanged("{'action':'click','target':{'window':'dialog:Copy order','role':'button','name':'OK'}}", steps(open));
+        // still offered by hand
+        Linker.Pool pool = new Linker.Pool();
+        pool.add(open);
+        assertThat(pool.fitting(action("{'action':'click','target':{'role':'tab','name':'Invoice'}}"), 5)).hasSize(1);
+        assertThat(tree(Linker.linkTo(action("{'action':'click','target':{'role':'tab','name':'Invoice'}}"), steps(open), 3,
+                ".opened.tabs[2]").action).at("/target/name").asText()).isEqualTo("${open.opened.tabs[2]}");
+    }
+
+    @Test
+    void aValueIsNeverLinkedThroughAPathThatNamesIt() {
+        RecordedStep shown = step(3, "{'action':'click','target':{'role':'button','name':'Open'}}",
+                "{'texts':{'ORD-1643':'ORD-1643'}}", "ORD-1643", ".texts['ORD-1643']");
+        unchanged(type("ORD-1643"), steps(shown));
+        Linker.Pool pool = new Linker.Pool();
+        pool.add(shown);
+        assertThat(pool.fitting(action(type("ORD-1643")), 5)).isEmpty();
+        assertThat(Linker.namesItself(".texts['ORD-1643']", "ORD-1643")).isTrue();
+        assertThat(Linker.namesItself(".rows.Orders.added[0].Number", "ORD-1643")).isFalse();
+        // the older row source is taken instead
+        assertThat(typed("ORD-1643", steps(copy(), shown))).isEqualTo(ORDER);
+    }
+
+    @Test
+    void aTitleThatHoldsAReferenceGivesNoScopedKey() {
+        assertThat(Linker.ownKeys(read("{'scope':['tab:${copy.x}'],'role':'label','name':'Total'}"))).containsExactly("Total");
     }
 
     @Test

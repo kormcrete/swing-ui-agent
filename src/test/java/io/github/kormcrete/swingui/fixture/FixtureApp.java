@@ -60,7 +60,8 @@ import java.util.function.Consumer;
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
  * <p>Its one menu, {@code Window › Register}, opens the Register window ({@link #showRegister}): records the agent
- * copies, so that each run of a recorded test makes a record with a new number.
+ * copies, so that each run of a recorded test makes a record with a new number, and opens in a window of their own,
+ * titled with their number.
  */
 public final class FixtureApp {
 
@@ -214,8 +215,9 @@ public final class FixtureApp {
     /**
      * Opens the Register window, or brings it back as it was: its records stay, so a second run begins with the ones
      * the first made. Copy copies the selected record under the next number, late (a timer, as an app saving in the
-     * background does); Save note writes the Note field into the selected record. Add tag and New folder add an entry
-     * with the next number to the Tags list and the Folders tree.
+     * background does); Save note writes the Note field into the selected record; Open shows the selected record in a
+     * new window titled with its number, with a tab of that name (a label showing the number) and a History tab. Add
+     * tag and New folder add an entry with the next number to the Tags list and the Folders tree.
      */
     static void showRegister() {
         if (register == null) register = registerFrame();
@@ -251,6 +253,21 @@ public final class FixtureApp {
             int row = table.getSelectedRow();
             if (row >= 0) records.setValueAt(note.getText(), row, 1);
         });
+        JButton open = new JButton("Open");
+        open.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row < 0) return;
+            String number = String.valueOf(records.getValueAt(row, 0));
+            JTabbedPane tabs = new JTabbedPane();
+            tabs.addTab(number, new JLabel(number));
+            tabs.addTab("History", new JLabel("No changes yet"));
+            JFrame record = new JFrame(number);
+            record.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            record.setContentPane(tabs);
+            record.setSize(320, 200);
+            record.setLocation(620, 340);
+            record.setVisible(true);
+        });
 
         DefaultListModel<String> tagModel = new DefaultListModel<String>();
         tagModel.addElement("TAG-1");
@@ -274,7 +291,7 @@ public final class FixtureApp {
         });
 
         JPanel recordButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        for (Component c : new Component[] {copy, noteCaption, note, saveNote}) recordButtons.add(c);
+        for (Component c : new Component[] {copy, noteCaption, note, saveNote, open}) recordButtons.add(c);
         JPanel recordsPanel = new JPanel(new BorderLayout());
         recordsPanel.add(new JScrollPane(table), BorderLayout.CENTER);
         recordsPanel.add(recordButtons, BorderLayout.SOUTH);

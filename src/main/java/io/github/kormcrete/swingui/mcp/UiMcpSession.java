@@ -567,7 +567,7 @@ public class UiMcpSession {
                             personSeq = ((Number) seq).intValue();
                             personRecord = added.id;
                         }
-                        autoLink(added);
+                        autoLink(added, null);
                         publish();
                         scheduleFolding();
                         return new Inspector.Result(true, action.describe());
@@ -1595,7 +1595,7 @@ public class UiMcpSession {
                     if (agentRecords && !check && changed != null) {
                         late = new Late(added.id, before, step.outcome != null ? step.outcome.made : null);
                     }
-                    r.set("recorded", mapper.valueToTree(autoLink(added)));
+                    r.set("recorded", mapper.valueToTree(autoLink(added, r)));
                     scheduleFolding();
                 } else {
                     model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
@@ -1707,9 +1707,10 @@ public class UiMcpSession {
     /**
      * Links the values of the record just added to what earlier steps made ({@link Linker}): one edit after the append,
      * so Undo takes back the link and leaves the step with its exact values. Returns the step's action as the recording
-     * now keeps it.
+     * now keeps it. {@code result} (null: none) gets a {@code linkNote} when places of the step that cannot hold a
+     * reference hold a value an earlier step made.
      */
-    private Action autoLink(RecordedStep added) {
+    private Action autoLink(RecordedStep added, ObjectNode result) {
         List<RecordedStep> records = model.records();
         int at = 0;
         while (at < records.size() && records.get(at).id != added.id) at++;
@@ -1720,6 +1721,11 @@ public class UiMcpSession {
             if (linked.linked()) checkLink(added.id, linked);
         } catch (RuntimeException e) {
             return added.action;   // linking is a help: the step stays exact rather than going unrecorded
+        }
+        if (result != null && !linked.notLinked.isEmpty()) {
+            result.put("linkNote", "stays exact: " + String.join(", ", linked.notLinked)
+                    + (linked.notLinked.size() == 1 ? " holds" : " hold") + " a value an earlier step made, and an id or "
+                    + "text scope step or a column cannot use one");
         }
         if (!linked.linked()) return added.action;
         model.link(added.id, linked.action, linked.seen, linked.ids);

@@ -3106,6 +3106,21 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void aFreshValueInAScopeIsLinkedAndAnIdScopeSaysItStaysExact() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        JsonNode check = mapper.readTree(session.verb("expect", mapper.readTree(
+                "{\"target\":{\"scope\":[\"tab:ORD-1641\"],\"role\":\"label\",\"name\":\"ORD-1641\"},\"shown\":true}")));
+        assertThat(check.at("/recorded/target/scope/0").asText()).isEqualTo("tab:" + NUMBER);
+        assertThat(check.at("/recorded/target/name").asText()).isEqualTo(NUMBER);
+        assertThat(check.has("linkNote")).isFalse();
+        JsonNode click = mapper.readTree(session.verb("click", mapper.readTree(
+                "{\"target\":{\"scope\":[\"id:ORD-1641\"],\"role\":\"button\",\"name\":\"Save\"}}")));
+        assertThat(click.path("linkNote").asText()).isEqualTo("stays exact: scope step 'id:ORD-1641' holds a value an "
+                + "earlier step made, and an id or text scope step or a column cannot use one");
+    }
+
+    @Test
     void aRowLinkStillResolvesAfterDoneFromTheMiddle() throws Exception {
         io.github.kormcrete.swingui.driver.outcome.UiReading before = orders("ORD-1640");
         // the new number shows in a field as well: the value index names the field, the click names the row

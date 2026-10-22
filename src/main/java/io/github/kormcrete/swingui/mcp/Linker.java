@@ -35,7 +35,14 @@ import java.util.regex.Pattern;
  * ({@code ${copy.rows.Orders.added[0].Order}}), so a replay uses what that step makes then. Strict on purpose: only a
  * value that was new in that step's outcome (its value index), distinctive (4 characters or more, no yes/no/true/false,
  * no integer below 1000), not the earlier step's own input, matched whole, or whole inside typed text (a domain step's
- * own values, under {@code step} of its outcome, too). A row or item
+ * own values, under {@code step} of its outcome, too). The title of a tab or section scope step and of a dialog or
+ * window is linked whole, like a name ({@code tab:${copy.rows.Orders.added[0].Order}}): never when the value is only
+ * inside it, never a title that starts or ends with {@code *}. A title a step opened or closed is no automatic source
+ * (most such titles are fixed words of the app; one that carries data shows it in a row, field or text of the same
+ * step as well): the person or the agent links to it by hand. No value is ever linked through a path that names the
+ * value itself ({@code .texts['ORD-1643']}): on the next run that key is another one. An id or text scope step and a
+ * column cannot hold a reference: one that holds a candidate's value stays exact and says so ({@link Linked#notLinked}).
+ * A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
  * is; a tree row a step added to that tree is linked by its whole path. What a check expects is never linked to the
  * checked element's own field or text, or to its cell in a row an earlier step changed (the check would compare it with
@@ -43,7 +50,7 @@ import java.util.regex.Pattern;
  * linked alike (that text also in its plain form, as typed before it was made unique, short or not: the person asked for
  * it; it is the typing step's own value, never what the field it filled shows). Several sources: the most recent step
  * wins (a value remembered after the step that added its row too); within one step a field, a row, an item or a domain
- * step's own value beats a text or a title (then the order of its value index).
+ * step's own value beats a text (then the order of its value index).
  *
  * <p>The person's links go through here too: what earlier steps changed that a step has ({@link Pool}, offered in
  * words), the one they pick ({@link #linkTo}), and the later uses of a text made unique per run ({@link #uniqueBack}).
@@ -63,13 +70,20 @@ final class Linker {
         final Set<Integer> sources;
         /** The id each source without one gets, by record id; a remember step is named by its name already. */
         final Map<Integer, String> ids;
+        /**
+         * The places of the step that hold a value an earlier step made, whole, but cannot use a reference ({@code scope
+         * step 'id:ORD-1641'}, {@code column 'ORD-1641'}): they stay exact. Automatic links only; empty for the others.
+         */
+        final List<String> notLinked;
         private final boolean any;
 
-        Linked(Action action, Map<String, String> seen, Set<Integer> sources, Map<Integer, String> ids, boolean any) {
+        Linked(Action action, Map<String, String> seen, Set<Integer> sources, Map<Integer, String> ids,
+                List<String> notLinked, boolean any) {
             this.action = action;
             this.seen = Collections.unmodifiableMap(seen);
             this.sources = Collections.unmodifiableSet(sources);
             this.ids = Collections.unmodifiableMap(ids);
+            this.notLinked = Collections.unmodifiableList(notLinked);
             this.any = any;
         }
 
@@ -137,6 +151,20 @@ final class Linker {
                 .names(records);
         work.only = field;
         return work.run(a);
+    }
+
+    /**
+     * Whether a key of {@code path} ({@code .texts['ORD-1643']}) is or holds {@code value}: linked through it, the value
+     * would name another key on the next run and never be found.
+     */
+    static boolean namesItself(String path, String value) {
+        if (path == null || path.isEmpty() || value.isEmpty()) return false;
+        try {
+            for (String key : JsonPaths.keys("$" + path)) if (key.contains(value)) return true;
+        } catch (IllegalArgumentException malformed) {
+            return false;
+        }
+        return false;
     }
 
     /** Whether {@code value} is one {@code s} itself typed, picked or named (never what the app made). */
@@ -215,7 +243,9 @@ final class Linker {
         for (Map.Entry<String, String> e : s.newValues.entrySet()) {
             String v = e.getKey();
             String p = e.getValue();
-            if (strict && !distinctive(v) || own.contains(v) || several(s.outcome, p)) continue;
+            if (strict && !distinctive(v) || own.contains(v) || several(s.outcome, p) || namesItself(p, v)) continue;
+            // a title a step opened or closed is most often a fixed word of the app: linked by hand only
+            if (strict && (p.startsWith(".opened") || p.startsWith(".closed"))) continue;
             // what a domain step says it made counts as a field does
             int kind = p.startsWith(".fields") || p.startsWith(".rows") || p.startsWith(".items") || p.startsWith(".step")
                     ? 0 : 1;
@@ -307,8 +337,9 @@ final class Linker {
 
     /**
      * Walks the places of a step where a value can be linked: a target's name (not a caption's), item and row keys;
-     * typed text; a selected item, a picked path; what a check expects; a domain step's params. Not menu paths, sentences,
-     * windows, ids or file paths.
+     * the titles of its tab and section scope steps and of its dialog or window (the step's own window too); typed
+     * text; a selected item, a picked path; what a check expects; a domain step's params. Not menu paths, sentences,
+     * id or text scope steps, columns, ids or file paths.
      */
     private abstract static class Walk {
 
@@ -317,6 +348,10 @@ final class Linker {
                 for (String field : ((VerbAction) a).targets().keySet()) {
                     if (tree.get(field) instanceof ObjectNode) locator((ObjectNode) tree.get(field));
                 }
+            }
+            JsonNode window = tree.get("window");
+            if (window != null && window.isTextual() && Refs.titleStart("window", window.textValue()) >= 0) {
+                titled(tree, "window");
             }
             switch (tree.path("action").asText()) {
                 case "type":
@@ -350,6 +385,17 @@ final class Linker {
         }
 
         void locator(ObjectNode l) {
+            JsonNode window = l.get("window");
+            if (window != null && window.isTextual() && Refs.titleStart("window", window.textValue()) >= 0) {
+                titled(l, "window");
+            }
+            JsonNode scope = l.get("scope");
+            if (scope instanceof ArrayNode) {
+                for (int i = 0; i < scope.size(); i++) {
+                    JsonNode step = scope.get(i);
+                    if (step.isTextual() && Refs.titleStart("scope", step.textValue()) >= 0) titledAt((ArrayNode) scope, i);
+                }
+            }
             JsonNode role = l.get("role");
             if (role == null || !CAPTIONED.contains(role.asText())) whole(l, "name");
             items(l);
@@ -392,6 +438,25 @@ final class Linker {
 
         /** Typed text: linked whole, or each value found whole inside it. */
         abstract void typed(ObjectNode parent, String field);
+
+        /** A window title ({@code window:<title>}, {@code dialog:<title>}): {@code parent}'s {@code field}, linked whole. */
+        abstract void titled(ObjectNode parent, String field);
+
+        /** A scope step's title ({@code tab:<title>}, {@code section:<title>}): slot {@code i} of {@code parent}, linked whole. */
+        abstract void titledAt(ArrayNode parent, int i);
+    }
+
+    /**
+     * Where the title of a titled scope step or window ({@code node}, in {@code field}: "scope" or "window") starts;
+     * -1 when it has none that can be linked: empty, holding a reference, or a glob (a {@code *} at either end).
+     */
+    private static int linkableTitle(JsonNode node, String field) {
+        if (node == null || !node.isTextual()) return -1;
+        String text = node.textValue();
+        int start = Refs.titleStart(field, text);
+        if (start < 0 || start == text.length() || hasRefs(text)) return -1;
+        String title = text.substring(start);
+        return title.startsWith("*") || title.endsWith("*") ? -1 : start;
     }
 
     /** The plain texts (escapes undone) at the places a step has values, without those that hold a reference. */
@@ -409,6 +474,19 @@ final class Linker {
 
         @Override void typed(ObjectNode parent, String field) {
             add(parent.get(field), typed);
+        }
+
+        @Override void titled(ObjectNode parent, String field) {
+            title(parent.get(field), "window");
+        }
+
+        @Override void titledAt(ArrayNode parent, int i) {
+            title(parent.get(i), "scope");
+        }
+
+        private void title(JsonNode node, String field) {
+            int start = linkableTitle(node, field);
+            if (start >= 0) whole.add(Refs.unescape(node.textValue().substring(start)));
         }
 
         @Override void items(ObjectNode l) {
@@ -446,6 +524,8 @@ final class Linker {
         String only;
         /** The records whose names an id given to a source must not take; by default the earlier ones. */
         List<RecordedStep> named;
+        /** {@link Linked#notLinked}. */
+        final List<String> notLinked = new ArrayList<String>();
 
         Work names(List<RecordedStep> records) {
             this.named = records;
@@ -478,12 +558,33 @@ final class Linker {
                     if (node != place) it.remove();
                 }
             }
+            if (rows && a instanceof VerbAction) {
+                for (String field : ((VerbAction) a).targets().keySet()) {
+                    if (tree.get(field) instanceof ObjectNode) staysExact((ObjectNode) tree.get(field));
+                }
+            }
             return matches.isEmpty() ? none(a) : finish(tree);
         }
 
         Linked none(Action a) {
             return new Linked(a, new LinkedHashMap<String, String>(), new HashSet<Integer>(),
-                    new LinkedHashMap<Integer, String>(), false);
+                    new LinkedHashMap<Integer, String>(), notLinked, false);
+        }
+
+        /** The places of locator {@code l} that hold a candidate's value whole but cannot hold a reference. */
+        private void staysExact(ObjectNode l) {
+            JsonNode scope = l.get("scope");
+            if (scope instanceof ArrayNode) {
+                for (JsonNode step : scope) {
+                    String t = step.isTextual() ? step.textValue() : "";
+                    int start = t.startsWith("id:") ? 3 : t.startsWith("text:") ? 5 : -1;
+                    if (start >= 0 && best.containsKey(t.substring(start))) notLinked.add("scope step '" + t + "'");
+                }
+            }
+            JsonNode column = l.get("column");
+            if (column != null && column.isTextual() && best.containsKey(column.textValue())) {
+                notLinked.add("column '" + column.textValue() + "'");
+            }
         }
 
         // -------------------------------------------------------------- where values are
@@ -604,6 +705,25 @@ final class Linker {
             if (c != null) matches.add(new Match(parent, field, -1, Collections.<Object>singletonList(c)));
         }
 
+        @Override void titled(ObjectNode parent, String field) {
+            Match m = titleMatch(parent, field, -1, parent.get(field), "window");
+            if (m != null) matches.add(m);
+        }
+
+        @Override void titledAt(ArrayNode parent, int i) {
+            Match m = titleMatch(parent, null, i, parent.get(i), "scope");
+            if (m != null) matches.add(m);
+        }
+
+        /** The title of {@code node} linked whole after its kind ({@code tab:}), as stored; null when it is no candidate. */
+        private Match titleMatch(JsonNode parent, String field, int index, JsonNode node, String kind) {
+            int start = linkableTitle(node, kind);
+            if (start < 0) return null;
+            String text = node.textValue();
+            Candidate c = best.get(Refs.unescape(text.substring(start)));
+            return c == null ? null : new Match(parent, field, index, Arrays.<Object>asList(text.substring(0, start), c));
+        }
+
         private Candidate wholeMatch(JsonNode node) {
             if (node == null || !node.isTextual() || hasRefs(node.textValue())) return null;
             return best.get(Refs.unescape(node.textValue()));
@@ -668,7 +788,7 @@ final class Linker {
                 else ((ArrayNode) m.parent).set(m.index, TextNode.valueOf(text.toString()));
             }
             try {
-                return new Linked(FlowJson.mapper().treeToValue(tree, Action.class), seen, sources, ids, true);
+                return new Linked(FlowJson.mapper().treeToValue(tree, Action.class), seen, sources, ids, notLinked, true);
             } catch (JsonProcessingException e) {
                 throw new IllegalStateException("a linked step does not read back: " + e.getOriginalMessage(), e);
             }
@@ -974,7 +1094,8 @@ final class Linker {
     /**
      * The keys an outcome may give the element locator {@code l} names, whole: its name or id alone (no other element
      * shares it), under the tabs and sections of its scope ({@code Billing › Name}), and under its window's title. A scope
-     * or window matched by a prefix gives no scoped key; nor does a number an outcome adds to twins ({@code Name #2}).
+     * or window matched by a prefix, or whose title holds a reference, gives no scoped key; nor does a number an outcome
+     * adds to twins ({@code Name #2}).
      */
     static Set<String> ownKeys(JsonNode l) {
         Set<String> out = new HashSet<String>();
@@ -989,7 +1110,8 @@ final class Linker {
                 String kind = colon < 0 ? "" : t.substring(0, colon);
                 if (!"tab".equals(kind) && !"section".equals(kind)) continue;
                 String title = t.substring(colon + 1);
-                if (title.startsWith("*") || title.endsWith("*")) exact = false;
+                // a title from an earlier step's value is another one on each run, like a glob
+                if (title.startsWith("*") || title.endsWith("*") || hasRefs(title)) exact = false;
                 scopes.add(title);
             }
         }
@@ -999,7 +1121,7 @@ final class Linker {
             String t = w.textValue();
             int colon = t.indexOf(':');
             String title = colon < 0 ? null : t.substring(colon + 1);
-            if (title != null && !title.startsWith("*") && !title.endsWith("*")) window = title;
+            if (title != null && !title.startsWith("*") && !title.endsWith("*") && !hasRefs(title)) window = title;
         }
         for (String k : new String[] {"name", "id"}) {
             JsonNode n = l.get(k);
