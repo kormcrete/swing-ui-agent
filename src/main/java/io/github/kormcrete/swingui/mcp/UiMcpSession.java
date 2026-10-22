@@ -3951,12 +3951,15 @@ public class UiMcpSession {
     }
 
     /**
-     * Refuses (BAD_INPUT) the references {@code written} of the check {@code check} (an expect, or a domain check whose
-     * reads are known: {@link #domainCheckReads}), the record at {@code at} of {@code records}, that name the very place
-     * the check reads under the step it sits under: what that step made there ({@link Linker#readBy}), or a value a
-     * remember entry under that same step read from there ({@link Linker#rememberedFrom}). Linked to it, the check would
-     * compare the value with itself at the same moment and pass whatever the app shows. Under a later step the same link
-     * checks that the value has not changed since: allowed. {@code ids}: the ids a link gives its sources, by record id.
+     * Refuses (BAD_INPUT) the references {@code written} of the check {@code check} (an expect, or a domain check), the
+     * record at {@code at} of {@code records}, that name the very place the check reads under the step it sits under: what
+     * that step made there ({@link Linker#readBy}), or a value a remember entry under that same step read from there
+     * ({@link Linker#rememberedFrom}). Linked to it, the check would compare the value with itself at the same moment and
+     * pass whatever the app shows. A domain check whose reads are not known ({@link #domainCheckReads}: made by insert,
+     * loaded from a file, a check that ran no expect, or brought back by undo after an edit) may read any field or text,
+     * and any remembered value, as the automatic rule takes it; the words then say it "may read". Under a later step the
+     * same link checks that the value has not changed since: allowed. {@code ids}: the ids a link gives its sources, by
+     * record id.
      */
     private void refuseSelfComparison(List<RecordedStep> records, int at, Action check, Collection<String> written,
             Map<Integer, String> ids) {
@@ -3968,7 +3971,11 @@ public class UiMcpSession {
         } else {
             return;
         }
-        if (reads == null) return;
+        String reading = "reads";
+        if (reads == null) {   // not known: any field or text it may read (Linker#readBy with none)
+            reads = Collections.<JsonNode>emptyList();
+            reading = "may read";
+        }
         int under = at - 1;
         while (under >= 0 && StepNumbers.isCheck(records.get(under).action)) under--;
         if (under < 0) return;
@@ -3996,9 +4003,9 @@ public class UiMcpSession {
                     }
                 }
                 if (place == null) continue;
-                throw new DriverException(Reason.BAD_INPUT, "check " + label(records, at) + " reads the very place "
-                        + place + ": linked to it, the check would compare the value with itself and pass whatever the "
-                        + "app shows (nothing linked)");
+                throw new DriverException(Reason.BAD_INPUT, "check " + label(records, at) + " " + reading
+                        + " the very place " + place + ": linked to it, the check would compare the value with itself and "
+                        + "pass whatever the app shows (nothing linked)");
             }
         }
     }
@@ -4448,31 +4455,35 @@ public class UiMcpSession {
 
     /**
      * Where the value of reference {@code r} comes from, in words a sentence can hold without step numbers: "the number
-     * placeOrder made", "the Order placeOrder added", "the remembered orderTotal", "this run's id".
+     * placeOrder made", "the Order placeOrder added", "the Folders item newFolder added", "the remembered orderTotal",
+     * "this run's id". With no word to name it by (only an index), "a value placeOrder made".
      */
     static String sentenceWords(Refs.Ref r) {
         if ("run".equals(r.id) && ".id".equals(r.path)) return "this run's id";
         if (r.path.isEmpty()) return "the remembered " + r.id;
         List<String> k = keys(r.path);
-        String last = null;
-        for (String key : k) if (!key.startsWith("[")) last = key;
-        if (last != null && last.contains(" › ")) last = last.substring(last.lastIndexOf(" › ") + 3);
         String first = k.isEmpty() ? "" : k.get(0);
+        String last = lastWord(k, 1);
         switch (first) {
             case "rows":
             case "items":
                 if (k.size() > 2 && ("added".equals(k.get(2)) || "changed".equals(k.get(2)))) {
-                    return "the " + last + " " + r.id + " " + k.get(2);
+                    String column = lastWord(k, 3);
+                    if (column != null) return "the " + column + " " + r.id + " " + k.get(2);
+                    String name = lastWord(k.subList(0, 2), 1);   // the table, list or tree: a whole row or item
+                    if (name != null) {
+                        return "the " + name + ("rows".equals(first) ? " row " : " item ") + r.id + " " + k.get(2);
+                    }
                 }
                 break;
             case "fields":
-                if (k.size() > 1) return "the " + last + " " + r.id + " set";
+                if (last != null) return "the " + last + " " + r.id + " set";
                 break;
             case "texts":
-                if (k.size() > 1) return "the " + last + " " + r.id + " showed";
+                if (last != null) return "the " + last + " " + r.id + " showed";
                 break;
             case "step":
-                if (k.size() > 1) return "the " + last + " " + r.id + " made";
+                if (last != null) return "the " + last + " " + r.id + " made";
                 break;
             case "opened":
                 String kind = k.size() > 1 ? OPENED.get(k.get(1)) : null;
@@ -4482,6 +4493,13 @@ public class UiMcpSession {
                 break;
         }
         return "a value " + r.id + " made";
+    }
+
+    /** The last key of {@code keys} from {@code from} on that is no index, its last {@code " › "} part; null: none. */
+    private static String lastWord(List<String> keys, int from) {
+        String last = null;
+        for (int i = from; i < keys.size(); i++) if (!keys.get(i).startsWith("[")) last = keys.get(i);
+        return last == null || !last.contains(" › ") ? last : last.substring(last.lastIndexOf(" › ") + 3);
     }
 
     private static final Map<String, String> OPENED = new HashMap<String, String>();

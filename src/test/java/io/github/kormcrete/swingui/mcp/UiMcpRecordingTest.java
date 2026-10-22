@@ -2865,6 +2865,66 @@ class UiMcpRecordingTest {
         assertThat(later.at("/steps/1/checks/1/n").asText()).as(later.toString()).isEqualTo("2.2");
     }
 
+    private static String totalCheck(String total) {
+        return "{\"action\":\"do\",\"step\":\"order-desk:cartTotalIs\",\"params\":{\"total\":\"" + total
+                + "\"},\"check\":true}";
+    }
+
+    @Test
+    void aDomainCheckWhoseReadsAreNotKnownMayReadAnyFieldOrTextOfItsStepButNoRow() throws Exception {
+        // 1: do addQty (Total €16.42, a Cart row added with Total €16.42); 2: click button 'Other'
+        UiMcpSession s = totalAfterAddQty();
+        List<String> headers = Arrays.asList("Product", "Total");
+        s.reader(readings(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().text("Total", "€0.00")
+                        .table("Cart", headers, java.util.Collections.<List<String>>emptyList()).build(),
+                io.github.kormcrete.swingui.driver.outcome.UiReading.builder().text("Total", "€16.42")
+                        .table("Cart", headers, java.util.Collections.singletonList(
+                                Arrays.asList("Gel pen, black", "€16.42"))).build()));
+        s.doAction(mapper.readTree(ADD_QTY));
+        s.doAction(mapper.readTree(CLICK_OTHER));
+        // 1.1: a domain check made by insert: it never ran, what it reads is not known
+        recording(s, "{\"op\":\"insert\",\"at\":\"1.1\",\"step\":" + totalCheck("€16.42") + "}");
+
+        DriverException e = catchThrowableOfType(
+                () -> recording(s, "{\"op\":\"link\",\"n\":\"1.1\",\"ref\":\"${1.texts.Total}\"}"), DriverException.class);
+        assertThat(e.getMessage()).contains("check 1.1 may read the very place step 1 showed this value in (.texts.Total)")
+                .contains("compare the value with itself").endsWith("(nothing linked)");
+        assertThat(s.recordedSteps().get(0).action.id).isNull();
+        // a row the step added is not a place a check reads by itself: linked
+        JsonNode row = recording(s, "{\"op\":\"link\",\"n\":\"1.1\",\"ref\":\"${1.rows.Cart.added[0].Total}\"}");
+        assertThat(row.at("/steps/0/checks/0/uses/0/value").asText()).as(row.toString()).isEqualTo("€16.42");
+        assertThat(((DoAction) s.recordedSteps().get(1).action).params)
+                .containsEntry("total", "${addQty.rows.Cart.added[0].Total}");
+        // insert with the reference in it: refused under the same step, allowed under a later one
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"insert\",\"at\":\"1.2\",\"step\":"
+                + totalCheck("${addQty.texts.Total}") + "}"), DriverException.class).getMessage())
+                .contains("check 1.2 may read the very place step 1 showed this value in (.texts.Total)");
+        assertThat(s.recordedSteps()).hasSize(3);
+        JsonNode later = recording(s, "{\"op\":\"insert\",\"at\":\"2.1\",\"step\":"
+                + totalCheck("${addQty.texts.Total}") + "}");
+        assertThat(later.at("/steps/1/checks/0/n").asText()).as(later.toString()).isEqualTo("2.1");
+    }
+
+    @Test
+    void aLoadedDomainChecksSelfLinkUnderItsStepIsRefused() throws Exception {
+        // saved: 1: do addQty; 1.1: do cartTotalIs; 2: click button 'Other'; 2.1: expect label Total, linked to step 1
+        UiMcpSession s = totalAfterAddQty();
+        s.doAction(mapper.readTree(ADD_QTY));
+        s.doAction(mapper.readTree(TOTAL_IS));
+        s.doAction(mapper.readTree(CLICK_OTHER));
+        s.doAction(mapper.readTree(EXPECT_TOTAL));
+        recording(s, "{\"op\":\"link\",\"n\":\"2.1\",\"ref\":\"${1.texts.Total}\"}");
+        s.exportRecordedTest("total", quoted(dir), null, false);
+        UiMcpSession loaded = totalAfterAddQty();
+        recording(loaded, "{\"op\":\"load\",\"name\":\"total\"}");
+
+        assertThat(catchThrowableOfType(() -> recording(loaded, "{\"op\":\"edit\",\"n\":\"1.1\",\"step\":"
+                + totalCheck("${addQty.texts.Total}") + "}"), DriverException.class).getMessage())
+                .contains("check 1.1 may read the very place step 1 showed this value in (.texts.Total)")
+                .endsWith("(nothing linked)");
+        assertThat(((DoAction) loaded.recordedSteps().get(1).action).params).containsEntry("total", "€16.42");
+    }
+
     @Test
     void theAgentsRawStepsFoldButNeverWithThePersons() throws Exception {
         UiMcpSession s = orderDesk(new Plugins(backend.verbs));
@@ -4477,6 +4537,17 @@ class UiMcpRecordingTest {
                 .isEqualTo("the Status placeOrder changed");
         assertThat(UiMcpSession.sentenceWords(Refs.scan("${run.id}").get(0))).isEqualTo("this run's id");
         assertThat(UiMcpSession.sentenceWords(Refs.scan("${copy.selected}").get(0))).isEqualTo("a value copy made");
+        // a list item or a tree row: the list's or tree's name; a whole row: the table's
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${newFolder.items.Folders.added[0]}").get(0)))
+                .isEqualTo("the Folders item newFolder added");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.rows.Orders.added[0]}").get(0)))
+                .isEqualTo("the Orders row placeOrder added");
+        // no word to name it by: only an index, or nothing after the kind
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${placeOrder.step[0]}").get(0)))
+                .isEqualTo("a value placeOrder made");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${open.fields[0]}").get(0))).isEqualTo("a value open made");
+        assertThat(UiMcpSession.sentenceWords(Refs.scan("${newFolder.items[0].added[0]}").get(0)))
+                .isEqualTo("a value newFolder made");
     }
 
     @Test
