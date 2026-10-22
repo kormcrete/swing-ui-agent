@@ -2330,6 +2330,64 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void whenNoStepThatRanCanBeKeptTheNoteSaysTheRecordingDoesNotMatchTheScreen() throws Exception {
+        // step 1 names a row by three keys: it has no Java form, so nothing of the step can be recorded raw
+        DomainStep d = DomainStep.act("payForRow", "Pay for the row")
+                .steps("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"row\":{\"SKU\":\"PEN-GEL-BLK\",\"Product\":\"Gel pen, black\",\"Price\":\"€1.20\"},\"column\":\"Product\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}",
+                        "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Pay\"}}").build();
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), d);
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 3
+                ? new DriverException(Reason.NOT_FOUND, "no button 'Pay'") : null;
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"payForRow\"}")));
+        assertThat(s.recordedSteps()).isEmpty();
+        assertThat(r.path("recordedPart")).isEmpty();
+        assertThat(r.path("recordedPartNote").asText()).isEqualTo("the domain step failed at its step 3 (click(button 'Pay')); "
+                + "its steps 1-2 ran but none is recorded: its step 1 cannot be recorded as a plain step (export_test has no "
+                + "Java form for it: row with more than two keys), so the recording does not match the screen: finish by "
+                + "hand, or recording redo {\"from\":1} puts the app back where the recording ends and records on");
+
+        // a tool error says the same at the end of its details
+        backend.verbs.calls.clear();
+        backend.verbs.during = () -> backend.verbs.failure = backend.verbs.calls.size() == 2
+                ? new DriverException(Reason.BAD_INPUT, "'keys' is empty") : null;
+        DriverException e = catchThrowableOfType(() -> s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"payForRow\"}")),
+                DriverException.class);
+        assertThat(e.details().get(e.details().size() - 1)).startsWith("the domain step failed at its step 2 (")
+                .contains("its step 1 ran but is not recorded (export_test has no Java form for it: row with more than two keys)")
+                .contains("so the recording does not match the screen");
+        assertThat(s.recordedSteps()).isEmpty();
+    }
+
+    @Test
+    void theStepsKeptOfAFailedDomainStepDoNotFoldBackIntoIt() throws Exception {
+        // its code clicked Add to cart and then threw: the steps that ran match its own pattern, yet it failed
+        DomainStep d = DomainStep.act("addAndConfirm", "Add and confirm")
+                .code((ui, p) -> {
+                    ui.button("Add to cart").click();
+                    throw new IllegalStateException("no confirmation came");
+                })
+                .match("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}")
+                .build();
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), d);
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addAndConfirm\"}")));
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("recordedPartNote").asText()).isEqualTo("the domain step failed after its step 1 (click(button "
+                + "'Add to cart')); its step 1 ran and is recorded as plain step 1, so the recording matches the screen");
+        JsonNode steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).has("folded")).isFalse();
+        assertThat(steps.get(0).path("keepRaw").asBoolean()).isTrue();
+        assertThat(s.recordedSteps().get(0).action.describe()).isEqualTo("click(button 'Add to cart')");
+        // the same click by the agent on its own folds as before
+        assertThat(mapper.readTree(s.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Add to cart\"}}")))
+                .path("passed").asBoolean()).isTrue();
+        steps = recording(s, "{\"op\":\"list\"}").path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(1).path("step").path("step").asText()).isEqualTo("order-desk:addAndConfirm");
+    }
+
+    @Test
     void aSubStepThatHoldsASecretOrDoesNotReadCannotBeKept() {
         // a secret the domain step read is masked in its kept step: recorded raw it would type the mask
         assertThat(UiMcpSession.cannotKeep("{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Password\"},"

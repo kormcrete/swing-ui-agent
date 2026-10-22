@@ -1859,7 +1859,9 @@ public class UiMcpSession {
      * step of the agent's is recorded, so the recording matches the screen. It stops at the first step that cannot be
      * kept ({@link #cannotKeep}, or no Java form). What the whole do step changed ({@code changed}, {@code newValues};
      * {@code before}: the reading before it) goes to the last action kept. Returns the steps as recorded, and puts what
-     * it did in words into {@code note}; null when it keeps nothing (no action of it ran, or the first cannot be kept).
+     * it did in words into {@code note} (also when none of them can be kept: the recording then does not match the
+     * screen, and the words say how to get there); null when no action of it ran. The steps kept are kept raw: folding
+     * must not take them back into the domain step that failed.
      * {@code result} (null: none) gets a {@code linkNote} as a single step's would.
      */
     private ArrayNode keepRanSubSteps(StepResult step, RecordedStep.Author author, UiReading before, ObjectNode changed,
@@ -1878,7 +1880,7 @@ public class UiMcpSession {
                 try {
                     recorded = literal(recordable(action(mapper.readTree(c.json)), c.outcome));
                     List<String> problems = exportProblems(recorded);
-                    if (!problems.isEmpty()) why = "export_test has no Java form for it: " + String.join("; ", problems);
+                    if (!problems.isEmpty()) why = "export_test has no Java form for it: " + ownProblems(problems);
                 } catch (IOException | RuntimeException e) {
                     why = UNREADABLE_STEP;
                 }
@@ -1887,12 +1889,13 @@ public class UiMcpSession {
                 unkept = c;
                 break;
             }
-            RecordedStep added = model.append(recorded, author, rowOf(recorded, c.outcome, null), seenOf(c.outcome));
+            // kept raw: folding must not take them back into the domain step that just failed
+            RecordedStep added = model.append(recorded, author, rowOf(recorded, c.outcome, null), seenOf(c.outcome),
+                    !StepNumbers.isCheck(recorded));
             kept.add(added.id);
             if (!StepNumbers.isCheck(recorded)) lastAction = added;
             out.add(mapper.valueToTree(autoLink(added, result)));
         }
-        if (kept.isEmpty()) return null;
         if (unkept != null) model.refused(unkept.action + " - " + why);
         if (lastAction != null) {
             keepOutcome(lastAction, changed, newValues, step);
@@ -1912,6 +1915,21 @@ public class UiMcpSession {
         StringBuilder words = new StringBuilder("the domain step failed ");
         words.append(failed.passed ? "after" : "at").append(" its step ").append(failed.index + 1)
                 .append(" (").append(failed.action).append(")");
+        if (kept.isEmpty()) {
+            // the app moved, the recording did not: say so, and how to get the two together again
+            int ran = 0;
+            while (ran < step.steps.size() && step.steps.get(ran).passed) ran++;
+            if (ran == 1) {
+                words.append("; its step 1 ran but is not recorded (").append(why).append(")");
+            } else {
+                words.append("; its steps 1-").append(ran).append(" ran but none is recorded: its step 1 cannot be recorded ")
+                        .append("as a plain step (").append(why).append(")");
+            }
+            words.append(", so the recording does not match the screen: finish by hand, or recording redo {\"from\":")
+                    .append(model.steps() + 1).append("} puts the app back where the recording ends and records on");
+            note.add(words.toString());
+            return out;
+        }
         if (kept.size() == 1) {
             words.append("; its step 1 ran and is recorded as plain step ").append(first);
         } else {
@@ -1925,6 +1943,13 @@ public class UiMcpSession {
         }
         note.add(words.toString());
         return out;
+    }
+
+    /** {@code problems} of one step from {@link #exportProblems}, without the place the step would have had ("step 9: "). */
+    private static String ownProblems(List<String> problems) {
+        List<String> own = new ArrayList<String>();
+        for (String p : problems) own.add(p.replaceFirst("^step \\d+(\\.\\d+)?: ", ""));
+        return String.join("; ", own);
     }
 
     /** Why a step a do step ran cannot be recorded as a plain step. */

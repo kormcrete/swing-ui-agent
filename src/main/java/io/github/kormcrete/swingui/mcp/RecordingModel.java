@@ -273,9 +273,14 @@ final class RecordingModel {
 
     /** As {@link #append(Action, RecordedStep.Author, RowChoice)}, with how its elements were seen (see {@link RecordedStep#seen}). */
     RecordedStep append(Action action, RecordedStep.Author author, RowChoice row, JsonNode seen) {
+        return append(action, author, row, seen, false);
+    }
+
+    /** As {@link #append(Action, RecordedStep.Author, RowChoice, JsonNode)}; {@code keepRaw}: folding never takes it. */
+    RecordedStep append(Action action, RecordedStep.Author author, RowChoice row, JsonNode seen, boolean keepRaw) {
         boolean isCheck = StepNumbers.isCheck(action);
         RecordedStep.Group group = isCheck && !steps.isEmpty() ? steps.get(steps.size() - 1).group : null;
-        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, row, seen, null, false);
+        RecordedStep step = new RecordedStep(nextId++, author, action, false, group, row, seen, null, keepRaw);
         steps.add(step);
         changed("the " + author.json + " recorded " + (isCheck ? "check " : "step ") + addressOf(step.id));
         return step;

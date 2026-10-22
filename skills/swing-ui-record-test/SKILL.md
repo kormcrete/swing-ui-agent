@@ -102,8 +102,10 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
   plain steps, so the recording matches the screen: the result has `recordedPart` (the steps) and
   `recordedPartNote` (in words; for a tool error, the last line of the error's details). A step that cannot be
   recorded raw (a secret, no Java form) ends what is kept; the note names it and the `recording redo {"from":n}`
-  that records from there again. Finish the rest with raw verbs, or `redo` from the kept steps. A failed check
-  records nothing.
+  that records from there again. When not even its first step can be kept, nothing is recorded (`recordedPart`
+  is empty) and the note says the recording does not match the screen, with the `recording redo` that puts the app
+  back where the recording ends. The kept steps stay raw (they never fold back into the step that failed). Finish
+  the rest with raw verbs, or `redo` from the kept steps. A failed check records nothing.
 - **Say which step you used** in your report, as the sentence with its values ("Add 10 × Gel pen, black to the
   cart"). Steps are named `<plugin>:<id>` in the recorded test, even with one plugin.
 - Raw steps that match a step fold into it as they are recorded (`recording list` shows `folded` and `raw`); a check,
