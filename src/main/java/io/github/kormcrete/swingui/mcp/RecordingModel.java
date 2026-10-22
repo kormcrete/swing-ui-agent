@@ -233,6 +233,32 @@ final class RecordingModel {
         while (history.size() > HISTORY) history.removeLast();
     }
 
+    /** Where the recording stood at {@link #mark()}: its records, and the newest edit then (null: none). */
+    static final class Mark {
+        final List<RecordedStep> before;
+        final Edit newest;
+
+        private Mark(List<RecordedStep> before, Edit newest) {
+            this.before = before;
+            this.newest = newest;
+        }
+    }
+
+    /** The recording as it stands, for {@link #asOneEdit} to make what follows one edit. */
+    Mark mark() {
+        return new Mark(copyOfRecords(), history.peekFirst());
+    }
+
+    /**
+     * Makes everything since {@code m} (records appended, the edits made on them) one edit that undo takes back at once:
+     * the edits since {@code m} leave the history and one edit, {@code label} by {@code author}, takes their place.
+     * Returns {@code past}.
+     */
+    String asOneEdit(Mark m, String label, String past, RecordedStep.Author author) {
+        while (!history.isEmpty() && history.peekFirst() != m.newest) history.removeFirst();
+        return edited(label, past, author, m.before, false, Collections.<Integer>emptySet());
+    }
+
     // ------------------------------------------------------------------ recording and reading
 
     /** Adds an action as a new step at the end, or a check under the last step; never joins a group by placement. */
@@ -1552,9 +1578,9 @@ final class RecordingModel {
         }
         history.removeFirst();
         Set<String> gone = new HashSet<String>();
-        for (RecordedStep s : steps) if (s.action.id != null) gone.add(s.action.id);
-        for (RecordedStep s : after) gone.remove(s.action.id);
-        // an id the undo takes away (a link's new id) names nothing any more
+        for (RecordedStep s : steps) gone.addAll(names(s));
+        for (RecordedStep s : after) gone.removeAll(names(s));
+        // an id or remember name the undo takes away (a link's new id, a remember entry) names nothing any more
         for (String id : gone) runValues.remove(id);
         steps.clear();
         steps.addAll(after);
@@ -1562,6 +1588,14 @@ final class RecordingModel {
         if (dropped > 0) did += " (" + dropped + " step" + (dropped == 1 ? "" : "s") + " recorded after it dropped)";
         changed(by(by) + " " + did);
         return did;
+    }
+
+    /** The names {@code s} keeps values under: its id, and the name it remembers as. */
+    private static Set<String> names(RecordedStep s) {
+        Set<String> names = new HashSet<String>();
+        if (s.action.id != null) names.add(s.action.id);
+        if (s.action instanceof RememberVerb && ((RememberVerb) s.action).as != null) names.add(((RememberVerb) s.action).as);
+        return names;
     }
 
     private DriverException outOfRange(int n) {

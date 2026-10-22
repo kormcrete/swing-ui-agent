@@ -13,6 +13,7 @@ import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
+import io.github.kormcrete.swingui.flow.refs.Refs;
 import io.github.kormcrete.swingui.flow.verb.ClickVerb;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ParamType;
@@ -997,7 +998,8 @@ class UiMcpRecordingTest {
         int rev = call("{\"op\":\"list\"}").path("rev").asInt();
         DriverException e = refused("{\"op\":\"move\",\"n\":\"1.2\",\"to\":3}");
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
-        assertThat(e.getMessage()).contains("check 1.2").contains("cannot be moved");
+        assertThat(e.getMessage()).contains("check 1.2").contains("cannot be moved")
+                .contains("checks cannot be moved; delete and insert");
         assertThat(call("{\"op\":\"list\"}").path("rev").asInt()).isEqualTo(rev);
         // a range delete is steps and takes their checks along
         JsonNode r = call("{\"op\":\"delete\",\"from\":1,\"to\":2}");
@@ -1008,6 +1010,46 @@ class UiMcpRecordingTest {
         r = call("{\"op\":\"move\",\"n\":1,\"to\":2}");
         assertThat(r.path("did").asText()).isEqualTo("moved step 1 to 2");
         assertThat(r.path("steps").get(1).path("checks")).hasSize(1);
+    }
+
+    @Test
+    void aCheckIsNotMovedAndTheRefusalSaysToDeleteAndInsert() throws Exception {
+        fourWithChecks();
+        assertThat(why("{\"op\":\"move\",\"n\":\"3.1\",\"to\":\"1.2\"}"))
+            .contains("check 3.1 cannot be moved", "checks cannot be moved; delete and insert").doesNotContain("must be an integer");
+        assertThat(why("{\"op\":\"move\",\"n\":3,\"to\":\"1.2\"}")).contains("move takes a step to a step number");
+    }
+
+    @Test
+    void oneUndoTakesBackARememberMadeWhileRecording() throws Exception {
+        session.reader(readings(ordersOf("ORD-1640", "Bea"), ordersOf("ORD-1640", "Bea", "ORD-1641", "Ada")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        backend.verbs.remembered = "ORD-1641";
+        call("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Number\"},\"as\":\"number\"}");
+        assertThat(sink.undoLabel()).isEqualTo("remember of check 1.1 by the agent");
+        assertThat(call("{\"op\":\"undo\"}").path("did").asText()).isEqualTo("undid the remember of check 1.1 by the agent");
+        assertThat(session.recordedSteps()).hasSize(1);
+        assertThat(session.runValues().resolve(Refs.scan("${number}").get(0))).isEmpty();
+        // the name is free again
+        assertThat(call("{\"op\":\"remember\",\"target\":{\"role\":\"label\",\"name\":\"Number\"},\"as\":\"number\"}")
+            .path("did").asText()).isEqualTo("remembered ORD-1641 as number (check 1.1)");
+    }
+
+    @Test
+    void editAndInsertOfACheckTakeTheFileFormWithoutAction() throws Exception {
+        fourWithChecks();
+        JsonNode r = call("{\"op\":\"edit\",\"n\":\"1.1\",\"step\":{\"target\":{\"id\":\"status\"},\"text\":\"done\"}}");
+        assertThat(r.at("/steps/0/checks/0/step/action").asText()).isEqualTo("expect");
+        assertThat(r.at("/steps/0/checks/0/step/text").asText()).isEqualTo("done");
+        r = call("{\"op\":\"insert\",\"at\":\"2.1\",\"step\":{\"target\":{\"id\":\"status\"},\"state\":[\"!disabled\"]}}");
+        assertThat(r.at("/steps/1/checks/0/step/action").asText()).isEqualTo("expect");
+        // at 1, what an expect checks makes the check-only step 1, as in the file
+        r = call("{\"op\":\"insert\",\"at\":1,\"step\":{\"target\":{\"id\":\"status\"},\"shown\":true}}");
+        assertThat(r.path("did").asText()).isEqualTo("inserted check 1.1");
+        assertThat(r.at("/steps/0/checks/0/step/action").asText()).isEqualTo("expect");
+        assertThat(r.at("/steps/0/step").isMissingNode()).isTrue();
+        // an action still names its type
+        assertThat(why("{\"op\":\"edit\",\"n\":2,\"step\":{\"target\":{\"id\":\"status\"}}}")).contains("needs an 'action'");
     }
 
     @Test

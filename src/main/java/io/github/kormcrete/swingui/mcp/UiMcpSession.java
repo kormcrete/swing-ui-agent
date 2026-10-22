@@ -2869,6 +2869,12 @@ public class UiMcpSession {
                 return recordingDelete(address(args, "n"), integer(args, "from"), integer(args, "to"), integer(args, "rev"));
             case "move": {
                 StepAddress n = address(args, "n");
+                // a check, or a check label as 'to', is refused before 'to' is read as a number
+                if (n != null && n.isCheck()) throw checkNotMoved(n);
+                if (args.path("to").isTextual() && args.path("to").textValue().contains(".")) {
+                    throw new DriverException(Reason.BAD_INPUT,
+                            "move takes a step to a step number; " + CHECKS_NOT_MOVED);
+                }
                 Integer to = integer(args, "to");
                 if (n == null || to == null) throw new DriverException(Reason.BAD_INPUT, "move needs 'n' and 'to'");
                 return recordingMove(n, to, integer(args, "rev"));
@@ -3305,6 +3311,8 @@ public class UiMcpSession {
     /** Puts {@code step} at {@code at} (a step position for an action, a check label for a check) without running it; it counts as edited until a replay passes it. */
     synchronized String recordingInsert(StepAddress at, JsonNode step, Integer rev) {
         checkRev(rev);
+        // at a check label, or at 1 with what an expect checks (the check-only step 1), a step without 'action' is a check
+        if (at.isCheck() || (at.step == 1 && checksSomething(step))) step = fileCheck(step);
         Action action = action(step);
         if (action instanceof DoAction) action = namedDo((DoAction) action);
         sentenced(action, (StepNumbers.isCheck(action) ? "check " : "step ") + at);
@@ -3312,6 +3320,26 @@ public class UiMcpSession {
         scratch.insert(at, action, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
         return edited(model.insert(at, action, RecordedStep.Author.AGENT));
+    }
+
+    /** What an expect checks, one of which it gives: a step object with one of these is a check. */
+    private static final List<String> EXPECT_FIELDS = Arrays.asList(
+            "state", "text", "value", "tooltip", "rows", "cell", "selected", "shown", "absent");
+
+    private static boolean checksSomething(JsonNode step) {
+        for (String f : EXPECT_FIELDS) if (step.has(f)) return true;
+        return false;
+    }
+
+    /**
+     * {@code step} as a check in the file's form: without an {@code "action"} it is an expect (a remember or a domain
+     * check names its action, as in the file).
+     */
+    private static JsonNode fileCheck(JsonNode step) {
+        if (!step.isObject() || step.has("action")) return step;
+        ObjectNode copy = ((ObjectNode) step).deepCopy();
+        copy.put("action", "expect");
+        return copy;
     }
 
     /**
@@ -3337,13 +3365,20 @@ public class UiMcpSession {
         return edited(did);
     }
 
+    /** How a move of a check is refused: what to do instead. */
+    private static final String CHECKS_NOT_MOVED = "checks cannot be moved; delete and insert";
+
+    /** The refusal of a move of check {@code n}, saying how to put it elsewhere. */
+    private static DriverException checkNotMoved(StepAddress n) {
+        return new DriverException(Reason.BAD_INPUT, "check " + n + " cannot be moved: " + CHECKS_NOT_MOVED
+                + " (delete {\"n\":\"" + n + "\"}, then insert {\"at\":\"<label>\",\"step\":…} in the file's form); "
+                + "move takes a step with its checks");
+    }
+
     /** Moves step {@code n}, with its checks, so that it is step {@code to} afterwards. A check is not moved on its own. */
     synchronized String recordingMove(StepAddress n, int to, Integer rev) {
         checkRev(rev);
-        if (n.isCheck()) {
-            throw new DriverException(Reason.BAD_INPUT, "check " + n + " cannot be moved on its own: move its step (" + n.step
-                    + ") with its checks, or delete the check and insert it again");
-        }
+        if (n.isCheck()) throw checkNotMoved(n);
         RecordingModel scratch = model.copy();
         scratch.moveStep(n.step, to, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
@@ -3380,7 +3415,7 @@ public class UiMcpSession {
         ObjectNode tree;
         if (whole) {
             if (!step.isObject()) throw new DriverException(Reason.BAD_INPUT, "edit 'step' must be a step object");
-            tree = (ObjectNode) step.deepCopy();
+            tree = (ObjectNode) (n.isCheck() ? fileCheck(step) : step).deepCopy();
             if (sentence == null && !tree.has("say") && old.say != null) tree.put("say", old.say);   // its sentence stays
             // and so does its id: later steps may use what it changed
             if (!tree.has("id") && old.id != null && !(old instanceof RememberVerb)) tree.put("id", old.id);
@@ -3720,13 +3755,17 @@ public class UiMcpSession {
         if (Boolean.TRUE.equals(selected)) json.put("selected", true);
         boolean last = n == null || n.step == steps;
         if (last && model.state() == RecordingModel.State.RECORDING) {
+            // recorded as a step is, yet one edit: one undo takes back the entry and any link the recorder made on it
+            RecordingModel.Mark mark = model.mark();
             ObjectNode r = runAndRecord(json, true, RecordedStep.Author.AGENT);
             if (!r.has("recorded")) throw notRemembered(r);
             List<RecordedStep> records = model.records();
             RecordedStep added = records.get(records.size() - 1);
             // keepOutcome kept the value it read as the entry's value index
             String value = added.newValues.isEmpty() ? "a value" : added.newValues.keySet().iterator().next();
-            return edited("remembered " + value + " as " + as + " (check " + model.addressOf(added.id) + ")");
+            String label = model.addressOf(added.id).toString();
+            return edited(model.asOneEdit(mark, "remember of check " + label,
+                    "remembered " + value + " as " + as + " (check " + label + ")", RecordedStep.Author.AGENT));
         }
         if (steps == 0) throw new DriverException(Reason.BAD_INPUT, "the recording has no step to remember a value under");
         int under = n == null ? steps : n.step;

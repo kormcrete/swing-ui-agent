@@ -1054,4 +1054,31 @@ class RecordingModelTest {
 
         assertThat(model.records().get(1).linkSeen).containsEntry(NUMBER, "ORD-1641").containsEntry("${run.id}", "k3j9x2ab");
     }
+
+    @Test
+    void asOneEditFoldsTheAppendAndItsLinkIntoOneUndo() {
+        RecordedStep copy = model.append(click("Copy"), PERSON);
+        model.outcome(copy.id, added("ORD-1641"), index("ORD-1641"));
+        RecordingModel.Mark m = model.mark();
+        io.github.kormcrete.swingui.flow.verb.RememberVerb r = new io.github.kormcrete.swingui.flow.verb.RememberVerb();
+        r.target = Locator.of("label", "ORD-1641");
+        r.as = "number";
+        RecordedStep remember = model.append(r, AGENT);
+        model.runValues().remember("number", "ORD-1641");
+        io.github.kormcrete.swingui.flow.verb.RememberVerb linked = new io.github.kormcrete.swingui.flow.verb.RememberVerb();
+        linked.target = Locator.of("label", NUMBER);
+        linked.as = "number";
+        model.link(remember.id, linked, Collections.singletonMap(NUMBER, "ORD-1641"), Collections.singletonMap(copy.id, "copy"));
+
+        assertThat(model.asOneEdit(m, "remember of check 1.1", "remembered x", AGENT)).isEqualTo("remembered x");
+
+        assertThat(model.undoLabel()).isEqualTo("remember of check 1.1 by the agent");
+        assertThat(model.undo(AGENT)).isEqualTo("undid the remember of check 1.1 by the agent");
+        assertThat(model.records()).hasSize(1);
+        assertThat(model.records().get(0).action.id).isNull();
+        assertThat(model.runValues().has("copy")).isFalse();
+        // the name the remember entry had is free again
+        assertThat(model.runValues().has("number")).isFalse();
+        assertThat(model.undoLabel()).isNull();
+    }
 }
