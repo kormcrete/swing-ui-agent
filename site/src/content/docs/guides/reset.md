@@ -88,7 +88,7 @@ A reset does not undo what earlier tests did to the app's data. In Order Desk ea
 - reads values the app made instead of expecting fixed ones: `PlaceOrderUiIT` reads the new order's number from the status bar (see [Waiting](/swing-ui-agent/guides/waiting/#work-the-driver-cannot-see));
 - checks its own row, found by values, rather than the first row or a row count;
 - leaves what it opened to the next reset, or closes it the way a user would;
-- puts back what it changed on the start screen: a search it typed, a filter it set. The reset may not clear them; `startNote` in the reset's result names a filled search beside a table.
+- puts back what it changed on the start screen, as its own last steps (recorded before the recording stops and the test is saved): a search it typed, a filter it set. The reset may not clear them; `startNote` in the reset's result names a filled search beside a table.
 
 To prove it, run the test twice on one app start, starting from a different screen each time.
 

@@ -156,13 +156,14 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
 6. **A step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'` cuts step 3
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
    with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
-7. **Stop and save:** `$UI recording '{"op":"stop"}'`. Save with
+7. **Leave the screen as you found it, then stop and save.** Before you stop, record the steps that put the screen
+   back: clear what you typed into a search, put a filter back. They are the test's own last steps, so every run
+   ends where the next one starts. Then `$UI recording '{"op":"stop"}'`. Save with
    `$UI recording '{"op":"export","as":"recorded","name":"place-order"}'` while you still verify; it keeps the
    recording, so a fix is `insert`/`edit`/`redo`, `replay`, export again over the same file.
    `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'` empties it
    (unless `"clear":false`): use it last. After a clearing save, `recording '{"op":"load","name":"place-order"}'`
-   brings the file back. A Java class is `export_test` (below). Leave the screen as you found it: clear what you
-   typed into a search, put a filter back.
+   brings the file back. A Java class is `export_test` (below).
 8. **Verify** (below).
 
 ## Values from earlier steps
@@ -216,8 +217,9 @@ value, or the step fails in words. Never the recorded value.
   reads it again for a late change.
 - **Prove it:** save, then `run_recorded_test` TWICE ON ONE APP START (no restart between): a test that leaves a
   search or filter filled passes the first time and fails the second. Each run must pass on its own new record (the
-  report shows each resolved value, e.g. `(copy.rows['Orders › table'].added[0].Order = ORD-1642)`). Leave the screen
-  as you found it (clear what you typed into a search, put a filter back), and read `startNote` after a reset.
+  report shows each resolved value, e.g. `(copy.rows['Orders › table'].added[0].Order = ORD-1642)`). The test's last
+  steps leave the screen as they found it (clear what was typed into a search, put a filter back: step 7), and read
+  `startNote` after a reset.
 - More: https://kormcrete.github.io/swing-ui-agent/guides/values-from-earlier-steps/
 
 ## Name the steps
