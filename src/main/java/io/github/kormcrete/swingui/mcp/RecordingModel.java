@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -233,20 +234,22 @@ final class RecordingModel {
         while (history.size() > HISTORY) history.removeLast();
     }
 
-    /** Where the recording stood at {@link #mark()}: its records, and the newest edit then (null: none). */
+    /** Where the recording stood at {@link #mark()}: its records, and the edits in the history then. */
     static final class Mark {
         final List<RecordedStep> before;
-        final Edit newest;
+        final Set<Edit> edits;
 
-        private Mark(List<RecordedStep> before, Edit newest) {
+        private Mark(List<RecordedStep> before, Set<Edit> edits) {
             this.before = before;
-            this.newest = newest;
+            this.edits = edits;
         }
     }
 
     /** The recording as it stands, for {@link #asOneEdit} to make what follows one edit. */
     Mark mark() {
-        return new Mark(copyOfRecords(), history.peekFirst());
+        Set<Edit> edits = Collections.newSetFromMap(new IdentityHashMap<Edit, Boolean>());
+        edits.addAll(history);
+        return new Mark(copyOfRecords(), edits);
     }
 
     /**
@@ -255,7 +258,8 @@ final class RecordingModel {
      * Returns {@code past}.
      */
     String asOneEdit(Mark m, String label, String past, RecordedStep.Author author) {
-        while (!history.isEmpty() && history.peekFirst() != m.newest) history.removeFirst();
+        // only edits made since the mark: one undone since must not let it reach the edits from before
+        while (!history.isEmpty() && !m.edits.contains(history.peekFirst())) history.removeFirst();
         return edited(label, past, author, m.before, false, Collections.<Integer>emptySet());
     }
 

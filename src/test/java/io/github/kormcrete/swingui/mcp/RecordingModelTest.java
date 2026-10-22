@@ -1081,4 +1081,22 @@ class RecordingModelTest {
         assertThat(model.runValues().has("number")).isFalse();
         assertThat(model.undoLabel()).isNull();
     }
+
+    @Test
+    void asOneEditNeverTakesAnEditFromBeforeItsMark() {
+        model.append(click("Copy"), PERSON);
+        model.say(StepAddress.ofStep(1), "Copy it", AGENT);
+        model.say(StepAddress.ofStep(1), "Copy the order", AGENT);
+        RecordingModel.Mark m = model.mark();
+        model.undo(AGENT);   // the newest edit at the mark is gone
+        model.say(StepAddress.ofStep(1), "Copy the order now", AGENT);
+
+        model.asOneEdit(m, "sentence of step 1", "set it", AGENT);
+
+        assertThat(model.undo(AGENT)).isEqualTo("undid the sentence of step 1 by the agent");
+        // the edit from before the mark is still there to undo
+        assertThat(model.undoLabel()).isEqualTo("sentence of step 1 by the agent");
+        assertThat(model.undo(AGENT)).isNotNull();
+        assertThat(model.records().get(0).action.say).isNull();
+    }
 }
