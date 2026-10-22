@@ -57,7 +57,7 @@ agent: start it the project's way if it says how, else stop and say so). A step 
 `"passed":false`: always read `passed`.
 
 An answering `session` means the agent is up, not that the app is ready. Wait for `ready: true` in `session` (the
-plugin is ready and the main window shows), then `expect` the start screen shown: with a plugin, what its reset shows
+plugin is ready and an app window shows), then `expect` the start screen shown: with a plugin, what its reset shows
 (the Orders tab); without one, something the app enables once it is ready (a toolbar button `!disabled`).
 
 `BUSY: leased by <owner> since ...` means a test run holds the app. Wait for it. If that run is dead, retry once the

@@ -51,7 +51,7 @@ class UiAgentsTest {
         try {
             UiAgents agents = new UiAgents("127.0.0.1", agent.port()).readyWait(500);
             assertThat(catchThrowable(agents)).isInstanceOf(IllegalStateException.class).hasMessage("127.0.0.1:"
-                    + agent.port() + ": the app's main window is not showing after 0.5 s - start the app and wait for "
+                    + agent.port() + ": no window of the app is showing after 0.5 s - start the app and wait for "
                     + "session ready");
         } finally {
             agent.stop();

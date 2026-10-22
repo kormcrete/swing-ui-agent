@@ -22,7 +22,7 @@ public final class SessionInfo {
     public final String pluginState;
     public final String pluginDetail;
     public final String leaseOwner;
-    /** The app plugin (if any) is ready and the app's main window shows; true when an older agent does not say. */
+    /** The app plugin (if any) is ready and an app window shows; true when an older agent does not say. */
     public final boolean ready;
     /** The app's main window: "showing", "not showing" or "unknown"; null when the agent does not say. */
     public final String mainWindow;

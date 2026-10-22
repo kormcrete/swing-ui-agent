@@ -70,6 +70,23 @@ public final class AppWindows implements WindowSource {
         return out;
     }
 
+    /**
+     * Whether a window of the app shows: a frame or a dialog, not a popup's window, a splash {@code JWindow} or one of
+     * the palette's own. Reads only what AWT already holds.
+     */
+    public static boolean anyAppWindowShowing() {
+        return anyAppWindowShowing(Window.getWindows());
+    }
+
+    static boolean anyAppWindowShowing(Window[] windows) {
+        for (Window w : windows) {
+            if ((w instanceof Frame || w instanceof Dialog) && w.isShowing() && !isPopupWindow(w) && !Roles.agentOwn(w)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String titleOf(Window w) {
         String title = null;
         if (w instanceof Frame) title = ((Frame) w).getTitle();

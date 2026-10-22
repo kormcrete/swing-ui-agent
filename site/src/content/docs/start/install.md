@@ -65,8 +65,9 @@ which folders are on its classpath (folders only, not jars) and whether its main
 {"agent":{"version":"0.1.0-SNAPSHOT",…},"endpoint":{"bind":"127.0.0.1","port":8770},"mode":"normal","palette":true,…,"app":{…,"mainWindow":"showing"},"lease":null,"plugins":[],"plugin":{"state":"none","detail":"no plugin configured (agent argument plugins=…)"},"ready":true}
 ```
 
-Wait for `"ready": true`: the plugin (if any) is ready and the app's main window shows. An agent that answers before
-that is up, but the app is not ready yet. A `session reset` waits for the main window by itself.
+Wait for `"ready": true`: the plugin (if any) is ready and an app window shows (the main window, or a dialog such as
+a sign-in). An agent that answers before that is up, but the app is not ready yet. A `session reset` waits for an app
+window by itself.
 
 ## The agent jar in your own project
 

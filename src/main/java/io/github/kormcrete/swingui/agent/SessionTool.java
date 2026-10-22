@@ -43,12 +43,14 @@ final class SessionTool implements McpToolDefinition {
     private final IntSupplier boundPort;
     private final long appStartedAt;
     private final ObjectMapper m = new ObjectMapper();
-    /** TRUE when the app's main window shows, FALSE while it does not, null when that cannot be known. */
+    /** TRUE when the app's main window shows, FALSE while it does not, null when that cannot be known. For info. */
     private volatile Supplier<Boolean> mainWindow = SessionTool::mainWindowShowing;
-    /** How long a reset waits for the main window; below 0: the driver's expect timeout. */
-    private volatile long mainWindowWaitMs = -1;
+    /** TRUE when a window of the app shows (a frame or a dialog), FALSE while none does, null when unknown. Readiness. */
+    private volatile Supplier<Boolean> appWindow = SessionTool::appWindowShowing;
+    /** How long a reset waits for an app window; below 0: the driver's expect timeout. */
+    private volatile long appWindowWaitMs = -1;
 
-    /** How long a read of the main window waits for a busy event thread before it says "not showing". */
+    /** How long a read of the app's windows waits for a busy event thread before it says "not showing". */
     static final long EDT_READ_MS = 1_000L;
     static final long POLL_MS = 100L;
 
@@ -65,12 +67,20 @@ final class SessionTool implements McpToolDefinition {
     }
 
     /**
-     * What this tool sees of the app's main window (TRUE showing, FALSE not yet, null unknown) and how long a reset
-     * waits for it. For tests; the default reads the installed driver's main window.
+     * What this tool sees of the app's main window (TRUE showing, FALSE not yet, null unknown), taken as whether an app
+     * window shows too unless {@link #appWindow} says otherwise, and how long a reset waits for one. For tests; the
+     * defaults read the installed driver.
      */
     SessionTool mainWindow(Supplier<Boolean> showing, long waitMs) {
         this.mainWindow = showing;
-        this.mainWindowWaitMs = waitMs;
+        this.appWindow = showing;
+        this.appWindowWaitMs = waitMs;
+        return this;
+    }
+
+    /** Whether a window of the app shows, apart from the main window (a sign-in dialog before any frame). For tests. */
+    SessionTool appWindow(Supplier<Boolean> showing) {
+        this.appWindow = showing;
         return this;
     }
 
@@ -86,7 +96,7 @@ final class SessionTool implements McpToolDefinition {
                 + "Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): "
                 + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
                 + "mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready "
-                + "and the app's main window shows; reset waits for that window");
+                + "and an app window shows; reset waits for one");
         ObjectNode schema = d.putObject("inputSchema");
         schema.put("type", "object");
         ObjectNode p = schema.putObject("properties");
@@ -141,7 +151,7 @@ final class SessionTool implements McpToolDefinition {
                 final ResetSpec spec = app == null ? null : who(a);
                 gated(a, new Callable<Object>() {
                     @Override public Object call() {
-                        awaitMainWindow();
+                        awaitAppWindow();
                         AgentReset.run(verbs, app, spec);
                         session.startRecording(app != null);
                         session.forgetOutcomeHandles();
@@ -201,7 +211,7 @@ final class SessionTool implements McpToolDefinition {
 
             @Override public void run() {
                 AppHooks hooks = resetHooks(null);
-                awaitMainWindow();
+                awaitAppWindow();
                 // as `session reset` without an alias: the plugin's default user
                 AgentReset.run(verbs, hooks, hooks == null ? null : ResetSpec.alias(null));
             }
@@ -241,8 +251,8 @@ final class SessionTool implements McpToolDefinition {
         }
         if (ai != null && ai.name != null) app.put("name", ai.name); else app.putNull("name");
         if (ai != null && ai.version != null) app.put("version", ai.version); else app.putNull("version");
-        Boolean showing = mainWindowNow();
-        app.put("mainWindow", showing == null ? "unknown" : showing ? "showing" : "not showing");
+        Boolean main = ask(mainWindow);
+        app.put("mainWindow", main == null ? "unknown" : main ? "showing" : "not showing");
         Lease.Grant g = lease.holder();
         if (g == null) {
             r.putNull("lease");
@@ -268,17 +278,17 @@ final class SessionTool implements McpToolDefinition {
             r.putObject("plugin").put("state", slot.stateName()).put("detail", slot.detail());
         }
         boolean pluginUsable = slot == null || slot.state() == PluginSlot.State.READY;
-        r.put("ready", pluginUsable && !Boolean.FALSE.equals(showing));
+        r.put("ready", pluginUsable && !Boolean.FALSE.equals(ask(appWindow)));
         return r;
     }
 
     /**
-     * Waits while the main window is known not to show; fails NOT_FOUND when it never came. An unknown window (no
-     * driver, a headless JVM) never waits.
+     * Waits while no window of the app is known to show; fails NOT_FOUND when none came. Unknown (no driver, a
+     * headless JVM) never waits.
      */
-    private void awaitMainWindow() {
-        if (!Boolean.FALSE.equals(mainWindowNow())) return;
-        long wait = mainWindowWaitMs;
+    private void awaitAppWindow() {
+        if (!Boolean.FALSE.equals(ask(appWindow))) return;
+        long wait = appWindowWaitMs;
         if (wait < 0) {
             Driver d = Driver.current();
             wait = d == null ? 0 : d.settings().expectMillis;
@@ -291,17 +301,17 @@ final class SessionTool implements McpToolDefinition {
                 Thread.currentThread().interrupt();
                 break;
             }
-            if (!Boolean.FALSE.equals(mainWindowNow())) return;
+            if (!Boolean.FALSE.equals(ask(appWindow))) return;
         }
         throw new DriverException(Reason.NOT_FOUND,
-                "reset: the app's main window is not showing (waited " + seconds(wait) + ")");
+                "reset: no window of the app is showing (waited " + seconds(wait) + ")");
     }
 
-    private Boolean mainWindowNow() {
+    private static Boolean ask(Supplier<Boolean> windows) {
         try {
-            return mainWindow.get();
+            return windows.get();
         } catch (RuntimeException e) {
-            // a main-window supplier that fails cannot say: nothing waits on it
+            // a window read that fails cannot say: nothing waits on it
             return null;
         }
     }
@@ -312,22 +322,31 @@ final class SessionTool implements McpToolDefinition {
         return String.format(java.util.Locale.ROOT, "%.1f s", millis / 1_000.0);
     }
 
-    /**
-     * The installed driver's main window ({@code Driver.setMainWindow}, else the first showing frame), read on the
-     * event thread as everywhere else: TRUE showing, FALSE not; null without a driver or a screen. An event thread busy
-     * longer than {@link #EDT_READ_MS} (the app still building its window) counts as not showing, so {@code session}
-     * never hangs on it.
-     */
+    /** The installed driver's main window ({@code Driver.setMainWindow}, else the first showing frame): {@link #onEdt}. */
     static Boolean mainWindowShowing() {
+        return onEdt(false);
+    }
+
+    /** The main window, or any other frame or dialog of the app (a sign-in dialog before any frame): {@link #onEdt}. */
+    static Boolean appWindowShowing() {
+        return onEdt(true);
+    }
+
+    /**
+     * Reads the app's windows on the event thread as everywhere else: TRUE showing, FALSE not; null without a driver
+     * or a screen. An event thread busy longer than {@link #EDT_READ_MS} (the app still building its window) counts as
+     * not showing, so {@code session} never hangs on it.
+     */
+    private static Boolean onEdt(final boolean anyAppWindow) {
         final Driver d = Driver.current();
         if (d == null || java.awt.GraphicsEnvironment.isHeadless()) return null;
-        if (javax.swing.SwingUtilities.isEventDispatchThread()) return showing(d);
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) return showing(d, anyAppWindow);
         final AtomicReference<Boolean> answer = new AtomicReference<Boolean>();
         final CountDownLatch done = new CountDownLatch(1);
         javax.swing.SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    answer.set(showing(d));
+                    answer.set(showing(d, anyAppWindow));
                 } finally {
                     done.countDown();
                 }
@@ -341,8 +360,9 @@ final class SessionTool implements McpToolDefinition {
         }
     }
 
-    private static Boolean showing(Driver d) {
+    private static Boolean showing(Driver d, boolean anyAppWindow) {
         try {
+            if (anyAppWindow && io.github.kormcrete.swingui.driver.window.AppWindows.anyAppWindowShowing()) return true;
             java.awt.Component main = d.windows().main();
             return main != null && main.isShowing();
         } catch (RuntimeException e) {

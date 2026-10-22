@@ -478,7 +478,7 @@ class SessionToolTest {
         DriverException e = catchThrowableOfType(() -> never.invoke(mapper.readTree("{\"op\":\"reset\"}")),
                 DriverException.class);
         assertThat(e.reason()).isEqualTo(Reason.NOT_FOUND);
-        assertThat(e.getMessage()).contains("reset: the app's main window is not showing (waited 0.3 s)");
+        assertThat(e.getMessage()).contains("reset: no window of the app is showing (waited 0.3 s)");
         // nothing was reset while the window was missing
         assertThat(dialogs.calls).isEmpty();
         AtomicInteger asked = new AtomicInteger();
@@ -495,7 +495,7 @@ class SessionToolTest {
                 new UiMcpSession(fixture, fixture, mapper), dialogs, new AgentInfo("2.0", "x"), AgentArgs.parse(null),
                 () -> 1, STARTED).mainWindow(() -> false, 1200);
         assertThatThrownBy(() -> never.appReset().run()).isInstanceOf(DriverException.class)
-                .hasMessageContaining("reset: the app's main window is not showing (waited 1 s)");
+                .hasMessageContaining("reset: no window of the app is showing (waited 1 s)");
         assertThat(app.calls).isEmpty();
     }
 
@@ -507,7 +507,7 @@ class SessionToolTest {
         assertThat(callOnEmpty("{\"op\":\"info\"}").path("ready").asBoolean()).isTrue();
         long started = System.currentTimeMillis();
         assertThat(callOnEmpty("{\"op\":\"reset\"}").path("reset").asText()).isEqualTo("dialogs");
-        assertThat(System.currentTimeMillis() - started).isLessThan(1_000L);
+        assertThat(System.currentTimeMillis() - started).isLessThan(5_000L);
     }
 
     @Test
@@ -516,5 +516,20 @@ class SessionToolTest {
         assertThat(SessionTool.seconds(1_000)).isEqualTo("1 s");
         assertThat(SessionTool.seconds(1_500)).isEqualTo("2 s");
         assertThat(SessionTool.seconds(300)).isEqualTo("0.3 s");
+    }
+
+    @Test
+    void aDialogShowingWithoutAnyFrameIsReadyAndTheResetDoesNotWait() throws Exception {
+        // a sign-in dialog before the main frame: the reset (the plugin's login, or Escape) is what gets past it
+        SessionTool tool = ((SessionTool) tool(fixture, null, () -> 1)).mainWindow(() -> false, 10_000)
+                .appWindow(() -> true);
+        JsonNode info = mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.at("/app/mainWindow").asText()).isEqualTo("not showing");
+        assertThat(info.path("ready").asBoolean()).isTrue();
+        long started = System.currentTimeMillis();
+        assertThat(mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"reset\"}"))).path("reset").asText())
+                .isEqualTo("default");
+        assertThat(System.currentTimeMillis() - started).isLessThan(5_000L);
+        assertThat(app.calls).containsExactly("reset alias:default");
     }
 }

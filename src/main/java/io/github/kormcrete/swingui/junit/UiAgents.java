@@ -32,7 +32,7 @@ final class UiAgents {
         this.agent = ready;
     }
 
-    /** How long {@link #shared} waits for the app's main window. For tests. */
+    /** How long {@link #shared} waits for a window of the app. For tests. */
     UiAgents readyWait(long ms) {
         this.readyWaitMs = ms;
         return this;
@@ -74,7 +74,7 @@ final class UiAgents {
         }
     }
 
-    /** The plugin is usable; while the app's main window does not show yet, asks again for a short while. */
+    /** The plugin is usable; while no window of the app shows yet, asks again for a short while. */
     private SessionInfo awaitReady(AgentClient a, SessionInfo info) {
         long deadline = System.currentTimeMillis() + readyWaitMs;
         while (!info.ready && System.currentTimeMillis() < deadline) {
@@ -87,7 +87,7 @@ final class UiAgents {
             info = SessionInfo.parse(a.callJson("session", a.args().put("op", "info")));
         }
         if (!info.ready) {
-            throw prefix(where(), new IllegalStateException("the app's main window is not showing after "
+            throw prefix(where(), new IllegalStateException("no window of the app is showing after "
                     + seconds(readyWaitMs) + " - start the app and wait for session ready"));
         }
         return info;
