@@ -78,4 +78,44 @@ class RefsTest {
     assertEquals(1, refs.size());
     assertEquals("run", refs.get(0).id);
   }
+
+  @Test
+  void titlesInScopeAndWindowHoldReferencesOtherScopeStepsAndKeywordsDoNot() throws Exception {
+    Action a =
+        FlowJson.mapper()
+            .readValue(
+                ("{'action':'click','target':{'window':'window:${copy.w}',"
+                        + "'scope':['tab:${copy.t}','section:Billing ${copy.s}','id:${copy.i}','text:${copy.x}'],"
+                        + "'role':'button','name':'${copy.n}'}}")
+                    .replace('\'', '"'),
+                Action.class);
+    assertEquals(
+        java.util.Arrays.asList("${copy.w}", "${copy.t}", "${copy.s}", "${copy.n}").stream().sorted().collect(java.util.stream.Collectors.toList()),
+        Refs.of(a).stream().map(r -> r.source).sorted().collect(java.util.stream.Collectors.toList()));
+    Action close =
+        FlowJson.mapper().readValue("{\"action\":\"closeWindow\",\"window\":\"dialog:${copy.w}\"}", Action.class);
+    assertEquals(1, Refs.of(close).size());
+    assertEquals("${copy.w}", Refs.of(close).get(0).source);
+    Action keyword =
+        FlowJson.mapper()
+            .readValue(
+                ("{'action':'click','target':{'window':'dialog','scope':['id:a${b'],'role':'button','name':'Save'}}")
+                    .replace('\'', '"'),
+                Action.class);
+    com.fasterxml.jackson.databind.JsonNode tree = FlowJson.mapper().valueToTree(keyword);
+    assertEquals(tree, Refs.mapValues(tree, Refs::escape)); // nothing escaped outside titles
+    Action titled =
+        FlowJson.mapper()
+            .readValue(
+                ("{'action':'click','target':{'window':'dialog:a${b','role':'button','name':'Save'}}").replace('\'', '"'),
+                Action.class);
+    assertEquals(
+        "dialog:a$${b",
+        Refs.mapValues(FlowJson.mapper().valueToTree(titled), Refs::escape).at("/target/window").asText());
+    assertEquals(4, Refs.titleStart("scope", "tab:ORD-1641"));
+    assertEquals(8, Refs.titleStart("scope", "section:Billing"));
+    assertEquals(-1, Refs.titleStart("scope", "id:orders"));
+    assertEquals(7, Refs.titleStart("window", "window:Register"));
+    assertEquals(-1, Refs.titleStart("window", "dialog"));
+  }
 }

@@ -18,7 +18,8 @@ import java.util.function.Function;
 /**
  * References to values of earlier steps inside a text: {@code ${id}} or {@code ${id.path}}, where
  * {@code id} is a step id, a remembered name or {@code run}. {@code $${} stands for a literal
- * {@code ${}.
+ * {@code ${}. They live in value fields and in the titles of {@code tab:}/{@code section:} scope steps and
+ * {@code dialog:}/{@code window:} windows.
  */
 public final class Refs {
   private Refs() {}
@@ -99,12 +100,31 @@ public final class Refs {
 
   /** Field names whose strings are never values: a sentence, the step type, names and the locator's identity. */
   private static final Set<String> NOT_VALUES = new HashSet<String>(Arrays.asList(
-      "say", "action", "id", "as", "window", "role", "scope", "column", "match", "ref"));
+      "say", "action", "id", "as", "role", "column", "match", "ref"));
+
+  /**
+   * Where the title starts in a {@code scope} step ({@code tab:} 4, {@code section:} 8) or a {@code window} value
+   * ({@code dialog:} and {@code window:} 7); -1 for anything else ({@code id:}, {@code text:}, {@code main},
+   * {@code popup}, {@code dialog}, null). Only that title may hold references.
+   */
+  public static int titleStart(String field, String text) {
+    if (text == null) {
+      return -1;
+    }
+    if ("scope".equals(field)) {
+      return text.startsWith("tab:") ? 4 : text.startsWith("section:") ? 8 : -1;
+    }
+    if ("window".equals(field)) {
+      return text.startsWith("dialog:") || text.startsWith("window:") ? 7 : -1;
+    }
+    return -1;
+  }
 
   /**
    * A copy of {@code node} with {@code fn} applied to every string value, in objects, arrays and the node itself. The
-   * strings of the fields in {@code NOT_VALUES} are left alone (references live in value fields only), except
-   * inside {@code params} and {@code row}, whose keys are the app's. The one walk that scanning, escaping and
+   * strings of the fields in {@code NOT_VALUES} are left alone (references live in value fields only), and so
+   * are scope steps other than {@code tab:}/{@code section:} and windows other than {@code dialog:}/{@code window:}
+   * (see {@link #titleStart}); except inside {@code params} and {@code row}, whose keys are the app's. The one walk that scanning, escaping and
    * unescaping share.
    */
   public static JsonNode mapValues(JsonNode node, Function<String, String> fn) {
@@ -119,9 +139,22 @@ public final class Refs {
       ObjectNode out = FlowJson.mapper().createObjectNode();
       for (Iterator<Map.Entry<String, JsonNode>> it = n.fields(); it.hasNext(); ) {
         Map.Entry<String, JsonNode> f = it.next();
-        boolean skip = !free && NOT_VALUES.contains(f.getKey());
-        boolean appKeys = free || "params".equals(f.getKey()) || "row".equals(f.getKey());
-        out.set(f.getKey(), skip ? f.getValue() : map(f.getValue(), fn, appKeys));
+        String key = f.getKey();
+        JsonNode v = f.getValue();
+        boolean appKeys = free || "params".equals(key) || "row".equals(key);
+        if (!free && NOT_VALUES.contains(key)) {
+          out.set(key, v);
+        } else if (!free && "window".equals(key)) {
+          out.set(key, v.isTextual() && titleStart(key, v.textValue()) < 0 ? v : map(v, fn, false));
+        } else if (!free && "scope".equals(key) && v.isArray()) {
+          ArrayNode steps = FlowJson.mapper().createArrayNode();
+          for (JsonNode e : v) {
+            steps.add(e.isTextual() && titleStart(key, e.textValue()) < 0 ? e : map(e, fn, false));
+          }
+          out.set(key, steps);
+        } else {
+          out.set(key, map(v, fn, appKeys));
+        }
       }
       return out;
     }

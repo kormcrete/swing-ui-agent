@@ -905,4 +905,27 @@ class JavaTestWriterTest {
         assertThat(none.problems()).containsExactly("step 1: do(order-desk:logIn) has no Java form here: a do step is written "
                 + "through the plugin that offers it, and none is configured");
     }
+
+    @Test
+    void aLinkedTitleExportsAsTheOutcomesText() throws Exception {
+        ClickVerb copy = click(Locator.of("button", "Copy"));
+        copy.id = "copy";
+        Locator save = Locator.of("button", "Save");
+        save.window = "window:${copy.rows.Orders.added[0].Number}";
+        save.scope = java.util.Collections.singletonList("tab:${copy.rows.Orders.added[0].Number}");
+        String src = JavaTestWriter.write(flow(copy, click(save)), "com.example.uitest.recorded", "CopyUiIT", "copy");
+
+        assertThat(body(src)).contains("        ui.window(copy.text(\"$.rows.Orders.added[0].Number\"))"
+                + ".tab(copy.text(\"$.rows.Orders.added[0].Number\")).button(\"Save\").click();");
+
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("jw");
+        java.nio.file.Path pkg = java.nio.file.Files.createDirectories(dir.resolve("com/example/uitest/recorded"));
+        java.nio.file.Path file = pkg.resolve("CopyUiIT.java");
+        java.nio.file.Files.write(file, src.getBytes("UTF-8"));
+        javax.tools.JavaCompiler javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertThat(javac).isNotNull();
+        int rc = javac.run(null, null, null, "-encoding", "UTF-8", "-classpath", System.getProperty("java.class.path"),
+                "-d", dir.toString(), file.toString());
+        assertThat(rc).as("generated source compiles:\n" + src).isZero();
+    }
 }

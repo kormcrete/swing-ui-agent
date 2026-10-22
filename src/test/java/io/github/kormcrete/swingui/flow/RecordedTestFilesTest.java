@@ -818,4 +818,42 @@ class RecordedTestFilesTest {
         Flow v4 = RecordedTestFiles.parse(json.replace("\"version\":2", "\"version\":4").replace("a ${b}", "a $${b}"), "x");
         assertThat(v4.steps.get(0).say).isEqualTo("Opens ${total}");
     }
+
+    private static final String TITLE_REFS = "\"window\":\"window:${copy.rows.Orders.added[0].Number}\","
+            + "\"scope\":[\"tab:${copy.rows.Orders.added[0].Number}\"]";
+
+    @Test
+    void aV4FileWithReferencesInTitlesLoadsAndWritesBack() throws Exception {
+        Flow flow = stepsOf(
+                "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"window\":\"main\",\"role\":\"button\",\"name\":\"Copy\"}}",
+                "{\"action\":\"expect\",\"target\":{" + TITLE_REFS + ",\"role\":\"label\",\"name\":\"Total\"},\"shown\":true}");
+
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(4);
+        String text = RecordedTestFiles.write(flow);
+        assertThat(text).contains("\"window:${copy.rows.Orders.added[0].Number}\"").doesNotContain("$${");
+        Flow back = RecordedTestFiles.parse(text, "x");
+        assertThat(RecordedTestFiles.write(back)).isEqualTo(text);
+        assertThat(Refs.of(back.steps.get(1))).hasSize(2);
+    }
+
+    @Test
+    void aReferenceInATitleToNoEarlierStepIsRefused() {
+        refused(V4 + "\"steps\":[{\"action\":\"click\",\"target\":{\"scope\":[\"tab:${nope}\"],\"role\":\"button\","
+                + "\"name\":\"Save\"}}]}", "step 1 (click)", "${nope}", "no earlier step");
+    }
+
+    @Test
+    void aV3FilesDollarBraceInATitleStaysText() throws Exception {
+        String text = V3 + "\"steps\":[{\"action\":\"click\",\"target\":{\"window\":\"dialog:Cost ${y}\","
+                + "\"scope\":[\"tab:Price ${x}\"],\"role\":\"button\",\"name\":\"Save\"}}," + DO_ADD + "]}";
+        Flow flow = RecordedTestFiles.parse(text, "x");
+        Action click = flow.steps.get(0);
+        JsonNode tree = FlowJson.mapper().valueToTree(click);
+        assertThat(tree.at("/target/scope/0").asText()).isEqualTo("tab:Price $${x}");
+        assertThat(tree.at("/target/window").asText()).isEqualTo("dialog:Cost $${y}");
+        assertThat(Refs.of(click)).isEmpty();
+        assertThat(RecordedTestFiles.versionFor(flow)).isEqualTo(3);
+        String back = RecordedTestFiles.write(flow);
+        assertThat(back).contains("\"tab:Price ${x}\"").contains("\"dialog:Cost ${y}\"").doesNotContain("$${");
+    }
 }

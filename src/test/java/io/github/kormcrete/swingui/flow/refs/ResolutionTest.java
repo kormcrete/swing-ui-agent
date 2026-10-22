@@ -113,4 +113,18 @@ class ResolutionTest {
     assertThat(words("${newOrder.opened.tabs[0]}", f)).isEqualTo("Step 2 (New order) opened no tab");
     assertThat(words("${nobody.fields.Number}", f)).isEqualTo("no earlier step is named nobody");
   }
+
+  @Test
+  void aTabTitleAndAWindowTitleAreFilledIn() throws Exception {
+    copied("ORD-1641");
+    Action a =
+        step(
+            "{\"action\":\"click\",\"target\":{\"window\":\"window:${copy.rows.Orders.added[0].Number}\","
+                + "\"scope\":[\"tab:${copy.rows.Orders.added[0].Number}\"],\"role\":\"button\",\"name\":\"Save\"}}");
+
+    ClickVerb filled = (ClickVerb) Resolution.fill(a, values);
+
+    assertThat(filled.target.window).isEqualTo("window:ORD-1641");
+    assertThat(filled.target.scope).containsExactly("tab:ORD-1641");
+  }
 }
