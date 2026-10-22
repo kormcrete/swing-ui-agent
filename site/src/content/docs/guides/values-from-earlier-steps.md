@@ -38,7 +38,7 @@ A value is linked automatically only when the link is surely right:
 - It **appeared in that step**. It was nowhere on the screen before the step and is there after it.
 - It **stands out**. It has 4 characters or more, is not yes, no, true or false, and is not a whole number below 1000. A quantity of `3` is never linked.
 - It is **the whole value**, or a whole part of what you typed. `Copy of ORD-1640` is linked as the fixed `Copy of ` plus the number.
-- The **titles** of tabs, sections, dialogs and windows are linked whole, like names: a window titled `ORD-1640` becomes `window:${copy.rows['Orders › table'].added[0].Order}`. A title with the value only inside it (`Order ORD-1640`), or one that starts or ends with `*`, stays as it is.
+- A fresh value in the **title** of a tab or section (`tab:`, `section:`) or of a dialog or window (`dialog:`, `window:`) is linked like a name: a window titled `ORD-1640` becomes `window:${copy.rows['Orders › table'].added[0].Order}`. A title with data next to fixed words (`Order ORD-1640`) stays a `*` glob (`Order *`). A value in a scope step `id:` or `text:` or in a `column` stays exact, and the step result says so in `linkNote`.
 - When one step made the same value in several places, a field comes first, then a row, an item, a plugin step's own value, and last a text.
 - A title a step **opened** (a tab, a dialog, a window) is never linked by itself: most such titles are fixed words of the app, like *Invoice* or *History*. When the title is data, the same value is almost always in a row, a field or a text, which is linked instead. To link to the title, use **Use a value from an earlier step…**.
 - A value is never linked through a name made of the value itself, such as a label known only by its own text: on the next run that name is another one.
@@ -63,6 +63,7 @@ Sometimes the value you need was already on the screen: the order you opened fro
 - A table cell is found again by the other values in its row. If they do not tell the rows apart, it is found as the selected row, and otherwise by its place. A list entry, a tree row or a tab must be the selected one. If it is not, the menu line is greyed with what to do: "select the row first, or remember a field" for a list entry, "select the item first, …" for a tree row, "select the tab first, …" for a tab.
 - It is greyed with "it is empty" when there is nothing to remember. It is greyed with "it is found by its own text" when the element is only found by the value you want to keep, such as a button or a label with no caption of its own. Remember a field or a cell that shows the value instead.
 - On a replay it fails when what it reads is missing or empty.
+- **An unnamed tab strip.** `{"role":"tabs"}` is ambiguous when a tab holds its own strip. Remember the value from a place that is unique instead: a table cell with `selected:true`, a field, a label. The main strip without an id is `{"role":"tabs","nth":0}` (counted from 0, in tree order); the step is marked `fragile`.
 
 ### Unique per run
 
@@ -87,7 +88,8 @@ A text you type that must be new on every run, such as a note or a customer's na
 
 ## When a value is not linked
 
-- **A new number that only its own label shows.** Say a step shows the new order's number in a label, and a check of that same label expects it. That check stays an exact value: it would compare the label with itself. On the next run the label shows the next number and the check fails. Do not check that number as an exact value. Check something the order shows every time, or remember the number and use it where it matters, such as finding the order in a list.
+- **A new number that only its own label shows.** A check of the very label, field or cell that showed the new value is never linked to that change of its own: it would compare the value with itself. When the same value also came as a new row, a field elsewhere or a remembered value, the check **is** linked to that, and works on every run: the order tab's title and label link to the new Orders row. Only a value shown nowhere else stays exact, and fails on the next run. Remember it, or check something else.
+- **A value label not tied to its caption.** When the caption next to a value answers to `label 'Delivery note'` and shows the caption, the value label is named by its own text. A check of it is `{"role":"label","name":"Leave at reception"},"shown":true`, and the per-run value there is linked through its `name`.
 - **A value in another form.** `ORD 1640` or `1640` where the step made `ORD-1640`, another date format, or a part of what the step made, such as the number in the status text `Order ORD-1640 placed`: none is linked, not even by hand. A recorded test holds no formulas. That is a [Java test](#in-a-java-test).
 - **Rows from a step that added several**, such as search results: never linked, not even by hand, because the next run may list them in another order. Remember the value you need from the screen instead, then use it.
 - **What the screen does not show**, such as a database or a log, and components the app paints itself, such as charts or a canvas. No step can read those.
@@ -103,7 +105,7 @@ $UI recording '{"op":"unlink","n":"17.1"}'
 $UI recording '{"op":"unique","n":5,"where":"end"}'
 ```
 
-- `remember` reads what `target` shows now and keeps it under `as`, as a check under the last step (or under step `n`).
+- `remember` reads what `target` shows now and keeps it under `as`, as a check under the last step (or under step `n`). It is one edit: one `undo` takes it back. `move` cannot move a check: delete it and insert it where it belongs (the file form needs no `action`).
 - `link` makes step or check `n` use a value: a remembered name, or a step and a path into what it changed, such as `${16.rows['Orders › table'].added[0].Order}` (a path from `changed` in `recording list`), where the value sits. It is refused, in words, when the step does not hold that value, the path has none, the value is one of several rows a step added, or the path names the value itself (a label known by its own text: on the next run it has another name).
 - A step from a loaded file holds the value of the run it was recorded on, not the one the source made in this session. Name the place with `field` and the link goes there, and to every other place of the step with that value: `{"op":"link","n":"17.1","field":"target.name","ref":"${16.rows['Orders › table'].added[0].Order}"}`.
 - `edit` with a new `target` or `text` keeps a link where the new value is the one the link stood for; another value is taken as given.

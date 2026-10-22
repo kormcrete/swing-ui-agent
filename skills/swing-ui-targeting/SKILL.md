@@ -33,7 +33,8 @@ way passes even when the button is broken, which makes the test worthless.
   text field). A field's clear X is `{"scope":[...,"text:Search"],"id":"clear"}`: FlatLaf's own X and an app's X
   named `clear` both answer to it. A `tab:` or `section:` step ending
   in `*` matches a title prefix (`tab:New order*` for "New order · Ada Shop Ltd"); this works as a scope step only,
-  not as the `name` of the target itself.
+  not as the `name` of the target itself. In a recorded test a `tab:`/`section:` title or a `dialog:`/`window:`
+  title may hold a value an earlier step made (`tab:${copy...}`): the recorder links a fresh whole title like a name.
 - `role`: `window dialog button toggle checkbox radio text password combo list table tree tabs tab menubar menu
   menuitem clickable label section`.
 - `name`: component name, own text, caption label, titled border, tooltip or action name. `match:"contains"`
@@ -81,6 +82,7 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
 - A caption label is not a node of its own; it is its field's name. Ask for `{"role":"text","name":"Customer"}`,
   not `{"role":"label",...}`. A label the app made clickable is `role:"clickable"`. One exception: a value label
   is named by its caption. The cart's total, shown next to the caption Total, is `{"role":"label","name":"Total"}`.
+  When the label next to the value is not tied to it (the caption itself answers to `label '<caption>'` and shows the caption), the value label is named by its own text: check it with `{"role":"label","name":"<value>"},"shown":true`. A per-run value there is linked through its `name` (and through a `tab:`/window title).
 - A field with no caption of its own may borrow the nearest label, even an unrelated one. If a `name` looks
   wrong for the field, check it with `read` before relying on it.
 - A table's caption (a `setLabelFor` label or titled border) is its `name`. Unnamed tables on one tab are told

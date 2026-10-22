@@ -30,6 +30,8 @@ the form `export_test` writes (the recorder may add a window or scope to the cha
 | check a cell | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"cell":{"row":{"Order":"ORD-1639"},"column":"Status","expected":"Placed"}}` | `assertThat(ui.tab("Orders").table()).hasCell(row("Order", "ORD-1639"), "Status", "Placed");` |
 | check a row count | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"rows":{"op":"gte","value":1}}` | `assertThat(ui.tab("Orders").table()).hasRowCount("gte", 1);` |
 | check a value next to a caption | `expect {"target":{"role":"label","name":"Total"},"text":"€31.32"}` | `assertThat(ui.label("Total")).hasText("€31.32");` |
+| check a value label that is not tied to its caption | `expect {"target":{"role":"label","name":"Leave at reception"},"shown":true}` (named by its own text; a per-run value is linked through the `name`) | `assertThat(ui.label("Leave at reception")).isVisible();` |
+| remember the main tab strip's selected title | `recording {"op":"remember","target":{"role":"tabs","nth":0},"selected":true,"as":"orderTab"}` (`{"role":"tabs"}` alone is AMBIGUOUS when a tab has its own strip; the step is `fragile`; or remember a unique cell, field or label instead) | (a `String` local from the tab's title) |
 | check enabled | `expect {"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}` | `assertThat(ui.button("Checkout…")).isEnabled();` |
 | check the selection | `expect {"target":{"scope":["tab:Orders"],"role":"table"},"selected":[0]}` | `assertThat(ui.tab("Orders").table()).hasSelectedRows(0);` |
 | close the active tab (plugin) | `do_action {"action":{"action":"close"}}` | `ui.closeActiveTab();` |

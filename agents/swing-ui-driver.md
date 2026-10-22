@@ -71,7 +71,7 @@ The project's instructions and the hand-over name these; they win over the defau
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
   the first step reaches the start screen; `recording` `edit`/`group` with `say` for names). A step that uses what an
   earlier step made (a new order number) is linked by the recorder or with `recording` `link`/`remember`/`unique`;
-  never type `${...}` yourself (typed text is literal). `"outcome": true` on a step returns what it changed.
+  never type `${...}` yourself (typed text is literal). Tab, section, dialog and window titles are linked like names. `"outcome": true` on a step returns what it changed.
 - **Busy agent.** `BUSY: leased by <owner> since ...` means a test run holds the app. Never take the lease from a
   run still going. If that run is dead, retry after 15 s idle, or `$UI session '{"op":"lease","owner":"driver"}'`,
   pass `--lease <token>` before the tool name on each call, and release it at the end.

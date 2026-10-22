@@ -91,7 +91,7 @@ A recorded test checks the values it holds, so the data behind them has to be ri
 
 - Check data **the test creates**, such as a customer it adds and then finds, or **data you know exists**, such as Ada Shop Ltd.
 - Tests do not reuse each other's data, unless you arrange it.
-- A value the app makes up, such as a new order number, can be used by later steps: the recorder links them to the step that made it, or you **Remember** it. A value that only its own label shows stays an exact value, so check it only when the start makes it predictable. A typed text that must not repeat can be made **Unique per run**. See [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
+- A value the app makes up, such as a new order number, can be used by later steps: the recorder links them to the step that made it, or you **Remember** it. A value that only its own label shows, and nothing else, stays an exact value, so check it only when the start makes it predictable. A typed text that must not repeat can be made **Unique per run**. See [Values from earlier steps](/swing-ui-agent/guides/values-from-earlier-steps/).
 
 ## They do not mix
 

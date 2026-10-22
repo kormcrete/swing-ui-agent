@@ -142,10 +142,13 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
    ```
    Check a value shown next to a caption (a total, a status) by that caption: `label 'Total'` + `text`.
+   When the label next to the value is not tied to it (the caption itself answers to `label '<caption>'` and shows the caption), the value label is named by its own text: check it with `{"role":"label","name":"<value>"},"shown":true`. A per-run value there is linked through its `name` (and through a `tab:`/window title).
    Check data the test creates or data known to exist. A value the app makes up (a new order number) is fine in a
    LATER step: the recorder links it to the step that made it (see "Values from earlier steps"). A check of the very
-   label or field that showed the new value is NOT linked (it would compare it with itself): it stays exact and
-   fails on the next run. Do not check such a value exactly; remember it and use it where it matters.
+   label, field or cell that showed the new value is never linked to that change of its own (it would compare it
+   with itself). When the same value also came as a new row, a field elsewhere or a remembered value, the check IS
+   linked to that, and works on every run (the order tab's title and label link to the new Orders row). Only a
+   value shown nowhere else stays exact: remember it, or check something else.
 6. **A step was wrong?** Do not patch it with more steps: `$UI recording '{"op":"redo","from":3}'` cuts step 3
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
    with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
@@ -163,12 +166,14 @@ value, or the step fails in words. Never the recorded value.
 
 - **Automatic links.** While recording, a value you click, type, pick or check is linked when it is new in an
   earlier step's outcome, 4 characters or more, not yes/no/true/false, not a whole number below 1000, whole (or a
-  whole part of typed text). Tab, section, dialog and window titles link whole, like names (`window:${copy...}`),
-  never a `*` title or a value only inside a title. Most recent step first, and within one step a field, then a row,
+  whole part of typed text). A fresh value in a `tab:`/`section:` title or a `dialog:`/`window:` title is linked like a
+  name (`window:${copy...}`); a value in an `id:`/`text:` scope step or a `column` stays exact and the step result
+  says so in `linkNote`; a title with data next to fixed words stays a `*` glob. Most recent step first, and within one step a field, then a row,
   an item, a plugin step's own value, before a text; a row or item only when that step added (or changed) that one
   alone. Not linked: a title a step opened (tab, dialog, window: link it by hand when it is data), a value through a
-  name made of the value itself (a label known by its own text), a check against its own element's new text, field
-  or cell (see step 5 above), a value in another form, rows from a search.
+  name made of the value itself (a label known by its own text, unless the check is of that same label: then
+  `name` is linked), a check against its own element's new text, field or cell when nothing else holds the value
+  (see step 5 above), a value in another form, rows from a search.
 - **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later
@@ -185,7 +190,11 @@ value, or the step fails in words. Never the recorded value.
 - **Remember** a value already on screen (not a change): `$UI recording
   '{"op":"remember","target":{"role":"table","scope":["tab:Orders"],"column":"Order"},"selected":true,"as":"orderNumber"}'`
   (a check-like entry under the last step, or under step `n`; refused when missing or empty). Later steps link to
-  `${orderNumber}`.
+  `${orderNumber}`. `{"role":"tabs"}` is AMBIGUOUS when a tab holds its own strip. Remember the value from a place
+  that is unique instead (a table cell with `selected:true`, a field, a label); the main strip without an id is
+  `{"role":"tabs","nth":0}` (counted from 0, in tree order; the step is `fragile`). The agent's `remember` is one
+  edit: one `undo` takes it back. `move` cannot move a check: delete it and insert it where it belongs (the file
+  form needs no `action`).
 - **Unique per run** for typed text that must not repeat (a note, a new customer's name):
   `$UI recording '{"op":"unique","n":5,"where":"end"}'` adds `${run.id}` (8 letters and digits, new per run); later
   steps that use that text follow it. Nothing is typed again.
