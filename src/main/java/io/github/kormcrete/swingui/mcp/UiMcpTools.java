@@ -230,7 +230,7 @@ public final class UiMcpTools {
                         + "export_test: it must have begun at a reset or a recording start, startWarning flags a recorded test "
                         + "that does not begin with menu, press or navigate, an empty recording or a bad name is refused, and an existing "
                         + "file is never overwritten - except the recorded test the recording came from (loaded in the "
-                        + "palette, or exported before without clear). A folder that cannot be written is refused, "
+                        + "palette or with recording load, or exported before without clear). A folder that cannot be written is refused, "
                         + "naming it. A recorded test holds exact values except its links (a step that uses what an earlier step "
                         + "changed or remembered, a text unique per run: see the recording tool), so a record the test creates, "
                         + "such as a new order number, is found again on each run; check data the test creates or data known to "

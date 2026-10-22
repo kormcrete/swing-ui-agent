@@ -161,7 +161,8 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
    recording, so a fix is `insert`/`edit`/`redo`, `replay`, export again over the same file.
    `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'` empties it
    (unless `"clear":false`): use it last. After a clearing save, `recording '{"op":"load","name":"place-order"}'`
-   brings the file back. A Java class is `export_test` (below). Leave the screen as you found it: clear what you typed into a search, put a filter back.
+   brings the file back. A Java class is `export_test` (below). Leave the screen as you found it: clear what you
+   typed into a search, put a filter back.
 8. **Verify** (below).
 
 ## Values from earlier steps
@@ -174,12 +175,13 @@ value, or the step fails in words. Never the recorded value.
   earlier step's outcome, 4 characters or more, not yes/no/true/false, not a whole number below 1000, whole (or a
   whole part of typed text). A fresh value in a `tab:`/`section:` title or a `dialog:`/`window:` title is linked like a
   name (`window:${copy...}`); a value in an `id:`/`text:` scope step or a `column` stays exact and the step result
-  says so in `linkNote`; a title with data next to fixed words stays a `*` glob. Most recent step first, and within one step a field, then a row,
-  an item, a plugin step's own value, before a text; a row or item only when that step added (or changed) that one
-  alone. Not linked: a title a step opened (tab, dialog, window: link it by hand when it is data), a value through a
-  name made of the value itself (a label known by its own text; a check of such a label links its `name` to a value an
-  earlier step made, never to text a step typed: make that text `unique` and the check follows), a check against its own element's new text, field or cell when nothing
-  else holds the value (see step 5 above), a value in another form, rows from a search.
+  says so in `linkNote`; a title with data next to fixed words stays a `*` glob. Most recent step first, and within
+  one step a field, then a row, an item, a plugin step's own value, before a text; a row or item only when that step
+  added (or changed) that one alone. Not linked: a title a step opened (tab, dialog, window: link it by hand when it
+  is data), a value through a name made of the value itself (a label known by its own text; a check of such a label
+  links its `name` to a value an earlier step made, never to text a step typed: make that text `unique` and the
+  check follows), a check against its own element's new text, field or cell when nothing else holds the value (see
+  step 5 above), a value in another form, rows from a search.
 - **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later

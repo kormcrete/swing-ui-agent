@@ -3277,8 +3277,8 @@ public class UiMcpSession {
      * Runs steps {@code from} to {@code to} (default: all; step numbers, a step with its checks) again on the live app
      * without recording them. From step 1 the app is reset first, as the exported test starts. Stops at the first
      * failing record. A record that passes no longer counts as edited. Result: {@code passed, ran, total, reset, rev,
-     * steps:[{n, say?, action, passed, ms, message?, reason?}]}, n a step number or a check label like "7.2"; {@code ran} (the
-     * steps reached) and {@code total} (the steps in the range) count steps, never checks.
+     * steps:[{n, say?, action, passed, ms, message?, reason?, resolved?}]}, n a step number or a check label like
+     * "7.2"; {@code ran} (the steps reached) and {@code total} (the steps in the range) count steps, never checks.
      */
     public synchronized String recordingReplay(Integer from, Integer to, String speed) {
         long pause = pauseFor(speed);

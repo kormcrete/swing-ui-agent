@@ -451,6 +451,18 @@ class LinkerTest {
     }
 
     @Test
+    void aLabelKnownByItsOwnTextFollowsTheTextMadeUniquePerRun() {
+        RecordedStep customer = new RecordedStep(1, RecordedStep.Author.PERSON,
+                action("{'action':'type','target':{'id':'customer'},'text':'Al ${run.id}'}"), false);
+
+        Linker.Linked back = Linker.uniqueBack(
+                action("{'action':'expect','target':{'role':'label','name':'Al'},'shown':true}"), customer,
+                "Al", "Al ${run.id}");
+        assertThat(back.linked()).isTrue();
+        assertThat(tree(back.action).path("target").path("name").asText()).isEqualTo("Al ${run.id}");
+    }
+
+    @Test
     void aCheckIsNeverLinkedToWhatItsOwnElementShows() {
         // Save changed the status, a field and a cell: a check on one of them compared with itself would check nothing
         RecordedStep save = step(2, "{'action':'click','target':{'name':'save'}}", "{'texts':{'status':'saved Ada Shop'},"
