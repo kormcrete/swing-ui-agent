@@ -45,8 +45,9 @@ import java.util.regex.Pattern;
  * A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
  * is; a tree row a step added to that tree is linked by its whole path. What a check expects is never linked to the
- * checked element's own field or text, or to its cell in a row an earlier step changed (the check would compare it with
- * itself); a row or item a step added is new on each run and is linked. A remembered value and a text made unique per run are
+ * checked element's own field or text, or to its cell in a row an earlier step changed, nor a domain check's param to
+ * what the check read (the check would compare it with itself); a row or item a step added is new on each run and is
+ * linked. A remembered value and a text made unique per run are
  * linked alike (that text also in its plain form, as typed before it was made unique, short or not: the person asked for
  * it; it is the typing step's own value, never what the field it filled shows). Several sources: the most recent step
  * wins (a value remembered after the step that added its row too); within one step a field, a row, an item or a domain
@@ -112,9 +113,40 @@ final class Linker {
      * given to a source must not take - a later step's too.
      */
     static Linked link(Action a, List<RecordedStep> earlier, List<RecordedStep> records) {
+        return link(a, earlier, records, null);
+    }
+
+    /**
+     * {@link #link(Action, List, List)}; {@code reads}: for a domain check, the {@code expect} steps it ran, as do_action
+     * takes them (empty: not known), whose own fields, texts and cells its params are never linked to; null for any
+     * other step.
+     */
+    static Linked link(Action a, List<RecordedStep> earlier, List<RecordedStep> records, List<JsonNode> reads) {
         List<Candidate> all = new ArrayList<Candidate>();
         for (int i = earlier.size() - 1, age = 0; i >= 0; i--, age++) candidates(earlier.get(i), age, all, true);
-        return new Work(earlier, all, true).names(records).run(a);
+        Work work = new Work(earlier, all, true).names(records);
+        work.reads = reads;
+        return work.run(a);
+    }
+
+    /**
+     * Whether the outcome path {@code path} ({@code .texts.Total}, {@code .fields['Billing › Name']},
+     * {@code .rows.Lines.changed[0].after.Ref}) is what one of {@code reads} (expect steps) checks: the checked element's
+     * own field or text, or (a cell check) a row of its table an earlier step changed, its cell in that column. With
+     * {@code reads} empty (what was read is not known), any field or text. False for a path that does not parse.
+     */
+    static boolean readBy(String path, List<JsonNode> reads) {
+        List<String> keys = keysOf(path);
+        if (reads.isEmpty()) {
+            return keys.size() == 2 && ("fields".equals(keys.get(0)) || "texts".equals(keys.get(0)));
+        }
+        for (JsonNode read : reads) {
+            JsonNode column = read.path("cell").get("column");
+            if (shows(keys, read.get("target"), column != null && column.isTextual() ? column.textValue() : null)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -441,7 +473,7 @@ final class Linker {
                     }
                     break;
                 case "do":
-                    wholeEach(tree.get("params"));
+                    params(tree.get("params"));
                     break;
                 default:
                     break;
@@ -483,6 +515,11 @@ final class Linker {
         void row(JsonNode name, JsonNode row) {
             if (!(row instanceof ObjectNode)) return;
             for (Iterator<String> it = row.fieldNames(); it.hasNext(); ) whole((ObjectNode) row, it.next());
+        }
+
+        /** A do step's params, each a value of its own. */
+        void params(JsonNode params) {
+            wholeEach(params);
         }
 
         /** Each text of an array or object (a pick's path, a row's values, a do step's params). */
@@ -590,6 +627,8 @@ final class Linker {
         List<RecordedStep> named;
         /** {@link Linked#notLinked}. */
         final List<String> notLinked = new ArrayList<String>();
+        /** For a domain check, the expect steps it ran ({@link #link(Action, List, List, List)}); null for other steps. */
+        List<JsonNode> reads;
 
         Work names(List<RecordedStep> records) {
             this.named = records;
@@ -677,7 +716,8 @@ final class Linker {
          * its table that an earlier step changed, in its column: compared with itself, the check would check nothing (and
          * a replay where it already showed that value finds no change). Another source of the value is taken instead. A
          * row or item an earlier step added is new on every run: a check of it is linked. The person's and the agent's
-         * links go where asked.
+         * links go where asked, but for a check linked to the very place it reads under the step that made the value
+         * (refused by the session: {@link #readBy}).
          */
         @Override void expected(ObjectNode parent, String field, JsonNode target, String column) {
             if (!rows) {
@@ -688,9 +728,31 @@ final class Linker {
             if (node == null || !node.isTextual() || hasRefs(node.textValue())) return;
             String value = Refs.unescape(node.textValue());
             for (Candidate c : sorted) {
-                if (!c.value.equals(value) || shows(c, target, column)) continue;
+                if (!c.value.equals(value) || shows(keysOf(c.path), target, column)) continue;
                 matches.add(new Match(parent, field, -1, Collections.<Object>singletonList(c)));
                 return;
+            }
+        }
+
+        /**
+         * A domain check's automatic links never come from what the check itself reads ({@link #readBy}): compared with
+         * itself, it would pass whatever the app shows. Another source of the value is taken instead.
+         */
+        @Override void params(JsonNode params) {
+            if (!rows || reads == null || !(params instanceof ObjectNode)) {
+                super.params(params);
+                return;
+            }
+            for (Iterator<String> it = params.fieldNames(); it.hasNext(); ) {
+                String field = it.next();
+                JsonNode node = params.get(field);
+                if (node == null || !node.isTextual() || hasRefs(node.textValue())) continue;
+                String value = Refs.unescape(node.textValue());
+                for (Candidate c : sorted) {
+                    if (!c.value.equals(value) || readBy(c.path, reads)) continue;
+                    matches.add(new Match(params, field, -1, Collections.<Object>singletonList(c)));
+                    break;
+                }
             }
         }
 
@@ -1125,11 +1187,10 @@ final class Linker {
     }
 
     /**
-     * Whether candidate {@code c} is what {@code target} itself showed: its own field or text, or (a cell check, in
-     * {@code column}) a row of its table an earlier step changed, its cell in that column.
+     * Whether the outcome path of {@code keys} is what {@code target} itself showed: its own field or text, or (a cell
+     * check, in {@code column}) a row of its table an earlier step changed, its cell in that column.
      */
-    private static boolean shows(Candidate c, JsonNode target, String column) {
-        List<String> keys = keysOf(c);
+    private static boolean shows(List<String> keys, JsonNode target, String column) {
         if (keys.size() < 2) return false;
         Set<String> own = ownKeys(target);
         if (column != null) {
@@ -1141,15 +1202,15 @@ final class Linker {
 
     /** Whether candidate {@code c} is in section {@code section} of an outcome under one of the keys {@code own}. */
     private static boolean in(Candidate c, String section, Set<String> own) {
-        List<String> keys = keysOf(c);
+        List<String> keys = keysOf(c.path);
         return keys.size() >= 2 && section.equals(keys.get(0)) && own.contains(keys.get(1));
     }
 
-    /** The keys of candidate {@code c}'s path ({@code rows, Orders, added, Number}); none for a candidate without one. */
-    private static List<String> keysOf(Candidate c) {
-        if (c.path == null || c.path.isEmpty()) return Collections.emptyList();
+    /** The keys of an outcome path ({@code rows, Orders, added, Number}); none for no path or one that does not parse. */
+    private static List<String> keysOf(String path) {
+        if (path == null || path.isEmpty()) return Collections.emptyList();
         try {
-            return JsonPaths.keys("$" + c.path);
+            return JsonPaths.keys("$" + path);
         } catch (IllegalArgumentException e) {
             return Collections.emptyList();
         }

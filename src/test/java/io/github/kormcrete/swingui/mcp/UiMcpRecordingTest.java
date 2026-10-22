@@ -11,6 +11,7 @@ import io.github.kormcrete.swingui.driver.inspect.Inspector;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.RowChoice;
 import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.refs.Refs;
@@ -2721,6 +2722,56 @@ class UiMcpRecordingTest {
         // nothing that check fits: none offered; no plugin: none
         assertThat(person.domainChecks(java.util.Collections.singletonList(enabled), null)).isEmpty();
         assertThat(session.humanSink().domainChecks(Arrays.asList(reads, enabled), null)).isEmpty();
+    }
+
+    /** Add {qty} to the cart: a code step (it never folds); the reader shows the Total label before and after it. */
+    private UiMcpSession totalAfterAddQty() {
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("addQty", "Add {qty}")
+                .param("qty", ParamType.TEXT).code((ui, p) -> ui.button("Add").click()).build());
+        s.reader(readings(io.github.kormcrete.swingui.driver.outcome.UiReading.builder().text("Total", "€0.00").build(),
+                io.github.kormcrete.swingui.driver.outcome.UiReading.builder().text("Total", "€16.42").build()));
+        return s;
+    }
+
+    @Test
+    void aDomainChecksTotalIsNotLinkedToTheLabelItReads() throws Exception {
+        UiMcpSession s = totalAfterAddQty();
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addQty\",\"params\":{\"qty\":\"12\"}}"));
+        JsonNode r = mapper.readTree(s.doAction(mapper.readTree(
+                "{\"action\":\"do\",\"step\":\"cartTotalIs\",\"params\":{\"total\":\"€16.42\"}}")));
+        assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
+        assertThat(s.recordedSteps().get(0).newValues).containsEntry("€16.42", ".texts.Total");
+
+        assertThat(((DoAction) s.recordedSteps().get(1).action).params).containsEntry("total", "€16.42");
+        assertThat(recording(s, "{\"op\":\"list\"}").at("/steps/0/checks/0/uses").isMissingNode()).isTrue();
+    }
+
+    @Test
+    void aByHandLinkOfACheckToItsOwnPlaceIsRefusedOnlyUnderTheStepThatMadeIt() throws Exception {
+        // 1: do addQty (Total €16.42); 1.1: do cartTotalIs €16.42; 1.2: expect label Total text €16.42;
+        // 2: click button 'Other' (reading unchanged); 2.1: expect label Total text €16.42
+        UiMcpSession s = totalAfterAddQty();
+        String expect = "{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"€16.42\"}";
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"addQty\",\"params\":{\"qty\":\"12\"}}"));
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"cartTotalIs\",\"params\":{\"total\":\"€16.42\"}}"));
+        s.doAction(mapper.readTree(expect));
+        s.doAction(mapper.readTree("{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Other\"}}"));
+        s.doAction(mapper.readTree(expect));
+        JsonNode list = recording(s, "{\"op\":\"list\"}");
+        assertThat(list.at("/steps/0/checks/1/n").asText()).as(list.toString()).isEqualTo("1.2");
+        assertThat(list.at("/steps/1/checks/0/n").asText()).isEqualTo("2.1");
+        assertThat(list.at("/steps/1/checks/0/uses").isMissingNode()).isTrue();
+
+        DriverException e = catchThrowableOfType(() -> recording(s, "{\"op\":\"link\",\"n\":\"1.1\",\"ref\":\"${1.texts.Total}\"}"), DriverException.class);
+        assertThat(e.getMessage()).contains("check 1.1 reads the very place step 1 showed this value in (.texts.Total)")
+                .contains("compare the value with itself").endsWith("(nothing linked)");
+        assertThat(catchThrowableOfType(() -> recording(s, "{\"op\":\"link\",\"n\":\"1.2\",\"ref\":\"${1.texts.Total}\"}"),
+                DriverException.class).getMessage()).contains("check 1.2 reads the very place step 1");
+        // nothing changed: the refused links left no id on step 1
+        assertThat(s.recordedSteps().get(0).action.id).isNull();
+        // under a later step it checks the value has not changed since: allowed
+        JsonNode later = recording(s, "{\"op\":\"link\",\"n\":\"2.1\",\"ref\":\"${1.texts.Total}\"}");
+        assertThat(later.at("/steps/1/checks/0/uses/0/value").asText()).isEqualTo("€16.42");
     }
 
     @Test

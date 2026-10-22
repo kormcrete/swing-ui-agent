@@ -500,6 +500,43 @@ class LinkerTest {
     }
 
     @Test
+    void aDomainChecksParamIsNeverLinkedToWhatTheCheckReads() {
+        RecordedStep add = step(2, "{'action':'do','step':'order-desk:addQtyToCart','params':{'product':'Gel pen, black','qty':'12'}}",
+                "{'texts':{'Total':'€16.42'}}", "€16.42", ".texts.Total");
+        String check = "{'action':'do','step':'order-desk:cartTotalIs','params':{'total':'€16.42'},'check':true}";
+        List<JsonNode> reads = Collections.singletonList(read("{'action':'expect','target':{'scope':['tab:New order*'],"
+                + "'role':'label','name':'Total'},'text':'€16.42'}"));
+        Linker.Linked l = Linker.link(action(check), steps(add), steps(add), reads);
+        assertThat(l.linked()).isFalse();
+        assertThat(tree(l.action).at("/params/total").asText()).isEqualTo("€16.42");
+        // what it reads is not known: no field or text at all
+        assertThat(Linker.link(action(check), steps(add), steps(add), Collections.<JsonNode>emptyList()).linked()).isFalse();
+        // another place that holds the value is linked: the row an OLDER step added (the newer label text is skipped)
+        RecordedStep placed = step(1, "{'action':'do','step':'order-desk:placeOrder'}",
+                "{'rows':{'Orders':{'added':[{'Order':'ORD-1640','Total':'€16.42'}],'removed':[],'changed':[],'count':1}}}",
+                "ORD-1640", ".rows.Orders.added[0].Order", "€16.42", ".rows.Orders.added[0].Total");
+        assertThat(tree(Linker.link(action(check), steps(placed, add), steps(placed, add), reads).action)
+                .at("/params/total").asText()).isEqualTo("${placeOrder.rows.Orders.added[0].Total}");
+        // an action's params are linked as before
+        assertThat(tree(Linker.link(action("{'action':'do','step':'order-desk:setBudget','params':{'amount':'€16.42'}}"),
+                steps(add)).action).at("/params/amount").asText()).isEqualTo("${addQtyToCart.texts.Total}");
+    }
+
+    @Test
+    void readByIsTheExpectSelfRule() {
+        List<JsonNode> label = Collections.singletonList(read("{'action':'expect','target':{'role':'label','name':'Total'},'text':'x'}"));
+        assertThat(Linker.readBy(".texts.Total", label)).isTrue();
+        assertThat(Linker.readBy(".texts.Subtotal", label)).isFalse();
+        assertThat(Linker.readBy(".rows.Orders.added[0].Total", label)).isFalse();
+        List<JsonNode> cell = Collections.singletonList(read("{'action':'expect','target':{'role':'table','name':'Lines'},"
+                + "'cell':{'row':{'index':0},'column':'Ref','expected':'x'}}"));
+        assertThat(Linker.readBy(".rows.Lines.changed[0].after.Ref", cell)).isTrue();
+        assertThat(Linker.readBy(".rows.Lines.changed[0].after.Code", cell)).isFalse();
+        assertThat(Linker.readBy(".fields.Customer", Collections.<JsonNode>emptyList())).isTrue();
+        assertThat(Linker.readBy(".rows.Orders.added[0].Order", Collections.<JsonNode>emptyList())).isFalse();
+    }
+
+    @Test
     void aTextMadeUniqueIsTheTypingStepsOwnValueNotTheFieldItFilled() {
         // the field Note shows what step 1 typed, as it was before it was made unique
         RecordedStep note = step(1, "{'action':'type','target':{'role':'text','name':'Note'},'text':'Copied note ${run.id}'}",

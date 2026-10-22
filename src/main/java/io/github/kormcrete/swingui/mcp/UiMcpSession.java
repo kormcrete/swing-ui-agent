@@ -40,6 +40,7 @@ import io.github.kormcrete.swingui.agent.Plugins;
 import io.github.kormcrete.swingui.spi.DomainStep;
 import io.github.kormcrete.swingui.spi.ExportDefaults;
 import io.github.kormcrete.swingui.spi.StepHost;
+import io.github.kormcrete.swingui.flow.verb.ExpectVerb;
 import io.github.kormcrete.swingui.flow.verb.MenuVerb;
 import io.github.kormcrete.swingui.flow.verb.RememberVerb;
 import io.github.kormcrete.swingui.flow.verb.TypeVerb;
@@ -107,6 +108,11 @@ public class UiMcpSession {
     private final ObjectMapper mapper;
     private final FlowExecutor executor = new FlowExecutor();
     private final RecordingModel model = new RecordingModel();
+    /**
+     * What each recorded domain check read when it ran (its expect steps, as do_action takes them), by record id (ids are
+     * never reused): a link of its params to that very place is refused ({@link #checkLink}).
+     */
+    private final Map<Integer, List<JsonNode>> domainCheckReads = new HashMap<Integer, List<JsonNode>>();
     /** Folds the recording's raw steps into the vocabulary's domain steps, off the EDT and this lock ({@link #scheduleFolding}). */
     private final Folding folding = new Folding(this, this::applyFolds);
     /** Folding has looked at every record up to this id; a later raw step is fresh. */
@@ -568,7 +574,7 @@ public class UiMcpSession {
                             personSeq = ((Number) seq).intValue();
                             personRecord = added.id;
                         }
-                        autoLink(added, null);
+                        autoLink(added, null, null);
                         publish();
                         scheduleFolding();
                         return new Inspector.Result(true, action.describe());
@@ -1609,7 +1615,7 @@ public class UiMcpSession {
                     if (agentRecords && !check && changed != null) {
                         late = new Late(added.id, before, step.outcome != null ? step.outcome.made : null);
                     }
-                    r.set("recorded", mapper.valueToTree(autoLink(added, r)));
+                    r.set("recorded", mapper.valueToTree(autoLink(added, r, step.steps)));
                     scheduleFolding();
                 } else {
                     model.refused(recordedAction.describe() + " - " + String.join("; ", problems));
@@ -1731,16 +1737,19 @@ public class UiMcpSession {
      * Links the values of the record just added to what earlier steps made ({@link Linker}): one edit after the append,
      * so Undo takes back the link and leaves the step with its exact values. Returns the step's action as the recording
      * now keeps it. {@code result} (null: none) gets a {@code linkNote} when places of the step that cannot hold a
-     * reference hold a value an earlier step made.
+     * reference hold a value an earlier step made. {@code ran} (null: not known): the results of the steps a do step
+     * ran; a domain check's params are never linked to what its expect steps read ({@link #checkReads}).
      */
-    private Action autoLink(RecordedStep added, ObjectNode result) {
+    private Action autoLink(RecordedStep added, ObjectNode result, List<StepResult> ran) {
         List<RecordedStep> records = model.records();
         int at = 0;
         while (at < records.size() && records.get(at).id != added.id) at++;
         if (at == records.size()) return added.action;
+        List<JsonNode> reads = checkReads(added.action, ran);
+        if (reads != null && !reads.isEmpty()) domainCheckReads.put(added.id, reads);
         Linker.Linked linked;
         try {
-            linked = Linker.link(added.action, records.subList(0, at), records);
+            linked = Linker.link(added.action, records.subList(0, at), records, reads);
             if (linked.linked()) checkLink(added.id, linked);
         } catch (RuntimeException e) {
             return added.action;   // linking is a help: the step stays exact rather than going unrecorded
@@ -1753,6 +1762,26 @@ public class UiMcpSession {
         if (!linked.linked()) return added.action;
         model.link(added.id, linked.action, linked.seen, linked.ids);
         return linked.action;
+    }
+
+    /**
+     * What the domain check {@code a} read when it ran: the steps of {@code ran} that passed and are expect steps, as
+     * do_action takes them; empty when none or {@code ran} is null (not known); null when {@code a} is no domain check.
+     */
+    private List<JsonNode> checkReads(Action a, List<StepResult> ran) {
+        if (!(a instanceof DoAction) || !Boolean.TRUE.equals(((DoAction) a).check)) return null;
+        List<JsonNode> reads = new ArrayList<JsonNode>();
+        if (ran == null) return reads;
+        for (StepResult c : ran) {
+            if (!c.passed || c.json == null) continue;
+            try {
+                JsonNode tree = mapper.readTree(c.json);
+                if (tree != null && "expect".equals(tree.path("action").asText())) reads.add(tree);
+            } catch (IOException unreadable) {
+                // not a step it can be said to have read
+            }
+        }
+        return reads;
     }
 
     /** The app as it is now, for what a step changed; null when it cannot be read (no driver, a remote one). */
@@ -1894,7 +1923,7 @@ public class UiMcpSession {
                     !StepNumbers.isCheck(recorded));
             kept.add(added.id);
             if (!StepNumbers.isCheck(recorded)) lastAction = added;
-            out.add(mapper.valueToTree(autoLink(added, result)));
+            out.add(mapper.valueToTree(autoLink(added, result, null)));
         }
         if (unkept != null) model.refused(unkept.action + " - " + why);
         if (lastAction != null) {
@@ -3798,9 +3827,11 @@ public class UiMcpSession {
     /**
      * Refuses (BAD_INPUT, nothing changed) a link of the record {@code stepId} that would leave a recording its file
      * could not hold: tried on a copy, it must still be one export_test writes and its ids, remember names and references
-     * must load ({@link RecordedTestFiles#linkProblems(List)}).
+     * must load ({@link RecordedTestFiles#linkProblems(List)}). Also a link of a check to the very place it reads, made
+     * by the step it sits under ({@link #refuseSelfComparison}).
      */
     private void checkLink(int stepId, Linker.Linked linked) {
+        refuseSelfComparison(stepId, linked);
         // the copy shares the run's values: what its link put there under a new id goes again if it is refused
         java.util.Set<String> fresh = new java.util.HashSet<String>();
         for (String id : linked.ids.values()) if (!model.runValues().has(id)) fresh.add(id);
@@ -3815,6 +3846,50 @@ public class UiMcpSession {
         } catch (RuntimeException e) {
             for (String id : fresh) model.runValues().remove(id);
             throw e;
+        }
+    }
+
+    /**
+     * Refuses (BAD_INPUT) a link of the check {@code stepId} (an expect, or a domain check whose reads are known:
+     * {@link #domainCheckReads}) to what the step it sits under made in the very place the check reads
+     * ({@link Linker#readBy}): it would compare the value with itself at the same moment and pass whatever the app shows.
+     * Under a later step the same link checks that the value has not changed since: allowed.
+     */
+    private void refuseSelfComparison(int stepId, Linker.Linked linked) {
+        List<RecordedStep> records = model.records();
+        int at = 0;
+        while (at < records.size() && records.get(at).id != stepId) at++;
+        if (at == records.size()) return;
+        Action check = records.get(at).action;
+        List<JsonNode> reads;
+        if (check instanceof ExpectVerb) {
+            reads = Collections.<JsonNode>singletonList(mapper.valueToTree(check));
+        } else if (check instanceof DoAction && Boolean.TRUE.equals(((DoAction) check).check)) {
+            reads = domainCheckReads.get(stepId);
+        } else {
+            return;
+        }
+        if (reads == null) return;
+        int under = at - 1;
+        while (under >= 0 && StepNumbers.isCheck(records.get(under).action)) under--;
+        if (under < 0) return;
+        RecordedStep step = records.get(under);
+        String id = step.action.id != null ? step.action.id : linked.ids.get(step.id);
+        if (id == null) return;
+        for (String written : linked.seen.keySet()) {
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.scan(written);
+            } catch (IllegalArgumentException malformed) {
+                continue;
+            }
+            for (Refs.Ref ref : refs) {
+                if (!ref.id.equals(id) || !Linker.readBy(ref.path, reads)) continue;
+                List<String> labels = StepNumbers.labels(model.actions());
+                throw new DriverException(Reason.BAD_INPUT, "check " + labels.get(at) + " reads the very place step "
+                        + labels.get(under) + " showed this value in (" + ref.path + "): linked to it, the check would "
+                        + "compare the value with itself and pass whatever the app shows (nothing linked)");
+            }
         }
     }
 

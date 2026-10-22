@@ -60,7 +60,7 @@ DomainStep.act("addToCart", "Add {product} to the cart")
 | `java` | The typed call a Java test makes for the step. A recorded test can hold any step; only an export as a Java test needs this. |
 | `autoFold(false)` | A recording only suggests the step instead of folding into it. |
 
-A call gives the step concrete values. A later step can still use what the step made, as it can after any action; see below.
+A call gives the step concrete values. While recording, a value an earlier step made is linked in the params like a typed value; a check's params are never linked to what the check reads. A later step can still use what the step made, as it can after any action; see below.
 
 ### Values a step makes
 

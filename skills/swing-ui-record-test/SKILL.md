@@ -91,8 +91,9 @@ A plugin may name the app's steps ("Add {product} to the cart"). At a recording 
   `$UI do_action '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`; in a
   `batch` it is `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`.
   Params are the concrete values you choose. A value an earlier step made is linked by the recorder (or with
-  `link`), never typed as `${...}`. A step's own values (`codeWithOutcome` in the plugin) are under `step` in its
-  outcome: `${placeOrder.step.number}`.
+  `link`), never typed as `${...}`. A domain check's param is never linked to what the check reads; read
+  `recording list` `uses` to see what was. A step's own values (`codeWithOutcome` in the plugin) are under `step` in
+  its outcome: `${placeOrder.step.number}`.
 - **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
   say so.

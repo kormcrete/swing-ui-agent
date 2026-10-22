@@ -42,6 +42,7 @@ A value is linked automatically only when the link is surely right:
 - When one step made the same value in several places, a field comes first, then a row, an item, a plugin step's own value, and last a text.
 - A title a step **opened** (a tab, a dialog, a window) is never linked by itself: most such titles are fixed words of the app, like *Invoice* or *History*. When the title is data, the same value is almost always in a row, a field or a text, which is linked instead. To link to the title, use **Use a value from an earlier step…**.
 - A value is never linked through a name made of the value itself, such as a label known only by its own text: on the next run that name is another one.
+- A plugin's domain step gets its params linked like a typed value (`openOrder` with the new order's number). A domain **check** never has a param linked to what it reads itself: `cartTotalIs` reads the Total label, so its total stays exact unless another place, such as the new Orders row, holds it.
 - A row or an item is linked only when the step **added (or changed) that one alone**. A search that filled a table with results is not, because the next run may list them in another order.
 - When several earlier steps made the same value, the **most recent one** wins.
 
@@ -88,7 +89,7 @@ A text you type that must be new on every run, such as a note or a customer's na
 
 ## When a value is not linked
 
-- **A new number that only its own label shows.** A check of the very label, field or cell that showed the new value is never linked to that change of its own: it would compare the value with itself. When the same value also came as a new row, a field elsewhere or a remembered value, the check **is** linked to that, and works on every run: the order tab's title and label link to the new Orders row. Only a value shown nowhere else stays exact, and fails on the next run. Remember it, or check something else.
+- **A new number that only its own label shows.** A check of the very label, field or cell that showed the new value is never linked to that change of its own: it would compare the value with itself. The same holds for a plugin's domain check and for a link by hand under the step that made the value. When the same value also came as a new row, a field elsewhere or a remembered value, the check **is** linked to that, and works on every run: the order tab's title and label link to the new Orders row. Only a value shown nowhere else stays exact, and fails on the next run. Remember it, or check something else.
 - **A value label not tied to its caption.** When the caption next to a value answers to `label 'Delivery note'` and shows the caption, the value label is named by its own text. A check of it is `{"role":"label","name":"Leave at reception"},"shown":true`, and the per-run value there is linked through its `name`.
 - **A value in another form.** `ORD 1640` or `1640` where the step made `ORD-1640`, another date format, or a part of what the step made, such as the number in the status text `Order ORD-1640 placed`: none is linked, not even by hand. A recorded test holds no formulas. That is a [Java test](#in-a-java-test).
 - **Rows from a step that added several**, such as search results: never linked, not even by hand, because the next run may list them in another order. Remember the value you need from the screen instead, then use it.
