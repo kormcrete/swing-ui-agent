@@ -107,7 +107,7 @@ This one failed because an earlier session had left a second "New order · Ada S
 
 ```text
 failure: io.github.kormcrete.swingui.junit.UiAssertionError: Expected tab 'New order · Ada Shop Ltd' to have state [selected]
-but: AMBIGUOUS: 2 elements match tab 'New order · Ada Shop Ltd'; add a scope, a window or nth
+but: AMBIGUOUS: 2 elements match tab 'New order · Ada Shop Ltd'; add a scope, a window or nth (nth counts from 0, in the order of details)
 waited: 10044 ms
 target target: tab 'New order · Ada Shop Ltd'
   candidate: tab 'New order · Ada Shop Ltd' in main

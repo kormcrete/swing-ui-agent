@@ -1826,7 +1826,7 @@ public class UiMcpSession {
                     Integer at = madeAt.get(ref.id);
                     if (at == null || model.runValues().resolve(ref).isPresent()) continue;
                     String source = stepNumber(labels.get(at));
-                    return "Step " + stepNumber(labels.get(i)) + " uses what step " + source
+                    return RecordingModel.stepOrCheck(labels.get(i)) + " uses what step " + source
                             + (remembered.contains(ref.id) ? " remembered" : " changed") + "; replay from step " + source
                             + " or earlier";
                 }
@@ -4480,6 +4480,8 @@ public class UiMcpSession {
 
     /** The most a step's "Use a value from an earlier step…" lists. */
     private static final int MAX_OFFERS = 20;
+    /** The most a step's {@code changed} in {@code list} shows; {@code changedMore} counts the rest. */
+    private static final int MAX_CHANGED = 20;
 
     /** Where unique per run put the run's id in {@code text}: "end", "start" or "off". */
     private static String uniqueOf(String text) {
@@ -4543,6 +4545,19 @@ public class UiMcpSession {
             }
         }
 
+        /** The paths the references of the other records take into what record {@code i} changed. */
+        Set<String> usedPaths(int i) {
+            Set<String> out = new LinkedHashSet<String>();
+            for (int k = 0; k < refs.size(); k++) {
+                if (k == i) continue;
+                for (Refs.Ref r : refs.get(k)) {
+                    Integer source = named.get(r.id);
+                    if (source != null && source == i) out.add(r.path);
+                }
+            }
+            return out;
+        }
+
         /** The labels of the records that use what record {@code i} changed or remembered. */
         List<String> usedBy(int i) {
             Set<String> by = users.get(i);
@@ -4563,7 +4578,7 @@ public class UiMcpSession {
                 if (value == null && !Linker.RUN_ID.equals(r.source) && !unknown.containsKey(words)
                         && !model.runValues().resolve(r).isPresent()) {
                     Integer source = named.get(r.id);
-                    unknown.put(words, RecordingModel.notKnown(stepOf(labels.get(i)),
+                    unknown.put(words, RecordingModel.notKnown(labels.get(i),
                             source == null ? null : records.get(source), source == null ? null : labels.get(source)));
                 }
             }
@@ -4817,19 +4832,38 @@ public class UiMcpSession {
     }
 
     /**
-     * What the agent links with, for the record at flat {@code i}: {@code changed} (what it changed that a later step may
-     * use, path → value: the paths a link's {@code ref} takes after the step number), {@code remembered} (a remember
-     * entry's value), {@code uses} ([{from, value}]: what it uses, in words, with the value it stood for when it last
-     * ran), {@code usedBy} (the steps and checks that use it) and {@code unique} (end or start: a typed text made unique
-     * per run).
+     * What the agent links with, for the record at flat {@code i}: {@code changed} (what it changed that a later step can
+     * link, path → value: the paths a link's {@code ref} takes after the step number; never an entry among several added
+     * or changed rows or items; the paths later steps use first, at most {@link #MAX_CHANGED}), {@code changedMore} (how
+     * many it leaves out), {@code remembered} (a remember entry's value), {@code uses} ([{from, value}]: what it uses, in
+     * words, with the value it stood for when it last ran), {@code usedBy} (the steps and checks that use it) and
+     * {@code unique} (end or start: a typed text made unique per run).
      */
     private void putLinks(ObjectNode into, List<RecordedStep> records, int i, Links links) {
         RecordedStep s = records.get(i);
         if (s.action instanceof RememberVerb) {
             if (s.newValues.size() == 1) into.put("remembered", s.newValues.keySet().iterator().next());
         } else if (!s.newValues.isEmpty()) {
-            ObjectNode changed = into.putObject("changed");
-            for (Map.Entry<String, String> e : s.newValues.entrySet()) changed.put(e.getValue(), e.getKey());
+            // what a later step can link to: the paths later steps use first, then the value index's order
+            Set<String> used = links.usedPaths(i);
+            List<Map.Entry<String, String>> linkable = new ArrayList<Map.Entry<String, String>>();
+            int more = 0;
+            for (Map.Entry<String, String> e : s.newValues.entrySet()) {
+                if (Linker.several(s.outcome, e.getValue())) more++;
+                else if (used.contains(e.getValue())) linkable.add(e);
+            }
+            for (Map.Entry<String, String> e : s.newValues.entrySet()) {
+                if (!Linker.several(s.outcome, e.getValue()) && !used.contains(e.getValue())) linkable.add(e);
+            }
+            if (linkable.size() > MAX_CHANGED) {
+                more += linkable.size() - MAX_CHANGED;
+                linkable = linkable.subList(0, MAX_CHANGED);
+            }
+            if (!linkable.isEmpty()) {
+                ObjectNode changed = into.putObject("changed");
+                for (Map.Entry<String, String> e : linkable) changed.put(e.getValue(), e.getKey());
+            }
+            if (more > 0) into.put("changedMore", more);
         }
         List<Inspector.LinkLine> uses = links.of(i);
         if (!uses.isEmpty()) {

@@ -111,7 +111,7 @@ $UI click '{"target":{"role":"button","name":"Add to basket"}}'
 ```
 
 - **`NOT_FOUND`:** nothing matches. Read `details` and pick the right name.
-- **`AMBIGUOUS`:** more than one element matches. Add a `scope` (such as `["tab:New order · Ada Shop Ltd"]`), a `window` or `nth`.
+- **`AMBIGUOUS`:** more than one element matches. Add a `scope` (such as `["tab:New order · Ada Shop Ltd"]`), a `window` or `nth` (counted from 0, in the order of `details`).
 - **`EXPECTATION`:** an `expect` did not hold within its timeout. The message says what it found.
 
 More on locators in [Targets and locators](/swing-ui-agent/guides/targets/).

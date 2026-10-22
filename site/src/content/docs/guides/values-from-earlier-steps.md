@@ -109,7 +109,7 @@ $UI recording '{"op":"unique","n":5,"where":"end"}'
 - `edit` with a new `target` or `text` keeps a link where the new value is the one the link stood for; another value is taken as given.
 - `unlink` turns the links back into the values they stood for; `unique` adds the run's id at the `end` or `start` of a typed text (`off` takes it away).
 
-`recording list` shows, on each step, what it `changed` (the values a later step may use), what it `uses`, which steps it is `usedBy`, and `unique`; on a remember entry, `remembered` (the value it read).
+`recording list` shows, on each step, what it `changed` (the values a later step can link to: the paths later steps use first, at most 20, never one of several rows a step added or changed; `changedMore` counts the ones left out), what it `uses`, which steps it is `usedBy`, and `unique`; on a remember entry, `remembered` (the value it read).
 
 When a test is for a person, the agent keeps everything in the recorded test, with no Java. It links with these ops, names the steps with `edit` and `say`, groups them, and saves with `export_recorded_test`. The file replays on its own, and you can change it in the palette; you never have to link or name a step yourself. The agent never types `${…}` into a step: what it types, and the `text` or `target` it gives `edit`, is taken as typed, and it links with `link`. A whole step it gives `insert` or `edit` is in the file's form, and an edit that would leave a step using a value no earlier step makes, or an id twice, is refused: the recording stays as it was. The [record-test skill](/swing-ui-agent/agents/skills/) teaches this.
 

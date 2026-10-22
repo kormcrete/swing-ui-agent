@@ -1316,19 +1316,28 @@ final class RecordingModel {
             if (s.linkSeen.containsKey(r.source) || Linker.RUN_ID.equals(r.source) || values.resolve(r).isPresent()) continue;
             int source = -1;
             for (int k = 0; k < records.size() && source < 0; k++) if (r.id.equals(nameOf(records.get(k)))) source = k;
-            return notKnown(stepOf(labels.get(i)), source < 0 ? null : records.get(source),
+            return notKnown(labels.get(i), source < 0 ? null : records.get(source),
                     source < 0 ? null : labels.get(source));
         }
         return null;
     }
 
-    /** {@link #unknownValue} in words: {@code source} (null: gone) at {@code sourceLabel}, used by step {@code user}. */
-    static String notKnown(String user, RecordedStep source, String sourceLabel) {
-        if (source == null) return "Step " + user + " uses a value of a step that is gone";
+    /**
+     * {@link #unknownValue} in words: {@code source} (null: gone) at {@code sourceLabel}, used by the step or check
+     * {@code userLabel} ("7", "7.2").
+     */
+    static String notKnown(String userLabel, RecordedStep source, String sourceLabel) {
+        String user = stepOrCheck(userLabel);
+        if (source == null) return user + " uses a value of a step that is gone";
         String step = stepOf(sourceLabel);
         String what = source.action instanceof RememberVerb ? "the remembered " + ((RememberVerb) source.action).as
                 : "what step " + step + " changed";
-        return "Step " + user + " uses " + what + ", and that value is not known yet: replay up to step " + step + " first";
+        return user + " uses " + what + ", and that value is not known yet: replay up to step " + step + " first";
+    }
+
+    /** A label as the start of a sentence: "Step 7" for "7", "Check 7.2" for "7.2". */
+    static String stepOrCheck(String label) {
+        return (label.indexOf('.') >= 0 ? "Check " : "Step ") + label;
     }
 
     /** The step of a label: "7" for "7" and "7.1". */

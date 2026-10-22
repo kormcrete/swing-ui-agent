@@ -37,7 +37,8 @@ final class LocatorSchema {
         point.putObject("properties").putObject("x").put("type", "number");
         point.with("properties").putObject("y").put("type", "number");
         p.putObject("nth").put("type", "integer")
-                .put("description", "Which match, in tree order, when the locator is not unique (makes the step fragile).");
+                .put("description", "Which match, counted from 0 in tree order, when the locator is not unique "
+                        + "(makes the step fragile).");
         return s;
     }
 

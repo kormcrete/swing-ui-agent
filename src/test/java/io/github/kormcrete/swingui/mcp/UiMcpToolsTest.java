@@ -635,6 +635,31 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void theRecordingToolDescriptionIsInShortSections() {
+        String text = null;
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (t.name().equals("recording")) text = t.descriptor(mapper).path("description").asText();
+        }
+        assertThat(text).isNotNull();
+        String[] paragraphs = text.split("\n\n");
+        assertThat(paragraphs.length).isGreaterThanOrEqualTo(8);
+        for (String p : paragraphs) assertThat(p.length()).as(p).isLessThanOrEqualTo(900);
+        assertThat(text).contains("group {from, to, say}", "ungroup {n}", "7.2", "checks cannot be moved; delete and insert",
+                "Each is one edit undo takes back", "recordedPart", "changedMore", "field");
+    }
+
+    @Test
+    void theLocatorsNthCountsFromZero() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (!t.name().equals("click")) continue;
+            JsonNode nth = t.descriptor(mapper).at("/inputSchema/properties/target/properties/nth/description");
+            assertThat(nth.asText()).contains("counted from 0");
+            return;
+        }
+        throw new AssertionError("no click tool");
+    }
+
+    @Test
     void theRecordingToolsListOpIsReadOnly() {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
             if (t.name().equals("recording")) {

@@ -171,7 +171,8 @@ value, or the step fails in words. Never the recorded value.
 - **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later
-  step may use), `uses` [{from, value}], `usedBy` and `unique`, and on a remember entry `remembered` (the value
+  step can link to: the paths later steps use first, at most 20, never a row among several; `changedMore` counts the
+  rest), `uses` [{from, value}], `usedBy` and `unique`, and on a remember entry `remembered` (the value
   it read).
 - **Link by hand** when the rules do not fire but the value is surely the same (short values too; never a row among
   several a step added, nor a value in another form: those are refused):

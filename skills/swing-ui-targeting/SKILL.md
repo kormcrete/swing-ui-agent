@@ -45,7 +45,7 @@ way passes even when the button is broken, which makes the test worthless.
   cell; alone, it also narrows WHICH table: only one with that header), `item` (list/combo item, or a tree path),
   `point` (`{x,y}` fractions, for custom-painted content). A `row` key the table lacks is looked up in its
   row-header table (frozen first columns beside it). Several columns with one header: `"Quantity@<identifier>"`.
-- `nth`: which match when not unique. It makes the step `fragile`; treat it as a last resort.
+- `nth`: which match when not unique, counted from 0 in tree order (the order of an `AMBIGUOUS` error's `details`). It makes the step `fragile`; treat it as a last resort.
 - `{"ref":"e12"}` from the last snapshot works for exploring; it is only valid until the next snapshot that finds
   something (a `{"window":"dialog"}` snapshot with no dialog open keeps them).
 

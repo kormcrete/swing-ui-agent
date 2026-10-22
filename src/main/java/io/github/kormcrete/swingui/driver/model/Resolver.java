@@ -65,7 +65,7 @@ public final class Resolver {
                     nearMisses(locator));
         }
         throw new DriverException(Reason.AMBIGUOUS, found.size() + " elements match " + locator
-                + "; add a scope, a window or nth", describe(found));
+                + "; add a scope, a window or nth (nth counts from 0, in the order of details)", describe(found));
     }
 
     /** Windows are not nodes: a locator with role window or dialog finds none; say how they are addressed. */

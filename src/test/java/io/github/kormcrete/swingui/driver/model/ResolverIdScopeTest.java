@@ -46,7 +46,8 @@ class ResolverIdScopeTest {
 
     @Test
     void withoutTheScopeTheNameIsAmbiguous() {
-        assertThatThrownBy(() -> resolver.resolve(Locator.of("button", "Open"))).hasMessageContaining("2 elements match");
+        assertThatThrownBy(() -> resolver.resolve(Locator.of("button", "Open"))).hasMessageContaining("2 elements match")
+                .hasMessageEndingWith("; add a scope, a window or nth (nth counts from 0, in the order of details)");
     }
 
     @Test

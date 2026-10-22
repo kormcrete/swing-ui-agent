@@ -3599,6 +3599,55 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void theListShowsWhatALaterStepCanLinkAndCountsTheRest() throws Exception {
+        io.github.kormcrete.swingui.driver.outcome.UiReading after = io.github.kormcrete.swingui.driver.outcome.UiReading
+                .builder().field("Number", "ORD-1643").table("Orders", java.util.Collections.singletonList("Number"),
+                        Arrays.asList(java.util.Collections.singletonList("ORD-1640"),
+                                java.util.Collections.singletonList("ORD-1641"),
+                                java.util.Collections.singletonList("ORD-1642"),
+                                java.util.Collections.singletonList("ORD-1643"))).build();
+        session.reader(readings(orders("ORD-1640"), after));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Search\"}}"));
+        JsonNode step = call("{\"op\":\"list\"}").at("/steps/0");
+        assertThat(step.path("changed").toString()).isEqualTo("{\".fields.Number\":\"ORD-1643\"}");
+        // the value index keeps one path per value: ORD-1643 under the field, ORD-1641 and ORD-1642 in a list of three rows
+        assertThat(step.path("changedMore").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void theListShowsWhatALaterStepUsesFirstAndAtMostTwenty() throws Exception {
+        io.github.kormcrete.swingui.driver.outcome.UiReading.Builder after =
+                io.github.kormcrete.swingui.driver.outcome.UiReading.builder();
+        for (int k = 1; k <= 25; k++) after.field("Field " + k, "VAL-" + (1000 + k));
+        session.reader(readings(orders("ORD-1640"), after.build(), after.build()));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Open\"}}"));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"VAL-1025\"}"));
+        JsonNode step = call("{\"op\":\"list\"}").at("/steps/0");
+        List<String> paths = new java.util.ArrayList<String>();
+        step.path("changed").fieldNames().forEachRemaining(paths::add);
+        assertThat(paths).hasSize(20);
+        // the one step 2 uses first, then the value index's order
+        assertThat(paths.get(0)).isEqualTo(".fields['Field 25']");
+        assertThat(paths.get(1)).isEqualTo(".fields['Field 1']");
+        assertThat(step.path("changedMore").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    void aCheckThatUsesAValueNotKnownYetIsCalledACheck() throws Exception {
+        // Copy, then a step whose check (2.1) types nothing but expects the copy's number
+        Path file = dir.resolve("copy-and-expect.json");
+        Files.write(file, ("{\"version\":4,\"name\":\"copy-and-expect\",\"start\":\"reset\",\"steps\":["
+                + "{\"action\":\"click\",\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"}},"
+                + "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Orders\"},\"checks\":[{\"target\":"
+                + "{\"id\":\"number\"},\"text\":\"" + NUMBER + "\"}]}]}").getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
+        assertThat(call("{\"op\":\"list\"}").at("/steps/1/checks/0/uses/0/unknown").asText())
+                .startsWith("Check 2.1 uses what step 1 changed");
+        noReset(session);
+        assertThat(why("{\"op\":\"replay\",\"from\":2}")).endsWith("Check 2.1 uses what step 1 changed; replay from step 1 or earlier");
+    }
+
+    @Test
     void aValueNotKnownYetIsSaidInWordsAndNothingChanges() throws Exception {
         // a loaded recorded test that has not run: step 2 uses what step 1 changed, which no run has shown yet
         session.loadRecordedTest(copyAndSearch());

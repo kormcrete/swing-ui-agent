@@ -27,7 +27,7 @@ On the command line and over MCP a target is a JSON object, the locator. Give at
 - **`window`:** `main`, `dialog`, `popup`, `dialog:<title>` or `window:<title>`. A title ending in `*` matches a prefix.
 - **`scope`:** the containers the element sits in, outermost first: `tab:<title>`, `section:<caption>`, `id:<name>` (strictly inside the component with that `getName()`), or `text:<name>` (strictly inside the text field of that name, such as its clear X).
 - **Parts of an element:** `row`, `column`, `item` and `point`, covered in [Tables](/swing-ui-agent/guides/tables/) and [Trees](/swing-ui-agent/guides/trees/). In a recorded test, a row is kept by its value or by its position: see [Sentences and groups](/swing-ui-agent/guides/sentences/#how-a-table-row-is-kept).
-- **`nth`:** which match to take when several match. A last resort: see [Prefer a stable target](#prefer-a-stable-target).
+- **`nth`:** which match to take when several match, counted from 0 in tree order (the order of an `AMBIGUOUS` error's `details`). A last resort: see [Prefer a stable target](#prefer-a-stable-target).
 
 A test written by `export_test` uses the same locators through the `Client` API, one call per level:
 
@@ -141,7 +141,7 @@ $UI click '{"target":{"window":"dialog","role":"button","name":"Edit"}}'
 ```
 
 ```json
-{"passed":false,"action":"click(button 'Edit' in dialog)","reason":"AMBIGUOUS","message":"AMBIGUOUS: 3 elements match button 'Edit' in dialog; add a scope, a window or nth","details":["button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Delivery address]","button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Shipping]","button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Payment]"]}
+{"passed":false,"action":"click(button 'Edit' in dialog)","reason":"AMBIGUOUS","message":"AMBIGUOUS: 3 elements match button 'Edit' in dialog; add a scope, a window or nth (nth counts from 0, in the order of details)","details":["button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Delivery address]","button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Shipping]","button 'Edit' in dialog:Checkout — Ada Shop Ltd [section:Payment]"]}
 ```
 
 Add the scope it names: `{"window":"dialog","scope":["section:Payment"],"role":"button","name":"Edit"}`.
@@ -158,7 +158,7 @@ All three are the app's answer, so the call itself succeeds (exit code 0) and `p
 
 - **An `id` beats a label** when the app sets one: it survives rewording and translation. Find the element by its label, then keep its `id`.
 - **Leave data out of names.** A tab titled `ORD-1640` is that order's tab today; the next run places `ORD-1641`. Read the number from the app, as Order Desk's [`PlaceOrderUiIT`](/swing-ui-agent/demo/recorded-test/) does with the status bar, or match a stable part with `contains`.
-- **Scope instead of `nth`.** `nth` picks the n-th match in tree order. The step is marked `fragile`, and it hits the wrong element as soon as the layout changes. A scope, a window or a column says which one you mean.
+- **Scope instead of `nth`.** `nth` picks a match by its place in tree order, counted from 0. The step is marked `fragile`, and it hits the wrong element as soon as the layout changes. A scope, a window or a column says which one you mean.
 - **Two inputs with one label is a bug to report.** When a label could name two fields, the driver refuses to guess. The fix is `setLabelFor(field)` in the app.
 
 ## What a locator cannot reach yet
