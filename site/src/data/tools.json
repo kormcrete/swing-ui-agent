@@ -1045,7 +1045,7 @@
           },
           "field": {
             "type": "string",
-            "description": "link: the one place in step or check n to link, a path into its step JSON (text, target.name, target.row.Number, params.qty); default: wherever it has the value."
+            "description": "link: the one place in step or check n to link, a path into its step JSON (text, target.name, target.row.Number, params.qty); default: wherever it has the value. When that place holds a value of an earlier run (a loaded file), every place with that value is linked."
           },
           "where": {
             "type": "string",

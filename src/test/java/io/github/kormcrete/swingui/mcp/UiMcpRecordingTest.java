@@ -3788,6 +3788,66 @@ class UiMcpRecordingTest {
     }
 
     @Test
+    void anEditedTargetKeepsItsLinkWhereTheValueIsTheSame() throws Exception {
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1641")));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":"
+                + "\"ORD-1641\"}}}"));
+        assertThat(mapper.valueToTree(session.recordedSteps().get(1).action).at("/target/row/Number").asText())
+                .isEqualTo(NUMBER);
+        JsonNode r = call("{\"op\":\"edit\",\"n\":2,\"target\":{\"role\":\"table\",\"name\":\"Orders\","
+                + "\"row\":{\"Number\":\"ORD-1641\"},\"column\":\"Number\"}}");
+        assertThat(r.path("did").asText()).isEqualTo("edited step 2; its link kept where it has the value it stood for");
+        JsonNode edited = mapper.valueToTree(session.recordedSteps().get(1).action);
+        assertThat(edited.at("/target/row/Number").asText()).isEqualTo(NUMBER);
+        assertThat(edited.at("/target/column").asText()).isEqualTo("Number");
+        assertThat(r.at("/steps/1/uses/0/value").asText()).isEqualTo("ORD-1641");
+        // another value is taken as typed
+        call("{\"op\":\"edit\",\"n\":2,\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"row\":{\"Number\":\"ORD-1640\"}}}");
+        assertThat(mapper.valueToTree(session.recordedSteps().get(1).action).at("/target/row/Number").asText())
+                .isEqualTo("ORD-1640");
+        assertThat(call("{\"op\":\"list\"}").at("/steps/1").has("uses")).isFalse();
+    }
+
+    @Test
+    void aLinkByFieldTakesAPlaceThatHoldsAValueOfAnEarlierRun() throws Exception {
+        // a loaded test: Copy, then a check of the label in the copy's own tab, recorded on a run that made ORD-1641
+        Path file = dir.resolve("copy-and-check.json");
+        Files.write(file, ("{\"version\":4,\"name\":\"copy-and-check\",\"start\":\"reset\",\"steps\":[{\"action\":\"click\","
+                + "\"id\":\"copy\",\"target\":{\"role\":\"button\",\"name\":\"Copy\"},\"checks\":[{\"target\":{\"scope\":"
+                + "[\"tab:ORD-1641\"],\"role\":\"label\",\"name\":\"ORD-1641\"},\"shown\":true}]}]}")
+                .getBytes(StandardCharsets.UTF_8));
+        session.loadRecordedTest(file);
+        noReset(session);
+        session.reader(readings(orders("ORD-1640"), orders("ORD-1640", "ORD-1642")));
+        call("{\"op\":\"replay\",\"to\":1}");   // the fake app passes the check; Copy's outcome (ORD-1642) is known now
+        assertThat(why("{\"op\":\"link\",\"n\":\"1.1\",\"ref\":\"" + NUMBER + "\"}"))
+                .contains("ORD-1642 is not in check 1.1", "name the place with field");
+        JsonNode r = call("{\"op\":\"link\",\"n\":\"1.1\",\"field\":\"target.name\",\"ref\":\"" + NUMBER + "\"}");
+        assertThat(r.path("did").asText()).isEqualTo("linked check 1.1 to what step 1 changed");
+        JsonNode check = mapper.valueToTree(session.recordedSteps().get(1).action);
+        assertThat(check.at("/target/name").asText()).isEqualTo(NUMBER);
+        assertThat(check.at("/target/scope/0").asText()).isEqualTo("tab:" + NUMBER);
+        assertThat(session.recordedSteps().get(1).linkSeen).containsExactly(entry(NUMBER, "ORD-1641"));
+        // a place that does not hold a value of an earlier run: refused as before
+        assertThat(why("{\"op\":\"link\",\"n\":\"1.1\",\"field\":\"target.role\",\"ref\":\"" + NUMBER + "\"}"))
+                .contains("is not in check 1.1's target.role");
+    }
+
+    @Test
+    void aLinkThroughAPathThatNamesItsValueIsRefused() throws Exception {
+        // the step's outcome has the label keyed by its own text: .texts['ORD-1641']
+        session.reader(readings(orders("ORD-1640"), io.github.kormcrete.swingui.driver.outcome.UiReading.builder()
+                .table("Orders", java.util.Collections.singletonList("Number"),
+                        java.util.Collections.singletonList(java.util.Collections.singletonList("ORD-1640")))
+                .text("ORD-1641", "ORD-1641").build()));
+        session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Open\"}}"));
+        session.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"ORD-1641\"}"));
+        assertThat(why("{\"op\":\"link\",\"n\":2,\"ref\":\"${1.texts['ORD-1641']}\"}"))
+                .contains("the path names the value itself", "another run's value has another name");
+    }
+
+    @Test
     void recordingOpsLinkUnlinkRememberUnique() throws Exception {
         session.reader(readings(ordersOf("ORD-1640", "Bea"), ordersOf("ORD-1640", "Bea", "ORD-1641", "Ada")));
         session.verb("click", mapper.readTree("{\"target\":{\"role\":\"button\",\"name\":\"Copy\"}}"));

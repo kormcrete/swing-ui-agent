@@ -474,7 +474,8 @@ public final class UiMcpTools {
                         + "(number or ${number}).");
                 p.putObject("field").put("type", "string").put("description",
                         "link: the one place in step or check n to link, a path into its step JSON (text, target.name, "
-                        + "target.row.Number, params.qty); default: wherever it has the value.");
+                        + "target.row.Number, params.qty); default: wherever it has the value. When that place holds a "
+                        + "value of an earlier run (a loaded file), every place with that value is linked.");
                 p.putObject("where").put("type", "string").put("description",
                         "unique: where the run's id goes in the typed text: end, start, or off to take it away.")
                         .putArray("enum").add("end").add("start").add("off");

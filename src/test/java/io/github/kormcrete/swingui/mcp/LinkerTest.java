@@ -626,6 +626,55 @@ class LinkerTest {
     }
 
     @Test
+    void aPathNamesItsValueOnlyWhenAPartOfAKeyIsThatValueWhole() {
+        assertThat(Linker.namesItself(".fields['ORD-1643 › Number']", "ORD-1643")).isTrue();
+        assertThat(Linker.namesItself(".texts['ORD-1643 #2']", "ORD-1643")).isTrue();
+        assertThat(Linker.namesItself(".texts['Billing › ORD-1643 #2']", "ORD-1643")).isTrue();
+        // a caption that holds the value inside it, a scope that is a number, a fixed key of an outcome, a twin's number
+        assertThat(Linker.namesItself(".rows['Open orders'].added[0].Number", "Open")).isFalse();
+        assertThat(Linker.namesItself(".fields['Line 1 › Qty']", "1")).isFalse();
+        assertThat(Linker.namesItself(".rows.Orders.added[0].Number", "added")).isFalse();
+        assertThat(Linker.namesItself(".texts.Status", "texts")).isFalse();
+        assertThat(Linker.namesItself(".fields['Qty #2']", "2")).isFalse();
+    }
+
+    @Test
+    void relinkPutsBackALinkWhereTheEditedStepHasTheSameValue() {
+        RecordedStep old = new RecordedStep(5, RecordedStep.Author.AGENT, action("{'action':'click','target':{'role':'table',"
+                + "'name':'Orders','row':{'Number':'" + ORDER + "'}}}"), false)
+                .withLinkSeen(Collections.singletonMap(ORDER, "ORD-1643"));
+        Linker.Linked same = Linker.relink(action("{'action':'click','target':{'role':'table','name':'Orders',"
+                + "'row':{'Number':'ORD-1643'},'column':'Number'}}"), old);
+        assertThat(tree(same.action).at("/target/row/Number").asText()).isEqualTo(ORDER);
+        assertThat(same.seen).containsExactly(entry(ORDER, "ORD-1643"));
+        assertThat(Linker.relink(action("{'action':'click','target':{'role':'table','name':'Orders','row':{'Number':'ORD-1640'}}}"),
+                old).linked()).isFalse();
+        // whole inside typed text too, as a link goes
+        RecordedStep typedOld = new RecordedStep(6, RecordedStep.Author.AGENT, action(type(ORDER)), false)
+                .withLinkSeen(Collections.singletonMap(ORDER, "ORD-1643"));
+        assertThat(tree(Linker.relink(action(type("Copy of ORD-1643")), typedOld).action).path("text").asText())
+                .isEqualTo("Copy of " + ORDER);
+        // a value seen through a text with more than one reference in it is not one link: not put back
+        RecordedStep two = new RecordedStep(7, RecordedStep.Author.AGENT, action(type(ORDER + " " + ORDER)), false)
+                .withLinkSeen(Collections.singletonMap(ORDER + " x", "ORD-1643"));
+        assertThat(Linker.relink(action(type("ORD-1643")), two).linked()).isFalse();
+    }
+
+    @Test
+    void valueAtReadsAPlaceAndATitle() {
+        Action a = action("{'action':'expect','target':{'window':'window:ORD-1641','scope':['tab:ORD-1641'],'role':'label',"
+                + "'name':'ORD-1641'},'shown':true}");
+        assertThat(Linker.valueAt(a, "target.name")).isEqualTo("ORD-1641");
+        assertThat(Linker.valueAt(a, "target.scope[0]")).isEqualTo("ORD-1641");
+        assertThat(Linker.valueAt(a, "target.window")).isEqualTo("ORD-1641");
+        assertThat(Linker.valueAt(a, "target.role")).isEqualTo("label");   // a text, though no link can go there
+        assertThat(Linker.valueAt(a, "text")).isNull();
+        assertThat(Linker.valueAt(a, "target")).isNull();
+        assertThat(Linker.valueAt(action(type("Copy of ORD$${1641")), "text")).isEqualTo("Copy of ORD${1641");
+        assertThat(Linker.valueAt(action(type(ORDER)), "text")).isNull();
+    }
+
+    @Test
     void aTitleThatHoldsAReferenceGivesNoScopedKey() {
         assertThat(Linker.ownKeys(read("{'scope':['tab:${copy.x}'],'role':'label','name':'Total'}"))).containsExactly("Total");
     }

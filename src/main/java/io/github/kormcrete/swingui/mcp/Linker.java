@@ -154,18 +154,82 @@ final class Linker {
     }
 
     /**
-     * Whether a key of {@code path} ({@code .texts['ORD-1643']}) is or holds {@code value}: linked through it, the value
-     * would name another key on the next run and never be found.
+     * Whether a key of {@code path} names {@code value} itself ({@code .texts['ORD-1643']}, {@code .fields['ORD-1643 ›
+     * Number']}): linked through it, the value would name another key on the next run and never be found. A key names
+     * it when one of its parts (split at the scopes, {@code " › "}, with a twin's number {@code " #2"} left off) is the
+     * value, whole; the fixed keys of an outcome ({@code rows}, {@code added}, ...) never do. A caption that only holds
+     * the value inside it ({@code Open orders} for {@code Open}) is no name of it.
      */
     static boolean namesItself(String path, String value) {
         if (path == null || path.isEmpty() || value.isEmpty()) return false;
+        List<String> keys;
         try {
-            for (String key : JsonPaths.keys("$" + path)) if (key.contains(value)) return true;
+            keys = JsonPaths.keys("$" + path);
         } catch (IllegalArgumentException malformed) {
             return false;
         }
+        for (String key : keys) {
+            if (FIXED_KEYS.contains(key)) continue;
+            for (String form : new String[] {key, TWIN.matcher(key).replaceFirst("")}) {
+                for (String part : form.split(Pattern.quote(SCOPE), -1)) if (part.equals(value)) return true;
+            }
+        }
         return false;
     }
+
+    /** The keys an outcome itself writes ({@link Outcomes}), never a name the app shows; and a domain step's {@code step}. */
+    private static final Set<String> FIXED_KEYS = new HashSet<String>(Arrays.asList("opened", "closed", "windows", "dialogs",
+            "tabs", "fields", "texts", "rows", "items", "selected", "added", "removed", "changed", "before", "after", "count",
+            "message", "partial", "step"));
+    /** The number an outcome adds to the key of twins ({@code Name #2}). */
+    private static final Pattern TWIN = Pattern.compile(" #\\d+$");
+
+    /**
+     * A corrected step's links back: where {@code a} (the step as edited) has, whole or whole inside typed text, a value
+     * that one of {@code old}'s references stood for ({@link RecordedStep#linkSeen}, an entry that is one reference),
+     * it gets that reference again. {@link Linked#seen} holds those references.
+     */
+    static Linked relink(Action a, RecordedStep old) {
+        List<Candidate> all = new ArrayList<Candidate>();
+        for (Map.Entry<String, String> e : old.linkSeen.entrySet()) {
+            String ref = e.getKey();
+            List<Refs.Ref> refs;
+            try {
+                refs = Refs.scan(ref);
+            } catch (IllegalArgumentException malformed) {
+                continue;
+            }
+            if (refs.size() != 1 || refs.get(0).start != 0 || refs.get(0).end != ref.length()) continue;
+            if (e.getValue() == null || e.getValue().isEmpty()) continue;
+            all.add(new Candidate(e.getValue(), old, null, ref, 0, 0));
+        }
+        return new Work(Collections.<RecordedStep>emptyList(), all, false).run(a);
+    }
+
+    /**
+     * The plain text (escapes undone) at {@code field} of {@code a}, a path into the step's JSON as a link names a place
+     * ({@code text}, {@code target.name}, {@code target.scope[0]}, {@code target.row.Number}, {@code params.qty}); for a
+     * tab or section scope step and a dialog or window, its title only. Null when there is no such place, it holds no
+     * text, or its text holds a reference.
+     */
+    static String valueAt(Action a, String field) {
+        if (field == null || field.isEmpty()) return null;
+        List<JsonNode> at;
+        try {
+            at = JsonPaths.select(FlowJson.mapper().valueToTree(a), (field.startsWith("[") ? "$" : "$.") + field);
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+        if (at.size() != 1 || !at.get(0).isTextual() || hasRefs(at.get(0).textValue())) return null;
+        String text = at.get(0).textValue();
+        String kind = SCOPE_STEP.matcher(field).find() ? "scope" : WINDOW.matcher(field).find() ? "window" : null;
+        int start = kind == null ? -1 : Refs.titleStart(kind, text);
+        return Refs.unescape(start >= 0 ? text.substring(start) : text);
+    }
+
+    /** A path to a scope step ({@code target.scope[0]}) and to a window ({@code target.window}, {@code window}). */
+    private static final Pattern SCOPE_STEP = Pattern.compile("(?:^|\\.)scope\\[\\d+\\]$");
+    private static final Pattern WINDOW = Pattern.compile("(?:^|\\.)window$");
 
     /** Whether {@code value} is one {@code s} itself typed, picked or named (never what the app made). */
     static boolean ownValue(RecordedStep s, String value) {

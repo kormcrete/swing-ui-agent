@@ -104,7 +104,9 @@ $UI recording '{"op":"unique","n":5,"where":"end"}'
 ```
 
 - `remember` reads what `target` shows now and keeps it under `as`, as a check under the last step (or under step `n`).
-- `link` makes step or check `n` use a value: a remembered name, or a step and a path into what it changed, such as `${16.rows['Orders › table'].added[0].Order}` (a path from `changed` in `recording list`), where the value sits. It is refused, in words, when the step does not hold that value, the path has none, or the value is one of several rows a step added.
+- `link` makes step or check `n` use a value: a remembered name, or a step and a path into what it changed, such as `${16.rows['Orders › table'].added[0].Order}` (a path from `changed` in `recording list`), where the value sits. It is refused, in words, when the step does not hold that value, the path has none, the value is one of several rows a step added, or the path names the value itself (a label known by its own text: on the next run it has another name).
+- A step from a loaded file holds the value of the run it was recorded on, not the one the source made in this session. Name the place with `field` and the link goes there, and to every other place of the step with that value: `{"op":"link","n":"17.1","field":"target.name","ref":"${16.rows['Orders › table'].added[0].Order}"}`.
+- `edit` with a new `target` or `text` keeps a link where the new value is the one the link stood for; another value is taken as given.
 - `unlink` turns the links back into the values they stood for; `unique` adds the run's id at the `end` or `start` of a typed text (`off` takes it away).
 
 `recording list` shows, on each step, what it `changed` (the values a later step may use), what it `uses`, which steps it is `usedBy`, and `unique`; on a remember entry, `remembered` (the value it read).

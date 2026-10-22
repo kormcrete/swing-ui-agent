@@ -167,6 +167,9 @@ value, or the step fails in words. Never the recorded value.
   several a step added, nor a value in another form: those are refused):
   `$UI recording '{"op":"link","n":"7.1","ref":"${3.rows['Orders › table'].added[0].Order}"}'` (a step number or id, then a
   path from its `changed`; or a remembered name, `"ref":"orderNumber"`). `unlink {n}` turns links back into values.
+  A step of a loaded file holds the value of the run it was recorded on: add `"field":"target.name"` (the place) and
+  every place of the step with that value is linked. A path that names the value itself (`.texts['ORD-1641']`) is
+  refused: link to a row, a field or a remembered value instead.
 - **Remember** a value already on screen (not a change): `$UI recording
   '{"op":"remember","target":{"role":"table","scope":["tab:Orders"],"column":"Order"},"selected":true,"as":"orderNumber"}'`
   (a check-like entry under the last step, or under step `n`; refused when missing or empty). Later steps link to
@@ -175,7 +178,8 @@ value, or the step fails in words. Never the recorded value.
   `$UI recording '{"op":"unique","n":5,"where":"end"}'` adds `${run.id}` (8 letters and digits, new per run); later
   steps that use that text follow it. Nothing is typed again.
 - **Never type `${...}` yourself.** What you type is taken as typed (a literal): steps you run, and the `text` and
-  `target` of `recording edit`. Links come only from the recorder and `link`. A whole step you give `insert` or
+  `target` of `recording edit`. Links come only from the recorder and `link`; an `edit` keeps a step's link where the
+  new value is the one the link stood for (give the value, not the reference). A whole step you give `insert` or
   `edit {step}` is in the file's form (`${id.path}` there is a reference); an edit that leaves a reference without an
   EARLIER source, or an id twice, is refused and the recording stays as it was.
 - **See what a step changed:** `"outcome": true` on `do_action`, `batch` steps or a verb tool returns

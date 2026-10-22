@@ -3406,11 +3406,37 @@ public class UiMcpSession {
             else tree.put("say", sentence);
         }
         Action edited = action(tree);
+        // a corrected target or text keeps its links where it still has the values they stood for
+        String kept = "";
+        if (hasTarget || text != null) {
+            Linker.Linked back = Linker.relink(edited, model.at(n));
+            if (back.linked() && relinkHolds(n, back.action)) {
+                edited = back.action;
+                kept = back.seen.size() > 1 ? "; its links kept where it has the values they stood for"
+                        : "; its link kept where it has the value it stood for";
+            }
+        }
         Action replaced = sentenced(edited instanceof DoAction ? namedDo((DoAction) edited) : edited, what);
         RecordingModel scratch = model.copy();
         scratch.replace(n, replaced, RecordedStep.Author.AGENT);
         validateEdit(scratch.actions());
-        return edited(model.replace(n, replaced, RecordedStep.Author.AGENT));
+        return edited(model.replace(n, replaced, RecordedStep.Author.AGENT) + kept);
+    }
+
+    /**
+     * Whether step or check {@code n} as {@code relinked} (an edit whose links were put back) leaves a recording its file
+     * can hold: each reference still finds its source (no link problem the recording did not have). When not, the edit
+     * is taken as given.
+     */
+    private boolean relinkHolds(StepAddress n, Action relinked) {
+        RecordingModel scratch = model.copy();
+        try {
+            scratch.replace(n, relinked, RecordedStep.Author.AGENT);
+            return RecordedTestFiles.linkProblems(model.actions())
+                    .containsAll(RecordedTestFiles.linkProblems(scratch.actions()));
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** Makes steps {@code from} to {@code to} one group with the sentence {@code say}; the same range again renames it. */
@@ -3493,7 +3519,9 @@ public class UiMcpSession {
      * - {@code ${3.rows.Orders.added[0].Number}} (a step number and the path in what it changed),
      * {@code ${copy.fields.Number}} (a step's id), {@code ${number}} or {@code number} (a remembered value) - and where
      * {@code n} has that value (whole, or whole inside typed text; at {@code field} only when given) it becomes the
-     * reference, the source getting an id when it has none. One edit by the agent; BAD_INPUT says in words why not.
+     * reference, the source getting an id when it has none. When {@code field} holds another value (one of an earlier
+     * run: a loaded file, an edit), every place of {@code n} with that value becomes the reference, which stands for it.
+     * One edit by the agent; BAD_INPUT says in words why not.
      */
     synchronized String recordingLink(StepAddress n, String field, String ref, Integer rev) {
         checkRev(rev);
@@ -3556,9 +3584,20 @@ public class UiMcpSession {
             throw new DriverException(Reason.BAD_INPUT, "'field' is a path into " + what + "'s step, like text or "
                     + "target.row.Number: " + e.getMessage());
         }
+        if (!linked.linked() && field != null) {
+            // the place holds a value of an earlier run (a loaded file, an edit): the link goes where that value is
+            String literal = Linker.valueAt(target.action, field);
+            if (literal != null && !literal.equals(value) && !Linker.ownValue(source, literal)
+                    && Linker.linkToValue(target.action, records.subList(0, at), source, named.path, literal, field, records)
+                            .linked()) {
+                linked = Linker.linkToValue(target.action, records.subList(0, at), source, named.path, literal, null, records);
+            }
+        }
         if (!linked.linked()) {
             throw new DriverException(Reason.BAD_INPUT, value + " is not in " + what + (field == null ? ""
-                    : "'s " + field) + " where a link can go - whole, or whole inside typed text (nothing linked)");
+                    : "'s " + field) + " where a link can go - whole, or whole inside typed text (nothing linked)"
+                    + (field == null ? "; to link a place that holds a value of an earlier run, name the place with field "
+                            + "(e.g. \"field\":\"target.name\")" : ""));
         }
         checkLink(target.id, linked);
         return edited(model.link(target.id, linked.action, linked.seen, linked.ids, RecordedStep.Author.AGENT));
@@ -3614,13 +3653,26 @@ public class UiMcpSession {
                         + "entries: one among several is never linked by its position (a replay may list them otherwise)");
             }
             List<JsonNode> hits = JsonPaths.select(source.outcome, "$" + path);
-            if (hits.size() == 1 && hits.get(0).isValueNode() && !hits.get(0).isNull()) return hits.get(0).asText();
+            if (hits.size() == 1 && hits.get(0).isValueNode() && !hits.get(0).isNull()) {
+                return notNamedByPath(path, hits.get(0).asText());
+            }
             throw new DriverException(Reason.BAD_INPUT, "what " + sourceWhat + " changed has no value at " + path
                     + "; list shows what it changed");
         }
-        for (Map.Entry<String, String> e : source.newValues.entrySet()) if (e.getValue().equals(path)) return e.getKey();
+        for (Map.Entry<String, String> e : source.newValues.entrySet()) {
+            if (e.getValue().equals(path)) return notNamedByPath(path, e.getKey());
+        }
         throw new DriverException(Reason.BAD_INPUT, "what " + sourceWhat + " changed at " + path + " is not known in "
                 + "this session: replay it, then link");
+    }
+
+    /** {@code value}, found at {@code path}; BAD_INPUT when the path names the value itself ({@link Linker#namesItself}). */
+    private static String notNamedByPath(String path, String value) {
+        if (Linker.namesItself(path, value)) {
+            throw new DriverException(Reason.BAD_INPUT, "at " + path + " the path names the value itself: another run's "
+                    + "value has another name; link to a row, a field or a remembered value");
+        }
+        return value;
     }
 
     /** Turns the references of step or check {@code n} back into the values they stood for; one edit by the agent. */
