@@ -42,7 +42,7 @@ class JavaTestWriterTest {
         return JavaTestWriter.write(Arrays.asList(steps), "com.example.uitest.recorded", "SmokeUiIT", "walk");
     }
 
-    // ---- Java layout: a step is one block (action + its checks), sentences and groups as comments
+    // ---- Java layout: a step is one block (action + its checks), sentences and groups as ui.step sections
 
     private static ExpectVerb stateCheck(String role, String name, String state) {
         ExpectVerb e = new ExpectVerb();
@@ -121,13 +121,13 @@ class JavaTestWriterTest {
     }
 
     @Test
-    void aStepSentenceIsACommentAboveItsBlock() {
+    void aStepSentenceIsAUiStepAboveItsBlock() {
         String[] lines = bodyOf(flow(click(Locator.of("button", "A")),
                 say(click(Locator.of("button", "B")), "Add the second product"),
                 stateCheck("label", "x", "!hidden")));
         assertThat(lines[0]).contains("\"A\"");
         assertThat(lines[1]).isEmpty();
-        assertThat(lines[2]).isEqualTo("        // Add the second product");
+        assertThat(lines[2]).isEqualTo("        ui.step(\"Add the second product\");");
         assertThat(lines[3]).contains("\"B\"");
         assertThat(lines[4]).contains("assertThat");
     }
@@ -141,7 +141,7 @@ class JavaTestWriterTest {
         assertThat(lines[0]).contains("Add to cart");
         assertThat(lines[1]).contains("€4.99");
         assertThat(lines[2]).isEmpty();
-        assertThat(lines[3]).isEqualTo("        // Keep a picture of the cart");
+        assertThat(lines[3]).isEqualTo("        ui.step(\"Keep a picture of the cart\");");
         assertThat(lines[4]).contains("saveScreenshot(\"cart.png\"");
     }
 
@@ -157,17 +157,17 @@ class JavaTestWriterTest {
     }
 
     @Test
-    void aGroupIsACommentAboveItsFirstStep() {
+    void aGroupIsAUiStepAboveItsFirstStep() {
         Flow f = flow(click(Locator.of("button", "A")), click(Locator.of("button", "B")),
                 say(click(Locator.of("button", "C")), "Third"), click(Locator.of("button", "D")));
         f.groups.add(new FlowGroup(1, 2, "Fill the cart"));
         String[] lines = bodyOf(f);
         assertThat(lines[0]).contains("\"A\"");
         assertThat(lines[1]).isEmpty();
-        assertThat(lines[2]).isEqualTo("        // Fill the cart");
+        assertThat(lines[2]).isEqualTo("        ui.step(\"Fill the cart\");");
         assertThat(lines[3]).contains("\"B\"");
         assertThat(lines[4]).isEmpty();                       // the step with a sentence
-        assertThat(lines[5]).isEqualTo("        // Third");
+        assertThat(lines[5]).isEqualTo("        ui.step(\"Third\");");
         assertThat(lines[6]).contains("\"C\"");
         assertThat(lines[7]).contains("\"D\"");
     }
@@ -178,8 +178,8 @@ class JavaTestWriterTest {
         f.groups.add(new FlowGroup(1, 1, "Group"));
         String[] lines = bodyOf(f);
         assertThat(lines[1]).isEmpty();
-        assertThat(lines[2]).isEqualTo("        // Group");
-        assertThat(lines[3]).isEqualTo("        // Second");
+        assertThat(lines[2]).isEqualTo("        ui.step(\"Group\");");
+        assertThat(lines[3]).isEqualTo("        ui.step(\"Second\");");
         assertThat(lines[4]).contains("\"B\"");
     }
 
@@ -193,20 +193,26 @@ class JavaTestWriterTest {
         String java = JavaTestWriter.write(f, "p", "SmokeUiIT", "walk");
         assertThat(java).contains("@LoginAs(\"ada\")");
         String[] lines = body(java);
-        assertThat(lines[0]).isEqualTo("        // Whole test");
-        assertThat(lines[1]).isEqualTo("        // Sign in as Ada");
+        assertThat(lines[0]).isEqualTo("        ui.step(\"Whole test\");");
+        assertThat(lines[1]).isEqualTo("        ui.step(\"Sign in as Ada\");");
         assertThat(lines[2]).contains("\"A\"");
     }
 
     @Test
-    void commentsAreSafeForJavac() throws Exception {
-        Flow f = flow(say(click(Locator.of("button", "A")), "evil \\u000a ui.hack(); */ and \\\\u000a and \r\n more"));
+    void sentencesAreSafeForJavac() throws Exception {
+        String evil = "evil \\u000a ui.hack(); */ and \\\\u000a and \r\n more";
+        Flow f = flow(say(click(Locator.of("button", "A")), evil), click(Locator.of("button", "B")),
+                say(stateCheck("label", "x", "!hidden"), "chk " + evil));
         f.groups.add(new FlowGroup(0, 0, "grp \\u000d"));
         String src = JavaTestWriter.write(f, "p", "SmokeUiIT", "walk");
-        // every line of the comment stays a comment: no raw line break and no eligible unicode escape
+        // a sentence stays on its own line: a ui.step literal or, for a check, a comment; no raw line break and no
+        // eligible unicode escape
         for (String line : src.split("\n")) {
-            if (line.contains("evil") || line.contains("grp")) assertThat(line.trim()).startsWith("//");
+            if (line.contains("chk")) assertThat(line.trim()).startsWith("//");
+            else if (line.contains("evil") || line.contains("grp")) assertThat(line.trim()).startsWith("ui.step(\"");
         }
+        assertThat(src).contains("        ui.step(\"evil \\\\u000a ui.hack(); */ and \\\\\\\\u000a and   more\");\n");
+        assertThat(src).contains("        ui.step(\"grp \\\\u000d\");\n");
         assertThat(src).doesNotContain("\r");
         java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("jw");
         java.nio.file.Path file = dir.resolve("SmokeUiIT.java");
@@ -573,8 +579,30 @@ class JavaTestWriterTest {
         String[] lines = bodyOf(flow(last, doStep("order-desk:setQty", null, "qty", "${last.fields.Qty}")), forms);
 
         assertThat(lines).containsSequence("        Outcome last = ui.outcomeOf(() -> ui.button(\"Last order\").click());", "",
-                "        // Set the quantity to ${last.fields.Qty}",
+                "        ui.step(\"Set the quantity to \" + last.text(\"$.fields.Qty\"));",
                 "        ui.role(\"spinner\", \"Qty\").type(last.text(\"$.fields.Qty\"));");
+    }
+
+    @Test
+    void aSentenceThatIsOnlyAnEarlierValueIsASectionOfItsText() {
+        DoStepForms forms = orderDesk(DomainStep.act("setQty", "{qty}")
+                .param("qty", ParamType.INT)
+                .steps("{\"action\":\"type\",\"target\":{\"role\":\"spinner\",\"name\":\"Qty\"},\"text\":\"{qty}\"}")
+                .build());
+        ClickVerb last = click(Locator.of("button", "Last order"));
+        last.id = "last";
+
+        String[] lines = bodyOf(flow(last, doStep("order-desk:setQty", null, "qty", "${last.fields.Qty}")), forms);
+
+        // a value that comes out blank in a run would leave the section without a name
+        assertThat(lines).contains("        ui.step(\"${last.fields.Qty}\");");
+    }
+
+    @Test
+    void aSentenceHoldingAMarkerTheExportDidNotMakeIsText() {
+        String forged = "Open \uE000x\uE001System.exit(1)\uE002 now";
+        String[] lines = bodyOf(flow(say(click(Locator.of("button", "A")), forged)));
+        assertThat(lines[0]).isEqualTo("        ui.step(\"Open x now\");");
     }
 
     @Test
@@ -817,7 +845,7 @@ class JavaTestWriterTest {
                 "        ui.menu(\"Orders\", \"New order\");",
                 "        OrderDeskSteps.addQtyToCart(ui, \"A4 paper, \\\"500\\\"\", 3);",   // its sentence is the call: no comment
                 "",
-                "        // Place it",
+                "        ui.step(\"Place it\");",
                 "        OrderDeskSteps.placeOrder(ui);",
                 "");
         assertThat(ran.get()).isEqualTo(atReady);   // a typed call needs no trace of the body
@@ -852,13 +880,13 @@ class JavaTestWriterTest {
         String[] lines = bodyOf(f, forms);
 
         assertThat(lines).containsExactly(
-                "        // Add Gel pen, black to the cart",
+                "        ui.step(\"Add Gel pen, black to the cart\");",
                 "        ui.tab(\"New order*\").table().row(\"Product\", \"Gel pen, black\").cell(\"Product\").click();",
                 "        ui.tab(\"New order*\").button(\"Add to cart\").click();",
                 "        // The cart total is 4.99",
                 "        assertThat(ui.label(\"Total\")).hasText(\"4.99\");",
                 "",
-                "        // Open order row 2",
+                "        ui.step(\"Open order row 2\");",
                 "        ui.table(\"Orders\").rowAt(2).doubleClick();",   // the INT placeholder is a number again
                 "");
         assertThat(JavaTestWriter.lines(f, forms).get(0)).isEqualTo(

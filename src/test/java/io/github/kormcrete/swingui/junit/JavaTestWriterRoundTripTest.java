@@ -183,7 +183,8 @@ class JavaTestWriterRoundTripTest {
         for (Action a : flow.steps) ((VerbAction) a).run(direct);
 
         String src = JavaTestWriter.write(flow, "rt", "RoundTripUiIT", "walk");
-        assertThat(src).contains("// Fill the cart", "// Add the first product", "// The total is shown", "// Go to checkout");
+        assertThat(src).contains("ui.step(\"Fill the cart\");", "ui.step(\"Add the first product\");", "// The total is shown",
+                "ui.step(\"Go to checkout\");");
         RecordingVerbs viaJava = new RecordingVerbs();
         run(src, new Client(viaJava, new RecordingApp(viaJava.calls), "rt"));
         assertThat(viaJava.calls).containsExactlyElementsOf(direct.calls);

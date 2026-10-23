@@ -55,7 +55,12 @@ import java.util.regex.Pattern;
  *
  * <p>A {@code do} step, a plugin's domain step, is written as its {@link DoForms} says: the typed call the step names
  * ({@code OrderDeskSteps.addToCart(ui, "Gel pen, black");}, its class imported), else the steps it makes, under its
- * sentence as a comment; a step with neither is refused.
+ * sentence; a step with neither is refused.
+ *
+ * <p>Sentences and groups become run journal sections: a group's sentence and an action's (a screenshot's and a do
+ * step's too) is {@code ui.step("Place the order");} on its own line where the step begins, its later values joined in
+ * as Java; a check's sentence is a {@code // comment} right above its assertion, since a section a check opened would
+ * cover the actions after it. The writer's FRAGILE and maxSize notes stay comments.
  *
  * <p>Values of earlier steps ({@code ${...}}) become Java expressions: a step a later one names by its id becomes
  * {@code Outcome copy = ui.outcomeOf(() -> ...);} and the reference {@code copy.text("$.rows.Orders.added[0].Number")}, a
@@ -214,7 +219,10 @@ public final class JavaTestWriter {
         return write(plain(steps), packageName, className, methodName, forms);
     }
 
-    /** The class for a recorded test: a step (its action and its checks) is one block; sentences and groups become comments. */
+    /**
+     * The class for a recorded test: a step (its action and its checks) is one block; sentences and groups become
+     * {@code ui.step} sections, a check's sentence a comment.
+     */
     public static String write(Flow flow, String packageName, String className, String methodName) {
         return write(flow, packageName, className, methodName, DoForms.NONE);
     }
@@ -239,7 +247,7 @@ public final class JavaTestWriter {
         return lines(plain(steps));
     }
 
-    /** {@link #lines(List)} of a recorded test: still one entry per record (action or check), without comments. */
+    /** {@link #lines(List)} of a recorded test: still one entry per record (action or check), without sections or comments. */
     public static List<String> lines(Flow flow) {
         return lines(flow, DoForms.NONE);
     }
@@ -349,8 +357,8 @@ public final class JavaTestWriter {
                 }
                 stepLines.add(as == null ? "" : "@LoginAs(" + quote(as) + ")");
                 // its group and sentence cannot sit on an annotation: they are the first body lines
-                for (FlowGroup g : groups) if (g.from == 0) addComment(g.say);
-                addComment(steps.get(0).say);
+                for (FlowGroup g : groups) if (g.from == 0) addStep(g.say);
+                addStep(steps.get(0).say);
                 start = 1;
             }
             // a problem names the record as the list numbers it: "step 7" or "check 7.2"
@@ -782,9 +790,9 @@ public final class JavaTestWriter {
 
         /**
          * Opens the statement of record {@code i}: a blank line where checking turns back to acting and before a step with
-         * a sentence or a group (never first, never twice), then the group's comment, then the sentence {@code say} (a
-         * check's sentence goes right above its line). A screenshot joins the block before it. {@code checking} is null
-         * before the first statement.
+         * a sentence or a group (never first, never twice), then the group's {@code ui.step}, then the sentence {@code say}:
+         * an action's as a {@code ui.step}, a check's as a comment right above its line. A screenshot joins the block
+         * before it. {@code checking} is null before the first statement.
          */
         private void begin(int i, Action a, String say, boolean check) {
             boolean screenshot = a instanceof ScreenshotVerb;
@@ -793,8 +801,9 @@ public final class JavaTestWriter {
             boolean hasSay = !check && say != null && !say.trim().isEmpty();
             boolean turn = !check && !screenshot && Boolean.TRUE.equals(checking);
             if (turn || groupStart || hasSay) blank();
-            for (FlowGroup g : groups) if (g.from == i) addComment(g.say);
-            addComment(say);
+            for (FlowGroup g : groups) if (g.from == i) addStep(g.say);
+            if (check) addComment(say);
+            else addStep(say);
             checking = screenshot ? Boolean.valueOf(Boolean.TRUE.equals(checking)) : Boolean.valueOf(check);
         }
 
@@ -805,6 +814,31 @@ public final class JavaTestWriter {
         private void addComment(String say) {
             if (say == null || say.trim().isEmpty()) return;
             statements.add(indent("// " + comment(readable(say))));
+        }
+
+        /**
+         * {@code say} as a run journal section, {@code ui.step("...");}: one line; a value of an earlier step this export
+         * marked in it (a do step's sentence) joined in as its Java, any other marker as its text. A sentence that would
+         * be only such values is written as its text, so the section never comes out blank in a run.
+         */
+        private void addStep(String say) {
+            if (say == null || say.trim().isEmpty()) return;
+            String text = oneLine(ownMarkers(say));
+            String fixed = readable(REF_MARK.matcher(text).replaceAll(""));
+            statements.add(indent("ui.step(" + (fixed.trim().isEmpty() ? literalOf(oneLine(readable(say))) : quote(text)) + ");"));
+        }
+
+        /** {@code s} with only the reference markers this export made ({@link #markers}); any other marker becomes its text. */
+        private String ownMarkers(String s) {
+            StringBuilder out = new StringBuilder();
+            Matcher m = REF_MARK.matcher(s);
+            int last = 0;
+            while (m.find()) {
+                out.append(readable(s.substring(last, m.start())));
+                out.append(markers.contains(m.group()) ? m.group() : readable(m.group(1)));
+                last = m.end();
+            }
+            return out.append(readable(s.substring(last))).toString();
         }
 
         /** True (and a problem recorded per bad locator) when any of this verb's targets uses an unconverted ref, or a point other than on a plain click. */
@@ -1296,7 +1330,7 @@ public final class JavaTestWriter {
          * (a backslash is only eligible after an even run of backslashes, so a run before a u is made even).
          */
         static String comment(String say) {
-            String oneLine = say.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ').trim();
+            String oneLine = oneLine(say);
             StringBuilder sb = new StringBuilder();
             int run = 0;
             for (int k = 0; k < oneLine.length(); k++) {
@@ -1310,6 +1344,11 @@ public final class JavaTestWriter {
                 sb.append(c);
             }
             return sb.toString();
+        }
+
+        /** {@code s} on one line: each line break a space, trimmed. */
+        static String oneLine(String s) {
+            return s.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ').trim();
         }
 
         private static String indent(String s) {

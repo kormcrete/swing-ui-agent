@@ -203,7 +203,8 @@ public final class UiMcpTools {
                         + "export it with export_recorded_test instead. Refuses a "
                         + "recording that did not begin at a reset or a recording start, a bad class/method/package "
                         + "name, an existing file, or an empty recording, naming each problem; a refusal keeps the "
-                        + "recording. A step and its checks are one block; sentences become comments.",
+                        + "recording. A step and its checks are one block; sentences and groups become "
+                        + "ui.step(\"...\") sections, a check's sentence a comment.",
                         schema);
             }
             @Override public String invoke(JsonNode args) throws Exception {

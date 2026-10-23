@@ -161,9 +161,12 @@ result: no snapshot before or after it.
 
 A Java test: run the given `*UiIT` class alone while the app is up, the project's way (default
 `mvn -Dtest=PlaceOrderUiIT verify`; failsafe uses `-Dit.test=`). On a failure read
-`target/ui-failures/<Class>/<method>/evidence.txt` and the PNG beside it; with the run report registered,
-`target/ui-runs/latest.txt` lists the run (`STARTED`, a `PASS`/`FAIL` line per test, `DONE`). Fix the Java only if
-the dispatch asks; otherwise report the failing step and its evidence path.
+`target/ui-failures/<Class>/<method>/evidence.txt` and the PNG beside it. Every run with a UI test writes
+`target/ui-runs/latest.txt` (nothing to register): `STARTED`, a `PASS`/`FAIL` line per test, `DONE`. Its STARTED
+line ends `run=<runId>` (unless `-Dswingui.journal=off`), and `target/ui-runs/<runId>/steps/<Class>#<method>.jsonl`
+shows each step of a test with its outcome (a repeated or parameterized test's invocation adds `[n]`; a recorded
+test run from JUnit is `<Class>#recorded[place-order].jsonl`): read the last lines of the failing test's file
+first. Fix the Java only if the dispatch asks; otherwise report the failing step and its evidence path.
 
 ## Finishing
 

@@ -296,7 +296,8 @@ $UI recording '{"op":"group","from":3,"to":5,"say":"Fill the cart","rev":16}'
   its own: name its checks.
 - Format and numbering: https://kormcrete.github.io/swing-ui-agent/reference/recorded-test-format/ and
   https://kormcrete.github.io/swing-ui-agent/guides/sentences/
-- Sentences and groups are kept in the recorded test file and become comments in a Java test.
+- Sentences and groups are kept in the recorded test file and become `ui.step("…")` sections in a Java test (a
+  check's sentence stays a comment).
 
 ## When a person works with you
 
@@ -357,6 +358,11 @@ Links export as code: a source step as `Outcome copy = ui.outcomeOf(() -> ...)` 
 `String orderNumber = ....selectedText()` / `.shownText()`, run values as `ui.run().id()`. A `do` step whose Java
 form is a typed call or several steps cannot be a source; the export says so.
 
+Checkpoints: name a moment worth comparing between releases with `ui.table("Lines").checkpoint("cart-lines")` or
+`ui.checkpoint("order-placed", ui.label("Order number"))` (the targets after the name are masked: values that change
+every run, such as dates and order numbers). Sparingly: 1, at most 3 per test, named by what they show (letters,
+digits, `-`, `_`, `.`); never twice in one test.
+
 Review the source. Rename the method if useful. Add by hand only checks no verb expresses, with the Client API
 (`ui.describeModal()`, `ui.clipboardText()`, `UiAssertions.eventually(...)`, `ui.outcomeOf(...)`) or the plugin's
 `ui.hooks(...)`.
@@ -373,8 +379,11 @@ rather than hand-editing recorded steps.
    while the app is up, the project's way; without one `mvn -Dtest=PlaceOrderUiIT verify` (failsafe picks up `*IT`
    classes and filters with `-Dit.test=PlaceOrderUiIT`).
 3. It must pass from there. On a Java failure read `target/ui-failures/<Class>/<method>/evidence.txt` and the PNG
-   beside it; with the run report registered, `target/ui-runs/latest.txt` lists the run (`STARTED`, a
-   `PASS`/`FAIL` line per test, `DONE`). Usually the start route is at fault: reset and re-record.
+   beside it. Every run with a UI test writes `target/ui-runs/latest.txt` (nothing to register): `STARTED`, a
+   `PASS`/`FAIL` line per test, `DONE`. Its STARTED line ends `run=<runId>` (unless `-Dswingui.journal=off`), and
+   `target/ui-runs/<runId>/steps/<Class>#<method>.jsonl` shows each step of a test with its outcome (a repeated or
+   parameterized test's invocation adds `[n]`; a recorded test run from JUnit is `<Class>#recorded[place-order].jsonl`).
+   Read the last lines of the failing test's file first. Usually the start route is at fault: reset and re-record.
 
 Report the file, the steps, the checks, the verify result, and the `Plugin gap:` lines (step 5 of "The app's own
 steps").

@@ -1178,7 +1178,7 @@ class UiMcpRecordingTest {
     }
 
     @Test
-    void exportWritesGroupsAndChecksNestedAndCommentsIntoJava() throws Exception {
+    void exportWritesGroupsAndChecksNestedAndSentencesIntoJava() throws Exception {
         Path tests = dir.resolve("tests");
         System.setProperty(UiMcpSession.TESTS_DIR_PROP, tests.toString());
         try {
@@ -1205,8 +1205,10 @@ class UiMcpRecordingTest {
             assertThat(java.path("steps").asInt()).isEqualTo(4);
             assertThat(java.path("checks").asInt()).isEqualTo(1);
             String source = new String(Files.readAllBytes(tests.resolve("demo/NestedUiIT.java")), StandardCharsets.UTF_8);
-            assertThat(source).contains("// The status is ok").contains("// Pick two").contains("// Open the second");
-            assertThat(source.indexOf("// Pick two")).isLessThan(source.indexOf("// Open the second"));
+            // a check's sentence stays a comment above it; a group's and a step's are ui.step sections
+            assertThat(source).contains("// The status is ok").contains("ui.step(\"Pick two\");")
+                    .contains("ui.step(\"Open the second\");").doesNotContain("// Pick two").doesNotContain("// Open the second");
+            assertThat(source.indexOf("ui.step(\"Pick two\")")).isLessThan(source.indexOf("ui.step(\"Open the second\")"));
         } finally {
             System.clearProperty(UiMcpSession.TESTS_DIR_PROP);
         }

@@ -74,23 +74,23 @@ Prefer the value where the row is data the test knows (an order number, a produc
 
 ## In a Java test
 
-Exporting the same recording as Java turns sentences into comments above the code they name, a group's sentence first:
+Exporting the same recording as Java turns each sentence into a `ui.step("…")` line above the code it names, a group's sentence first. Each one starts a part of the test's run journal. A check's sentence stays a comment above its assertion:
 
 ```java
     @Test
     void gelPenTotal(Client ui) {
-        // Start an order for Ada
-        // Open a new order
+        ui.step("Start an order for Ada");
+        ui.step("Open a new order");
         ui.menu("File", "New order");
 
-        // Enter the customer Ada
+        ui.step("Enter the customer Ada");
         ui.field("Customer").type("Ada");
         ui.press("Enter");
 
-        // Pick Gel pen, black in the product table
+        ui.step("Pick Gel pen, black in the product table");
         ui.table().row("Product", "Gel pen, black").cell("SKU").click();
 
-        // Add it to the cart
+        ui.step("Add it to the cart");
         ui.button("Add to cart").click();
         // The cart total is 1.44
         assertThat(ui.label("Total")).hasText("€1.44");
