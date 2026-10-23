@@ -269,7 +269,18 @@ class StepWordsTest {
         said("{\"action\":{\"x\":1}}", "Step");
         said("{\"action\":\"type\",\"target\":{\"role\":{\"a\":1},\"name\":[1]},\"text\":{\"a\":1}}", "Type (missing) into the main window");
         said("{\"action\":\"expect\",\"target\":{\"role\":\"table\",\"name\":\"Lines\"},\"rows\":\"3\"}",
-                "Check that Lines has 0 rows");
+                "Check that Lines has (missing) rows");
+        said("{\"action\":\"expect\",\"target\":{\"role\":\"table\",\"name\":\"Lines\"},\"rows\":{\"op\":\"gt\",\"value\":\"x\"}}",
+                "Check that Lines has more than (missing) rows");
+    }
+
+    @Test
+    void aValueOfOnlySpacesIsARealValueShownInQuotes() {
+        String customer = "\"target\":{\"role\":\"text\",\"name\":\"Customer\"}";
+        said("{\"action\":\"type\"," + customer + ",\"text\":\" \"}", "Type \" \" into Customer");
+        said("{\"action\":\"setClipboard\",\"text\":\"   \"}", "Put \"   \" on the clipboard");
+        said("{\"action\":\"expect\"," + customer + ",\"text\":\" \"}", "Check that Customer shows \" \"");
+        said("{\"action\":\"press\",\"keys\":\"\\n\"}", "Press \" \"");
     }
 
     @Test

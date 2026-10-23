@@ -163,9 +163,10 @@ public final class StepWords {
         if (s.has("state")) return head + where + " is " + states(strings(s.get("state")));
         if (s.has("rows")) {
             JsonNode rows = s.get("rows");
-            int n = rows.path("value").asInt();
+            JsonNode number = rows.path("value");
             String op = rows.path("op").asText("eq");
-            String count = n + (n == 1 ? " row" : " rows");
+            String count = !number.isNumber() ? "(missing) rows"
+                    : number.asLong() == 1 ? "1 row" : number.asLong() + " rows";
             String phrase;
             switch (op) {
                 case "gt": phrase = "has more than " + count; break;
@@ -370,13 +371,17 @@ public final class StepWords {
 
     /** A value a step must have: the value in a sentence, or the fixed word "(missing)" when it is absent or empty. */
     private static String req(String v) {
-        return v == null || v.trim().isEmpty() ? "(missing)" : value(v);
+        return v == null || v.isEmpty() ? "(missing)" : value(v);
     }
 
-    /** A value inside a sentence: one line, at most {@link #VALUE_CAP} characters. */
+    /**
+     * A value inside a sentence: one line, at most {@link #VALUE_CAP} characters; a value of only spaces is shown in
+     * double quotes, so it stays visible.
+     */
     private static String value(String v) {
         if (v == null) return "";
         String line = v.replaceAll("\\r\\n|\\r|\\n", " ");
+        if (!line.isEmpty() && line.trim().isEmpty() && line.length() <= VALUE_CAP) return "\"" + line + "\"";
         if (line.length() <= VALUE_CAP) return line;
         int end = VALUE_CAP;
         if (Character.isHighSurrogate(line.charAt(end - 1))) end--;
