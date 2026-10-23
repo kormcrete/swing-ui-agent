@@ -4,6 +4,9 @@ import io.github.kormcrete.swingui.agent.InJvmAgent;
 import io.github.kormcrete.swingui.client.AgentClient;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
+import io.github.kormcrete.swingui.journal.JournalSettings;
+import io.github.kormcrete.swingui.journal.RunFolder;
+import io.github.kormcrete.swingui.journal.TestJournal;
 import io.github.kormcrete.swingui.spi.AppHooks;
 import io.github.kormcrete.swingui.spi.AppInfo;
 import io.github.kormcrete.swingui.spi.PluginParts;
@@ -181,5 +184,33 @@ class UiRunTest {
     @Test
     void theEdtStackComesFromTheClient() {
         assertThat(new UiRun(client, "A#a (r1)").edtStack()).contains("AWT-EventQueue");
+    }
+
+    @Test
+    void aJournalWrapsTheVerbsAfterTheReset(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        RunFolder folder = RunFolder.of(dir, JournalSettings.defaults());
+        try {
+            TestJournal journal = folder.test("PlaceOrderUiIT#places");
+            UiRun run = new UiRun(client, "A#a (r1)", null, new Hooks());
+            Client ui = run.begin("alice", "r1", RunInfo.start(), journal, 2);
+            ui.button("Add to cart").click();
+            run.end();
+
+            assertThat(app.calls).containsExactly("reset alias:alice");
+            assertThat(ui.journal()).isSameAs(journal);
+            assertThat(ui.clientNumber()).isEqualTo(2);
+            assertThat(ui.timeout(java.time.Duration.ofSeconds(1)).journal()).isSameAs(journal);
+            assertThat(ui.timeout(java.time.Duration.ofSeconds(1)).clientNumber()).isEqualTo(2);
+            List<String> lines = Files.readAllLines(folder.create().resolve("steps/PlaceOrderUiIT#places.jsonl"),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(lines).hasSize(2);
+            assertThat(lines.get(0)).contains("\"kind\":\"test\"");
+            assertThat(lines.get(1)).contains("\"kind\":\"action\"").contains("Click Add to cart");
+            UiRun plain = new UiRun(client, "B#b (r2)", null, new Hooks());
+            assertThat(plain.begin(null, "r2").journal()).isNull();
+            plain.end();
+        } finally {
+            RunFolder.forget(dir);
+        }
     }
 }

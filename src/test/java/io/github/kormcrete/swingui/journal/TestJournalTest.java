@@ -215,6 +215,41 @@ class TestJournalTest {
     }
 
     @Test
+    void aTypedPasswordIsMaskedInEveryLaterLine() throws IOException {
+        RunFolder folder = folder();
+        TestJournal journal = folder.test("K#m");
+        StepCallVerbs.Sink sink = journal.sink(1);
+
+        StepCall typed = new StepCall(
+                "{\"action\":\"type\",\"target\":{\"role\":\"password\",\"name\":\"Password\"},\"text\":\"pa55word\"}", "type");
+        typed.passed = true;
+        sink.ended(typed, System.currentTimeMillis());
+        StepCall check = new StepCall("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},\"text\":\"€7.32\"}",
+                "expect");
+        check.message = "EXPECTATION: Total shows 'pa55word'";
+        check.reason = Reason.EXPECTATION;
+        sink.ended(check, System.currentTimeMillis());
+        journal.end("failed", "expect label 'Total': EXPECTATION: Total shows 'pa55word'", null);
+
+        Path file = folder.create().resolve("steps/K#m.jsonl");
+        assertThat(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)).doesNotContain("pa55word");
+        List<JsonNode> lines = lines(file);
+        assertThat(lines.get(1).path("text").asText()).isEqualTo("Type *** into Password");
+        assertThat(lines.get(2).path("message").asText()).isEqualTo("Total shows '***'");
+        assertThat(lines.get(3).path("message").asText()).isEqualTo("expect label 'Total': EXPECTATION: Total shows '***'");
+    }
+
+    @Test
+    void anEndMessageLosesItsReasonPrefix() throws IOException {
+        TestJournal journal = folder().test("K#m");
+
+        journal.end("failed", "NOT_FOUND: no button 'Place order'\n  nearest: button 'Place order…'", null);
+
+        JsonNode end = lines(folder().create().resolve("steps/K#m.jsonl")).get(1);
+        assertThat(end.path("message").asText()).isEqualTo("no button 'Place order'");
+    }
+
+    @Test
     void withTheJournalOffNothingIsWrittenButCheckpointNamesStillWork() {
         JournalSettings off = JournalSettings.from(key -> JournalSettings.JOURNAL.equals(key) ? Optional.of("OFF") : Optional.empty());
         RunFolder folder = RunFolder.of(runs, off);
@@ -319,6 +354,9 @@ class TestJournalTest {
                 .hasMessageContaining("'cart totals'").hasMessageContaining("A-Z a-z 0-9 . _ -");
         assertThat(twice).isInstanceOf(IllegalStateException.class)
                 .hasMessage("checkpoint name 'cart-totals' is used twice in K#m");
+        assertThat(catchThrowable(() -> journal.claimCheckpoint("Cart-Totals"))).isInstanceOf(IllegalStateException.class)
+                .hasMessage("checkpoint names 'cart-totals' and 'Cart-Totals' in K#m differ only in case,"
+                        + " which a disk may ignore: give them names that differ in letters");
         assertThat(catchThrowable(() -> journal.claimCheckpoint(".."))).isInstanceOf(IllegalArgumentException.class);
         assertThat(catchThrowable(() -> journal.claimCheckpoint(null))).isInstanceOf(IllegalArgumentException.class);
     }

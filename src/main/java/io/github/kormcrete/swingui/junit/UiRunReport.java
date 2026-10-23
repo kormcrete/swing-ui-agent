@@ -185,8 +185,7 @@ public final class UiRunReport implements TestExecutionListener {
     private static String name(TestIdentifier id) {
         if (id.getSource().isPresent() && id.getSource().get() instanceof MethodSource) {
             MethodSource m = (MethodSource) id.getSource().get();
-            String cls = m.getClassName();
-            return cls.substring(cls.lastIndexOf('.') + 1) + "#" + m.getMethodName();
+            return TestNames.of(m.getClassName(), m.getMethodName(), id.getUniqueId());
         }
         return id.getDisplayName();
     }

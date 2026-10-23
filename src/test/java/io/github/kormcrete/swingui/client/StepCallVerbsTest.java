@@ -4,6 +4,7 @@ import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.StepCall;
+import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.junit.ClientApp;
 import io.github.kormcrete.swingui.testing.RecordingVerbs;
@@ -88,6 +89,42 @@ class StepCallVerbsTest {
 
         assertThat(thrown).isSameAs(failure);
         assertThat(verbs.calls).hasSize(2);
+    }
+
+    @Test
+    void aSinkThatThrowsAnAssertionErrorNeverHidesTheStep() {
+        StepCallVerbs kept = new StepCallVerbs(verbs, new StepCallVerbs.Sink() {
+            @Override public void ended(StepCall call, long startedAtMillis) {
+                throw new AssertionError("the journal broke");
+            }
+        });
+
+        VerbOutcome out = kept.click(Locator.of("button", "Add to cart"), null, null, null, null);
+        DriverException failure = new DriverException(Reason.NOT_FOUND, "no button 'Place order'");
+        verbs.failNext = failure;
+        Throwable thrown = catchThrowable(() -> kept.click(Locator.of("button", "Place order"), null, null, null, null));
+
+        assertThat(out).isSameAs(verbs.outcome);
+        assertThat(thrown).isSameAs(failure);
+    }
+
+    @Test
+    void aSinkWhoseSecretThrowsStillGetsTheStepMasked() {
+        StepCallVerbs kept = new StepCallVerbs(verbs, new StepCallVerbs.Sink() {
+            @Override public void ended(StepCall call, long startedAtMillis) {
+                ended.add(call);
+            }
+            @Override public void secret(String value) {
+                throw new IllegalStateException("the journal broke");
+            }
+        });
+
+        String read = kept.app(app).secret("ada", "pin");
+        kept.type(Locator.of("text", "PIN"), read, null, null, null);
+
+        assertThat(read).isEqualTo("s3cret-pin");
+        assertThat(ended).hasSize(1);
+        assertThat(ended.get(0).json).doesNotContain("s3cret-pin").contains("***");
     }
 
     @Test

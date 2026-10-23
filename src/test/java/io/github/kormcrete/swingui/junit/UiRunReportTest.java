@@ -5,6 +5,7 @@ import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.testing.FixtureClassCondition;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -57,6 +58,13 @@ class UiRunReportTest {
     static class Mixed {
         @Test void passes() { }
         @Test void noMessage() { throw new IllegalStateException(); }
+    }
+
+    @FixtureClass
+    @Tag("ui")
+    static class Repeated {
+        @Test void opens() { }
+        @RepeatedTest(2) void places() { }
     }
 
     @FixtureClass
@@ -166,6 +174,15 @@ class UiRunReportTest {
             }
             assertThat(loaded).hasSize(1);
         }
+    }
+
+    @Test
+    void eachInvocationOfARepeatedTestIsNamedWithItsIndex(@TempDir Path dir) throws Exception {
+        List<String> lines = run(dir, Repeated.class);
+
+        assertThat(lines).anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#opens "))
+                .anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#places[1] "))
+                .anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#places[2] "));
     }
 
     @Test

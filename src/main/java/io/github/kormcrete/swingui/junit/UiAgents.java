@@ -19,6 +19,8 @@ final class UiAgents {
     private final String host;
     private final int port;
     private AgentClient agent;
+    /** The session info {@link #shared} checked; null until then, and for an agent a test made itself. */
+    private SessionInfo info;
     private RuntimeException broken;
     private long readyWaitMs = READY_WAIT_MS;
 
@@ -42,6 +44,9 @@ final class UiAgents {
     String host() { return host; }
     int port() { return port; }
     String where() { return host + ":" + port; }
+
+    /** The session info {@link #shared} checked; null before that, and for an agent a test made itself. */
+    synchronized SessionInfo info() { return info; }
 
     /** A guard's failure, prefixed with the agent it is about: with several clients the message must say which. */
     static IllegalStateException prefix(String where, IllegalStateException e) {
@@ -67,6 +72,7 @@ final class UiAgents {
                 throw prefix(where(), e);
             }
             System.out.println("[ui] " + where() + " " + info.headline());
+            this.info = info;
             agent = a;
             return a;
         } catch (RuntimeException e) {

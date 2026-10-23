@@ -3,9 +3,11 @@ package io.github.kormcrete.swingui.junit;
 import io.github.kormcrete.swingui.client.AgentClient;
 import io.github.kormcrete.swingui.client.RemoteApp;
 import io.github.kormcrete.swingui.client.RemoteVerbs;
+import io.github.kormcrete.swingui.client.StepCallVerbs;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.journal.TestJournal;
 
 import java.nio.file.Path;
 
@@ -71,6 +73,14 @@ final class UiRun {
 
     /** Leases, resets as {@code alias} and binds a Client; {@code run}: the run values of its test, shared by its clients. */
     Client begin(String alias, String runId, RunInfo run) {
+        return begin(alias, runId, run, null, 0);
+    }
+
+    /**
+     * {@link #begin(String, String, RunInfo)} for client {@code client} (1-based) of a test with {@code journal}: while
+     * its steps journal is on, each step and app step after the reset goes to it as it ends (the reset is no step).
+     */
+    Client begin(String alias, String runId, RunInfo run, TestJournal journal, int client) {
         final String token = lease().get("token").asText();
         leased = agent.withLease(token);
         hook = releaseOnExit(token);
@@ -83,7 +93,11 @@ final class UiRun {
         heartbeat.start();
         if (alias == null) leased.callJson("session", leased.args().put("op", "reset"));
         else leased.callJson("session", leased.args().put("op", "reset").put("alias", alias));
-        return new Client(new RemoteVerbs(leased), new RemoteApp(leased), runId, screenshotDir, run);
+        if (journal != null && journal.stepsOn()) {
+            StepCallVerbs kept = new StepCallVerbs(new RemoteVerbs(leased), journal.sink(client));
+            return new Client(kept, kept.app(new RemoteApp(leased)), runId, screenshotDir, run, journal, client);
+        }
+        return new Client(new RemoteVerbs(leased), new RemoteApp(leased), runId, screenshotDir, run, journal, client);
     }
 
     /**

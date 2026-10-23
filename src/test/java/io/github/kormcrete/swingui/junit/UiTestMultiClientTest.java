@@ -3,7 +3,10 @@ package io.github.kormcrete.swingui.junit;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.agent.InJvmAgent;
 import io.github.kormcrete.swingui.client.AgentClient;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.spi.AppHooks;
 import io.github.kormcrete.swingui.spi.AppInfo;
 import io.github.kormcrete.swingui.spi.PluginParts;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
@@ -23,6 +27,7 @@ import org.junit.platform.launcher.core.LauncherFactory;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -48,11 +53,12 @@ class UiTestMultiClientTest {
 
     static final List<String> EVENTS = Collections.synchronizedList(new ArrayList<String>());
     static volatile UiPool poolUnderTest;
+    static volatile Path runsUnderTest;
     static volatile Client seenX, seenY, seenBefore, seenAfter;
 
     @FixtureClass
     static class TwoClients {
-        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest);
+        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest, cls -> runsUnderTest);
 
         @BeforeEach void before(Client ui) { seenBefore = ui; }
 
@@ -67,7 +73,7 @@ class UiTestMultiClientTest {
 
     @FixtureClass
     static class TwoClientsFailing {
-        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest);
+        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest, cls -> runsUnderTest);
 
         @Test void fails(@As("user1") Client x, @As("user2") Client y) {
             throw new AssertionError("on purpose");
@@ -76,17 +82,27 @@ class UiTestMultiClientTest {
 
     @FixtureClass
     static class AfterEachUnknownAlias {
-        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest);
+        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest, cls -> runsUnderTest);
 
         @Test void runs(@As("user1") Client x, @As("user2") Client y) { }
 
         @AfterEach void after(@As("nobody") Client ui) { }
     }
 
+    @FixtureClass
+    static class TwoClientsClick {
+        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest, cls -> runsUnderTest);
+
+        @Test void both(@As("user1") Client x, @As("user2") Client y) {
+            x.button("Add to cart").click();
+            y.button("Place order").click();
+        }
+    }
+
     /** Leaves a warning on each client, so afterEach prints before it ends the runs and releases the pool. */
     @FixtureClass
     static class TwoClientsWithWarnings {
-        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest);
+        @RegisterExtension static final UiTestExtension EXT = new UiTestExtension(c -> poolUnderTest, cls -> runsUnderTest);
 
         @Test void warns(@As("user1") Client x, @As("user2") Client y) {
             x.warn("first");
@@ -95,6 +111,7 @@ class UiTestMultiClientTest {
     }
 
     private InJvmAgent a, b;
+    @TempDir Path tmp;
     private AgentClient ca, cb;
 
     /** Stands in for an app until the agents' ports are known; then it delegates to the one for its port. */
@@ -119,6 +136,7 @@ class UiTestMultiClientTest {
         ca = new AgentClient("127.0.0.1", aFirst ? a.port() : b.port());
         cb = new AgentClient("127.0.0.1", aFirst ? b.port() : a.port());
         poolUnderTest = UiPool.of(ca, cb);
+        runsUnderTest = tmp.resolve("ui-runs");
         EVENTS.clear();
         seenX = seenY = seenBefore = seenAfter = null;
     }
@@ -126,6 +144,7 @@ class UiTestMultiClientTest {
     private void stopTwo() {
         a.stop();
         b.stop();
+        RunFolder.forget(runsUnderTest);
     }
 
     private static List<Throwable> launch(Class<?> fixture) {
@@ -299,6 +318,43 @@ class UiTestMultiClientTest {
         } finally {
             System.setOut(realOut);
             if (waitBefore == null) System.clearProperty(UiRun.LEASE_WAIT_PROPERTY); else System.setProperty(UiRun.LEASE_WAIT_PROPERTY, waitBefore);
+            stopTwo();
+        }
+    }
+
+    @Test
+    void bothClientsWriteOneFileAndEachLineSaysWhichClient() throws IOException {
+        startTwo(new NamedApp("low"), new NamedApp("high"));
+        try {
+            assertThat(launch(TwoClientsClick.class)).isEmpty();
+
+            String id = new String(Files.readAllBytes(runsUnderTest.resolve("latest-run.txt")), StandardCharsets.UTF_8).trim();
+            Path steps = runsUnderTest.resolve(id).resolve("steps");
+            List<String> files;
+            try (Stream<Path> list = Files.list(steps)) {
+                files = list.map(p -> p.getFileName().toString()).collect(Collectors.toList());
+            }
+            assertThat(files).containsExactly("UiTestMultiClientTest$TwoClientsClick#both.jsonl");
+            ObjectMapper json = new ObjectMapper();
+            List<JsonNode> lines = new ArrayList<JsonNode>();
+            for (String l : Files.readAllLines(steps.resolve(files.get(0)), StandardCharsets.UTF_8)) lines.add(json.readTree(l));
+
+            assertThat(lines).hasSize(4);
+            JsonNode clients = lines.get(0).path("clients");
+            assertThat(clients).hasSize(2);
+            assertThat(clients.get(0).path("client").asInt()).isEqualTo(1);
+            assertThat(clients.get(0).path("alias").asText()).isEqualTo("user1");
+            assertThat(clients.get(0).path("agent").asText()).isEqualTo("in-jvm:0");
+            assertThat(clients.get(1).path("client").asInt()).isEqualTo(2);
+            assertThat(clients.get(1).path("alias").asText()).isEqualTo("user2");
+            assertThat(clients.get(1).path("agent").asText()).isEqualTo("in-jvm:1");
+            assertThat(lines.get(1).path("client").asInt()).isEqualTo(1);
+            assertThat(lines.get(1).path("text").asText()).isEqualTo("Click Add to cart");
+            assertThat(lines.get(2).path("client").asInt()).isEqualTo(2);
+            assertThat(lines.get(2).path("text").asText()).isEqualTo("Click Place order");
+            assertThat(lines.get(3).path("kind").asText()).isEqualTo("end");
+            assertThat(lines.get(3).has("client")).isFalse();
+        } finally {
             stopTwo();
         }
     }

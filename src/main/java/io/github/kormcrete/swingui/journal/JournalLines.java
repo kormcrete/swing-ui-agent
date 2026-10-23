@@ -240,6 +240,7 @@ public final class JournalLines {
     /** Enough of a read's value for a sentence, which cuts it again. */
     private static String shortText(Object value) {
         if (value == null) return null;
+        if (value instanceof Object[]) return shortText(Arrays.asList((Object[]) value));
         if (value instanceof Collection) {
             StringBuilder sb = new StringBuilder();
             for (Object e : (Collection<?>) value) {

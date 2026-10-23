@@ -22,12 +22,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -50,7 +49,8 @@ public final class TestJournal {
     private final long startedAt = System.currentTimeMillis();
     /** Secrets, longest first; shared with this journal's children. */
     private final List<String> secrets;
-    private final Set<String> checkpoints = new HashSet<String>();
+    /** The checkpoint names claimed, by their lower case form (a disk may ignore case). */
+    private final Map<String, String> checkpoints = new HashMap<String, String>();
     private volatile List<ObjectNode> clients = Collections.emptyList();
     /** The file name base, taken from the folder on first need. */
     private String base;
@@ -78,7 +78,11 @@ public final class TestJournal {
         return !discarded && folder.stepsOn();
     }
 
-    /** The clients the test line lists; with more than one, each line says which one it came from. */
+    /**
+     * The clients the test line lists; with more than one, each line says which one it came from. Set them before any
+     * line is written and before {@link #child} is called: the test line is written with the first line, and a child
+     * keeps the list it was made with.
+     */
     public void clients(List<ObjectNode> clients) {
         this.clients = clients == null ? Collections.<ObjectNode>emptyList() : new ArrayList<ObjectNode>(clients);
     }
@@ -129,6 +133,8 @@ public final class TestJournal {
                 } catch (IOException | RuntimeException unreadable) {
                     step = NODES.objectNode().put("action", call.action);
                 }
+                String password = typedPassword(step);
+                if (password != null) secret(password);   // later lines (a check, the end) must not echo it either
                 String message = call.reason == null ? call.message : DriverException.stripReason(call.message, call.reason);
                 append(JournalLines.step(step, call.passed, message, call.reason == null ? null : call.reason.name(),
                         call.ms, startedAtMillis), client);
@@ -138,6 +144,14 @@ public final class TestJournal {
                 TestJournal.this.secret(value);
             }
         };
+    }
+
+    /** The text a {@code type} step types into a {@code password} target; null for any other step or a masked text. */
+    private static String typedPassword(JsonNode step) {
+        if (!"type".equals(step.path("action").asText(null))) return null;
+        if (!"password".equals(step.path("target").path("role").asText(null))) return null;
+        String text = step.path("text").asText(null);
+        return text == null || text.isEmpty() || JournalLines.MASK.equals(text) ? null : text;
     }
 
     /** A line that starts a section of the test, named by its author. */
@@ -160,7 +174,7 @@ public final class TestJournal {
 
     /**
      * The last line: {@code outcome} is {@code passed}, {@code failed} or {@code aborted}; {@code message} (its first
-     * line) and {@code evidence} only when given.
+     * line, without a leading {@code REASON: } of a driver failure) and {@code evidence} only when given.
      */
     public void end(String outcome, String message, String evidence) {
         if (!stepsOn()) return;
@@ -170,9 +184,17 @@ public final class TestJournal {
         line.put("kind", "end");
         line.put("outcome", outcome);
         line.put("ms", Math.max(0, now - startedAt));
-        if (message != null) line.put("message", message.split("\\r\\n|\\r|\\n", 2)[0]);
+        if (message != null) line.put("message", withoutReason(message.split("\\r\\n|\\r|\\n", 2)[0]));
         if (evidence != null) line.put("evidence", evidence);
         append(line, 0);
+    }
+
+    /** {@code message} without the {@code REASON: } a driver failure starts with. */
+    private static String withoutReason(String message) {
+        for (Reason r : Reason.values()) {
+            if (message.startsWith(r.name() + ": ")) return DriverException.stripReason(message, r);
+        }
+        return message;
     }
 
     /**
@@ -218,8 +240,14 @@ public final class TestJournal {
             throw new IllegalArgumentException("checkpoint name '" + name + "' may use only A-Z a-z 0-9 . _ - (not . or ..)");
         }
         synchronized (checkpoints) {
-            if (!checkpoints.add(name.toLowerCase(Locale.ROOT))) {
+            String before = checkpoints.get(name.toLowerCase(Locale.ROOT));
+            if (before == null) {
+                checkpoints.put(name.toLowerCase(Locale.ROOT), name);
+            } else if (before.equals(name)) {
                 throw new IllegalStateException("checkpoint name '" + name + "' is used twice in " + test);
+            } else {
+                throw new IllegalStateException("checkpoint names '" + before + "' and '" + name + "' in " + test
+                        + " differ only in case, which a disk may ignore: give them names that differ in letters");
             }
         }
     }

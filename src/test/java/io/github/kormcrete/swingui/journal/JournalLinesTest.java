@@ -172,6 +172,11 @@ class JournalLinesTest {
                 .isEqualTo(3);
         assertThat(JournalLines.read("columns", Locator.of("table", "Lines"), Arrays.asList("Product", "Qty"), true, null, 1, AT)
                 .path("value")).isEqualTo(json("[\"Product\",\"Qty\"]"));
+        assertThat(JournalLines.read("columns", Locator.of("table", "Lines"), new String[] {"Product", "Qty"}, true, null, 1, AT)
+                .path("text").asText())
+                .isEqualTo(JournalLines.read("columns", Locator.of("table", "Lines"), Arrays.asList("Product", "Qty"), true, null, 1, AT)
+                        .path("text").asText())
+                .contains("Product, Qty");
         assertThat(JournalLines.read("bounds", Locator.of("table", "Lines"), new StringBuilder("10,20"), true, null, 1, AT)
                 .path("value").asText()).isEqualTo("10,20");
 

@@ -1,6 +1,12 @@
 package io.github.kormcrete.swingui.junit;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.kormcrete.swingui.client.AgentClient;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.journal.RunFolder;
+import io.github.kormcrete.swingui.journal.RunIds;
+import io.github.kormcrete.swingui.journal.TestJournal;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
@@ -10,33 +16,41 @@ import org.junit.jupiter.api.extension.TestExecutionExceptionHandler;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
  * Binds {@link Client}s to running apps: one per Client parameter of the test method, each leased,
  * reset and bound; all released after the test. A failure writes evidence (tree, screenshot, the client's EDT stack
  * on a timeout) under the test module's target/ui-failures, one {@code client-N} folder per client when there are
- * several.
+ * several. Each test's steps and checks go to its run journal under the test module's target/ui-runs
+ * ({@link TestJournal}), from the first step after the reset to an {@code end} line saying how the test went; the
+ * journal never fails a test.
  */
 public final class UiTestExtension implements ParameterResolver, TestExecutionExceptionHandler, AfterEachCallback {
 
     private static final ExtensionContext.Namespace NS = ExtensionContext.Namespace.create(UiTestExtension.class);
-    private static final String JVM_RUN = runId();
+    /** One warning per JVM when not even a run folder can be had for the journal. */
+    private static final AtomicBoolean NO_FOLDER_WARNED = new AtomicBoolean();
 
-    private final java.util.function.Function<ExtensionContext, UiPool> pools;
+    private final Function<ExtensionContext, UiPool> pools;
+    private final Function<Class<?>, Path> runsDir;
 
     public UiTestExtension() {
-        this(c -> UiPool.forSpec(c.getConfigurationParameter(UiPool.AGENTS_PARAMETER).orElse(UiPool.defaultSpec())));
+        this(c -> UiPool.forSpec(c.getConfigurationParameter(UiPool.AGENTS_PARAMETER).orElse(UiPool.defaultSpec())),
+                UiTestExtension::runsRoot);
     }
 
-    /** The pool each test reserves from; tests pass {@link UiPool#of} over in-JVM agents. */
-    UiTestExtension(java.util.function.Function<ExtensionContext, UiPool> pools) {
+    /**
+     * The pool each test reserves from (tests pass {@link UiPool#of} over in-JVM agents) and the ui-runs directory of
+     * a test class, where its run journal goes.
+     */
+    UiTestExtension(Function<ExtensionContext, UiPool> pools, Function<Class<?>, Path> runsDir) {
         this.pools = pools;
+        this.runsDir = runsDir;
     }
 
     @Override
@@ -72,12 +86,16 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             List<UiAgents> reserved = pool.reserve(aliases.size(), owner(c));
             store.put("pool", pool);
             store.put("reserved", reserved);
+            List<AgentClient> agents = new ArrayList<AgentClient>();
+            for (UiAgents a : reserved) agents.add(a.shared());   // checked first: the journal names what they said
+            TestJournal journal = journal(c, aliases, reserved);
+            if (journal != null) store.put("journal", journal);
             List<Client> clients = new ArrayList<Client>();
             RunInfo values = RunInfo.start();   // one ${run.id} for the test method, whichever client uses it
             for (int i = 0; i < reserved.size(); i++) {   // ascending port order
-                UiRun run = new UiRun(reserved.get(i).shared(), owner(c), screenshotRoot(c.getRequiredTestClass()));
+                UiRun run = new UiRun(agents.get(i), owner(c), screenshotRoot(c.getRequiredTestClass()));
                 runs.add(run);
-                clients.add(run.begin(aliases.get(i), runId(), values));   // its own runId
+                clients.add(run.begin(aliases.get(i), RunIds.next(), values, journal, i + 1));   // its own runId
             }
             store.put("clients", clients);
             return clients;
@@ -88,6 +106,62 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             store.put("beginFailure", failure);
             throw failure;
         }
+    }
+
+    /**
+     * The test's run journal, its clients listed; null when not even a run folder can be had. Never throws: a failure
+     * turns the run's journal off with one warning, the test goes on.
+     */
+    private TestJournal journal(ExtensionContext c, List<String> aliases, List<UiAgents> reserved) {
+        RunFolder folder = null;
+        try {
+            folder = RunFolder.of(runsDir.apply(c.getRequiredTestClass()), c::getConfigurationParameter);
+            finishWithTheEngine(c, folder);
+            TestJournal journal = folder.test(TestNames.of(c));
+            List<ObjectNode> clients = new ArrayList<ObjectNode>();
+            for (int i = 0; i < reserved.size(); i++) clients.add(client(i + 1, reserved.get(i), aliases.get(i), folder));
+            // before any line is written: the test line lists them, and a child journal copies them when made
+            journal.clients(clients);
+            for (ObjectNode client : clients) {
+                ObjectNode seen = client.deepCopy();
+                seen.remove("client");   // a client's number belongs to its test, not to the run
+                folder.client(seen);
+            }
+            return journal;
+        } catch (RuntimeException e) {
+            if (folder != null) folder.broken(e);
+            else if (NO_FOLDER_WARNED.compareAndSet(false, true)) {
+                System.err.println("[ui-warning] run journal off for this run: " + e);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * One client of a test as its journal lists it: number, agent address, alias, and what the agent said of itself and
+     * its app, each only when known (an agent a test made itself says nothing). The app version a run names beats
+     * the app's own.
+     */
+    private static ObjectNode client(int number, UiAgents agent, String alias, RunFolder folder) {
+        SessionInfo info = agent.info();
+        ObjectNode client = JsonNodeFactory.instance.objectNode();
+        client.put("client", number);
+        client.put("agent", agent.where());
+        if (alias != null) client.put("alias", alias);
+        if (info != null && info.agentVersion != null) client.put("agentVersion", info.agentVersion);
+        ObjectNode app = client.putObject("app");
+        if (info != null && info.appName != null) app.put("name", info.appName);
+        String version = folder.appVersionResolved();
+        if (version == null && info != null) version = info.appVersion;
+        if (version != null) app.put("version", version);
+        return client;
+    }
+
+    /** {@code folder}'s run.json gets {@code finished} when the engine ends (a run report, when one runs, adds the counts). */
+    private static void finishWithTheEngine(ExtensionContext c, final RunFolder folder) {
+        c.getRoot().getStore(NS).getOrComputeIfAbsent(folder,
+                k -> (ExtensionContext.Store.CloseableResource) () -> folder.finish(null),
+                ExtensionContext.Store.CloseableResource.class);
     }
 
     /** One alias per client, in test-method order: @As, else the test's @LoginAs (null: the default user). */
@@ -134,10 +208,14 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
         throw t;
     }
 
-    /** Warnings, then every run ended (last first), then the pool released: each step runs even if one before it threw. */
+    /**
+     * The journal's end line, then warnings, then every run ended (last first), then the pool released: each step runs
+     * even if one before it threw.
+     */
     @Override
     public void afterEach(ExtensionContext c) {
         ExtensionContext.Store store = c.getStore(NS);
+        endJournal(c, store);
         try {
             try {
                 @SuppressWarnings("unchecked")
@@ -161,6 +239,30 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             List<UiAgents> reserved = store.get("reserved", List.class);
             if (pool != null) pool.release(reserved);
         }
+    }
+
+    /** The journal's last line: passed, aborted, or failed with the failure's first line and the evidence folder. */
+    private static void endJournal(ExtensionContext c, ExtensionContext.Store store) {
+        try {
+            TestJournal journal = store.get("journal", TestJournal.class);
+            if (journal == null) return;
+            Throwable t = c.getExecutionException().orElse(null);
+            if (t == null) {
+                journal.end("passed", null, null);
+            } else if (t instanceof org.opentest4j.TestAbortedException) {
+                journal.end("aborted", message(t), null);
+            } else {
+                Path evidence = store.get("evidence", Path.class);
+                journal.end("failed", message(t), evidence == null ? null : evidence.toAbsolutePath().toString());
+            }
+        } catch (RuntimeException e) {
+            // the journal is a bystander: it never fails a test
+        }
+    }
+
+    /** The failure's message, else its simple class name: never the word null. */
+    private static String message(Throwable t) {
+        return t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
     }
 
     /** Ends each run, last first; one that throws does not keep the others leased. Rethrows the first failure. */
@@ -238,6 +340,11 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
         return ModuleTarget.of(testClass).resolve("ui-failures");
     }
 
+    /** The test module's target/ui-runs: where the run folders and their journals go. */
+    static Path runsRoot(Class<?> testClass) {
+        return ModuleTarget.of(testClass).resolve("ui-runs");
+    }
+
     /** The test module's target/ui-screenshots: where {@link Client#saveScreenshot} puts a relative path. */
     static Path screenshotRoot(Class<?> testClass) {
         return ModuleTarget.of(testClass).resolve("ui-screenshots");
@@ -252,12 +359,7 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
 
     static String owner(ExtensionContext c) {
         return c.getRequiredTestClass().getSimpleName() + "#" + c.getTestMethod().map(Method::getName).orElse("class")
-                + " (" + JVM_RUN + ")";
-    }
-
-    static String runId() {
-        return "UIT-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date())
-                + "-" + String.format("%04x", ThreadLocalRandom.current().nextInt(0x10000));
+                + " (" + RunIds.JVM + ")";
     }
 
     /** Carries the evidence path in a failure's suppressed list; no stack of its own. */

@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.junit;
 
 import io.github.kormcrete.swingui.agent.InJvmAgent;
 import io.github.kormcrete.swingui.client.AgentClient;
+import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.testing.RecordingVerbs;
 import org.junit.jupiter.api.DynamicTest;
@@ -31,11 +32,12 @@ class RecordedTestsTest {
 
     static volatile AgentClient agentUnderTest;
     static volatile Path folder;
+    static volatile Path runs;
 
     @FixtureClass
     static class Recorded {
         @RegisterExtension
-        static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest));
+        static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runs);
 
         @TestFactory
         Stream<DynamicTest> recorded(Client ui) {
@@ -59,6 +61,7 @@ class RecordedTestsTest {
         try {
             agentUnderTest = new AgentClient("127.0.0.1", agent.port());
             folder = dir;
+            runs = dir.resolve("ui-runs");
             SummaryGeneratingListener listener = new SummaryGeneratingListener();
             LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
                     .selectors(selectClass(Recorded.class)).configurationParameter("swingui.fixtures", "run").build(),
@@ -66,6 +69,7 @@ class RecordedTestsTest {
             return listener.getSummary();
         } finally {
             agentUnderTest = null;
+            RunFolder.forget(runs);
             agent.stop();
         }
     }

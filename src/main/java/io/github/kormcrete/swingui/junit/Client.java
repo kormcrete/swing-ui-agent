@@ -8,6 +8,7 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.UiUsers;
+import io.github.kormcrete.swingui.journal.TestJournal;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -39,6 +40,10 @@ public final class Client {
     private final RunInfo run;
     /** The {@link #outcomeOf} running now, shared with the clients {@link #timeout} makes; null when none. */
     private final AtomicReference<Capture> capture;
+    /** The run journal of this client's test; null for a Client built directly. */
+    private final TestJournal journal;
+    /** This client's number in its test (1-based); 0 for a Client built directly. */
+    private final int client;
 
     /** One {@link #outcomeOf}: its thread, how many actions it saw, what the one action changed. */
     private static final class Capture {
@@ -58,12 +63,20 @@ public final class Client {
 
     /** {@code run}: the run values of the test this client belongs to, shared by all its clients. */
     Client(Verbs verbs, ClientApp app, String runId, Path screenshotDir, RunInfo run) {
+        this(verbs, app, runId, screenshotDir, run, null, 0);
+    }
+
+    /**
+     * {@code journal}: the run journal of the test this client belongs to (null: none), {@code client} its number there
+     * (1-based; 0 with no journal).
+     */
+    Client(Verbs verbs, ClientApp app, String runId, Path screenshotDir, RunInfo run, TestJournal journal, int client) {
         this(verbs, app, runId, null, new ArrayList<String>(), screenshotDir == null ? SCREENSHOT_DIR : screenshotDir,
-                run, new AtomicReference<Capture>());
+                run, new AtomicReference<Capture>(), journal, client);
     }
 
     private Client(Verbs verbs, ClientApp app, String runId, Long timeoutMillis, List<String> warnings, Path screenshotDir,
-                   RunInfo run, AtomicReference<Capture> capture) {
+                   RunInfo run, AtomicReference<Capture> capture, TestJournal journal, int client) {
         this.verbs = verbs;
         this.app = app;
         this.runId = runId;
@@ -72,6 +85,8 @@ public final class Client {
         this.screenshotDir = screenshotDir;
         this.run = run;
         this.capture = capture;
+        this.journal = journal;
+        this.client = client;
     }
 
     /** Unique per test, e.g. {@code UIT-20260928-141503-a3f9}: name what the test creates with it. */
@@ -124,8 +139,14 @@ public final class Client {
 
     /** The same client with another wait for its actions and assertions, and those of the targets made from it. */
     public Client timeout(Duration d) {
-        return new Client(verbs, app, runId, Target.millis(d), warnings, screenshotDir, run, capture);
+        return new Client(verbs, app, runId, Target.millis(d), warnings, screenshotDir, run, capture, journal, client);
     }
+
+    /** The run journal of this client's test; null for a Client built directly. */
+    TestJournal journal() { return journal; }
+
+    /** This client's number in its test (1-based), as its journal lines say; 0 for a Client built directly. */
+    int clientNumber() { return client; }
 
     /** The app's typed hooks: an interface the app's plugin registers, e.g. {@code ui.hooks(MyAppHooks.class).openTabTitles()}. */
     public <T> T hooks(Class<T> type) {
