@@ -47,49 +47,70 @@ An app plugin may offer a vocabulary: the app's own steps and checks, each a sen
 
 1. **Read the vocabulary once.** If the dispatch gives you the vocabulary list, use it. Otherwise call
    `$UI vocabulary '{"op":"list"}'` once, before any call that drives or reads the app. An empty list (with a hint)
-   means no steps: work as in step 4 for everything. `$UI vocabulary '{"op":"describe","step":"addToCart"}'` shows
+   means no steps: work as in step 5 for everything. `$UI vocabulary '{"op":"describe","step":"addToCart"}'` shows
    a step's `choices` (the values that fit right now): call it only for a param you must choose.
 2. **Map the whole item to steps and checks**, the checks included: each action to an `act` step, each check to a
    `check` step, with concrete values: the app's exact names. A word that is not one ("the gel pens", "A4 paper")
    is resolved with `describe`'s `choices` before the batch: `Gel pen, black` when that is the only choice that
    fits; when two fit, report it, do not pick. Never stretch a step to do something else.
-3. **Run the item as ONE `batch`**: `{"verb":"do","step":<id>,"params":{...}}` per step, each check where it belongs.
+   Search the whole list for every part before you call it uncovered, and read each step's `about`. Questions,
+   confirmations, messages, notes, About boxes and saved files often have steps of their own: an `act` step that
+   asks and answers ("Ask to cancel the orders {orders}, then keep them"), a `check` that reads the text ("The exit
+   question reads {message}"). `about` says what a step `Needs:` before it runs, where it `Ends:`, and the texts
+   the app shows ("e.g. …").
+3. **Run the item as ONE `batch`**: the steps that get there, the action, the checks, and the steps that put the
+   screen back where the item began (cancel the dialog, close the tab), in that order. Chain them by `about`: each
+   step's `Needs:` is where the step before it `Ends:`. `{"verb":"do","step":<id>,"params":{...}}` per step:
    ```sh
    $UI batch '{"steps":[
      {"verb":"do","step":"openNewOrder","params":{"customer":"Ada Shop Ltd"}},
      {"verb":"do","step":"addQtyToCart","params":{"product":"A4 paper, 500 sheets","qty":3}},
      {"verb":"do","step":"addQtyToCart","params":{"product":"Gel pen, black","qty":10}},
+     {"verb":"do","step":"cartAmountIs","params":{"amount":"Volume discount","value":"−€0.60"}},
      {"verb":"do","step":"cartTotalIs","params":{"total":"€31.32"}},
-     {"verb":"expect","target":{"scope":["tab:New order*"],"role":"label","name":"Volume discount"},"text":"−€0.60"}]}'
+     {"verb":"do","step":"closeTab"}]}'
    ```
-   A value a step makes (a new order number) comes back in the same call: put `"outcome":true` on that step, no read
-   afterwards. Make a second call only when a later step needs that value; type the value you got (the recorder
-   links it).
-4. **Only for what no step covers**: plain steps (verbs, `expect`) in the same batch when you know the target, else
-   find it first with scoped reads (below). Never refuse a part because no step covers it. Tell the tester in one
+   Make a second call only when the first stopped at a step that did not pass, or when a later step needs a value
+   an earlier one makes (a new order number): put `"outcome":true` on that step, then type the value you got (the
+   recorder links it). The second call carries everything left, the closing steps too; never a third for them.
+4. **Keep the batch going.**
+   - **A value you are asked to tell** (a message, a reason, a count) and do not know: run the check that reads it
+     with the text you expect, from the request or the check's `about`. When it passes, that is the answer. When
+     it fails, its `message` says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"):
+     report that text, then finish the rest in one more call.
+   - **Something the app should refuse** (cancel a shipped order, choose a delivery it does not offer): run the
+     check that reads the refusal (a button disabled, with its reason) instead of the act step that would fail;
+     the batch goes on. When an act step fails all the same, its `message` is the app's reason: report it.
+5. **Only for what no step covers**: plain steps (verbs, `expect`) in the same batch when you know the target, else
+   find it first with a scoped `read` (below). Never refuse a part because no step covers it. Tell the tester in one
    line which part the plugin lacked, in this form:
    `Plugin gap: no step or check for <the part, in the tester's words>; done step by step instead.`
    It is a note, not a GAP: the item still passes or fails on what the app did.
+
+**No snapshot** to find the way or to report a result: not the `snapshot` tool, not a batch's `"snapshot"` option,
+not a `snapshot` step. The batch's step results (`passed`, `message`, `outcome`) and the checks are the report. A
+snapshot is the last resort, for a part no step covers whose target no `read` finds, and each one gets its own
+`Plugin gap:` line.
 
 A `do` step that does not pass is the app's answer like any step: report its `message` (and `recordedPartNote`,
 which says how far it got).
 
 ## Driving rules
 
-- **Scope every read** (for what no step covers). Never an unscoped `snapshot`: it is the whole app and costs
-  thousands of tokens. Use `snapshot {"target":<locator>,"depth":2-4,"compact":true}` or `{"window":"dialog"}`,
-  `read {"target":...}` for one element, `expect` for a yes/no. With a plugin, `describe_ui {"fields":["dialog"]}` names only what you need.
-  If an answer says `size.scoped:false`, scope the next one.
+- **Scope every read** (for what no step covers). `read {"target":...}` for one element, `expect` for a yes/no;
+  with a plugin, `describe_ui {"fields":["dialog"]}` names only what you need. A snapshot only as the last resort
+  above, scoped: `snapshot {"target":<locator>,"depth":2-4,"compact":true}` or `{"window":"dialog"}`, never
+  unscoped (it is the whole app and costs thousands of tokens). If an answer says `size.scoped:false`, scope the
+  next one.
 - **Batch what you already know**, plain steps too. Consecutive steps that do not depend on what you are about to
-  read go in ONE `batch` call; it stops at the first step that does not pass and reports each step. Add `"snapshot":{...}` to get
-  a scoped look at the end in the same call. Make a single call only when the next step depends on the last read.
+  read go in ONE `batch` call; it stops at the first step that does not pass and reports each step. Make a single
+  call only when the next step depends on the last read.
   ```sh
   $UI batch '{"steps":[
     {"verb":"menu","path":["File","New order"]},
     {"verb":"type","target":{"role":"text","name":"Customer"},"text":"Ada"},
     {"verb":"press","keys":"Enter"},
-    {"verb":"expect","target":{"role":"tab","name":"New order · Ada Shop Ltd"},"state":["selected"]}],
-    "snapshot":{"target":{"role":"tab","name":"New order · Ada Shop Ltd"},"depth":3,"compact":true}}'
+    {"verb":"expect","target":{"role":"tab","name":"New order · Ada Shop Ltd"},"state":["selected"]}]}'
   ```
   `do_actions {"actions":[...]}` does the same with steps; in `do_action` the step sits one level down:
   `{"action":{"action":"click","target":{...}}}`.
@@ -121,7 +142,8 @@ A recorded test file: `$UI run_recorded_test '{"name":"place-order"}'`. It start
 `passed`, `ran`/`total` steps and every step and check by its number (`7`, `7.2`); the failing one carries what its
 locators match now and a picture under `evidence`. The CLI exits 4 when the test fails. A step that uses an
 earlier step's value carries `resolved` (what each reference stood for in this run); a link with no value fails its
-step in words ("Step 3 (Copy) added no row to Orders"): report it like any failure.
+step in words ("Step 3 (Copy) added no row to Orders"): report it like any failure. The run's report is the
+result: no snapshot before or after it.
 
 A Java test: run the given `*UiIT` class alone while the app is up, the project's way (default
 `mvn -Dtest=PlaceOrderUiIT verify`; failsafe uses `-Dit.test=`). On a failure read

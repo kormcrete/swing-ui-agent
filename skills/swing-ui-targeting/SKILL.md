@@ -25,7 +25,8 @@ way passes even when the button is broken, which makes the test worthless.
 
 **A domain step beats a locator.** When the app's plugin has a step or check for what the user names
 (`vocabulary list`, see the swing-ui-record-test skill), run it (`{"verb":"do","step":...}`) and find no target;
-this skill is for the parts no step covers.
+this skill is for the parts no step covers. Search the whole list first: a text the user asks about (a message, a
+question, a reason) often has a check that reads it, and its failure says what the app shows.
 
 ## A locator
 
@@ -71,11 +72,12 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
 
 ## Finding the target
 
-- `snapshot` scoped: `{"target":<locator>,"depth":3,"compact":true}` or `{"window":"dialog"}`. Never unscoped:
-  it is the whole app. `size.scoped:false` in the answer means scope the next one.
-- `read {"target":...}` for one element (a table's columns and rows; `maxRows` limits them).
+- `read {"target":...}` first, for one element (a table's columns and rows; `maxRows` limits them).
   `read {"form":"candidates","target":...}` lists what a near-miss locator could mean.
   `read {"form":"menuItems","path":["File"]}` lists a menu without opening it.
+- `snapshot` only when no `read` names the target, scoped: `{"target":<locator>,"depth":3,"compact":true}` or
+  `{"window":"dialog"}`. Never unscoped: it is the whole app. `size.scoped:false` in the answer means scope the
+  next one. Never a snapshot to report a result: `expect` checks it.
 - A target that does not resolve fails `NOT_FOUND` or `AMBIGUOUS` with candidates. Read them before guessing.
 
 ## Prefer the stable name
@@ -94,8 +96,9 @@ work" is a skipped level. Job-by-job recipes, with the Java each step exports to
 
 ## When a word does not resolve
 
-**Look before you call it a gap.** A scoped `snapshot` around where the target should be (depth 3-4) shows what is
-really there; most "missing" targets sit under another role, name, tab or window.
+**Look before you call it a gap.** `read {"form":"candidates","target":...}`, or failing that a scoped `snapshot`
+around where the target should be (depth 3-4), shows what is really there; most "missing" targets sit under another
+role, name, tab or window.
 
 **Ambiguity: refuse and say what to add.** A label that names two inputs fails asking for `setLabelFor(field)` in
 the app's source. That is the fix to report. Do not silently pick `nth`: a step that hits the wrong widget passes

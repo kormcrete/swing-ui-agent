@@ -18,11 +18,14 @@ recording a test the user is shaping step by step (swing-ui-record-test).
 
 Hand the driver:
 - **What to walk**, as a checklist of items each with an observable outcome ("File > New order opens a New order
-  tab"; "Checkout… stays disabled while a cart line asks for more than is in stock").
+  tab"; "Checkout… stays disabled while a cart line asks for more than is in stock"). Each item whole: how to get
+  there, what to do, what to check, how to leave the screen. The driver runs one item as one `batch`, the closing
+  steps included; do not split an item into separate calls for it.
 - **The app's vocabulary.** Before the first dispatch, call `vocabulary '{"op":"list"}'` once and paste its
   result (each step's id, kind, sentence and params) into every hand-over, so the driver does not list it again.
   The driver maps each item to those steps and checks and runs it as one `batch`; where an item's words match a
-  step's sentence, use them.
+  step's sentence, use them. Do not ask it to look at the screen (a snapshot) for a text: a check that reads the
+  text reports it word for word.
 - **The known targets**, if any (locators, menu paths, ids), so it does not rediscover them.
 - **Whether to record and export**, and the class name. Default: no.
 - **Where to write results.**

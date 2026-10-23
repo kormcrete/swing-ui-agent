@@ -92,20 +92,39 @@ come first, in this order:
    values that fit in the app right now): call it for a param you must choose.
 2. **Map the whole request to steps and checks**, the checks included, with concrete values: the app's exact
    names. A word that is not one ("A4 paper") is resolved with `describe`'s `choices` before the batch (below).
-3. **Run it as ONE `batch`**, each check where it belongs:
+   Search the whole list for every part before you call it uncovered, and read each step's `about`: questions,
+   confirmations, messages and saved files often have steps of their own ("Ask to cancel the orders {orders},
+   then keep them", "The exit question reads {message}"). `about` says what a step `Needs:` before it runs, where
+   it `Ends:`, and the texts the app shows ("e.g. …").
+3. **Run it as ONE `batch`**: the steps that get there, the action, the checks, and the steps that put the screen
+   back (cancel the dialog, close the tab, clear the search: "Leave the screen as you found it" below), in that
+   order, each step's `Needs:` where the one before it `Ends:`. A step is
    `{"verb":"do","step":"addToCart","params":{"product":"Gel pen, black"}}`, a check
-   `{"verb":"do","step":"cartTotalIs","params":{"total":"€31.32"}}` (alone: `$UI do_action
-   '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`). A value a step makes
-   comes back in the same call with `"outcome":true` on that step; make a second call only when a later step needs
-   that value. A value an earlier step made is linked by the recorder (or with
+   `{"verb":"do","step":"cartTotalIs","params":{"total":"€31.32"}}`, the screen put back
+   `{"verb":"do","step":"closeTab"}` (alone: `$UI do_action
+   '{"action":{"action":"do","step":"addToCart","params":{"product":"Gel pen, black"}}}'`). Make a second call only
+   when the first stopped at a step that did not pass, or when a later step needs a value an earlier one makes: it
+   comes back in the same call with `"outcome":true` on that step. The second call carries everything left, the
+   closing steps too. A value an earlier step made is linked by the recorder (or with
    `link`), never typed as `${...}`. A domain check's param is never linked to what the check reads; read
    `recording list` `uses` to see what was. A step's own values (`codeWithOutcome` in the plugin) are under `step`
    in its outcome: `${placeOrder.step.number}`.
-4. **Only for the parts no step covers**: find the targets with scoped reads (`read {"target":...}`, or `snapshot`
-   with a `target` or `{"window":"dialog"}` and a `depth`; never an unscoped `snapshot`: it is the whole app), then
-   raw verbs, in the same batch where you can (swing-ui-targeting). Never refuse a part because no step covers it,
-   and never stretch a step to do something else. In your report, one line per such part, in exactly this form:
+4. **Keep the batch going.** A value you are asked to tell (a message, a reason, a count) and do not know: run the
+   check that reads it with the text you expect, from the request or its `about`. When it fails, its `message`
+   says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"): that is the answer. A failed
+   check records nothing, so the next call begins with that check again with the shown text, then the rest.
+   Something the app should refuse (cancel a shipped order): run the check that reads the refusal (a button
+   disabled, with its reason) instead of the act step that would fail.
+5. **Only for the parts no step covers**: find the targets with a scoped `read {"target":...}`, then raw verbs, in
+   the same batch where you can (swing-ui-targeting). Never refuse a part because no step covers it, and never
+   stretch a step to do something else. In your report, one line per such part, in exactly this form:
    `Plugin gap: no step or check for <the part, in their words>; done step by step instead.`
+
+**No snapshot** to find the way or to report a result: not the `snapshot` tool, not a batch's `"snapshot"` option,
+not a `snapshot` step. The step results (`passed`, `message`, `outcome`) and the checks are the report, and a
+re-run of the saved test needs none either. A snapshot is the last resort, for a part no step covers whose target no
+`read` finds (scoped: a `target` or `{"window":"dialog"}` and a `depth`; never unscoped, it is the whole app), and
+each one gets its own `Plugin gap:` line.
 
 - **Resolve loose values against the choices.** "the gel pens" is `Gel pen, black` when that is the only choice
   that fits. When two fit, ask the person; do not pick. A call may pass a value that is not among the choices, but
@@ -135,8 +154,9 @@ come first, in this order:
 ## Steps
 
 1. **Plan from the vocabulary; explore only the rest.** Where the app's own steps cover the request, there is
-   nothing to find. For the parts they do not, find the route and every target before recording: scoped
-   `snapshot`, `read` (see the swing-ui-targeting skill).
+   nothing to find, and nothing to try first: record it at once (a wrong step is fixed with step 6). For the parts
+   they do not, find the route and every target before recording: a scoped `read` (see the swing-ui-targeting
+   skill; a snapshot only as the last resort above).
 2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`. (`session '{"op":"reset"}'` starts a
    recording too, but the palette does not show it.) Read `startNote` in the result: a search or filter left filled
    next to a table on the start screen.
@@ -157,6 +177,7 @@ come first, in this order:
    $UI expect '{"target":{"role":"table"},"cell":{"row":{"Product":"A4 paper, 500 sheets"},"column":"Qty","expected":"3"}}'
    $UI expect '{"target":{"role":"label","name":"Total"},"text":"€31.32"}'
    $UI expect '{"target":{"role":"button","name":"Checkout…"},"state":["!disabled"]}'
+   $UI expect '{"target":{"scope":["tab:Orders"],"role":"table"},"rows":{"op":"eq","value":2}}'
    ```
    Check a value shown next to a caption (a total, a status) by that caption: `label 'Total'` + `text`.
    When the label next to the value is not tied to it (the caption itself answers to `label '<caption>'` and shows the caption), the value label is named by its own text: check it with `{"role":"label","name":"<value>"},"shown":true`. A per-run value there is linked through its `name` (and through a `tab:`/window title).
@@ -196,7 +217,7 @@ value, or the step fails in words. Never the recorded value.
   links its `name` to a value an earlier step made, never to text a step typed: make that text `unique` and the
   check follows), a check against its own element's new text, field or cell when nothing else holds the value (see
   step 5 above), a value in another form, rows from a search.
-- **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `snapshot`
+- **Look before you use a late value.** The recorder takes changes until your next action, so `read` or `expect`
   until the new row is there, then click it. A row you click before it appears is not linked.
 - **Check what was linked:** `$UI recording '{"op":"list"}'` shows per step `changed` (path: value, what a later
   step can link to: the paths later steps use first, at most 20, never a row among several; `changedMore` counts the
@@ -333,5 +354,5 @@ rather than hand-editing recorded steps.
    beside it; with the run report registered, `target/ui-runs/latest.txt` lists the run (`STARTED`, a
    `PASS`/`FAIL` line per test, `DONE`). Usually the start route is at fault: reset and re-record.
 
-Report the file, the steps, the checks, the verify result, and the `Plugin gap:` lines (step 4 of "The app's own
+Report the file, the steps, the checks, the verify result, and the `Plugin gap:` lines (step 5 of "The app's own
 steps").
