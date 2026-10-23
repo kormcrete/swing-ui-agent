@@ -4468,6 +4468,47 @@ class UiMcpRecordingTest {
         assertThat(linked.at("/steps/1/uses/0/value").asText()).isEqualTo("ORD-1641");
     }
 
+    @Test
+    void aValueAStepReturnedUnderAnOrderNumberKeyIsLinkedAndReplaysButNotOneByItsPositionInAList() throws Exception {
+        Map<String, Object> made = new LinkedHashMap<String, Object>();
+        made.put("orders", java.util.Collections.singletonMap("ORD-1634", java.util.Collections.singletonMap(
+                "Customer", "Grace Ltd")));
+        made.put("added", Arrays.asList("Lamp", "Desk"));
+        UiMcpSession s = orderDesk(new Plugins(backend.verbs), DomainStep.act("showOrders", "Show the orders")
+                .codeWithOutcome((ui, p) -> {
+                    ui.tab("Orders").click();
+                    return made;
+                })
+                .build());
+
+        s.doAction(mapper.readTree("{\"action\":\"do\",\"step\":\"showOrders\"}"));
+        // offered: the key with a hyphen and digits is a plain path step
+        JsonNode list = recording(s, "{\"op\":\"list\"}");
+        assertThat(list.at("/steps/0/changed").has(".step.orders.ORD-1634.Customer")).isTrue();
+        s.verb("type", mapper.readTree("{\"target\":{\"id\":\"search\"},\"text\":\"Grace Ltd\"}"));
+        s.verb("type", mapper.readTree("{\"target\":{\"id\":\"note\"},\"text\":\"Lamp\"}"));
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.recordedSteps().get(1).action).text)
+                .isEqualTo("${showOrders.step.orders.ORD-1634.Customer}");
+        // a plain string list's position is no source, automatic or by hand
+        assertThat(((io.github.kormcrete.swingui.flow.verb.TypeVerb) s.recordedSteps().get(2).action).text)
+                .isEqualTo("Lamp");
+        assertThat(why(s, "{\"op\":\"link\",\"n\":3,\"ref\":\"${1.step.added[0]}\"}"))
+                .contains(".step.added[0] is a place in a list").contains("never linked by its position");
+
+        // resolved on replay
+        backend.verbs.calls.clear();
+        JsonNode r = recording(s, "{\"op\":\"replay\"}");
+        assertThat(r.path("passed").asBoolean()).as(r.toString()).isTrue();
+        assertThat(r.at("/steps/1/resolved").path("${showOrders.step.orders.ORD-1634.Customer}").asText())
+                .isEqualTo("Grace Ltd");
+        assertThat(backend.verbs.calls).anySatisfy(c -> assertThat(c).startsWith("type #search Grace Ltd"));
+    }
+
+    private String why(UiMcpSession s, String json) {
+        DriverException e = catchThrowableOfType(() -> recording(s, json), DriverException.class);
+        return e == null ? "" : e.getMessage();
+    }
+
     /** Order Desk with placeOrder (it returns the number ORD-1641) and openOrder {order}. */
     private UiMcpSession placeAndOpen() {
         return orderDesk(new Plugins(backend.verbs),

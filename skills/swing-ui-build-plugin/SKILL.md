@@ -131,7 +131,9 @@ the `match` patterns and the typed Java calls use it. Write the steps screen by 
 8. **Two things that match**: the step says which one it takes (the cart line, the newest order) or fails as
    ambiguous, naming both. It never takes one by chance.
 9. **What a step makes is its outcome**: a body that makes a value the screen does not show whole (a new order's
-   number inside "Order ORD-1640 placed") returns it with `codeWithOutcome`, so later steps link to it.
+   number inside "Order ORD-1640 placed") returns it with `codeWithOutcome`, so later steps link to it. Return
+   a value by name or in a map keyed by a stable name (`orders` keyed by order number): a value found only by its
+   position in a returned list is never linked.
 10. **Every step has its Java form** (`java(...)`), and a `match` where a person's recorded clicks should fold into
     it. A check, and any step whose body reads the app (a fail-fast look counts), yields no pattern from its body:
     give it a `match`.

@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
  * column cannot hold a reference: one that holds a candidate's value stays exact and says so ({@link Linked#notLinked}).
  * A row or item
  * is linked by its position only when its step added (or changed) that one alone: a search that filled a table never
- * is; a tree row a step added to that tree is linked by its whole path. What a check expects is never linked to the
+ * is; a tree row a step added to that tree is linked by its whole path; a value a domain step returned in a list is
+ * never linked by its position there ({@link #several}). What a check expects is never linked to the
  * checked element's own field or text, or to its cell in a row an earlier step changed, nor a domain check's param to
  * what the check read, nor either to a value remembered from that very place under the same step (the check would
  * compare it with itself); a row or item a step added is new on each run and is linked. A remembered value and a text made unique per run are
@@ -1180,11 +1181,18 @@ final class Linker {
     /** A row's or an item's path in an added or changed list: {@code .rows.Orders.added[0]}, {@code .rows.T.changed[1].after}. */
     private static final Pattern ROW = Pattern.compile("^\\.(?:rows|items)" + KEY + "\\.(?:added|changed)\\[\\d+\\](?:\\.after)?");
 
+    /** A path under a domain step's own values ({@code .step}), up to its first list index: {@code .step.orders[3]}. */
+    private static final Pattern STEP_LISTED = Pattern.compile("^\\.step" + KEY + "*\\[\\d+\\]");
+
     /**
      * Whether {@code path} (in {@code outcome}) is in a list of added or changed rows or items with more than one entry:
-     * its position there says nothing a replay can count on. False when the outcome is not known.
+     * its position there says nothing a replay can count on. False when the outcome is not known. A value a domain step
+     * returned in a list ({@code .step.orders[3].Customer}) is found only by its position there, which the next run's
+     * list need not keep, so it is always one, a list of one too; a value it returned by name, or in a map keyed by a
+     * stable name, is not.
      */
     static boolean several(ObjectNode outcome, String path) {
+        if (STEP_LISTED.matcher(path).find()) return true;
         if (outcome == null) return false;
         java.util.regex.Matcher m = LISTED.matcher(path);
         if (!m.find()) return false;

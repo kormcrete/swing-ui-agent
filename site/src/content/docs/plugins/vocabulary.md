@@ -76,6 +76,7 @@ DomainStep.act("placeOrder", "Place the order")
 
 - The body returns JSON-like values: text, numbers, booleans, and lists and maps of them, or null for none. Anything else fails the step in words.
 - The values go under `step` in what the step changed. A later step uses them as `${placeOrder.step.number}`, and the recorder links them automatically like a field's value. An agent gets them with `"outcome": true`.
+- A value found only by its position in a list the body returned (`${showOrders.step.orders[3].Customer}`, or `added[0]` of a list of names) is never linked, not even by hand: the next run's list may hold it elsewhere. Return what a later step should use by name, or in a map keyed by a stable name, such as the order number: `${showOrders.step.orders.ORD-1634.Customer}`. When the same value sits in both, the keyed path is the one linked.
 - The runs that learn a step's pattern or its Java form run the body too, and leave its values out.
 - **In a Java export** a `do` step whose Java form is a typed call (`java(...)`) or several steps cannot be the source of a later step's value, and its `step` values have no Java form: `outcomeOf` takes exactly one action. The export names the problem; the recorded test is not affected. A Java test takes the value from what the helper returns: `String number = OrderDeskSteps.placeOrder(ui);`.
 

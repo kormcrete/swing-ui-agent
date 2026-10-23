@@ -4067,7 +4067,11 @@ public class UiMcpSession {
         }
         if (source.outcome != null) {
             if (Linker.several(source.outcome, path)) {
-                throw new DriverException(Reason.BAD_INPUT, "at " + path + " " + sourceWhat + " added or changed several "
+                throw new DriverException(Reason.BAD_INPUT, path.startsWith(".step")
+                        ? path + " is a place in a list the domain step of " + sourceWhat + " returned: a value there is "
+                                + "never linked by its position (a replay may list them otherwise); the step can return it "
+                                + "by name or under a stable key"
+                        : "at " + path + " " + sourceWhat + " added or changed several "
                         + "entries: one among several is never linked by its position (a replay may list them otherwise)");
             }
             List<JsonNode> hits = JsonPaths.select(source.outcome, "$" + path);

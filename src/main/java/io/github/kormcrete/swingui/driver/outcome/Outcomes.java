@@ -150,7 +150,9 @@ public final class Outcomes {
      * {@code $}: {@code .rows.Orders.added[0].Order}). A value found in several places keeps the first in this order:
      * fields, rows, items, texts, opened, then selected and message; the map's order is that order. A text keyed by
      * itself is left out, and so is what is selected when the outcome is partial. Last come the values a domain step's
-     * body returned, when the outcome holds them under {@code step} (text and numbers, at {@code .step.number}).
+     * body returned, when the outcome holds them under {@code step} (text and numbers, at {@code .step.number}); of
+     * those, one found only by its position in a list it returned ({@code .step.orders[3].Customer}) comes after the
+     * rest, so the same value returned by name or under a stable key is the one kept.
      */
     public static Map<String, String> newValues(UiReading before, Map<String, Object> outcome) {
         Set<String> seen = before.values();
@@ -188,23 +190,30 @@ public final class Outcomes {
             for (int i = 0; i < chosen.size(); i++) cells(out, seen, chosen.get(i), ".selected" + key(e.getKey()) + "[" + i + "]");
         }
         add(out, seen, outcome.get("message"), ".message");
-        made(out, seen, outcome.get("step"), ".step");
+        // what the body returned by name first; a value found only by its position in a returned list comes last
+        Map<String, Object> listed = new LinkedHashMap<String, Object>();
+        made(out, seen, outcome.get("step"), ".step", null, listed);
+        for (Map.Entry<String, Object> e : listed.entrySet()) add(out, seen, e.getValue(), e.getKey());
         return out;
     }
 
-    /** Each text or number in {@code value} (a domain step's values: maps, lists, scalars) at its path under {@code at}. */
-    private static void made(Map<String, String> out, Set<String> seen, Object value, String at) {
+    /**
+     * Each text or number in {@code value} (a domain step's values: maps, lists, scalars) at its path under {@code at}:
+     * into {@code out}, or, inside a list ({@code list} non-null), into {@code listed} (path → text) for later.
+     */
+    private static void made(Map<String, String> out, Set<String> seen, Object value, String at, Object list,
+                             Map<String, Object> listed) {
         if (value instanceof Map) {
             for (Map.Entry<?, ?> e : ((Map<?, ?>) value).entrySet()) {
-                made(out, seen, e.getValue(), at + key(String.valueOf(e.getKey())));
+                made(out, seen, e.getValue(), at + key(String.valueOf(e.getKey())), list, listed);
             }
         } else if (value instanceof List) {
-            List<?> list = (List<?>) value;
-            for (int i = 0; i < list.size(); i++) made(out, seen, list.get(i), at + "[" + i + "]");
-        } else if (value instanceof Number) {
-            add(out, seen, String.valueOf(value), at);
+            List<?> items = (List<?>) value;
+            for (int i = 0; i < items.size(); i++) made(out, seen, items.get(i), at + "[" + i + "]", items, listed);
         } else {
-            add(out, seen, value, at);
+            Object text = value instanceof Number ? String.valueOf(value) : value;
+            if (list != null) listed.put(at, text);
+            else add(out, seen, text, at);
         }
     }
 

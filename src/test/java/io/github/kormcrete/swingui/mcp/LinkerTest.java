@@ -140,6 +140,29 @@ class LinkerTest {
     }
 
     @Test
+    void aValueADomainStepReturnedInAListIsNeverLinkedByItsPosition() {
+        String returned = "{'step':{'orders':[{'Order':'ORD-1640','Customer':'Ada Shop Ltd'},"
+                + "{'Order':'ORD-1700','Customer':'Grace Ltd'}],'only':['ORD-1703'],'number':'ORD-1701',"
+                + "'byOrder':{'ORD-1702':{'Customer':'Hopper Inc'}}}}";
+        RecordedStep shown = step(3, "{'action':'do','step':'showOrders'}", returned,
+                "ORD-1700", ".step.orders[1].Order", "Grace Ltd", ".step.orders[1].Customer",
+                "ORD-1703", ".step.only[0]", "ORD-1701", ".step.number",
+                "Hopper Inc", ".step.byOrder.ORD-1702.Customer");
+
+        // by position in a returned list, even a list of one: never
+        unchanged(type("ORD-1700"), steps(shown));
+        unchanged(type("Grace Ltd"), steps(shown));
+        unchanged(type("ORD-1703"), steps(shown));
+        assertThat(Linker.several((ObjectNode) read(returned), ".step.orders[1].Order")).isTrue();
+        assertThat(Linker.several((ObjectNode) read(returned), ".step.byOrder.ORD-1702.Customer")).isFalse();
+        // a value it returned by name, or keyed by a stable name, is linked
+        assertThat(typed("ORD-1701", steps(shown))).isEqualTo("${showOrders.step.number}");
+        assertThat(typed("Hopper Inc", steps(shown))).isEqualTo("${showOrders.step.byOrder.ORD-1702.Customer}");
+        // once its outcome shrank, its index keeps only those
+        assertThat(shown.shrunk().newValues).containsOnlyKeys("ORD-1701", "Hopper Inc");
+    }
+
+    @Test
     void aValueAlreadyOnScreenBeforeTheStepIsNotLinked() {
         // the customer and the status are in the added row, but the app showed them before Copy: no new value
         List<RecordedStep> earlier = steps(copy());

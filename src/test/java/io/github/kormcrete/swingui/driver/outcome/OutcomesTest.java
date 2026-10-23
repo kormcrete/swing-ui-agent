@@ -317,6 +317,29 @@ class OutcomesTest {
     }
 
     @Test
+    void aValueADomainStepReturnedByNameWinsOverTheSameValueInAList() {
+        UiReading before = UiReading.builder().build();
+        Map<String, Object> made = new java.util.LinkedHashMap<String, Object>();
+        Map<String, Object> grace = new java.util.LinkedHashMap<String, Object>();
+        grace.put("Order", "ORD-1700");
+        grace.put("Customer", "Grace Ltd");
+        made.put("orders", Arrays.asList(grace));
+        made.put("byOrder", java.util.Collections.singletonMap("ORD-1700", java.util.Collections.singletonMap(
+                "Customer", "Grace Ltd")));
+        made.put("ada", "Ada Shop Ltd");
+        Map<String, Object> outcome = new java.util.LinkedHashMap<String, Object>();
+        outcome.put("step", made);
+
+        Map<String, String> values = Outcomes.newValues(before, outcome);
+
+        // a path by position in a list is the last resort: a later run's list may hold it elsewhere
+        assertThat(values.get("Grace Ltd")).isEqualTo(".step.byOrder.ORD-1700.Customer");
+        assertThat(values.get("Ada Shop Ltd")).isEqualTo(".step.ada");
+        assertThat(values.get("ORD-1700")).isEqualTo(".step.orders[0].Order");
+        assertThat(new ArrayList<String>(values.keySet())).containsExactly("Grace Ltd", "Ada Shop Ltd", "ORD-1700");
+    }
+
+    @Test
     void aKeyThatIsNoPlainWordIsQuotedInItsPath() {
         UiReading before = UiReading.builder().build();
         Map<String, Object> outcome = Outcomes.diff(before, UiReading.builder().field("Billing › Name", "Grace Hopper")
