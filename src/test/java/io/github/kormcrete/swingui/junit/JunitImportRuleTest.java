@@ -13,13 +13,13 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The test JVM starts no AWT and knows no app: junit and client import neither AWT nor Swing. */
+/** The test JVM starts no AWT and knows no app: junit, client and journal import neither AWT nor Swing. */
 class JunitImportRuleTest {
 
     @Test
     void junitAndClientStayOffAwtAndSwing() throws Exception {
         List<String> bad = new ArrayList<String>();
-        for (String pkg : new String[] {"junit", "client"}) {
+        for (String pkg : new String[] {"junit", "client", "journal"}) {
             Path dir = Paths.get("src/main/java/io/github/kormcrete/swingui/" + pkg);
             if (!Files.isDirectory(dir)) continue;
             List<Path> files;

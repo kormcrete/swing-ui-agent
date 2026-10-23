@@ -188,6 +188,19 @@ final class StepJson {
         return s;
     }
 
+    /** The app step that logs in as {@code user} with a password; the password is never part of it. */
+    ObjectNode loginAsUser(String user) {
+        ObjectNode s = json.createObjectNode();
+        s.put("action", "loginAs");
+        s.put("user", user);
+        return s;
+    }
+
+    /** The app step that logs in again as the user logged in last. */
+    ObjectNode relogin() {
+        return json.createObjectNode().put("action", "relogin");
+    }
+
     /** Sets {@code field} to {@code value} as JSON, or leaves it out when null. */
     void put(ObjectNode o, String field, Object value) {
         if (value == null) return;

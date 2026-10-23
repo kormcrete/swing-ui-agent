@@ -39,13 +39,26 @@ import java.util.function.Supplier;
  * encoding {@link TracingVerbs} keeps), how long it took and how it went. Reads pass through and are not kept. A
  * plugin's domain step runs its body on a {@code Client} over these, so its result lists the steps the body ran. A
  * secret the body reads through {@link #app} is masked ({@value #MASK}) in what is kept, never in what runs.
+ * <p>
+ * With a {@link Sink} it keeps no list: each step goes to the sink as it ends, and so does each secret read.
  */
 public final class StepCallVerbs implements Verbs {
 
     /** What a secret becomes in a kept step. */
     public static final String MASK = "***";
 
+    /** Where a step goes as it ends, instead of the list. */
+    public interface Sink {
+        /** {@code call} ended, passed or failed; it started at {@code startedAtMillis} (wall clock). */
+        void ended(StepCall call, long startedAtMillis);
+
+        /** A secret read through {@link #app}, or a password a login was given: mask it in all that is kept. */
+        default void secret(String value) {}
+    }
+
     private final Verbs verbs;
+    /** Gets each step as it ends; null: the steps are kept in {@link #calls}. */
+    private final Sink sink;
     private final StepJson json = new StepJson(AgentClient.mapper());
     private final List<StepCall> calls = new ArrayList<StepCall>();
     private final Set<String> secrets = new LinkedHashSet<String>();
@@ -53,10 +66,19 @@ public final class StepCallVerbs implements Verbs {
     private Throwable rethrown;
 
     public StepCallVerbs(Verbs verbs) {
-        this.verbs = verbs;
+        this(verbs, null);
     }
 
-    /** The steps so far, in call order: the last one failed when the body stopped on a failed step. */
+    /**
+     * Verbs that hand each step to {@code sink} as it ends and keep none ({@link #calls} stays empty). A sink that
+     * throws is ignored: it never hides how the step went. App logins with a password are steps too (without it).
+     */
+    public StepCallVerbs(Verbs verbs, Sink sink) {
+        this.verbs = verbs;
+        this.sink = sink;
+    }
+
+    /** The steps so far, in call order: the last one failed when the body stopped on a failed step; none with a sink. */
     public List<StepCall> calls() {
         return Collections.unmodifiableList(new ArrayList<StepCall>(calls));
     }
@@ -85,18 +107,43 @@ public final class StepCallVerbs implements Verbs {
             @Override public void loginAs(final String alias) {
                 run(json.loginAs(alias), () -> { app.loginAs(alias); return null; });
             }
-            @Override public void loginAs(String user, String password) { app.loginAs(user, password); }
-            @Override public void relogin() { app.relogin(); }
+            @Override public void loginAs(final String user, final String password) {
+                if (sink == null) {
+                    app.loginAs(user, password);
+                    return;
+                }
+                remember(password);
+                run(json.loginAsUser(user), () -> { app.loginAs(user, password); return null; });
+            }
+            @Override public void relogin() {
+                if (sink == null) {
+                    app.relogin();
+                    return;
+                }
+                run(json.relogin(), () -> { app.relogin(); return null; });
+            }
             @Override public <T> T hooks(Class<T> type) { return app.hooks(type); }
             @Override public String secret(String alias, String name) {
                 String s = app.secret(alias, name);
-                if (s != null && !s.isEmpty()) secrets.add(s);
+                remember(s);
                 return s;
             }
             @Override public String runRecordedTest(String testJson, String evidenceDir) {
                 return app.runRecordedTest(testJson, evidenceDir);
             }
         };
+    }
+
+    /** Masks {@code secret} from now on, and tells the sink. */
+    private void remember(String secret) {
+        if (secret == null || secret.isEmpty()) return;
+        secrets.add(secret);
+        if (sink == null) return;
+        try {
+            sink.secret(secret);
+        } catch (RuntimeException | AssertionError ignored) {
+            // the sink is a bystander: the step goes on
+        }
     }
 
     // ---- passed through, not kept
@@ -209,11 +256,15 @@ public final class StepCallVerbs implements Verbs {
         return run(json.setClipboard(text, timeout), () -> verbs.setClipboard(text, timeout));
     }
 
-    /** Keeps {@code step}, runs {@code call}, and notes how it went; a failure is noted and thrown on unchanged. */
+    /**
+     * Keeps {@code step} (or hands it to the sink as it ends), runs {@code call}, and notes how it went; a failure is
+     * noted and thrown on unchanged.
+     */
     private VerbOutcome run(ObjectNode step, Supplier<VerbOutcome> call) {
         JsonNode kept = mask(step);
         StepCall c = new StepCall(kept.toString(), label(kept));
-        calls.add(c);
+        if (sink == null) calls.add(c);
+        long startedAt = System.currentTimeMillis();
         long started = System.nanoTime();
         try {
             VerbOutcome out = call.get();
@@ -236,6 +287,13 @@ public final class StepCallVerbs implements Verbs {
             throw e;
         } finally {
             c.ms = (System.nanoTime() - started) / 1_000_000L;
+            if (sink != null) {
+                try {
+                    sink.ended(c, startedAt);
+                } catch (RuntimeException | AssertionError ignored) {
+                    // the sink is a bystander: the step's own outcome stands
+                }
+            }
         }
     }
 
