@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.flow.Action;
+import io.github.kormcrete.swingui.flow.DoAction;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.FlowGroup;
 import io.github.kormcrete.swingui.flow.FlowJson;
@@ -22,7 +23,8 @@ import java.util.Map;
 /**
  * A recorded test's run as journal lines, written when it ends from the agent's {@code run_recorded_test} reply: one
  * line per record that ran, in order, each with its step as it ran (references by the values they stood for) and, as
- * its text, the step's {@code say} or else its sentence; a group's {@code say} as a section before its first step; a
+ * its text, the step's {@code say} or else its sentence (a {@code do} step's: the plugin's own, from the reply); a
+ * group's {@code say} as a section before its first step; a
  * {@code do} step's own steps after it, pointing at it ({@code "parent"}); then the end line. The agent is unchanged:
  * its reply has what the journal needs.
  */
@@ -59,8 +61,13 @@ public final class RecordedJournal {
                     : asRan(FlowJson.mapper().valueToTree(record), values(ran.path("resolved")));
             ObjectNode line = line(journal, step, ran, t);
             String say = step.path("say").asText("");
+            String told = ran.path("action").asText("");
             if (!say.trim().isEmpty()) line.set("text", JournalLines.capTexts(TextNode.valueOf(say)));
-            else if (record == null) line.put("text", ran.path("say").asText(ran.path("action").asText("Step")));
+            else if (record == null) line.put("text", ran.path("say").asText(told.trim().isEmpty() ? "Step" : told));
+            else if (record instanceof DoAction && !told.trim().isEmpty()) {
+                // the plugin's own sentence, as the palette shows it
+                line.set("text", JournalLines.capTexts(TextNode.valueOf(told)));
+            }
             if (ran.has("resolved")) line.set("resolved", ran.get("resolved"));
             children(journal, ran, journal.append(line, 0), t);
             t += Math.max(0, ran.path("ms").asLong(0));

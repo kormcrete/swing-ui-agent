@@ -185,6 +185,27 @@ class RecordedJournalTest {
         assertThat(place.path("t").asText()).isEqualTo(JournalLines.time(STARTED + 8));
     }
 
+    private static final String SET_QTY = "{\"version\":4,\"name\":\"place-order\",\"start\":\"reset\","
+            + "\"requires\":[\"order-desk\"],\"steps\":["
+            + "{\"action\":\"do\",\"step\":\"order-desk:setQty\",\"params\":{\"qty\":\"3\"}}]}";
+
+    @Test
+    void aDoStepWithoutSaySaysThePluginsSentence() throws IOException {
+        List<JsonNode> lines = written(SET_QTY, "{\"passed\":true,\"steps\":["
+                + "{\"n\":1,\"action\":\"Set the quantity to 3\",\"passed\":true,\"ms\":8}]}", null);
+
+        // the sentence the person sees in the palette
+        assertThat(lines.get(1).path("text").asText()).isEqualTo("Set the quantity to 3");
+    }
+
+    @Test
+    void aDoStepWithoutSayOrPluginSentenceSaysItsStep() throws IOException {
+        List<JsonNode> lines = written(SET_QTY, "{\"passed\":true,\"steps\":["
+                + "{\"n\":1,\"action\":\" \",\"passed\":true,\"ms\":8}]}", null);
+
+        assertThat(lines.get(1).path("text").asText()).isEqualTo("Do order-desk:setQty");
+    }
+
     @Test
     void aFailedRecordEndsTheLinesAndTheEndSaysFailed() throws IOException {
         String reply = "{\"passed\":false,\"test\":\"place-order\",\"ran\":2,\"total\":4,\"steps\":["
