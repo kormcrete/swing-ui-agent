@@ -144,7 +144,7 @@ public final class DropInjector {
     /**
      * Stands in for the toolkit's drop peer: serves one Transferable and records what the listener decided, in words
      * ({@link #outcome}) and as the toolkit keeps it: the action a drag would drop with now ({@link #action}: the
-     * gesture's until the listener accepts another, none once it rejects), and the drop's answer.
+     * gesture's until the listener accepts another the source allows, none once it rejects), and the drop's answer.
      */
     static final class FakeDropPeer implements DropTargetContextPeer {
         enum Drop { WAITING, ACCEPTED, REJECTED }
@@ -156,8 +156,9 @@ public final class DropInjector {
         private int targetActions = DnDConstants.ACTION_COPY;
         String outcome = "untouched";
         int action;
-        boolean dragRejected;
         Drop drop = Drop.WAITING;
+        /** What acceptDrop asked for, before it met the source's actions. */
+        int acceptedAs = DnDConstants.ACTION_NONE;
         /** What dropComplete said; null when it was not called. */
         Boolean completed;
 
@@ -178,18 +179,17 @@ public final class DropInjector {
 
         @Override public void acceptDrag(int dragAction) {
             outcome = "drag accepted";
-            action = oneOf(dragAction);
-            if (action != DnDConstants.ACTION_NONE) dragRejected = false;
+            action = oneOf(dragAction & sourceActions);
         }
 
         @Override public void rejectDrag() {
             outcome = "drag rejected";
             action = DnDConstants.ACTION_NONE;
-            dragRejected = true;
         }
 
         @Override public void acceptDrop(int dropAction) {
             outcome = "drop accepted";
+            acceptedAs = dropAction;
             action = oneOf(dropAction & sourceActions);
             drop = Drop.ACCEPTED;
         }

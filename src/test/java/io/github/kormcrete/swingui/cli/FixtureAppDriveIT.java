@@ -807,6 +807,47 @@ class FixtureAppDriveIT {
             step("expect", "{'target':{" + window + "},'cell':{'row':{'index':" + i + "},'column':'Product','expected':'"
                     + order[i] + "'}}");
         }
+    }
+
+    @Test
+    @Order(25)
+    void aDropThatAsksFirstAndAcceptsNothingIsLeftToTheAnswerAndMovesTheRow() throws Exception {
+        String window = "'window':'window:Line order','name':'packLines'";
+        step("menu", "{'path':['Window','Line order']}");
+        // its drop asks first, and then moves the row without telling the toolkit it took the drop
+        JsonNode dragged = call("drag", "{'from':{" + window + ",'row':{'Product':'Jam'},'column':'Product'},"
+                + "'to':{" + window + ",'row':{'Product':'Bread'},'column':'Product'}}");
+        String why = dragged.path("why").asText();
+        assertThat(dragged.path("passed").asBoolean()).as(why).isTrue();
+        assertThat(dragged.path("pending").path("message").asText()).as(why).contains("Move Jam to line 1?");
+        step("answer", "{'button':'Yes'}");
+        step("expect", "{'target':{'window':'window:Line order','name':'lineStatus'},'text':'moved Jam to line 1'}");
+        String[] order = {"Jam", "Bread", "Butter"};
+        for (int i = 0; i < order.length; i++) {
+            step("expect", "{'target':{" + window + "},'cell':{'row':{'index':" + i + "},'column':'Product','expected':'"
+                    + order[i] + "'}}");
+        }
+        // the drag and drop ended once the drop returned: the next one starts
+        JsonNode again = call("drag", "{'from':{'window':'window:Line order','name':'orderLines','row':{'Product':'Tea'},"
+                + "'column':'Product'},'to':{'window':'window:Line order','name':'orderLines','row':{'Product':'Milk'},"
+                + "'column':'Product'}}");
+        assertThat(again.path("passed").asBoolean()).as(again.path("why").asText()).isTrue();
+        step("expect", "{'target':{'window':'window:Line order','name':'lineStatus'},'text':'moved Tea to line 1'}");
+    }
+
+    @Test
+    @Order(26)
+    void aListEntryDraggedOntoAnotherMovesThroughSwingsOwnDragAndDrop() throws Exception {
+        String window = "'window':'window:Line order','name':'pickList'";
+        step("menu", "{'path':['Window','Line order']}");
+        // Swing's drag and drop (drag enabled, a TransferHandler) runs in the app like the AWT one: no native drag
+        JsonNode dragged = call("drag", "{'from':{" + window + ",'item':['Plums']},'to':{" + window + ",'item':['Apples']}}");
+        String why = dragged.path("why").asText();
+        assertThat(dragged.path("passed").asBoolean()).as(why).isTrue();
+        assertThat(dragged.path("message").asText()).as(why).contains("accepted the drop (move)").contains("completed");
+        step("expect", "{'target':{'window':'window:Line order','name':'lineStatus'},'text':'moved Plums to pick 1'}");
+        JsonNode read = call("read", "{'target':{" + window + "}}");
+        assertThat(read.path("node").toString()).as(read.path("why").asText()).containsSubsequence("Plums", "Apples", "Pears");
         step("close_window", "{'window':'window:Line order'}");
     }
 

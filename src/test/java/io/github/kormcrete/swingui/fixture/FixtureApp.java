@@ -2,6 +2,7 @@ package io.github.kormcrete.swingui.fixture;
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.DefaultListModel;
+import javax.swing.DropMode;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
@@ -24,6 +25,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.TransferHandler;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.PopupMenuEvent;
@@ -41,6 +43,7 @@ import java.awt.GridLayout;
 import java.awt.Point;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DragSource;
 import java.awt.dnd.DragSourceAdapter;
@@ -326,10 +329,17 @@ public final class FixtureApp {
     private static JFrame lineOrder;
 
     /**
-     * Opens the Line order window: a table of order lines (Coffee, Tea, Milk) whose rows move by AWT drag and drop, as
-     * an app wires it by hand: a drag gesture recognizer on the table notes the row the drag starts on and starts the
-     * drag with the product's name, and the table's drop target moves that row to the row it is dropped on. A status
-     * line says what moved.
+     * Opens the Line order window, three lists whose entries move by dragging one onto another, and a status line that
+     * says what moved:
+     * <ul>
+     * <li>Order lines (Coffee, Tea, Milk), with AWT drag and drop as an app wires it by hand: a drag gesture recognizer
+     * on the table notes the row the drag starts on and starts the drag with the product's name, and the table's drop
+     * target accepts the drop and moves that row to the row it is dropped on;</li>
+     * <li>Packing lines (Bread, Butter, Jam), the same, except that its drop asks first ("Move Jam to line 1?") and
+     * moves the row without telling the toolkit it took the drop (no acceptDrop, no dropComplete), as some apps do;</li>
+     * <li>a Pick list (Apples, Pears, Plums) with Swing's own drag and drop: drag enabled, and a TransferHandler that
+     * moves the dragged entry to the entry it is dropped on.</li>
+     * </ul>
      */
     static void showLineOrder() {
         if (lineOrder == null) lineOrder = lineOrderFrame();
@@ -348,6 +358,64 @@ public final class FixtureApp {
         table.setName("orderLines");
         JLabel moved = new JLabel("no line moved");
         moved.setName("lineStatus");
+        reorderByDragAndDrop(table, model, moved, false);
+        DefaultTableModel packing = new DefaultTableModel(new Object[][] {{"Bread", 1}, {"Butter", 2}, {"Jam", 1}},
+                new Object[] {"Product", "Qty"}) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable packTable = new JTable(packing);
+        packTable.setName("packLines");
+        reorderByDragAndDrop(packTable, packing, moved, true);
+
+        DefaultListModel<String> picks = new DefaultListModel<String>();
+        for (String s : new String[] {"Apples", "Pears", "Plums"}) picks.addElement(s);
+        JList<String> pickList = new JList<String>(picks);
+        pickList.setName("pickList");
+        pickList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        pickList.setDragEnabled(true);
+        pickList.setDropMode(DropMode.ON);
+        pickList.setTransferHandler(new TransferHandler() {
+            private int from = -1;
+
+            @Override public int getSourceActions(JComponent c) { return MOVE; }
+
+            @Override protected Transferable createTransferable(JComponent c) {
+                from = pickList.getSelectedIndex();
+                return new StringSelection(pickList.getSelectedValue());
+            }
+
+            @Override public boolean canImport(TransferSupport support) {
+                return support.isDrop() && support.isDataFlavorSupported(DataFlavor.stringFlavor);
+            }
+
+            @Override public boolean importData(TransferSupport support) {
+                int to = ((JList.DropLocation) support.getDropLocation()).getIndex();
+                if (!canImport(support) || from < 0 || to < 0) return false;
+                String pick = picks.remove(from);
+                picks.add(to, pick);
+                moved.setText("moved " + pick + " to pick " + (to + 1));
+                return true;
+            }
+        });
+
+        JPanel lists = new JPanel(new GridLayout(1, 3));
+        lists.add(new JScrollPane(table));
+        lists.add(new JScrollPane(packTable));
+        lists.add(new JScrollPane(pickList));
+        JPanel content = new JPanel(new BorderLayout());
+        content.add(lists, BorderLayout.CENTER);
+        content.add(moved, BorderLayout.SOUTH);
+        frame.setContentPane(content);
+        frame.setSize(600, 180);
+        frame.setLocation(400, 300);
+        return frame;
+    }
+
+    /**
+     * AWT drag and drop that moves a row of {@code table} onto another, wired by hand. With {@code asks}, the drop asks
+     * first and moves the row without acceptDrop or dropComplete.
+     */
+    private static void reorderByDragAndDrop(JTable table, DefaultTableModel model, JLabel moved, boolean asks) {
         int[] dragRow = {-1};
         DragSource.getDefaultDragSource().createDefaultDragGestureRecognizer(table, DnDConstants.ACTION_MOVE, gesture -> {
             int row = table.rowAtPoint(gesture.getDragOrigin());
@@ -367,24 +435,27 @@ public final class FixtureApp {
                     e.rejectDrop();
                     return;
                 }
+                Object product = model.getValueAt(from, 0);
+                if (asks) {
+                    int answer = JOptionPane.showConfirmDialog(table, "Move " + product + " to line " + (to + 1) + "?",
+                            "Move line", JOptionPane.YES_NO_OPTION);
+                    if (answer == JOptionPane.YES_OPTION) {
+                        model.moveRow(from, from, to);
+                        moved.setText("moved " + product + " to line " + (to + 1));
+                    }
+                    return;
+                }
                 e.acceptDrop(DnDConstants.ACTION_MOVE);
                 try {
-                    Object product = e.getTransferable().getTransferData(DataFlavor.stringFlavor);
+                    Object data = e.getTransferable().getTransferData(DataFlavor.stringFlavor);
                     model.moveRow(from, from, to);
-                    moved.setText("moved " + product + " to line " + (to + 1));
+                    moved.setText("moved " + data + " to line " + (to + 1));
                     e.dropComplete(true);
                 } catch (Exception ex) {
                     e.dropComplete(false);
                 }
             }
         });
-        JPanel content = new JPanel(new BorderLayout());
-        content.add(new JScrollPane(table), BorderLayout.CENTER);
-        content.add(moved, BorderLayout.SOUTH);
-        frame.setContentPane(content);
-        frame.setSize(300, 180);
-        frame.setLocation(600, 300);
-        return frame;
     }
 
     /**

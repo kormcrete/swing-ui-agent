@@ -236,8 +236,9 @@ public final class Target {
     }
 
     /**
-     * Drags this target onto {@code to}, in the same window: a mouse drag, or - where the app does AWT drag and drop
-     * there - that drag and drop, run in the app; a refused or rejected drop fails the step.
+     * Drags this target onto {@code to}, in the same window: a mouse drag, or - where the press starts the app's own drag
+     * and drop, AWT's (a drag gesture recognizer) or Swing's (drag enabled, with a TransferHandler) - that drag and drop,
+     * run inside the app instead of as a native drag; a refused drag or a rejected drop fails the step.
      */
     public void dragTo(Target to) {
         client.act("drag to " + to.locator, locator,

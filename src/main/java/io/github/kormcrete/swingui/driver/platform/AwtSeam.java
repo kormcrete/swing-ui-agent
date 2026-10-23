@@ -132,6 +132,7 @@ public final class AwtSeam implements Seam {
     private void lookUpDragSource() {
         dragSource = new DragSourceHook();
         if (dragSource.missingBecause() != null) missing.put(Capability.DRAG_SOURCE, dragSource.missingBecause());
+        if (dragSource.swingMissingBecause() != null) missing.put(Capability.SWING_DRAG, dragSource.swingMissingBecause());
     }
 
     private void lookUpApplicationActive() {
@@ -307,6 +308,22 @@ public final class AwtSeam implements Seam {
             dragSource.end();
         } catch (ReflectiveOperationException e) {
             throw gap(Capability.DRAG_SOURCE, e);
+        }
+    }
+
+    @Override
+    public String peerReplacementRefused() {
+        require(Capability.DRAG_SOURCE);
+        return dragSource.peerReplacementRefused();
+    }
+
+    @Override
+    public DragGestureRecognizer swingDragRecognizer() {
+        require(Capability.SWING_DRAG);
+        try {
+            return dragSource.swingRecognizer();
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.SWING_DRAG, e);
         }
     }
 

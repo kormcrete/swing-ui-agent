@@ -537,12 +537,17 @@ public final class LiveVerbs implements Verbs {
                 }
                 return SwingUtilities.convertPoint(b.component(), b.point, a.component());
             });
-            // a press that goes to a drag gesture recognizer starts the app's AWT drag and drop: done in process
-            DragGestureRecognizer recognizer = Edt.call(() -> DragAndDrop.recognizerAt(a.component(), a.point));
+            // a press that starts the app's drag and drop (AWT's, or Swing's TransferHandler drag): done in process
+            DragGestureRecognizer recognizer = Edt.call(() -> driver.drags().sourceAt(a.component(), a.point));
             final DragAndDrop.Gesture gesture = recognizer == null ? null
                     : driver.drags().start(driver.poster(), recognizer, a.component(), a.point, end);
             if (gesture == null) {
                 driver.poster().drag(a.component(), a.point, end);
+                return POSTED;
+            }
+            if (!gesture.started()) {
+                // the app chose to start no drag: the plain mouse drag was posted, as for a person
+                note.set(gesture.note());
                 return POSTED;
             }
             // Queued, as a drop is: the app's drop may open a modal dialog synchronously, which settle must be free

@@ -1,5 +1,8 @@
 package io.github.kormcrete.swingui.driver.platform;
 
+import io.github.kormcrete.swingui.driver.DriverException;
+import io.github.kormcrete.swingui.driver.Reason;
+
 import java.awt.AWTEvent;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -29,6 +32,10 @@ public class FakeSeam implements Seam {
     public final Map<Capability, String> because = new EnumMap<Capability, String>(Capability.class);
     public final Map<Capability, String> notes = new EnumMap<Capability, String>(Capability.class);
     public boolean systemGenerated;
+    /** {@link #peerReplacementRefused}'s answer. */
+    public String peerReplacementRefused;
+    /** Makes {@link #dragSourceContext} fail as a capability gap. */
+    public boolean contextRefused;
     public Boolean active = Boolean.FALSE;
     public Window pinned;
     public int held;
@@ -84,6 +91,9 @@ public class FakeSeam implements Seam {
     }
     @Override public DragSourceContext dragSourceContext(DragSourceContextPeer peer, DragGestureEvent trigger, Cursor cursor,
                                                          Image image, Point offset, Transferable data, DragSourceListener l) {
+        if (contextRefused) {
+            throw new DriverException(Reason.CAPABILITY_GAP, Capability.DRAG_SOURCE.what + " failed: refused by the test");
+        }
         try {
             return dragSource.context(peer, trigger, cursor, image, offset, data, l);
         } catch (ReflectiveOperationException e) {
@@ -100,6 +110,14 @@ public class FakeSeam implements Seam {
     @Override public void endDragAndDrop() {
         try {
             dragSource.end();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+    @Override public String peerReplacementRefused() { return peerReplacementRefused; }
+    @Override public DragGestureRecognizer swingDragRecognizer() {
+        try {
+            return dragSource.swingRecognizer();
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }

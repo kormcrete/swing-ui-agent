@@ -87,6 +87,12 @@ public interface Seam {
     /** Ends what {@link #beginDragAndDrop} began. */
     void endDragAndDrop();
 
+    /** Why this Java will not let {@link #dragSourceContext} put the driver's peer in, or null when it will. */
+    String peerReplacementRefused();
+
+    /** Swing's one drag gesture recognizer, which every TransferHandler drag goes through. EDT. */
+    DragGestureRecognizer swingDragRecognizer();
+
     /** Whether the OS counts this process as the active app; null when unknown. */
     Boolean appActive();
 }

@@ -28,7 +28,9 @@ import java.lang.reflect.Method;
  * <li>the toolkit's "drag and drop in progress" flag ({@code SunDragSourceContextPeer.setDragDropInProgress}): set for
  * the whole driven drag, it keeps any real native drag from starting meanwhile, as during a real drag.</li>
  * </ul>
- * On Java 9+ it needs {@code java.awt.dnd} and {@code sun.awt.dnd} open to us ({@link ModuleAccess}).
+ * <li>Swing's one drag gesture recognizer ({@code TransferHandler}'s private static {@code recognizer}, which every
+ * TransferHandler drag goes through), made the way TransferHandler makes it on its first drag when there is none yet.</li>
+ * On Java 9+ it needs {@code java.awt.dnd}, {@code sun.awt.dnd} and {@code javax.swing} open to us ({@link ModuleAccess}).
  */
 final class DragSourceHook {
 
@@ -42,6 +44,12 @@ final class DragSourceHook {
     private final Method setTrigger;
     private final Method setInProgress;
     private final String missingBecause;
+    private final Field swingRecognizer;
+    private final Constructor<?> newSwingRecognizer;
+    private final Constructor<?> newDragHandler;
+    private final String swingMissingBecause;
+    /** {@link #peerReplacementRefused}'s answer once asked: "" when allowed. */
+    private String peerRefused;
 
     DragSourceHook() {
         Field s = null;
@@ -92,6 +100,77 @@ final class DragSourceHook {
         setTrigger = trigger;
         setInProgress = progress;
         missingBecause = why;
+        Field r = null;
+        Constructor<?> newRecognizer = null;
+        Constructor<?> newHandler = null;
+        String swingWhy = null;
+        try {
+            r = accessible(Class.forName("javax.swing.TransferHandler").getDeclaredField("recognizer"));
+            newRecognizer = accessible(Class.forName("javax.swing.TransferHandler$SwingDragGestureRecognizer")
+                    .getDeclaredConstructor(DragGestureListener.class));
+            newHandler = accessible(Class.forName("javax.swing.TransferHandler$DragHandler").getDeclaredConstructor());
+            r.get(null);
+        } catch (Exception | LinkageError e) {
+            r = null;
+            newRecognizer = null;
+            newHandler = null;
+            swingWhy = AwtSeam.describe(e);
+        }
+        swingRecognizer = r;
+        newSwingRecognizer = newRecognizer;
+        newDragHandler = newHandler;
+        swingMissingBecause = swingWhy;
+    }
+
+    /** Null when Swing's drag recognizer can be reached. */
+    String swingMissingBecause() {
+        return swingMissingBecause;
+    }
+
+    /** Swing's drag recognizer; made as TransferHandler makes it on its first drag when there is none yet. EDT. */
+    DragGestureRecognizer swingRecognizer() throws ReflectiveOperationException {
+        if (swingMissingBecause != null) {
+            throw new IllegalStateException("Swing drag hook unavailable: " + swingMissingBecause);
+        }
+        Object r = swingRecognizer.get(null);
+        if (r == null) {
+            r = newSwingRecognizer.newInstance(newDragHandler.newInstance());
+            swingRecognizer.set(null, r);
+        }
+        return (DragGestureRecognizer) r;
+    }
+
+    /**
+     * Why this Java will not let a final field be written by reflection, which {@link #context} needs on Java 9+ (its
+     * {@code peer}); null when it will, and on Java 8. Asked once, on the first drag and drop, on a field of the
+     * driver's own, so a refusal is known before anything is posted.
+     */
+    synchronized String peerReplacementRefused() {
+        if (withoutPeer == null) return null;
+        if (peerRefused == null) {
+            try {
+                Field value = accessible(FinalProbe.class.getDeclaredField("value"));
+                FinalProbe probe = new FinalProbe();
+                value.set(probe, "written");
+                peerRefused = "written".equals(probe.value()) ? "" : "a final field kept its value after a write";
+            } catch (Exception | LinkageError e) {
+                peerRefused = "this Java will not let a final field be written: " + AwtSeam.describe(e);
+            }
+        }
+        return peerRefused.isEmpty() ? null : peerRefused;
+    }
+
+    /** A final field of the driver's own, written once by {@link #peerReplacementRefused}. */
+    private static final class FinalProbe {
+        private final Object value;
+
+        FinalProbe() {
+            value = "unwritten";
+        }
+
+        Object value() {
+            return value;
+        }
     }
 
     /** Null when available. */
