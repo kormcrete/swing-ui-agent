@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.junit;
 
+import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.journal.JournalSettings;
 import io.github.kormcrete.swingui.journal.RunFolder;
 import org.junit.platform.engine.TestExecutionResult;
@@ -7,10 +8,12 @@ import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.TestTag;
 import org.junit.platform.engine.support.descriptor.ClassSource;
 import org.junit.platform.engine.support.descriptor.MethodSource;
+import org.junit.platform.engine.support.descriptor.UriSource;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -123,7 +126,7 @@ public final class UiRunReport implements TestExecutionListener {
 
     @Override
     public void executionSkipped(TestIdentifier id, String reason) {
-        if (report == null || !id.getTags().contains(UI)) return;
+        if (report == null || !isUi(id)) return;
         if (id.isTest()) {
             line(id, "SKIP", 0, reason);
         } else {
@@ -134,7 +137,7 @@ public final class UiRunReport implements TestExecutionListener {
 
     @Override
     public void executionFinished(TestIdentifier id, TestExecutionResult result) {
-        if (report == null || !id.getTags().contains(UI)) return;
+        if (report == null || !isUi(id)) return;
         Throwable t = result.getThrowable().orElse(null);
         if (!id.isTest()) {
             // a class whose @BeforeAll failed: its tests never ran, so no line would say so
@@ -182,12 +185,52 @@ public final class UiRunReport implements TestExecutionListener {
         return t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
     }
 
-    private static String name(TestIdentifier id) {
-        if (id.getSource().isPresent() && id.getSource().get() instanceof MethodSource) {
-            MethodSource m = (MethodSource) id.getSource().get();
+    /**
+     * True for a UI test, or a container of them: tagged "ui" itself or under a container that is (a dynamic test of a
+     * {@code @UiTest} factory may not carry its factory's tags).
+     */
+    private boolean isUi(TestIdentifier id) {
+        for (TestIdentifier at = id; at != null; at = parent(at)) {
+            if (at.getTags().contains(UI)) return true;
+        }
+        return false;
+    }
+
+    private TestIdentifier parent(TestIdentifier id) {
+        TestPlan p = plan;
+        return p == null ? null : p.getParent(id).orElse(null);
+    }
+
+    /**
+     * The test's id, as its journal names it ({@link TestNames}): {@code <Class>#<method>}, {@code [<n>]} for an
+     * invocation of a test template, {@code <Class>#recorded[<file>]} for a recorded test; any other test by its
+     * display name.
+     */
+    private String name(TestIdentifier id) {
+        TestSource source = id.getSource().orElse(null);
+        if (source instanceof MethodSource) {
+            MethodSource m = (MethodSource) source;
             return TestNames.of(m.getClassName(), m.getMethodName(), id.getUniqueId());
         }
+        String file = recordedFile(source);
+        if (file != null) {
+            for (TestIdentifier at = parent(id); at != null; at = parent(at)) {
+                TestSource s = at.getSource().orElse(null);
+                if (s instanceof MethodSource) return TestNames.recorded(((MethodSource) s).getClassName(), file);
+            }
+        }
         return id.getDisplayName();
+    }
+
+    /** The name without {@code .json} of the recorded test file {@code source} points at; null for any other source. */
+    private static String recordedFile(TestSource source) {
+        if (!(source instanceof UriSource)) return null;
+        URI uri = ((UriSource) source).getUri();
+        String path = uri == null ? null : uri.getPath();
+        if (path == null || !path.endsWith(RecordedTestFiles.SUFFIX)) return null;
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        return name.length() > RecordedTestFiles.SUFFIX.length()
+                ? name.substring(0, name.length() - RecordedTestFiles.SUFFIX.length()) : null;
     }
 
     private static String className(TestSource s) {

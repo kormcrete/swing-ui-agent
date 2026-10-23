@@ -8,6 +8,7 @@ import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.testing.RecordingVerbs;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -42,6 +43,22 @@ class RecordedTestsTest {
     static class Recorded {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runs);
+
+        @TestFactory
+        Stream<DynamicTest> recorded(Client ui) {
+            return RecordedTests.of(ui, folder);
+        }
+    }
+
+    /** Recorded tests beside a plain UI test: a run report starts only for a plan that lists a UI test up front. */
+    @FixtureClass
+    @Tag("ui")
+    static class RecordedBesideAUiTest {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runs);
+
+        @Test
+        void opens(Client ui) { }
 
         @TestFactory
         Stream<DynamicTest> recorded(Client ui) {
@@ -149,6 +166,39 @@ class RecordedTestsTest {
         Path txt = ModuleTarget.of(RecordedTestsTest.class).toAbsolutePath()
                 .resolve("failsafe-reports").resolve("recorded-test-failures").resolve("fail.txt");
         assertThat(end.path("evidence").asText()).isEqualTo(txt.toString());
+    }
+
+    @Test
+    void theRunReportNamesARecordedTestByItsJournalsId() throws IOException {
+        write("pass.json", PASS);
+        write("fail.json", FAIL);
+        InJvmAgent agent = InJvmAgent.start(new RecordingVerbs(), null);
+        try {
+            agentUnderTest = new AgentClient("127.0.0.1", agent.port());
+            folder = dir;
+            runs = dir.resolve("ui-runs");
+            LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
+                    .selectors(selectClass(RecordedBesideAUiTest.class))
+                    .configurationParameter("swingui.fixtures", "run").build(),
+                    new UiRunReport(runs.resolve("latest.txt")));
+        } finally {
+            agentUnderTest = null;
+            RunFolder.forget(runs);
+            agent.stop();
+        }
+
+        // the same ids as the journal files, in latest.txt and in the run folder's report.txt
+        assertThat(journals().keySet()).contains("RecordedTestsTest$RecordedBesideAUiTest#recorded[fail].jsonl",
+                "RecordedTestsTest$RecordedBesideAUiTest#recorded[pass].jsonl");
+        String runId = new String(Files.readAllBytes(runs.resolve("latest-run.txt")), StandardCharsets.UTF_8).trim();
+        for (Path report : new Path[] {runs.resolve("latest.txt"), runs.resolve(runId).resolve("report.txt")}) {
+            List<String> lines = Files.readAllLines(report, StandardCharsets.UTF_8);
+            assertThat(lines).as(report.toString())
+                    .anyMatch(l -> l.startsWith("PASS RecordedTestsTest$RecordedBesideAUiTest#opens "))
+                    .anyMatch(l -> l.startsWith("PASS RecordedTestsTest$RecordedBesideAUiTest#recorded[pass] "))
+                    .anyMatch(l -> l.startsWith("FAIL RecordedTestsTest$RecordedBesideAUiTest#recorded[fail] "))
+                    .noneMatch(l -> l.startsWith("PASS pass ") || l.startsWith("FAIL fail "));
+        }
     }
 
     @Test

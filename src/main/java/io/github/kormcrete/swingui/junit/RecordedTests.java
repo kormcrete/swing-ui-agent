@@ -90,7 +90,7 @@ public final class RecordedTests {
                                   final Path evidence) {
         return new Executable() {
             @Override public void execute() throws Throwable {
-                TestJournal journal = factory == null ? null : factory.child("recorded[" + name + "]");
+                TestJournal journal = factory == null ? null : factory.child(TestNames.recordedMethod(name));
                 Ended ended = new Ended();
                 Throwable thrown = null;
                 try {

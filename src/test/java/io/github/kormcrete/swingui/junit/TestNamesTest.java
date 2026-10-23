@@ -49,6 +49,12 @@ class TestNamesTest {
     }
 
     @Test
+    void aRecordedTestIsRecordedAndItsFileName() {
+        assertThat(TestNames.recorded("io.github.kormcrete.orderdesk.RecordedUiIT", "place-order"))
+                .isEqualTo("RecordedUiIT#recorded[place-order]");
+    }
+
+    @Test
     void aRunningTestIsNamedFromItsContext() {
         SEEN.clear();
         LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request().selectors(selectClass(Repeated.class))
