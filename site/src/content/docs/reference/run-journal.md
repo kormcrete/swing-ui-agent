@@ -32,7 +32,7 @@ target/ui-runs/
 ```
 
 - `target` is the test module's, found from the test class, whatever the working directory (an IDE may run tests from the project root).
-- A test's id is `<Class>#<method>`. `<Class>` is the class's binary name after its last `.`, so a nested class is `Outer$Inner`. A repeated or parameterized test adds the invocation number: `OrdersUiIT#totals[2]`. `latest.txt` uses the same ids, `[n]` included.
+- A test's id is `<Class>#<method>`. `<Class>` is the class's binary name after its last `.`, so a nested class is `Outer$Inner`. A repeated or parameterized test adds the invocation number: `OrdersUiIT#totals[2]`. A recorded test run from JUnit is `<Class>#recorded[<file>]` (see [Recorded tests](#recorded-tests)). `latest.txt` and `report.txt` use the same ids, `[n]` and `recorded[…]` included.
 - Each test that writes something gets one journal file: `steps/<test id>.jsonl`. Characters a file name cannot hold on some OS (`<>:"/\|?*` and control characters) become `_` in the file name; the `test` field keeps the real id.
 - The same test id twice in one run gets a file of its own, never appended to the first: `<test id>~2.jsonl`, with checkpoints in `<test id>~2/`. This happens when one JVM runs a class twice, or runs two classes with the same simple name from different packages.
 
@@ -94,7 +94,7 @@ Written when the run folder is made and rewritten whole as the run goes on: a ne
 | `library` | The swing-ui-agent version on the test class path. |
 | `java`, `os` | The test JVM's Java version, and its OS name, version and architecture. |
 | `app.version` | Only when the run names it: `UiRunJournal.appVersion(...)`, else `-Dswingui.appVersion`. |
-| `clients` | Each agent the run drove, the first time it was seen. `agent` is its address. `alias` is the login alias of the test that first used it, when the test had one. The rest is what the agent said of itself and its app: `agentVersion`, `app.name`, `app.version`, `scale` (the main window's screen scale, `2.0` on a Retina display), `laf` (the look and feel class) and `window` (the main window's size). Each is present only when known: an older agent does not report them. `app.version` is the run's version when it names one, else the version the app reports through its plugin. |
+| `clients` | Each agent the run drove, the first time it was seen. `agent` is its address. `alias` is the login alias of the test that first used it, when the test had one. The rest is what the agent said of itself and its app: `agentVersion`, `app.name`, `app.version`, `scale` (the main window's screen scale, `2.0` on a Retina display), `laf` (the look and feel class) and `window` (the main window's size). `app` is always an object, `{}` when neither its name nor its version is known; every other field is present only when known: an older agent does not report them. `app.version` is the run's version when it names one, else the version the app reports through its plugin. |
 | `counts` | The passed, failed, skipped and aborted tests of the latest test run in this JVM that had a UI test. A build's test JVM usually runs one. |
 
 ## report.txt
@@ -143,7 +143,7 @@ The first line of every file: the test's id, the run id, and its clients with wh
 
 ### section
 
-`ui.step("Place the order")` starts a part of the test, in the author's words. The lines after it belong to it, up to the next section. Line breaks become spaces; nothing else in the sentence changes.
+`ui.step("Place the order")` starts a part of the test, in the author's words. The lines after it belong to it, up to the next section. Line breaks become spaces; nothing else in the sentence changes, except that a sentence longer than 2,000 characters is cut to 2,000.
 
 ```json
 {"seq":2,"t":"2026-10-23T08:12:04.559Z","kind":"section","text":"Place the order"}
@@ -213,7 +213,7 @@ Two things to know about the `end` line:
 One line stays small, whatever the test reads or types:
 
 - A `value` longer than 2,000 characters is cut to 2,000 and the line gets `"capped": true`. For a list or a map, that is its JSON text: a capped list is a string.
-- Each text inside `step`, `locator` and `expected` is cut at 2,000 characters. How many entries they hold is not limited.
+- Each text inside `step`, `locator` and `expected`, and a section's `text`, is cut at 2,000 characters. How many entries they hold is not limited.
 - A sentence holds at most 60 characters of a value, then `…`.
 
 ### Secrets
@@ -224,7 +224,7 @@ These values are written as `***` in the `target`, `locator`, `value`, `expected
 - text typed into a `password` target;
 - the password given to `loginAs(user, password)`.
 
-The run's `report.txt` masks them too (see [report.txt](#reporttxt)).
+A value is masked before anything is cut to size, so a secret longer than a cap leaves no part of itself either. The run's `report.txt` masks them too (see [report.txt](#reporttxt)).
 
 ### Times
 
@@ -312,7 +312,7 @@ Two things a checkpoint does to the app, both on purpose:
 
 ## Recorded tests
 
-A recorded test run from JUnit through `RecordedTests.of(ui)` writes its own journal: `steps/<Class>#recorded[<file>].jsonl`, where `<file>` is the file's name without `.json`, for example `RecordedUiIT#recorded[place-order].jsonl`. The factory method's own journal is dropped.
+A recorded test run from JUnit through `RecordedTests.of(ui)` writes its own journal: `steps/<Class>#recorded[<file>].jsonl`, where `<file>` is the file's name without `.json`, for example `RecordedUiIT#recorded[place-order].jsonl`, whatever the factory method is called. `latest.txt` and `report.txt` name it by the same id. The factory method's own journal is dropped.
 
 - It is written when the recorded test ends, from the agent's reply: one line per step and check that ran, in order, then the `end` line.
 - `step` is the step as it ran: a link such as `${copy.rows.Orders.added[0].Number}` is replaced by the value it stood for. `resolved` lists each link as written with that value.
@@ -337,7 +337,7 @@ Each is a JUnit configuration parameter, which JUnit also reads from the system 
 | `swingui.runId` | the JVM's run id | The run folder's name, e.g. a CI build number. `A-Z a-z 0-9 . _ -` only; anything else warns once and uses the JVM's run id. |
 | `swingui.appVersion` | none | The app version this run tests, into `run.json` and each client's `app.version`. |
 
-From test code, `UiRunJournal.appVersion(OrderDesk.VERSION)` in a `@BeforeAll` or a static initializer names the app version. It wins over `swingui.appVersion` and over the version the app reports, and rewrites a `run.json` already written.
+From test code, `UiRunJournal.appVersion(OrderDesk.VERSION)` names the app version. It wins over `swingui.appVersion` and over the version the app reports. Name it before the first test of the run, for example in a static initializer of a base class all UI tests share: named later, it still changes the top-level `app.version` of a `run.json` already written, but the clients already listed keep the version they were listed with.
 
 ## When writing fails
 

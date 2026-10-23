@@ -64,10 +64,11 @@ import java.util.function.Consumer;
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
  * (FixtureAppDriveIT): two fields (Notes with a plain border and a caret that does not blink, so a picture of it
  * shows whether its caret was painted), Save, a New that moves focus itself, a Delete that asks in a modal dialog,
- * an attachments drop target with a context menu that lights up while the pointer is over it, a lines table, a status label that tells what happened, a Total
- * caption beside the value label it names (Save sets the value, New sets it back to €0.00) and an
- * Archive button bottom right, with a button beside it that drags the person's palette over Archive (as a person
- * would: the palette's default spot covers no button). That button is enabled once the palette is in the window.
+ * an attachments drop target with a context menu that lights up while the pointer is over it, a lines table, a
+ * status label that tells what happened, a Total caption beside the value label it names (Save sets the value, New
+ * sets it back to €0.00) and an Archive button bottom right, with a button beside it that drags the person's
+ * palette over Archive (as a person would: the palette's default spot covers no button). That button is enabled
+ * once the palette is in the window.
  * The lines table edits Qty in a plain spinner, and Code and Ref in validating editors that refuse anything but
  * digits: Code silently, Ref with a message dialog.
  * <p>Its one menu, {@code Window › Register}, opens the Register window ({@link #showRegister}): records the agent

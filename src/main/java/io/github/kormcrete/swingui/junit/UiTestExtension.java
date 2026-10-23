@@ -134,8 +134,9 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
 
     /**
      * One client of a test as its journal lists it: number, agent address, alias, and what the agent said of itself and
-     * its app (version, screen scale, look and feel, main window size), each only when known (an agent a test made itself says nothing). The app version a run names beats
-     * the app's own.
+     * its app (version, screen scale, look and feel, main window size), each only when known (an agent a test made
+     * itself says nothing); {@code app} is always an object, empty when neither name nor version is known. The app
+     * version a run names beats the app's own.
      */
     private static ObjectNode client(int number, UiAgents agent, String alias, RunFolder folder) {
         SessionInfo info = agent.info();

@@ -11,9 +11,10 @@ public final class UiRunJournal {
     private UiRunJournal() {}
 
     /**
-     * Names the app version this run tests, e.g. {@code UiRunJournal.appVersion(OrderDesk.VERSION)} in a
-     * {@code @BeforeAll} or a static initializer. It goes into the run's {@code run.json} and each test's client list,
-     * and beats {@code -Dswingui.appVersion} and the version the app reports; {@code null} or blank forgets it.
+     * Names the app version this run tests, e.g. {@code UiRunJournal.appVersion(OrderDesk.VERSION)} in a static
+     * initializer of a base class all UI tests share: name it before the first test, as the clients a run already
+     * listed keep the version they were listed with. It goes into the run's {@code run.json} and each test's client
+     * list, and beats {@code -Dswingui.appVersion} and the version the app reports; {@code null} or blank forgets it.
      */
     public static void appVersion(String version) {
         RunFolder.appVersion(version);
