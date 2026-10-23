@@ -45,8 +45,11 @@ public final class StepWords {
         if (action == null) return null;
         Locator target = locator(s.get("target"));
         switch (action) {
-            case "type":
-                return "Type " + value(text(s, "text")) + " into " + cellPlace(target, null, s);
+            case "type": {
+                String typed = text(s, "text");
+                if (typed != null && typed.isEmpty()) return "Clear " + cellPlace(target, null, s);
+                return "Type " + req(typed) + " into " + cellPlace(target, null, s);
+            }
             case "click":
                 return clickVerb(s) + " " + place(target);
             case "contextMenu":
@@ -58,21 +61,21 @@ public final class StepWords {
             case "select": {
                 List<String> items = strings(s.get("items"));
                 if (items.isEmpty() && text(s, "item") != null) items.add(text(s, "item"));
-                return "Choose " + join(items) + " in " + place(target);
+                return "Choose " + (items.isEmpty() ? "(missing)" : join(items)) + " in " + place(target);
             }
             case "check":
                 return (s.path("checked").asBoolean(true) ? "Tick " : "Untick ") + place(target);
             case "press":
-                return "Press " + text(s, "keys") + (target == null ? "" : " in " + place(target));
+                return "Press " + req(text(s, "keys")) + (target == null ? "" : " in " + place(target));
             case "answer": {
                 String button = text(s, "button");
-                return "Press " + ("escape".equals(button) ? "Escape" : button) + " in the dialog";
+                return "Press " + ("escape".equals(button) ? "Escape" : req(button)) + " in the dialog";
             }
             case "chooseFile": {
                 String path = text(s, "path");
                 boolean approve = s.path("approve").asBoolean(true);
                 if (path == null) return approve ? "Choose a file" : "Cancel the file chooser";
-                return "Choose the file " + value(path) + (approve ? "" : " without approving");
+                return "Choose the file " + req(path) + (approve ? "" : " without approving");
             }
             case "focusFileChooserName":
                 return "Put the focus in the file name field";
@@ -80,7 +83,7 @@ public final class StepWords {
                 return "Drag " + place(locator(s.get("from"))) + " onto " + place(locator(s.get("to")));
             case "drop": {
                 List<String> files = strings(s.get("files"));
-                String what = files.isEmpty() ? "the text " + value(text(s, "text")) : join(files);
+                String what = files.isEmpty() ? "the text " + req(text(s, "text")) : join(files);
                 return "Drop " + what + " on " + place(target);
             }
             case "resizeColumn": {
@@ -97,9 +100,9 @@ public final class StepWords {
             case "scroll":
                 return scroll(s, target);
             case "setClipboard":
-                return "Put " + value(text(s, "text")) + " on the clipboard";
+                return "Put " + req(text(s, "text")) + " on the clipboard";
             case "navigate":
-                return "Go to " + value(text(s, "target"));
+                return "Go to " + req(text(s, "target"));
             case "close":
                 return "Close the active tab";
             case "loginAs": {
@@ -113,7 +116,7 @@ public final class StepWords {
                 return expect(s, target);
             case "remember":
                 return "Remember what " + (s.path("selected").asBoolean(false) ? "is selected in " : "")
-                        + place(target) + (s.path("selected").asBoolean(false) ? "" : " shows") + " as " + text(s, "as");
+                        + place(target) + (s.path("selected").asBoolean(false) ? "" : " shows") + " as " + req(text(s, "as"));
             case "screenshot": {
                 if (target != null) return "Take a picture of " + place(target);
                 String window = text(s, "window");
@@ -121,7 +124,7 @@ public final class StepWords {
             }
             case "do": {
                 String say = text(s, "say");
-                return say != null && !say.trim().isEmpty() ? value(say) : "Do " + text(s, "step");
+                return say != null && !say.trim().isEmpty() ? value(say) : "Do " + req(text(s, "step"));
             }
             default:
                 return null;
@@ -151,8 +154,8 @@ public final class StepWords {
     private static String expect(JsonNode s, Locator target) {
         String where = place(target);
         String head = "Check that ";
-        if (s.has("text")) return head + where + " shows " + value(text(s, "text"));
-        if (s.has("value")) return head + where + " holds " + value(text(s, "value"));
+        if (s.has("text")) return head + where + " shows " + shown(text(s, "text"));
+        if (s.has("value")) return head + where + " holds " + shown(text(s, "value"));
         if (s.has("tooltip")) {
             String tip = text(s, "tooltip");
             return head + where + (tip == null || tip.isEmpty() ? " has no tooltip" : " has the tooltip " + value(tip));
@@ -175,11 +178,11 @@ public final class StepWords {
         }
         if (s.has("cell")) {
             JsonNode cell = s.get("cell");
-            return head + cellPlace(target, cell, null) + " shows " + value(text(cell, "expected"));
+            return head + cellPlace(target, cell, null) + " shows " + shown(text(cell, "expected"));
         }
         if (s.has("selected")) {
             List<String> rows = new ArrayList<>();
-            for (JsonNode i : s.get("selected")) rows.add(String.valueOf(i.asInt() + 1));
+            for (JsonNode i : s.get("selected")) rows.add(String.valueOf(i.asLong() + 1));
             if (rows.isEmpty()) return head + "nothing is selected in " + where;
             return head + (rows.size() == 1 ? "row " : "rows ") + join(rows) + " of " + where
                     + (rows.size() == 1 ? " is selected" : " are selected");
@@ -222,7 +225,8 @@ public final class StepWords {
     /** The place phrase: where in the app a locator points, in words. */
     public static String place(Locator t) {
         if (t == null) return "the window";
-        String name = t.name == null ? null : t.name.replaceAll("~+$", "");
+        String name = t.name == null ? null : t.containsMatch() && t.name.endsWith("~")
+                ? t.name.substring(0, t.name.length() - 1) : t.name;
         String base;
         boolean bare = false;
         if (name != null && !name.isEmpty()) {
@@ -298,7 +302,7 @@ public final class StepWords {
     private static String rowPhrase(Map<String, Object> row) {
         Object index = row.get("index");
         if (row.size() == 1 && index instanceof Number) {
-            int i = ((Number) index).intValue();
+            long i = ((Number) index).longValue();
             if (i >= 0) return "row " + (i + 1);
             if (i == -1) return "the last row";
             return "row " + (-i) + " from the end";
@@ -359,15 +363,28 @@ public final class StepWords {
         return sb.toString();
     }
 
+    /** An expected text: the value, or "nothing" when it is empty (never a trailing space). */
+    private static String shown(String v) {
+        return v == null || v.isEmpty() ? "nothing" : value(v);
+    }
+
+    /** A value a step must have: the value in a sentence, or the fixed word "(missing)" when it is absent or empty. */
+    private static String req(String v) {
+        return v == null || v.trim().isEmpty() ? "(missing)" : value(v);
+    }
+
     /** A value inside a sentence: one line, at most {@link #VALUE_CAP} characters. */
     private static String value(String v) {
         if (v == null) return "";
         String line = v.replaceAll("\\r\\n|\\r|\\n", " ");
-        return line.length() > VALUE_CAP ? line.substring(0, VALUE_CAP) + "…" : line;
+        if (line.length() <= VALUE_CAP) return line;
+        int end = VALUE_CAP;
+        if (Character.isHighSurrogate(line.charAt(end - 1))) end--;
+        return line.substring(0, end) + "\u2026";
     }
 
     private static String path(List<String> items) {
-        return join(items, " > ");
+        return items.isEmpty() ? "(missing)" : join(items, " > ");
     }
 
     private static String join(List<String> items) {
@@ -385,25 +402,29 @@ public final class StepWords {
 
     private static String text(JsonNode n, String field) {
         JsonNode v = n == null ? null : n.get(field);
-        return v == null || v.isNull() ? null : v.asText();
+        return v == null || !v.isValueNode() || v.isNull() ? null : v.asText();
     }
 
     private static List<String> strings(JsonNode n) {
         List<String> out = new ArrayList<>();
         if (n != null && n.isArray()) {
-            for (JsonNode e : n) out.add(e.asText());
+            for (JsonNode e : n) {
+                if (e.isValueNode() && !e.isNull()) out.add(e.asText());
+            }
+        } else if (n != null && n.isValueNode() && !n.isNull()) {
+            out.add(n.asText());
         }
         return out;
     }
 
     private static Map<String, Object> rowMap(JsonNode n) {
-        if (n == null || !n.isObject()) return null;
+        if (n == null || !n.isObject() || n.size() == 0) return null;
         Map<String, Object> row = new LinkedHashMap<>();
         Iterator<Map.Entry<String, JsonNode>> it = n.fields();
         while (it.hasNext()) {
             Map.Entry<String, JsonNode> e = it.next();
             JsonNode v = e.getValue();
-            row.put(e.getKey(), v.isIntegralNumber() ? (Object) v.asInt() : v.asText());
+            row.put(e.getKey(), v.isIntegralNumber() ? (Object) v.asLong() : v.asText());
         }
         return row;
     }

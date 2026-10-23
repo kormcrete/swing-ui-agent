@@ -213,4 +213,76 @@ class StepWordsTest {
     void valuesAreOneLine() {
         said("{\"action\":\"setClipboard\",\"text\":\"a\\r\\nb\\nc\"}", "Put a b c on the clipboard");
     }
+
+    @Test
+    void sentencesOfTheBranchesTheMainGoldensSkip() {
+        String orders = "\"target\":{\"role\":\"table\",\"name\":\"Orders\"}";
+        String lines = "\"target\":{\"role\":\"table\",\"name\":\"Lines\"}";
+        said("{\"action\":\"do\",\"step\":\"addToCart\",\"say\":\"Add the gel pen to the cart\"}", "Add the gel pen to the cart");
+        said("{\"action\":\"expect\"," + lines + ",\"rows\":{\"op\":\"gt\",\"value\":3}}", "Check that Lines has more than 3 rows");
+        said("{\"action\":\"expect\"," + lines + ",\"rows\":{\"op\":\"lte\",\"value\":4}}", "Check that Lines has at most 4 rows");
+        said("{\"action\":\"expect\"," + lines + ",\"rows\":{\"op\":\"eq\",\"value\":1}}", "Check that Lines has 1 row");
+        said("{\"action\":\"click\",\"count\":3," + orders + "}", "Triple-click Orders");
+        said("{\"action\":\"click\",\"modifiers\":[\"Shift\",\"Ctrl\"]," + orders + "}", "Shift+Ctrl-click Orders");
+        said("{\"action\":\"click\",\"modifiers\":[\"Mod\"],\"count\":2," + orders + "}", "Mod-double-click Orders");
+        said("{\"action\":\"scroll\",\"pages\":-2," + orders + "}", "Scroll Orders back by 2 pages");
+        said("{\"action\":\"scroll\",\"pages\":1," + orders + "}", "Scroll Orders by 1 page");
+        said("{\"action\":\"expect\"," + lines + ",\"selected\":[1]}", "Check that row 2 of Lines is selected");
+        String gift = "\"target\":{\"role\":\"checkbox\",\"name\":\"Gift wrap\"}";
+        said("{\"action\":\"expect\"," + gift + ",\"state\":[\"readonly\",\"!readonly\"]}",
+                "Check that Gift wrap is read-only and editable");
+        said("{\"action\":\"expect\"," + gift + ",\"state\":[\"!checked\",\"focused\",\"!focused\",\"hidden\",\"selected\",\"!selected\"]}",
+                "Check that Gift wrap is unchecked and focused and not focused and hidden and selected and not selected");
+        said("{\"action\":\"expect\"," + gift + ",\"state\":[\"disabled\",\"blinking\",\"!sparkling\"]}",
+                "Check that Gift wrap is disabled and blinking and not sparkling");
+        said("{\"action\":\"chooseFile\"}", "Choose a file");
+        said("{\"action\":\"chooseFile\",\"approve\":false}", "Cancel the file chooser");
+        said("{\"action\":\"answer\",\"button\":\"escape\"}", "Press Escape in the dialog");
+        said("{\"action\":\"remember\",\"target\":{\"role\":\"table\",\"name\":\"Orders\",\"column\":\"Number\"},"
+                + "\"as\":\"order\",\"selected\":true}", "Remember what is selected in column Number in Orders as order");
+        said("{\"action\":\"expect\"," + gift + ",\"text\":\"\"}", "Check that Gift wrap shows nothing");
+        said("{\"action\":\"click\",\"target\":{\"role\":\"table\",\"name\":\"Lines\",\"row\":{\"index\":9999999999}}}",
+                "Click row 10000000000 in Lines");
+    }
+
+    @Test
+    void aMissingFieldReadsAsMissingNeverAsNullOrDoubleSpaces() {
+        String customer = "\"target\":{\"role\":\"text\",\"name\":\"Customer\"}";
+        said("{\"action\":\"type\"," + customer + ",\"text\":\"\"}", "Clear Customer");
+        said("{\"action\":\"type\"," + customer + "}", "Type (missing) into Customer");
+        said("{\"action\":\"press\"}", "Press (missing)");
+        said("{\"action\":\"remember\"," + customer + "}", "Remember what Customer shows as (missing)");
+        said("{\"action\":\"do\"}", "Do (missing)");
+        said("{\"action\":\"navigate\"}", "Go to (missing)");
+        said("{\"action\":\"answer\"}", "Press (missing) in the dialog");
+        said("{\"action\":\"menu\"}", "Choose (missing) in the menu bar");
+        said("{\"action\":\"pick\",\"path\":[]}", "Pick (missing)");
+        said("{\"action\":\"setClipboard\"}", "Put (missing) on the clipboard");
+        said("{\"action\":\"select\"," + customer + "}", "Choose (missing) in Customer");
+    }
+
+    @Test
+    void malformedFieldsStillGiveASentence() {
+        said("{\"action\":\"click\",\"target\":\"Place order\",\"modifiers\":\"Shift\"}", "Shift-click the window");
+        said("{\"action\":\"menu\",\"path\":\"File\"}", "Choose File in the menu bar");
+        said("{\"action\":\"pick\",\"path\":{\"a\":1}}", "Pick (missing)");
+        said("{\"action\":{\"x\":1}}", "Step");
+        said("{\"action\":\"type\",\"target\":{\"role\":{\"a\":1},\"name\":[1]},\"text\":{\"a\":1}}", "Type (missing) into the main window");
+        said("{\"action\":\"expect\",\"target\":{\"role\":\"table\",\"name\":\"Lines\"},\"rows\":\"3\"}",
+                "Check that Lines has 0 rows");
+    }
+
+    @Test
+    void aTildeIsDroppedOnlyFromAContainsName() {
+        assertThat(StepWords.place(loc("{\"role\":\"button\",\"name\":\"Backup~\"}"))).isEqualTo("Backup~");
+        assertThat(StepWords.place(loc("{\"role\":\"button\",\"name\":\"Backup~\",\"match\":\"contains\"}"))).isEqualTo("Backup");
+    }
+
+    @Test
+    void theCutNeverSplitsASurrogatePair() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 59; i++) text.append('a');
+        text.append("😀tail");
+        said("{\"action\":\"setClipboard\",\"text\":\"" + text + "\"}", "Put " + text.substring(0, 59) + "… on the clipboard");
+    }
 }
