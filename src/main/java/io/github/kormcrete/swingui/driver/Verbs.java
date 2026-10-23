@@ -62,6 +62,18 @@ public interface Verbs {
         throw missing("screenshot");
     }
 
+    /**
+     * A picture of {@code target} for comparing runs - the main window when it is null; a target with only a
+     * {@code window} is that window's content. Before it paints, pending work is drained and the pointer leaves the
+     * window (as a person moving the mouse away); the text caret is off while it paints. Always scale 1, never scaled
+     * down, without the palette; a cell, row or column target is just that part. Each of {@code masks} (none: null or
+     * empty) comes back as its rectangle relative to the picture, for leaving out when comparing; nothing is painted over
+     * it. Not recorded; it moves the pointer, so the agent gates it like an action.
+     */
+    default CheckpointShot checkpoint(Locator target, List<Locator> masks) {
+        throw missing("checkpoint");
+    }
+
     /** Where {@code target} is: its rectangle in its window's coordinates, and a table's column geometry. No wait. */
     default Geometry geometry(Locator target) {
         throw missing("geometry");

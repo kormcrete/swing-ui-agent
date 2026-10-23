@@ -213,4 +213,60 @@ class UiMcpReadToolsTest {
         assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
         assertThat(e.getMessage()).contains("scale");
     }
+
+    @Test
+    void aCheckpointPassesTargetAndMasks() throws Exception {
+        backend.verbs.checkpointShot = new io.github.kormcrete.swingui.driver.CheckpointShot(new byte[] {1, 2, 3}, 412, 180,
+                Arrays.asList(new io.github.kormcrete.swingui.driver.CheckpointShot.Mask(12, 40, 90, 18, false),
+                        new io.github.kormcrete.swingui.driver.CheckpointShot.Mask(0, 160, 30, 20, true)));
+        JsonNode r = json(session.screenshot(json("{\"checkpoint\":true,\"target\":{\"role\":\"table\",\"name\":\"Lines\"},"
+                + "\"masks\":[{\"name\":\"Date\"},{\"id\":\"total\"}]}")));
+
+        assertThat(backend.verbs.calls).containsExactly("checkpoint " + Locator.of("table", "Lines") + " masks=["
+                + Locator.of(null, "Date") + ", " + Locator.ofId("total") + "]");
+        assertThat(r.at("/_mcpContent/0/type").asText()).isEqualTo("image");
+        JsonNode note = json(r.at("/_mcpContent/1/text").asText());
+        assertThat(note.toString()).isEqualTo("{\"width\":412,\"height\":180,\"sourceWidth\":412,\"sourceHeight\":180,"
+                + "\"scaled\":false,\"bytes\":3,\"checkpoint\":true,\"masks\":[{\"x\":12,\"y\":40,\"w\":90,\"h\":18,"
+                + "\"clipped\":false},{\"x\":0,\"y\":160,\"w\":30,\"h\":20,\"clipped\":true}]}");
+    }
+
+    @Test
+    void aCheckpointOfAWindowOrOfNothingNamedIsTheMainWindowsWithoutMasks() throws Exception {
+        session.screenshot(json("{\"checkpoint\":true,\"window\":\"dialog\"}"));
+        session.screenshot(json("{\"checkpoint\":true}"));
+        assertThat(backend.verbs.calls).containsExactly("checkpoint in dialog masks=[]", "checkpoint null masks=[]");
+    }
+
+    @Test
+    void aCheckpointRefusesScaleRegionMaxSizeAndPalette() throws Exception {
+        for (String extra : new String[] {"\"scale\":2", "\"region\":{\"x\":0,\"y\":0,\"w\":1,\"h\":1}",
+                "\"maxSize\":400", "\"palette\":true"}) {
+            DriverException e = catchThrowableOfType(
+                    () -> session.screenshot(json("{\"checkpoint\":true," + extra + "}")), DriverException.class);
+            assertThat(e.reason()).as(extra).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).as(extra).endsWith("a checkpoint is always scale 1, uncropped by region, "
+                    + "never scaled down, without the palette");
+        }
+        assertThat(backend.verbs.calls).isEmpty();
+    }
+
+    @Test
+    void masksWithoutCheckpointAreRefused() throws Exception {
+        for (String args : new String[] {"{\"masks\":[{\"name\":\"Date\"}]}",
+                "{\"checkpoint\":false,\"masks\":[{\"name\":\"Date\"}]}"}) {
+            DriverException e = catchThrowableOfType(() -> session.screenshot(json(args)), DriverException.class);
+            assertThat(e.reason()).as(args).isEqualTo(Reason.BAD_INPUT);
+            assertThat(e.getMessage()).as(args).contains("'masks'").contains("'checkpoint'");
+        }
+        assertThat(backend.verbs.calls).isEmpty();
+    }
+
+    @Test
+    void masksMustBeAnArrayOfTargets() {
+        DriverException e = catchThrowableOfType(
+                () -> session.screenshot(json("{\"checkpoint\":true,\"masks\":{\"name\":\"Date\"}}")), DriverException.class);
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).contains("'masks'");
+    }
 }

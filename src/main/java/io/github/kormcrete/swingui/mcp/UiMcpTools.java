@@ -366,6 +366,15 @@ public final class UiMcpTools {
                 p.putObject("palette").put("type", "boolean").put("description",
                         "true keeps the person's palette and open menus in the picture (for documentation); "
                         + "default false.");
+                p.putObject("checkpoint").put("type", "boolean").put("description",
+                        "true: a picture for comparing runs: the pointer leaves the window, the app settles, the text "
+                        + "caret is hidden while it paints; always scale 1, never scaled down; a cell, row or column "
+                        + "target is just that part. Takes no region, maxSize, scale or palette.");
+                ObjectNode masks = p.putObject("masks");
+                masks.put("type", "array");
+                masks.put("description", "With checkpoint: elements whose rectangles, relative to the picture, come "
+                        + "back in 'masks' (to leave out when comparing); nothing is painted over them.");
+                masks.set("items", LocatorSchema.of(m));
                 return readOnly(tool(m, "screenshot",
                         "A PNG of the app: the target element, or the current window when no target is given. "
                         + "It PAINTS the app's own components into an offscreen image - it never grabs the screen - so "
@@ -376,12 +385,16 @@ public final class UiMcpTools {
                         + "instead. The person's palette and any boxes shown in the app are not in the image. "
                         + "'palette': true keeps the palette, the boxes and the open menus in the picture, as the "
                         + "person sees the window (for documentation); default false. "
+                        + "'checkpoint': true moves the pointer off the window, so it needs the lease like an action; "
+                        + "its text answer adds checkpoint:true and masks [{x, y, w, h, clipped}]. "
                         + "A read: nothing is recorded; to capture screens in a recorded test, use the "
                         + "'screenshot' step in a batch, which writes a file. Use it for an "
                         + "aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for "
                         + "anything that is really a number or a boolean.",
                         schema));
             }
+            /** A checkpoint moves the pointer: that call is gated like an action, a plain screenshot is not. */
+            @Override public java.util.Set<String> actingFlags() { return java.util.Collections.singleton("checkpoint"); }
             @Override public String invoke(JsonNode args) { return session.screenshot(args); }
         });
 

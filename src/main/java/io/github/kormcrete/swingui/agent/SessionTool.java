@@ -72,6 +72,23 @@ final class SessionTool implements McpToolDefinition {
     private volatile Supplier<Seen> appWindow = SessionTool::appWindowShowing;
     /** How long a reset waits for an app window; below 0: the driver's expect timeout. */
     private volatile long appWindowWaitMs = -1;
+    /** How the app looks (screen scale, look and feel, main window size), or null when that cannot be read. For info. */
+    private volatile Supplier<Looks> looks = SessionTool::readLooks;
+
+    /** How the app looks, for run conditions; each null when it cannot be read, never guessed. */
+    static final class Looks {
+        final Double scale;
+        final String laf;
+        final Integer width;
+        final Integer height;
+
+        Looks(Double scale, String laf, Integer width, Integer height) {
+            this.scale = scale;
+            this.laf = laf;
+            this.width = width;
+            this.height = height;
+        }
+    }
 
     /** How long a read of the app's windows waits for a busy event thread before it says {@link Seen#BUSY}. */
     static final long EDT_READ_MS = 1_000L;
@@ -112,6 +129,12 @@ final class SessionTool implements McpToolDefinition {
         return this;
     }
 
+    /** What this tool reads of how the app looks; null from it: nothing could be read. For tests. */
+    SessionTool looks(Supplier<Looks> looks) {
+        this.looks = looks;
+        return this;
+    }
+
     @Override public String name() { return "session"; }
 
     @Override public ObjectNode descriptor(ObjectMapper mapper) {
@@ -127,7 +150,9 @@ final class SessionTool implements McpToolDefinition {
                 + "recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users "
                 + "mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready "
                 + "and an app window shows; reset waits for one. app.mainWindow: the main window is showing, not "
-                + "showing, busy (the app's event thread did not answer) or unknown");
+                + "showing, busy (the app's event thread did not answer) or unknown. app.screenScale (the main window's "
+                + "screen, 2 on a Retina display), app.lookAndFeel (the look and feel's class) and app.mainWindowSize "
+                + "{width, height}: how the app looks, each left out when it cannot be read");
         ObjectNode schema = d.putObject("inputSchema");
         schema.put("type", "object");
         ObjectNode p = schema.putObject("properties");
@@ -285,7 +310,15 @@ final class SessionTool implements McpToolDefinition {
         }
         if (ai != null && ai.name != null) app.put("name", ai.name); else app.putNull("name");
         if (ai != null && ai.version != null) app.put("version", ai.version); else app.putNull("version");
-        app.put("mainWindow", ask(mainWindow).words);
+        Seen main = ask(mainWindow);
+        app.put("mainWindow", main.words);
+        // an event thread that did not answer for the window will not answer for its looks either
+        Looks l = main == Seen.BUSY ? null : askLooks();
+        if (l != null && l.scale != null) app.put("screenScale", l.scale);
+        if (l != null && l.laf != null) app.put("lookAndFeel", l.laf);
+        if (l != null && l.width != null && l.height != null) {
+            app.putObject("mainWindowSize").put("width", l.width).put("height", l.height);
+        }
         Lease.Grant g = lease.holder();
         if (g == null) {
             r.putNull("lease");
@@ -353,6 +386,86 @@ final class SessionTool implements McpToolDefinition {
         } catch (RuntimeException e) {
             // a window read that fails cannot say: nothing waits on it
             return Seen.UNKNOWN;
+        }
+    }
+
+    private Looks askLooks() {
+        try {
+            return looks.get();
+        } catch (RuntimeException e) {
+            // looks that cannot be read are left out; info must not fail over them
+            return null;
+        }
+    }
+
+    /**
+     * How the app looks, read on the event thread as {@link #onEdt} reads its windows; null without a driver or a screen,
+     * or when the event thread does not answer in {@link #EDT_READ_MS}.
+     */
+    static Looks readLooks() {
+        final Driver d = Driver.current();
+        if (d == null || java.awt.GraphicsEnvironment.isHeadless()) return null;
+        Supplier<Looks> read = () -> looksOf(d);
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) return read.get();
+        return callOn(javax.swing.SwingUtilities::invokeLater, read, EDT_READ_MS);
+    }
+
+    /**
+     * Scale and size come from a showing main window: its screen's default transform, or on Java 8 (where that is 1 on a
+     * Retina display) the device's own {@code getScaleFactor()} when it says more; the look and feel's class name.
+     */
+    private static Looks looksOf(Driver d) {
+        Double scale = null;
+        Integer width = null;
+        Integer height = null;
+        String laf = null;
+        try {
+            javax.swing.LookAndFeel l = javax.swing.UIManager.getLookAndFeel();
+            if (l != null) laf = l.getClass().getName();
+            java.awt.Component main = d.windows().main();
+            if (main != null && main.isShowing()) {
+                width = main.getWidth();
+                height = main.getHeight();
+                java.awt.GraphicsConfiguration gc = main.getGraphicsConfiguration();
+                if (gc != null) scale = scaleOf(gc);
+            }
+        } catch (RuntimeException e) {
+            // a plugin's main-window supplier that fails: what was read so far stands
+        }
+        return new Looks(scale, laf, width, height);
+    }
+
+    static double scaleOf(java.awt.GraphicsConfiguration gc) {
+        double scale = gc.getDefaultTransform().getScaleX();
+        // from Java 9 on the transform carries the scale; asking the device there would be an illegal access
+        if (scale != 1 || !String.valueOf(System.getProperty("java.specification.version")).startsWith("1.")) return scale;
+        try {
+            Object factor = gc.getDevice().getClass().getMethod("getScaleFactor").invoke(gc.getDevice());
+            if (factor instanceof Number && ((Number) factor).doubleValue() > 1) return ((Number) factor).doubleValue();
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // no such method, or not ours to call: the transform's value
+        }
+        return scale;
+    }
+
+    /** {@code read} handed to {@code edt} to run: what it read, null when it did not answer in {@code waitMs}. */
+    static <T> T callOn(Consumer<Runnable> edt, final Supplier<T> read, long waitMs) {
+        final AtomicReference<T> answer = new AtomicReference<T>();
+        final CountDownLatch done = new CountDownLatch(1);
+        edt.accept(new Runnable() {
+            @Override public void run() {
+                try {
+                    answer.set(read.get());
+                } finally {
+                    done.countDown();
+                }
+            }
+        });
+        try {
+            return done.await(waitMs, TimeUnit.MILLISECONDS) ? answer.get() : null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         }
     }
 

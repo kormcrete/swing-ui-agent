@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.client;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DomainStepFailed;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
@@ -161,6 +162,9 @@ public final class StepCallVerbs implements Verbs {
     @Override public List<String> candidates(Locator target) { return verbs.candidates(target); }
     @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
         return verbs.screenshot(target, region, maxSize, scale, palette);
+    }
+    @Override public CheckpointShot checkpoint(Locator target, List<Locator> masks) {
+        return verbs.checkpoint(target, masks);
     }
     @Override public Geometry geometry(Locator target) { return verbs.geometry(target); }
     @Override public List<String> menuItems(List<String> path) { return verbs.menuItems(path); }

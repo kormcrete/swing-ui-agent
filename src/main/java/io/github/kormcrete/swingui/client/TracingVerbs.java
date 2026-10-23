@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.client;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.FileChooserState;
@@ -92,6 +93,7 @@ public final class TracingVerbs implements Verbs {
     @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
         throw read("screenshot");
     }
+    @Override public CheckpointShot checkpoint(Locator target, List<Locator> masks) { throw read("checkpoint"); }
     @Override public String clipboardText() { throw read("clipboard"); }
     @Override public UiReading readUi() { throw read("reading of the UI"); }
     @Override public String remember(Locator target, boolean selected, Long timeout) { throw read("remembered value"); }

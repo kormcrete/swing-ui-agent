@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver.verbs;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Edt;
@@ -32,6 +33,7 @@ import io.github.kormcrete.swingui.driver.outcome.UiReader;
 import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.driver.platform.CapabilityReport;
 import io.github.kormcrete.swingui.driver.platform.Watch;
+import io.github.kormcrete.swingui.driver.widgets.Checkpoints;
 import io.github.kormcrete.swingui.driver.widgets.ClipboardText;
 import io.github.kormcrete.swingui.driver.widgets.ComboWidget;
 import io.github.kormcrete.swingui.driver.widgets.Dialogs;
@@ -216,6 +218,47 @@ public final class LiveVerbs implements Verbs {
                     : driver.resolver().resolve(target).component;
             return Screenshots.of(c, region, maxSize, scale, palette);
         });
+    }
+
+    /**
+     * Drains, moves the pointer off the target's window and off the last hovered one (a rollover our own click left),
+     * drains again, then resolves, paints and measures in ONE event-thread task, so the masks' rectangles and the
+     * picture see the same layout and scroll offsets.
+     */
+    @Override
+    public CheckpointShot checkpoint(final Locator target, final List<Locator> masks) {
+        final List<Locator> maskList = masks == null ? Collections.<Locator>emptyList() : masks;
+        driver.settle().drain();
+        Component window = Edt.call(() -> checkpointComponent(target));
+        driver.poster().leave(window);
+        driver.poster().leaveHovered();
+        driver.settle().drain();
+        return Edt.call(() -> {
+            Checkpoints.Area area = checkpointArea(target);
+            List<Checkpoints.Area> areas = new ArrayList<Checkpoints.Area>();
+            List<String> words = new ArrayList<String>();
+            for (Locator m : maskList) {
+                areas.add(checkpointArea(m));
+                words.add(String.valueOf(m));
+            }
+            return Checkpoints.take(area, areas, target == null ? "the main window" : String.valueOf(target), words);
+        });
+    }
+
+    /** What a checkpoint target is: the main window for none, a window-only target's window, else its match. EDT. */
+    private Component checkpointComponent(Locator target) {
+        if (target == null) {
+            Component main = driver.windows().main();
+            if (main == null || !main.isShowing()) throw new DriverException(Reason.NOT_FOUND, "no main window is showing");
+            return main;
+        }
+        return isWindowOnly(target) ? windowRoot(target.window) : driver.resolver().resolve(target).component;
+    }
+
+    /** {@link #checkpointComponent}'s area: a window's content, or the part the target names. EDT. */
+    private Checkpoints.Area checkpointArea(Locator target) {
+        if (target == null || isWindowOnly(target)) return Checkpoints.window(checkpointComponent(target));
+        return Checkpoints.area(driver.resolver().resolve(target));
     }
 
     @Override

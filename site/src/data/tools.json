@@ -551,7 +551,7 @@
     },
     {
       "name": "screenshot",
-      "description": "A PNG of the app: the target element, or the current window when no target is given. It PAINTS the app's own components into an offscreen image - it never grabs the screen - so it captures the client whether or not it is in front, takes no focus, and cannot catch another application's window. Give a 'target' for one dialog, panel, table or toolbar, and 'region' for a snippet inside it. Anything drawn in a window of its own (an open popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window instead. The person's palette and any boxes shown in the app are not in the image. 'palette': true keeps the palette, the boxes and the open menus in the picture, as the person sees the window (for documentation); default false. A read: nothing is recorded; to capture screens in a recorded test, use the 'screenshot' step in a batch, which writes a file. Use it for an aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for anything that is really a number or a boolean.",
+      "description": "A PNG of the app: the target element, or the current window when no target is given. It PAINTS the app's own components into an offscreen image - it never grabs the screen - so it captures the client whether or not it is in front, takes no focus, and cannot catch another application's window. Give a 'target' for one dialog, panel, table or toolbar, and 'region' for a snippet inside it. Anything drawn in a window of its own (an open popup menu, a combo dropdown, a tooltip) is NOT in the image - capture that window instead. The person's palette and any boxes shown in the app are not in the image. 'palette': true keeps the palette, the boxes and the open menus in the picture, as the person sees the window (for documentation); default false. 'checkpoint': true moves the pointer off the window, so it needs the lease like an action; its text answer adds checkpoint:true and masks [{x, y, w, h, clipped}]. A read: nothing is recorded; to capture screens in a recorded test, use the 'screenshot' step in a batch, which writes a file. Use it for an aesthetic call - alignment, cropping, overlap, proportion - and an 'expect' for anything that is really a number or a boolean.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -688,6 +688,112 @@
           "palette": {
             "type": "boolean",
             "description": "true keeps the person's palette and open menus in the picture (for documentation); default false."
+          },
+          "checkpoint": {
+            "type": "boolean",
+            "description": "true: a picture for comparing runs: the pointer leaves the window, the app settles, the text caret is hidden while it paints; always scale 1, never scaled down; a cell, row or column target is just that part. Takes no region, maxSize, scale or palette."
+          },
+          "masks": {
+            "type": "array",
+            "description": "With checkpoint: elements whose rectangles, relative to the picture, come back in 'masks' (to leave out when comparing); nothing is painted over them.",
+            "items": {
+              "type": "object",
+              "description": "A UI element: {\"ref\":\"e12\"} from the last snapshot, or a locator. row/column/item/point address a part of it.",
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "description": "Ref from the last snapshot, e.g. e12; valid until the next snapshot."
+                },
+                "window": {
+                  "type": "string",
+                  "description": "main | popup | dialog | dialog:<title> | window:<title>; a title ending in * matches a prefix."
+                },
+                "scope": {
+                  "type": "array",
+                  "description": "Ordered tab:<title> / section:<caption> steps the element sits in (a section is any titled border, even one on a clickable box); a title or caption ending in * matches a prefix (tab:New order*); an id:<name> step means strictly inside the component whose getName() is <name> (not a contributed section id); a text:<name> step strictly inside the text field of that name, such as its clear X (id clear: the app's own X named so, or FlatLaf's).",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "role": {
+                  "type": "string",
+                  "description": "The element's role.",
+                  "enum": [
+                    "window",
+                    "dialog",
+                    "button",
+                    "toggle",
+                    "checkbox",
+                    "radio",
+                    "text",
+                    "password",
+                    "combo",
+                    "list",
+                    "table",
+                    "tree",
+                    "tabs",
+                    "tab",
+                    "menubar",
+                    "menu",
+                    "menuitem",
+                    "clickable",
+                    "label",
+                    "section"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Its name: component name, own text, label, titled border, tooltip, or action name."
+                },
+                "match": {
+                  "type": "string",
+                  "description": "How name compares.",
+                  "enum": [
+                    "exact",
+                    "contains"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "description": "The component's getName()."
+                },
+                "row": {
+                  "type": "object",
+                  "description": "Table row: {\"<column header>\": \"<cell text>\", ...} or {\"index\": n}."
+                },
+                "column": {
+                  "type": "string",
+                  "description": "Table column header: with row, that cell; without row, the header itself."
+                },
+                "item": {
+                  "type": "array",
+                  "description": "List or combo item text (one element), or a tree path.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "point": {
+                  "type": "object",
+                  "description": "{x, y}: fractions (0..1) of the element's bounds, for custom-painted content.",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "nth": {
+                  "type": "integer",
+                  "description": "Which match, counted from 0 in tree order, when the locator is not unique (makes the step fragile)."
+                }
+              }
+            }
+          },
+          "_lease": {
+            "type": "string",
+            "description": "lease token from session op 'lease'; omit while nobody holds the lease"
           }
         }
       },
@@ -3130,7 +3236,7 @@
     },
     {
       "name": "session",
-      "description": "The agent itself. info (default): versions, app start, lease, plugins (the plugins array lists every plugin with its state). lease {owner, ttlMs}: take the agent for one owner; pass the token as _lease on every mutating call. release {token}. renew {token}: keep the lease alive while the test makes no call; answers renewed: false once the lease is gone. reset {alias | user+password}: the start of every test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). startNote: a search or filter field left filled next to a table on the start screen (a test that leaves it filled may fail its next run). Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready and an app window shows; reset waits for one. app.mainWindow: the main window is showing, not showing, busy (the app's event thread did not answer) or unknown",
+      "description": "The agent itself. info (default): versions, app start, lease, plugins (the plugins array lists every plugin with its state). lease {owner, ttlMs}: take the agent for one owner; pass the token as _lease on every mutating call. release {token}. renew {token}: keep the lease alive while the test makes no call; answers renewed: false once the lease is gone. reset {alias | user+password}: the start of every test: close modal dialogs; with an app plugin also its reset (tabs, login as alias or user). startNote: a search or filter field left filled next to a table on the start screen (a test that leaves it filled may fail its next run). Starts a fresh recording for export_test; refused while a recording runs (recording start or ● Record): recording stop or Done ends it. login {alias | user+password | relogin:true}: switch users mid-test. edt: the client's event-thread stack. ready: true once the app plugin (if any) is ready and an app window shows; reset waits for one. app.mainWindow: the main window is showing, not showing, busy (the app's event thread did not answer) or unknown. app.screenScale (the main window's screen, 2 on a Retina display), app.lookAndFeel (the look and feel's class) and app.mainWindowSize {width, height}: how the app looks, each left out when it cannot be read",
       "inputSchema": {
         "type": "object",
         "properties": {

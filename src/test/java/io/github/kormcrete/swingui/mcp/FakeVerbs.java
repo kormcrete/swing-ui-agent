@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.FileChooserState;
@@ -68,6 +69,14 @@ public class FakeVerbs implements Verbs {
         calls.add("screenshot " + target + " " + maxSize + (scale == null ? "" : " " + scale) + (palette ? " palette" : ""));
         if (readFailure != null) throw readFailure;
         return shot;
+    }
+    /** What {@link #checkpoint} answers. */
+    public CheckpointShot checkpointShot = new CheckpointShot(new byte[] {(byte) 0x89, 'P', 'N', 'G'}, 4, 3,
+            Collections.<CheckpointShot.Mask>emptyList());
+    @Override public CheckpointShot checkpoint(Locator target, List<Locator> masks) {
+        calls.add("checkpoint " + target + " masks=" + masks);
+        if (readFailure != null) throw readFailure;
+        return checkpointShot;
     }
     @Override public Node read(Locator target, Integer maxRows) {
         calls.add("read " + target + " " + maxRows);

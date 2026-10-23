@@ -12,8 +12,9 @@ import java.util.Set;
 /**
  * Wraps every tool that is not read-only so it runs under the {@link Lease}; a read-only tool runs for anyone, and
  * renews the lease when it carries the holder's token. A tool with read-only ops ({@link McpToolDefinition#readOnlyOps})
- * does both, op by op. The token travels as the argument {@value #TOKEN_FIELD} and
- * is stripped before the tool sees its arguments.
+ * does both, op by op; a read-only tool with acting flags ({@link McpToolDefinition#actingFlags}) does both, call by
+ * call (a {@code screenshot} with {@code checkpoint: true} moves the pointer). The token travels as the argument
+ * {@value #TOKEN_FIELD} and is stripped before the tool sees its arguments.
  */
 final class LeaseGate {
 
@@ -25,7 +26,8 @@ final class LeaseGate {
         List<McpToolDefinition> out = new ArrayList<McpToolDefinition>();
         for (McpToolDefinition t : tools) {
             boolean readOnly = t.descriptor(mapper).path("annotations").path("readOnlyHint").asBoolean(false);
-            out.add(readOnly ? renewing(t, lease) : !t.readOnlyOps().isEmpty() ? mixed(t, lease) : gated(t, lease));
+            out.add(readOnly ? (t.actingFlags().isEmpty() ? renewing(t, lease) : flagged(t, lease))
+                    : !t.readOnlyOps().isEmpty() ? mixed(t, lease) : gated(t, lease));
         }
         return out;
     }
@@ -49,6 +51,8 @@ final class LeaseGate {
             @Override public ObjectNode descriptor(ObjectMapper mapper) { return tool.descriptor(mapper); }
 
             @Override public Set<String> readOnlyOps() { return tool.readOnlyOps(); }
+
+            @Override public Set<String> actingFlags() { return tool.actingFlags(); }
 
             @Override public String invoke(JsonNode args) throws Exception {
                 lease.renew(token(args));
@@ -78,11 +82,36 @@ final class LeaseGate {
         };
     }
 
+    /** A read-only tool whose calls with an acting flag set are gated; its other calls run for anyone and renew. */
+    private static McpToolDefinition flagged(final McpToolDefinition tool, final Lease lease) {
+        final McpToolDefinition reads = renewing(tool, lease);
+        final McpToolDefinition gated = gated(tool, lease);
+        final Set<String> flags = tool.actingFlags();
+        return new McpToolDefinition() {
+            @Override public String name() { return tool.name(); }
+
+            @Override public ObjectNode descriptor(ObjectMapper mapper) { return gated.descriptor(mapper); }
+
+            @Override public Set<String> readOnlyOps() { return tool.readOnlyOps(); }
+
+            @Override public Set<String> actingFlags() { return flags; }
+
+            @Override public String invoke(JsonNode args) throws Exception {
+                for (String flag : flags) {
+                    if (args != null && args.path(flag).asBoolean(false)) return gated.invoke(args);
+                }
+                return reads.invoke(args);
+            }
+        };
+    }
+
     private static McpToolDefinition gated(final McpToolDefinition tool, final Lease lease) {
         return new McpToolDefinition() {
             @Override public String name() { return tool.name(); }
 
             @Override public Set<String> readOnlyOps() { return tool.readOnlyOps(); }
+
+            @Override public Set<String> actingFlags() { return tool.actingFlags(); }
 
             @Override public ObjectNode descriptor(ObjectMapper mapper) {
                 ObjectNode d = tool.descriptor(mapper);

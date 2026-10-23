@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.mcp;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Edt;
@@ -1252,21 +1253,62 @@ public class UiMcpSession {
             target = new Locator();   // a whole window, as snapshot takes it
             target.window = window;
         }
+        Boolean checkpoint = bool(args, "checkpoint");
+        if (checkpoint != null && checkpoint) return checkpoint(args, target);
+        if (args != null && args.has("masks")) {
+            throw new DriverException(Reason.BAD_INPUT, "'masks' needs 'checkpoint': true");
+        }
         Boolean palette = bool(args, "palette");
         Shot shot = driver().screenshot(target, region(args), integer(args, "maxSize"), number(args, "scale"),
                 palette != null && palette);
+        return image(shot.png, "{\"width\":" + shot.width + ",\"height\":" + shot.height
+                + ",\"sourceWidth\":" + shot.sourceWidth + ",\"sourceHeight\":" + shot.sourceHeight
+                + ",\"scaled\":" + shot.scaled + ",\"bytes\":" + shot.png.length + "}");
+    }
 
+    /**
+     * {@link #screenshot} with {@code checkpoint: true}: a picture for comparing runs, its size as on screen, and the
+     * {@code masks} targets' rectangles relative to it. Takes none of the options that would change the picture.
+     */
+    private String checkpoint(JsonNode args, Locator target) {
+        for (String option : new String[] {"region", "maxSize", "scale", "palette"}) {
+            if (args.hasNonNull(option)) {
+                throw new DriverException(Reason.BAD_INPUT, "a checkpoint is always scale 1, uncropped by region, "
+                        + "never scaled down, without the palette");
+            }
+        }
+        List<Locator> masks = new ArrayList<Locator>();
+        if (args.hasNonNull("masks")) {
+            JsonNode list = args.get("masks");
+            if (!list.isArray()) throw new DriverException(Reason.BAD_INPUT, "'masks' must be an array of targets");
+            for (JsonNode m : list) {
+                if (!m.isObject()) throw new DriverException(Reason.BAD_INPUT, "'masks' must be an array of targets");
+                masks.add(locator(m));
+            }
+        }
+        CheckpointShot shot = driver().checkpoint(target, masks);
+        ObjectNode note = mapper.createObjectNode();
+        note.put("width", shot.width).put("height", shot.height).put("sourceWidth", shot.width)
+                .put("sourceHeight", shot.height).put("scaled", false).put("bytes", shot.png.length)
+                .put("checkpoint", true);
+        ArrayNode rects = note.putArray("masks");
+        for (CheckpointShot.Mask m : shot.masks) {
+            rects.addObject().put("x", m.x).put("y", m.y).put("w", m.w).put("h", m.h).put("clipped", m.clipped);
+        }
+        return image(shot.png, note.toString());
+    }
+
+    /** A tool answer of a PNG and a text with what it is. */
+    private String image(byte[] png, String about) {
         ObjectNode r = mapper.createObjectNode();
         ArrayNode content = r.putArray("_mcpContent");
         ObjectNode image = content.addObject();
         image.put("type", "image");
         image.put("mimeType", "image/png");
-        image.put("data", Base64.getEncoder().encodeToString(shot.png));
+        image.put("data", Base64.getEncoder().encodeToString(png));
         ObjectNode note = content.addObject();
         note.put("type", "text");
-        note.put("text", "{\"width\":" + shot.width + ",\"height\":" + shot.height
-                + ",\"sourceWidth\":" + shot.sourceWidth + ",\"sourceHeight\":" + shot.sourceHeight
-                + ",\"scaled\":" + shot.scaled + ",\"bytes\":" + shot.png.length + "}");
+        note.put("text", about);
         return r.toString();
     }
 

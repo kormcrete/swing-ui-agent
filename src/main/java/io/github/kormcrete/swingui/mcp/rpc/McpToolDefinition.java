@@ -27,4 +27,13 @@ public interface McpToolDefinition {
     default Set<String> readOnlyOps() {
         return Collections.emptySet();
     }
+
+    /**
+     * Boolean arguments that make a call of a read-only tool an action: a call with one of them {@code true} is gated
+     * like a tool that is not read-only (it changes what the app sees, e.g. moves the pointer); any other call runs for
+     * anyone. Only read-only tools have them.
+     */
+    default Set<String> actingFlags() {
+        return Collections.emptySet();
+    }
 }

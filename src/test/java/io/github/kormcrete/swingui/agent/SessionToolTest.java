@@ -590,4 +590,51 @@ class SessionToolTest {
         assertThat(System.currentTimeMillis() - started).isLessThan(5_000L);
         assertThat(app.calls).containsExactly("reset alias:default");
     }
+
+    @Test
+    void infoReportsScaleLookAndFeelAndMainWindowSize() throws Exception {
+        SessionTool tool = ((SessionTool) tool(fixture, null, () -> 1))
+                .looks(() -> new SessionTool.Looks(2.0, "javax.swing.plaf.metal.MetalLookAndFeel", 760, 280));
+        JsonNode info = mapper.readTree(tool.invoke(mapper.readTree("{\"op\":\"info\"}")));
+        assertThat(info.at("/app/screenScale").isNumber()).isTrue();
+        assertThat(info.at("/app/screenScale").asDouble()).isEqualTo(2.0);
+        assertThat(info.at("/app/lookAndFeel").asText()).isEqualTo("javax.swing.plaf.metal.MetalLookAndFeel");
+        assertThat(info.at("/app/mainWindowSize").toString()).isEqualTo("{\"width\":760,\"height\":280}");
+    }
+
+    @Test
+    void infoLeavesOutLooksItCannotRead() throws Exception {
+        SessionTool none = ((SessionTool) tool(fixture, null, () -> 1)).looks(() -> null);
+        JsonNode app = mapper.readTree(none.invoke(mapper.readTree("{\"op\":\"info\"}"))).path("app");
+        assertThat(app.has("screenScale")).isFalse();
+        assertThat(app.has("lookAndFeel")).isFalse();
+        assertThat(app.has("mainWindowSize")).isFalse();
+
+        SessionTool some = ((SessionTool) tool(fixture, null, () -> 1))
+                .looks(() -> new SessionTool.Looks(null, "javax.swing.plaf.metal.MetalLookAndFeel", null, null));
+        app = mapper.readTree(some.invoke(mapper.readTree("{\"op\":\"info\"}"))).path("app");
+        assertThat(app.has("screenScale")).isFalse();
+        assertThat(app.path("lookAndFeel").asText()).isEqualTo("javax.swing.plaf.metal.MetalLookAndFeel");
+        assertThat(app.has("mainWindowSize")).isFalse();
+    }
+
+    @Test
+    void withoutADriverInfoHasNoLooks() throws Exception {
+        JsonNode app = callOnEmpty("{\"op\":\"info\"}").path("app");
+        assertThat(app.has("screenScale")).isFalse();
+        assertThat(app.has("lookAndFeel")).isFalse();
+        assertThat(app.has("mainWindowSize")).isFalse();
+    }
+
+    @Test
+    void aLooksReadOnABusyEventThreadIsNothing() {
+        assertThat(SessionTool.callOn(r -> { }, () -> "never", 50)).isNull();
+        assertThat(SessionTool.callOn(Runnable::run, () -> "now", 50)).isEqualTo("now");
+    }
+
+    @Test
+    void theDescriptorNamesTheLooks() {
+        String d = fixtureTool.descriptor(mapper).path("description").asText();
+        assertThat(d).contains("app.screenScale").contains("app.lookAndFeel").contains("app.mainWindowSize");
+    }
 }

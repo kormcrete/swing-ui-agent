@@ -109,7 +109,7 @@ public final class Screenshots {
      * The part of the component that is on screen: a component inside a viewport is as tall as all of its
      * content, but a capture shows what the user sees. For a component that is not scrolled, all of it.
      */
-    private static Rectangle shown(Component c) {
+    static Rectangle shown(Component c) {
         Rectangle all = new Rectangle(0, 0, c.getWidth(), c.getHeight());
         if (!(c instanceof JComponent)) return all;
         Rectangle visible = ((JComponent) c).getVisibleRect();
@@ -122,7 +122,7 @@ public final class Screenshots {
      * lands at the image's origin. A scale above 1 is a transform on the graphics, the way a HiDPI
      * display paints: the layout is unchanged and text and borders are drawn at the finer resolution.
      */
-    private static BufferedImage paint(Component c, Rectangle shown, double scale) {
+    static BufferedImage paint(Component c, Rectangle shown, double scale) {
         int iw = (int) Math.ceil(shown.width * scale);
         int ih = (int) Math.ceil(shown.height * scale);
         BufferedImage image = new BufferedImage(iw, ih, BufferedImage.TYPE_INT_RGB);
@@ -258,7 +258,7 @@ public final class Screenshots {
         return out;
     }
 
-    private static byte[] png(BufferedImage image) {
+    static byte[] png(BufferedImage image) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             ImageIO.write(image, "png", out);

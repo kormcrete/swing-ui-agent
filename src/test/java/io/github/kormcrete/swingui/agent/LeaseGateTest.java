@@ -24,8 +24,14 @@ class LeaseGateTest {
     }
 
     private McpToolDefinition tool(final String name, final boolean readOnly, final java.util.Set<String> readOps) {
+        return tool(name, readOnly, readOps, java.util.Collections.<String>emptySet());
+    }
+
+    private McpToolDefinition tool(final String name, final boolean readOnly, final java.util.Set<String> readOps,
+                                   final java.util.Set<String> actingFlags) {
         return new McpToolDefinition() {
             @Override public java.util.Set<String> readOnlyOps() { return readOps; }
+            @Override public java.util.Set<String> actingFlags() { return actingFlags; }
             @Override public String name() { return name; }
             @Override public ObjectNode descriptor(ObjectMapper mapper) {
                 ObjectNode d = mapper.createObjectNode();
@@ -172,5 +178,55 @@ class LeaseGateTest {
         now[0] = 20_000L;
         assertThatThrownBy(() -> clocked.acquire("rerun", null)).hasMessageContaining("BUSY: leased by polling test");
         assertThat(seen).containsExactly("recording {\"op\":\"list\"}");
+    }
+
+    private McpToolDefinition screenshot() {
+        return LeaseGate.gate(Arrays.asList(tool("screenshot", true, java.util.Collections.<String>emptySet(),
+                java.util.Collections.singleton("checkpoint"))), lease, m).get(0);
+    }
+
+    /** A checkpoint moves the pointer off the window: an action, so another session's lease refuses it. */
+    @Test
+    void aCheckpointIsRefusedWhileAnotherSessionHoldsTheLease() throws Exception {
+        McpToolDefinition screenshot = screenshot();
+        Lease.Grant g = lease.acquire("suite", null);
+        assertThatThrownBy(() -> screenshot.invoke(m.readTree("{\"checkpoint\":true}")))
+                .hasMessageContaining("BUSY: leased by suite");
+        screenshot.invoke(m.readTree("{\"checkpoint\":true,\"_lease\":\"" + g.token + "\"}"));
+        assertThat(seen).containsExactly("screenshot {\"checkpoint\":true}");
+    }
+
+    @Test
+    void aPlainScreenshotStillPassesUnderTheSameLease() throws Exception {
+        McpToolDefinition screenshot = screenshot();
+        lease.acquire("suite", null);
+        screenshot.invoke(m.readTree("{\"scale\":2}"));
+        screenshot.invoke(m.readTree("{\"checkpoint\":false}"));
+        assertThat(seen).containsExactly("screenshot {\"scale\":2}", "screenshot {\"checkpoint\":false}");
+    }
+
+    @Test
+    void whileAPersonReplaysACheckpointIsBusyAndAPlainScreenshotPasses() throws Exception {
+        McpToolDefinition screenshot = screenshot();
+        lease.drivenBy(() -> "a person is replaying their recording in the app");
+        screenshot.invoke(m.readTree("{}"));
+        assertThatThrownBy(() -> screenshot.invoke(m.readTree("{\"checkpoint\":true}")))
+                .hasMessageContaining("BUSY: a person is replaying");
+        assertThat(seen).containsExactly("screenshot {}");
+    }
+
+    @Test
+    void theScreenshotToolIsReadOnlyButACheckpointActsAndItAdvertisesTheLease() {
+        for (McpToolDefinition t : io.github.kormcrete.swingui.mcp.UiMcpTools.build(null, m)) {
+            if ("screenshot".equals(t.name())) {
+                assertThat(t.descriptor(m).path("annotations").path("readOnlyHint").asBoolean()).isTrue();
+                assertThat(t.actingFlags()).containsExactly("checkpoint");
+                McpToolDefinition gated = LeaseGate.gate(Arrays.asList(t), lease, m).get(0);
+                assertThat(gated.descriptor(m).path("inputSchema").path("properties").has("_lease")).isTrue();
+                assertThat(gated.actingFlags()).containsExactly("checkpoint");
+                return;
+            }
+        }
+        throw new AssertionError("no screenshot tool");
     }
 }

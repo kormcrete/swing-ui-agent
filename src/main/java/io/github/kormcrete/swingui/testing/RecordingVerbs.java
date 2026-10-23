@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.testing;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.FileChooserState;
@@ -104,6 +105,13 @@ public final class RecordingVerbs implements Verbs {
     @Override public Shot screenshot(Locator target, double[] region, Integer maxSize, Double scale, boolean palette) {
         calls.add("screenshot " + target + (scale == null ? "" : " " + scale) + (palette ? " palette" : ""));
         return new Shot(new byte[] {1, 2, 3}, 1, 1, 1, 1, false);
+    }
+    public CheckpointShot checkpointAnswer = new CheckpointShot(new byte[] {1, 2, 3}, 1, 1,
+            java.util.Collections.<CheckpointShot.Mask>emptyList());
+    @Override public CheckpointShot checkpoint(Locator target, List<Locator> masks) {
+        calls.add("checkpoint " + target + " masks=" + masks);
+        if (failNext != null) { DriverException e = failNext; failNext = null; throw e; }
+        return checkpointAnswer;
     }
     @Override public VerbOutcome click(Locator t, String button, Integer count, List<String> modifiers, Long timeout) {
         return verb("click " + t + " " + button + " " + count + " " + modifiers + " " + timeout);
