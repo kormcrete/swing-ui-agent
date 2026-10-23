@@ -144,10 +144,15 @@ public final class UiMcpTools {
                 ObjectNode snapshot = p.putObject("snapshot");
                 snapshot.put("description", "true, or the snapshot tool's arguments (target, depth, compact, ...): "
                         + "a snapshot taken after the last step that ran, pass or fail.");
+                p.putObject(UiMcpSession.CONTINUE_ON_FAILED_CHECK).put("type", "boolean").put("description",
+                        "true: a failed check (expect, remember, a domain check) is reported and the batch goes on, so one "
+                        + "call can report several values; a failed action still stops it, and passed is false if any "
+                        + "step failed. Default false.");
                 schema.putArray("required").add("steps");
                 return tool(m, "batch",
                         "Run SEVERAL steps in ONE call, in order, stopping at the first that does not pass - use it "
-                        + "whenever the next steps are already known. "
+                        + "whenever the next steps are already known. With continueOnFailedCheck true, a failed check "
+                        + "does not stop the batch, only a failed action or read does. "
                         + "Each step runs, answers and records exactly as its own tool call would, so export_test "
                         + "writes the same test either way; 'read' steps record nothing, and a 'read' that finds "
                         + "nothing stops the batch. Returns {passed, ran, total, ms, steps:[{verb, passed, message, "

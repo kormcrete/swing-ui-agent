@@ -101,6 +101,98 @@ class UiMcpBatchTest {
         assertThat(exported.path("source").asText()).contains(".click()");
     }
 
+    private static final String EXPECT = "{\"verb\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},"
+            + "\"text\":\"4.99\"}";
+
+    private JsonNode batchPastFailedChecks(UiMcpSession s, String... steps) throws Exception {
+        return mapper.readTree(s.batch(mapper.readTree("{\"continueOnFailedCheck\":true,\"steps\":["
+                + String.join(",", steps) + "]}")));
+    }
+
+    @Test
+    void byDefaultAFailedCheckEndsTheBatch() throws Exception {
+        failCall(2, new DriverException(Reason.EXPECTATION, "expected text '4.99' but was '5.00'"));
+        JsonNode r = batch(CLICK, EXPECT, PRESS);
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(2);
+        assertThat(backend.verbs.calls).hasSize(2);
+    }
+
+    @Test
+    void continueOnFailedCheckRunsTheStepsAfterAFailedCheckAndReportsEveryOne() throws Exception {
+        failCall(2, new DriverException(Reason.EXPECTATION, "expected text '4.99' but was '5.00'"));
+        JsonNode r = batchPastFailedChecks(session, CLICK, EXPECT, EXPECT, PRESS);
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(4);
+        assertThat(r.path("total").asInt()).isEqualTo(4);
+        JsonNode steps = r.path("steps");
+        assertThat(steps).hasSize(4);
+        assertThat(steps.get(0).path("passed").asBoolean()).isTrue();
+        assertThat(steps.get(1).path("passed").asBoolean()).isFalse();
+        assertThat(steps.get(1).path("reason").asText()).isEqualTo("EXPECTATION");
+        assertThat(steps.get(1).path("message").asText()).contains("but was '5.00'");
+        assertThat(steps.get(2).path("passed").asBoolean()).isTrue();
+        assertThat(steps.get(3).path("passed").asBoolean()).isTrue();
+        assertThat(backend.verbs.calls).extracting(c -> c.split(" ")[0])
+                .containsExactly("click", "expect", "expect", "press");
+    }
+
+    @Test
+    void continueOnFailedCheckStillStopsAtAFailedAction() throws Exception {
+        failCall(1, new DriverException(Reason.NOT_ACTIONABLE, "covered by blocker"));
+        JsonNode r = batchPastFailedChecks(session, CLICK, EXPECT, PRESS);
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(1);
+        assertThat(backend.verbs.calls).hasSize(1);
+    }
+
+    @Test
+    void continueOnFailedCheckStillStopsAtAReadThatFindsNothing() throws Exception {
+        backend.verbs.failure = new DriverException(Reason.NOT_FOUND, "nothing matches");
+        JsonNode r = batchPastFailedChecks(session,
+                "{\"verb\":\"read\",\"target\":{\"role\":\"text\",\"name\":\"Nope\"}}", PRESS);
+        assertThat(r.path("passed").asBoolean()).isFalse();
+        assertThat(r.path("ran").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void aFailedCheckTheBatchWentPastRecordsNothingAndTheOtherStepsAreRecorded() throws Exception {
+        failCall(2, new DriverException(Reason.EXPECTATION, "expected text '4.99' but was '5.00'"));
+        batchPastFailedChecks(session, CLICK, EXPECT, EXPECT, PRESS);
+        String source = mapper.readTree(session.exportTest("CUiIT", "c", "p", true)).path("source").asText();
+        // click, the expect that passed, press: the failed check is not in the test
+        assertThat(source).contains(".click()").contains("Escape");
+        assertThat(source.split("4\\.99", -1)).hasSize(2);
+    }
+
+    @Test
+    void continueOnFailedCheckGoesPastAFailedDomainCheckButNotAFailedDomainAct() throws Exception {
+        io.github.kormcrete.swingui.agent.Plugins plugins = new io.github.kormcrete.swingui.agent.Plugins(backend.verbs);
+        plugins.add("order-desk", java.nio.file.Paths.get("order-desk")).ready(
+                new io.github.kormcrete.swingui.spi.PluginParts(() -> java.util.Arrays.asList(
+                        io.github.kormcrete.swingui.spi.DomainStep.check("totalIs", "The total is {total}")
+                                .param("total", io.github.kormcrete.swingui.spi.ParamType.TEXT)
+                                .steps("{\"action\":\"expect\",\"target\":{\"role\":\"label\",\"name\":\"Total\"},"
+                                        + "\"text\":\"{total}\"}").build(),
+                        io.github.kormcrete.swingui.spi.DomainStep.act("closeIt", "Close it")
+                                .steps("{\"action\":\"press\",\"keys\":\"Escape\"}").build())), "ok");
+        UiMcpSession withPlugin = new UiMcpSession(plugins, new UiMcpToolsTest.FakeInventory(), mapper);
+        String check = "{\"verb\":\"do\",\"step\":\"totalIs\",\"params\":{\"total\":\"4.99\"}}";
+        String act = "{\"verb\":\"do\",\"step\":\"closeIt\"}";
+
+        failCall(1, new DriverException(Reason.EXPECTATION, "expected text '4.99' but was '5.00'"));
+        JsonNode pastCheck = batchPastFailedChecks(withPlugin, check, PRESS);
+        assertThat(pastCheck.path("passed").asBoolean()).isFalse();
+        assertThat(pastCheck.path("ran").asInt()).isEqualTo(2);
+        assertThat(pastCheck.path("steps").get(1).path("passed").asBoolean()).isTrue();
+
+        backend.verbs.calls.clear();
+        failCall(1, new DriverException(Reason.NOT_ACTIONABLE, "covered by blocker"));
+        JsonNode atAct = batchPastFailedChecks(withPlugin, act, PRESS);
+        assertThat(atAct.path("passed").asBoolean()).isFalse();
+        assertThat(atAct.path("ran").asInt()).isEqualTo(1);
+    }
+
     @Test
     void theRecordedRecordedTestIsTheSameAsTheStepsIssuedOneByOne() throws Exception {
         // navigate is a step type with a Java form: the batch runs it as do_action would

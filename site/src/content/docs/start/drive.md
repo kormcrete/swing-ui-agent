@@ -126,6 +126,8 @@ $UI batch '{"steps":[
   {"verb":"click","target":{"role":"button","name":"Add to cart"}}]}'
 ```
 
+To read several values in one call, add `"continueOnFailedCheck":true`: a check that fails (`expect`, `remember` or a plugin's check) is reported with what the app shows, and the steps after it still run. A failed action or a `read` that finds nothing still stops the batch, and `passed` is false when any step failed. On a recording, the failed check records nothing; the steps after it record as they would one by one. When the saved test must keep that check, leave the option off and run the check again with the text the message names.
+
 ## Over MCP
 
 An MCP client that speaks streamable HTTP connects to `http://127.0.0.1:8770/mcp` and gets the same tools. See [CLI or MCP?](/swing-ui-agent/agents/cli-or-mcp/).

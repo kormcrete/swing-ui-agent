@@ -2357,7 +2357,10 @@ public class UiMcpSession {
      * writes, is the same as issuing the steps one by one.
      *
      * <p>A step that fails ({@code passed:false}, or a {@code read} that finds nothing) ends the batch
-     * and is the last one reported. A harness error (CAPABILITY_GAP, BAD_INPUT, BUSY) ends it as a tool
+     * and is the last one reported - except a failed check ({@link StepNumbers#isCheck}: {@code expect},
+     * {@code remember}, a domain check) when {@code continueOnFailedCheck} is true: it is reported and the batch goes
+     * on, the batch's {@code passed} is false, and the failed check records nothing (as a failed step never does; the
+     * steps after it record as they would one by one). A failed action, act or {@code read} still ends it. A harness error (CAPABILITY_GAP, BAD_INPUT, BUSY) ends it as a tool
      * error naming the step; the steps before it ran and were recorded. {@code snapshot} ({@code true},
      * or the snapshot tool's arguments) adds one after the last step that ran, pass or fail.
      */
@@ -2382,6 +2385,7 @@ public class UiMcpSession {
         ArrayNode results = mapper.createArrayNode();
         int ran = 0;
         boolean allPassed = true;
+        boolean pastFailedChecks = args.path(CONTINUE_ON_FAILED_CHECK).asBoolean(false);
         for (JsonNode step : steps) {
             String label = (ran + 1) + "/" + steps.size();
             if (!step.isObject() || !step.hasNonNull("verb") || !step.get("verb").isTextual()) {
@@ -2410,7 +2414,7 @@ public class UiMcpSession {
             ran++;
             if (!passed) {
                 allPassed = false;
-                break;
+                if (!pastFailedChecks || !batchCheck(verb, stepArgs)) break;
             }
         }
         r.put("passed", allPassed);
@@ -2431,6 +2435,29 @@ public class UiMcpSession {
             }
         }
         return r.toString();
+    }
+
+    /** The batch argument that lets a failed check not end the batch. */
+    static final String CONTINUE_ON_FAILED_CHECK = "continueOnFailedCheck";
+
+    /**
+     * Whether the batch step {@code verb} with {@code args} is a check ({@link StepNumbers#isCheck}; a {@code do} step is
+     * one when its domain step is a check). A {@code read}, or a step that does not parse, is not.
+     */
+    private boolean batchCheck(String verb, ObjectNode args) {
+        if (READ_STEP.equals(verb)) return false;
+        Class<? extends VerbAction> tool = VerbSchemas.TOOLS.get(verb);
+        ObjectNode json = args.deepCopy();
+        json.remove("snapshot");
+        json.remove("outcome");
+        json.put("action", tool != null ? VerbSchemas.actionName(tool) : verb);
+        try {
+            Action a = action(json);
+            if (a instanceof DoAction) a = namedDo((DoAction) a);
+            return StepNumbers.isCheck(a);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private ObjectNode batchStep(String verb, ObjectNode args) {

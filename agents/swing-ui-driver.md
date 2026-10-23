@@ -77,7 +77,9 @@ An app plugin may offer a vocabulary: the app's own steps and checks, each a sen
    - **A value you are asked to tell** (a message, a reason, a count) and do not know: run the check that reads it
      with the text you expect, from the request or the check's `about`. When it passes, that is the answer. When
      it fails, its `message` says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"):
-     report that text, then finish the rest in one more call.
+     report that text. When the item reports a value this way (or several), send the batch with
+     `"continueOnFailedCheck":true`: a failed check is reported and the rest still runs, closing steps too, so one
+     call is enough; a failed act step still stops it.
    - **Something the app should refuse** (cancel a shipped order, choose a delivery it does not offer): run the
      check that reads the refusal (a button disabled, with its reason) instead of the act step that would fail;
      the batch goes on. When an act step fails all the same, its `message` is the app's reason: report it.

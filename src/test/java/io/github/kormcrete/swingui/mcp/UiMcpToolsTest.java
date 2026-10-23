@@ -356,6 +356,20 @@ class UiMcpToolsTest {
     }
 
     @Test
+    void theBatchToolTakesContinueOnFailedCheckAndSaysWhatItDoesInOneSentence() {
+        for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
+            if (!t.name().equals("batch")) continue;
+            com.fasterxml.jackson.databind.JsonNode p = t.descriptor(mapper).path("inputSchema").path("properties")
+                    .path("continueOnFailedCheck");
+            assertThat(p.path("type").asText()).isEqualTo("boolean");
+            assertThat(p.path("description").asText()).contains("failed check").contains("failed action");
+            assertThat(t.descriptor(mapper).path("description").asText()).contains("continueOnFailedCheck");
+            return;
+        }
+        throw new AssertionError("no batch tool");
+    }
+
+    @Test
     void theVocabularyToolIsReadOnlyWithThreeOps() {
         for (io.github.kormcrete.swingui.mcp.rpc.McpToolDefinition t : UiMcpTools.build(session(), mapper)) {
             if (!t.name().equals("vocabulary")) continue;

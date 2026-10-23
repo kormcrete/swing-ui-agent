@@ -111,8 +111,10 @@ come first, in this order:
    in its outcome: `${placeOrder.step.number}`.
 4. **Keep the batch going.** A value you are asked to tell (a message, a reason, a count) and do not know: run the
    check that reads it with the text you expect, from the request or its `about`. When it fails, its `message`
-   says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"): that is the answer. A failed
-   check records nothing, so the next call begins with that check again with the shown text, then the rest.
+   says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"): that is the answer. When a
+   request reports several values, add `"continueOnFailedCheck":true` to the batch: a failed check is reported and
+   the rest still runs (a failed act step still stops it). A failed check records nothing: when the saved test must
+   keep it, leave the option off, and the next call begins with that check again with the shown text, then the rest.
    Something the app should refuse (cancel a shipped order): run the check that reads the refusal (a button
    disabled, with its reason) instead of the act step that would fail.
 5. **Only for the parts no step covers**: find the targets with a scoped `read {"target":...}`, then raw verbs, in
