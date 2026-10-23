@@ -6,6 +6,7 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.input.Poster;
 import io.github.kormcrete.swingui.driver.platform.Capability;
 import io.github.kormcrete.swingui.driver.platform.FakeSeam;
+import io.github.kormcrete.swingui.driver.settle.EdtErrors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -496,6 +497,22 @@ class DragAndDropTest {
     }
 
     @Test
+    void aStandInThatFailsInsideAListenerThatDoesNotCatchItIsACapabilityGapAndNoAppError() {
+        show(Start.THROUGH_THE_GESTURE);
+        seam.contextRefused = true;
+        // what the verb turns into APP_ERROR: an exception uncaught on the event dispatch thread
+        EdtErrors errors = EdtErrors.live();
+        errors.ensureInstalled();
+        errors.begin();
+        DriverException e = failure(() -> start(dnd(), 2, 0));
+        List<Throwable> uncaught = errors.end();
+        assertThat(e.reason()).isEqualTo(Reason.CAPABILITY_GAP);
+        assertThat(e.getMessage()).contains("the driver could not stand in for the drag");
+        assertThat(uncaught).isEmpty();
+        noDragAndDropLeftInProgress();
+    }
+
+    @Test
     void onlyAComponentWithADragGestureRecognizerIsADragAndDropSource() {
         show(Start.THROUGH_THE_GESTURE);
         assertThat(recognizer()).isNotNull();
@@ -593,6 +610,20 @@ class DragAndDropTest {
         assertThat(pickOrder()).containsExactly("Plums", "Apples", "Pears");
         assertThat(outcome).contains("picks").contains("accepted the drop (move)");
         assertThat(exportedAs.get()).isEqualTo(TransferHandler.MOVE);
+        noDragAndDropLeftInProgress();
+    }
+
+    @Test
+    void aSwingDragShorterThanTheThresholdPassesAsThePlainMouseDragItWas() {
+        showPickList();
+        DragAndDrop dnd = dnd();
+        Point from = item(2);
+        Point to = new Point(from.x + 1, from.y);
+        DragGestureRecognizer r = Edt.call(() -> dnd.sourceAt(pickList, from));
+        DragAndDrop.Gesture gesture = dnd.start(poster, r, pickList, from, to);
+        assertThat(gesture.started()).isFalse();
+        assertThat(gesture.note()).contains("picks").contains("the mouse drag was posted as is");
+        assertThat(pickOrder()).containsExactly("Apples", "Pears", "Plums");
         noDragAndDropLeftInProgress();
     }
 

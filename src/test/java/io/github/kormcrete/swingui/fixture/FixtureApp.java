@@ -375,6 +375,7 @@ public final class FixtureApp {
         pickList.setDragEnabled(true);
         pickList.setDropMode(DropMode.ON);
         pickList.setTransferHandler(new TransferHandler() {
+            private static final long serialVersionUID = 1L;
             private int from = -1;
 
             @Override public int getSourceActions(JComponent c) { return MOVE; }

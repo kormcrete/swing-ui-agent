@@ -66,6 +66,9 @@ import java.util.List;
  */
 public final class DragAndDrop {
 
+    /** The class of Swing's one drag gesture recognizer, which every TransferHandler drag goes through. */
+    private static final String SWING_RECOGNIZER = "javax.swing.TransferHandler$SwingDragGestureRecognizer";
+
     private final Seam seam;
     private final DropInjector drops;
 
@@ -136,8 +139,8 @@ public final class DragAndDrop {
      * drop peer, or the app's drag source is a DragSource subclass of its own; NOT_ACTIONABLE when a drag and drop is in
      * progress already. When the app started no drag, the rest of the motion and the release are posted, as a person's
      * mouse would go on: the gesture is returned with a {@link Gesture#note} (the app chose not to drag) unless the
-     * drag moved too little to be a gesture (NOT_ACTIONABLE), the app started its drag on a DragSource it holds itself
-     * or the stand-in failed inside the app's listener (CAPABILITY_GAP).</p>
+     * drag on an AWT recognizer moved too little to be a gesture (NOT_ACTIONABLE), the app's gesture listener started
+     * its drag on a DragSource it holds itself or the stand-in failed inside that listener (CAPABILITY_GAP).</p>
      */
     public Gesture start(Poster poster, final DragGestureRecognizer recognizer, final Component source, Point from,
                          Point to) {
@@ -229,6 +232,8 @@ public final class DragAndDrop {
         private final DragSource ownSource;
         private final DragGestureListener ownListener;
         private final String name;
+        /** Swing's drag recognizer (a TransferHandler drag), not an AWT one on the component. */
+        private final boolean swing;
         final StandInSource standIn;
         final Gestures gestures;
         private final StandInPeer peer = new StandInPeer();
@@ -252,6 +257,7 @@ public final class DragAndDrop {
             this.ownSource = recognizer.getDragSource();
             this.ownListener = ownListener;
             this.name = name;
+            this.swing = SWING_RECOGNIZER.equals(recognizer.getClass().getName());
             this.standIn = new StandInSource(ownSource);
             this.gestures = new Gestures();
         }
@@ -277,9 +283,11 @@ public final class DragAndDrop {
                 try {
                     ownListener.dragGestureRecognized(dge);
                 } catch (InvalidDnDOperationException e) {
-                    if (context != null || standInFailed != null) throw e;
-                    // DragSource.startDrag on another drag source, refused before anything native began
-                    elsewhere = e;
+                    if (context != null) throw e;
+                    // the stand-in's own failure (standInFailed says why), or DragSource.startDrag on another drag
+                    // source, refused before anything native began: no drag either way, and the verb says which -
+                    // never as an exception left to the app's event dispatch thread
+                    if (standInFailed == null) elsewhere = e;
                 }
             }
 
@@ -320,7 +328,9 @@ public final class DragAndDrop {
             }
             int moved = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
             int threshold = DragSource.getDragThreshold();
-            if (moved <= threshold) {
+            // too short a move for an AWT recognizer means the driver's drag was wrong; Swing's components take a short
+            // drag as the plain mouse drag it is (selecting text), as they did before the driver stood in for them
+            if (moved <= threshold && !swing) {
                 throw new DriverException(Reason.NOT_ACTIONABLE, name + " did not recognize a drag gesture in the drag "
                         + "from " + from.x + "," + from.y + " to " + to.x + "," + to.y + " (" + moved + " px; a gesture "
                         + "takes more than the drag threshold, " + threshold + " px), so no drag and drop started; "
