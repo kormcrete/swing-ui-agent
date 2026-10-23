@@ -197,9 +197,9 @@ public final class Client {
     /**
      * Starts a part of this test in its run journal, named in the author's words: {@code ui.step("Place the order")}.
      * The steps, reads and checks after it belong to it, up to the next. Line breaks become spaces, and a sentence
-     * longer than {@value JournalLines#VALUE_CAP} characters is cut to that many in the journal. Throws
-     * IllegalArgumentException("a step needs a sentence") for a null or blank one; a Client built directly writes
-     * nothing.
+     * longer than {@value io.github.kormcrete.swingui.journal.JournalLines#VALUE_CAP} characters is cut to that many
+     * in the journal. Throws IllegalArgumentException("a step needs a sentence") for a null or blank one; a Client
+     * built directly writes nothing.
      */
     public void step(String sentence) {
         if (sentence == null || sentence.trim().isEmpty()) throw new IllegalArgumentException("a step needs a sentence");

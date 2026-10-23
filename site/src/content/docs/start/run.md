@@ -134,7 +134,7 @@ PASS PlaceOrderUiIT#placesAnOrderForAda 4255ms
 DONE passed=1 failed=0 skipped=0 aborted=0
 ```
 
-The STARTED line ends with ` run=<run id>`: the run folder `target/ui-runs/<run id>/`, which holds each test's journal (every step, check and read, with an English sentence) and its checkpoints. `target/ui-runs/latest-run.txt` holds the same id on one line. A repeated or parameterized test is listed once per invocation, as `<Class>#<method>[n]`. See [Run journal](/swing-ui-agent/reference/run-journal/).
+The STARTED line ends with ` run=<run id>`: the run folder `target/ui-runs/<run id>/`, which holds each test's journal (every step, check and read, with an English sentence) and its checkpoints. `target/ui-runs/latest-run.txt` holds the same id on one line. A repeated or parameterized test is listed once per invocation, as `<Class>#<method>[n]`, and a recorded test as `<Class>#recorded[<file>]`. `tests=` counts the UI tests known when the run starts, so it leaves those out. See [Run journal](/swing-ui-agent/reference/run-journal/) for every id and how to read a line.
 
 ## What's next
 

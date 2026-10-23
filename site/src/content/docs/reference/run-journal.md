@@ -32,7 +32,7 @@ target/ui-runs/
 ```
 
 - `target` is the test module's, found from the test class, whatever the working directory (an IDE may run tests from the project root).
-- A test's id is `<Class>#<method>`. `<Class>` is the class's binary name after its last `.`, so a nested class is `Outer$Inner`. A repeated or parameterized test adds the invocation number: `OrdersUiIT#totals[2]`. A recorded test run from JUnit is `<Class>#recorded[<file>]` (see [Recorded tests](#recorded-tests)). `latest.txt` and `report.txt` use the same ids, `[n]` and `recorded[…]` included.
+- A test's id is `<Class>#<method>`. `<Class>` is the class's binary name after its last `.`, so a nested class is `Outer$Inner`. A repeated or parameterized test adds the invocation number: `OrdersUiIT#totals[2]`. A recorded test run from JUnit is `<Class>#recorded[<file>]` (see [Recorded tests](#recorded-tests)). `latest.txt` and `report.txt` use the same ids, `[n]` and `recorded[…]` included. A dynamic test of a `@TestFactory` of your own is `<Class>#<factory>[<display name>]` there (with a `[<display name>]` more for each dynamic container it is in); its steps are in the factory's journal, `<Class>#<factory>.jsonl`. An id may hold spaces (a display name or a recorded test's file name may): see [report.txt](#reporttxt) for reading a line.
 - Each test that writes something gets one journal file: `steps/<test id>.jsonl`. Characters a file name cannot hold on some OS (`<>:"/\|?*` and control characters) become `_` in the file name; the `test` field keeps the real id.
 - The same test id twice in one run gets a file of its own, never appended to the first: `<test id>~2.jsonl`, with checkpoints in `<test id>~2/`. This happens when one JVM runs a class twice, or runs two classes with the same simple name from different packages.
 
@@ -95,7 +95,7 @@ Written when the run folder is made and rewritten whole as the run goes on: a ne
 | `java`, `os` | The test JVM's Java version, and its OS name, version and architecture. |
 | `app.version` | Only when the run names it: `UiRunJournal.appVersion(...)`, else `-Dswingui.appVersion`. |
 | `clients` | Each agent the run drove, the first time it was seen. `agent` is its address. `alias` is the login alias of the test that first used it, when the test had one. The rest is what the agent said of itself and its app: `agentVersion`, `app.name`, `app.version`, `scale` (the main window's screen scale, `2.0` on a Retina display), `laf` (the look and feel class) and `window` (the main window's size). `app` is always an object, `{}` when neither its name nor its version is known; every other field is present only when known: an older agent does not report them. `app.version` is the run's version when it names one, else the version the app reports through its plugin. |
-| `counts` | The passed, failed, skipped and aborted tests of the latest test run in this JVM that had a UI test. A build's test JVM usually runs one. |
+| `counts` | The passed, failed, skipped and aborted tests of the latest test run in this JVM that had a UI test. A build's test JVM usually runs one. Missing when no run report ran in this JVM: the journal is on, but no test or test factory of the run is tagged `ui`, e.g. a test that registers `UiTestExtension` itself without `@UiTest`. |
 
 ## report.txt
 
@@ -107,6 +107,9 @@ PASS PlaceOrderUiIT#placesAnOrderForAda 4255ms
 FAIL OrdersUiIT#totals 10431ms — Expected label 'Total' to have text '€7.32' — evidence /home/ci/order-desk/target/ui-failures/OrdersUiIT/totals
 DONE passed=1 failed=1 skipped=0 aborted=0
 ```
+
+- `tests=` on the STARTED line counts the UI tests known when the run starts. The tests a test factory makes (recorded tests among them) and the invocations of a repeated or parameterized test come while it runs, so they are not counted there: a run of only recorded tests says `tests=0`. Its PASS and FAIL lines and the DONE counts list them all.
+- A test id may hold spaces. Read a line from both ends: the status is its first word; the failure, when there is one, starts at the first ` — `; before that, the time is the last word (`4255ms`), and what lies between the status and the time is the id.
 
 `report.txt` masks every secret a journal of the same JVM was given (see [Secrets](#secrets)). `latest.txt` and the console do not: a failure message that quotes a secret shows it there. The failure evidence under `target/ui-failures` is not masked either.
 
