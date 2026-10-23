@@ -117,8 +117,9 @@ come first, in this order:
      off; the next call begins with that check again with the shown text, then the rest.
      Several values: add `"continueOnFailedCheck":true` (a failed check is reported and the rest still runs; a
      failed act step still stops it), then put each failed check back with the shown text at the label it would
-     have had (`recording list` shows the checks that were kept). An inserted check is not run; the re-runs prove
-     it:
+     have had (`recording list` shows the checks that were kept). With several, insert them from the first failed
+     check to the last: each insert shifts the labels after it. A check is not run when it is inserted; the re-runs
+     prove it. The example stays on one line: a newline inside the JSON is refused by some shells and gates.
      ```sh
      $UI recording '{"op":"insert","at":"1.2","step":{"action":"do","step":"order-desk:orderItemsSummaryIs","params":{"order":"ORD-1639","summary":"55 units in 3 lines"}}}'
      ```

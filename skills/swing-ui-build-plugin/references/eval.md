@@ -81,9 +81,9 @@ The prompt's "never read outside your working directory" is a request. The **loc
   the command literally, without shell variables); file reads only inside the working directory, plus the
   session's own spilled tool output (a long answer such as `vocabulary list` is written to a file the session must
   read back); no search, edit, web or MCP tools that reach files. Sub-agents get the same limits. Permission rules
-  alone do not hold: Claude Code, for one, lets read-only shell commands (`ls`, `cat`, `grep`, …) on paths inside
-  the working directory through before its permission mode can deny them, and a `$TMPDIR` path slips past
-  path rules. What holds is a gate that sees every tool call before it runs (in Claude Code a `PreToolUse` hook in
+  alone may not hold: Claude Code, for one, can let read-only shell commands (`ls`, `cat`, `grep`, …) on paths
+  inside the working directory through before its permission mode can deny them (seen in the version we tested);
+  check too that temp-dir paths are covered by your path rules. What holds is a gate that sees every tool call before it runs (in Claude Code a `PreToolUse` hook in
   the session's settings; sub-agents run it too) and allows one plain agent command: the shell's quotes scanned as
   the shell does (a `'` inside `"…"` is no quote), no `;`, `&`, `|`, `$`, backticks, redirects or brackets outside
   single quotes, the agent's options checked (an `--out` file only inside the working directory). In another
