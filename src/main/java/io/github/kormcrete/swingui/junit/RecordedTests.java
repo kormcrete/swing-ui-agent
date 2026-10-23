@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
@@ -39,6 +41,12 @@ import java.util.stream.Stream;
  */
 public final class RecordedTests {
 
+    /**
+     * Each recorded test file this JVM made a dynamic test of, by its absolute path, with the name its test goes by:
+     * how the run report knows a recorded test from any other dynamic test with a file source.
+     */
+    private static final Map<Path, String> MADE = new ConcurrentHashMap<Path, String>();
+
     private RecordedTests() {
     }
 
@@ -57,6 +65,11 @@ public final class RecordedTests {
             if (!RecordedTests.class.getName().equals(f.getClassName())) return f.getClassName();
         }
         return null;
+    }
+
+    /** The name of the recorded test this JVM made of {@code file}, as its id says it; null for any other file. */
+    static String madeOf(Path file) {
+        return file == null ? null : MADE.get(file.toAbsolutePath().normalize());
     }
 
     private static Stream<DynamicTest> of(Client ui, String caller, Path folder) {
@@ -78,6 +91,7 @@ public final class RecordedTests {
         for (Path file : RecordedTestSelection.select(dir, System.getProperty(RecordedTestSelection.PROPERTY))) {
             String base = file.getFileName().toString();
             if (base.endsWith(RecordedTestFiles.SUFFIX)) base = base.substring(0, base.length() - RecordedTestFiles.SUFFIX.length());
+            MADE.put(file.toAbsolutePath().normalize(), base);
             out.add(DynamicTest.dynamicTest(base, file.toUri(), run(ui, journal, base, file, evidence)));
         }
         // each recorded test has its own journal; the factory's would only say "passed", whatever its tests did

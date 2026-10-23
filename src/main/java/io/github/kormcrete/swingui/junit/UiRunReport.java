@@ -1,6 +1,5 @@
 package io.github.kormcrete.swingui.junit;
 
-import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.journal.JournalSettings;
 import io.github.kormcrete.swingui.journal.RunFolder;
 import org.junit.platform.engine.TestExecutionResult;
@@ -8,13 +7,15 @@ import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.TestTag;
 import org.junit.platform.engine.support.descriptor.ClassSource;
 import org.junit.platform.engine.support.descriptor.MethodSource;
+import org.junit.platform.engine.UniqueId;
+import org.junit.platform.engine.support.descriptor.FileSource;
 import org.junit.platform.engine.support.descriptor.UriSource;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
 
-import java.net.URI;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +30,8 @@ import java.util.function.Function;
  * first UI test's class (see {@link ModuleTarget}), not the working directory. With the journal on it also makes the
  * run folder ({@link RunFolder}): STARTED ends with {@code run=<runId>}, every line goes to its report.txt too.
  * Registered by the library jar's META-INF/services/org.junit.platform.launcher.TestExecutionListener, so it is on
- * whenever the library is on the test class path; a plan without UI tests gets no report. A second instance (a test
+ * whenever the library is on the test class path; a plan without UI tests (or UI test factories or templates) gets no
+ * report. A second instance (a test
  * module that also registers or passes one) writes nothing for a plan the first one reports.
  */
 public final class UiRunReport implements TestExecutionListener {
@@ -65,18 +67,31 @@ public final class UiRunReport implements TestExecutionListener {
         this.parameters = parameters;
     }
 
+    /**
+     * Starts the report when the plan holds a UI test, or a UI container of a test method whose tests come only while
+     * it runs (a test factory, as recorded tests are, or a repeated or parameterized test). {@code tests=} counts the
+     * UI tests known now.
+     */
     @Override
     public void testPlanExecutionStarted(TestPlan plan) {
         long ui = 0;
+        boolean later = false;
         String firstClass = null;
         for (TestIdentifier root : plan.getRoots()) {
             for (TestIdentifier id : plan.getDescendants(root)) {
-                if (!id.isTest() || !id.getTags().contains(UI)) continue;
-                ui++;
-                if (firstClass == null) firstClass = className(id.getSource().orElse(null));
+                if (!id.getTags().contains(UI)) continue;
+                TestSource source = id.getSource().orElse(null);
+                if (id.isTest()) {
+                    ui++;
+                } else if (source instanceof MethodSource) {
+                    later = true;   // its tests are registered while it runs
+                } else {
+                    continue;
+                }
+                if (firstClass == null) firstClass = className(source);
             }
         }
-        if (ui == 0) return;
+        if (ui == 0 && !later) return;
         Path latest = file != null ? file : ModuleTarget.of(firstClass).resolve("ui-runs").resolve("latest.txt");
         Path runsDir = latest.toAbsolutePath().normalize().getParent();
         synchronized (REPORTING) {
@@ -203,34 +218,54 @@ public final class UiRunReport implements TestExecutionListener {
 
     /**
      * The test's id, as its journal names it ({@link TestNames}): {@code <Class>#<method>}, {@code [<n>]} for an
-     * invocation of a test template, {@code <Class>#recorded[<file>]} for a recorded test; any other test by its
-     * display name.
+     * invocation of a test template, {@code <Class>#recorded[<file>]} for a recorded test {@link RecordedTests} made;
+     * a dynamic test of any other factory is {@code <Class>#<factory>} with {@code [<display name>]} for it and each
+     * dynamic container it is in. A test of no method (another engine's) goes by its display name.
      */
     private String name(TestIdentifier id) {
+        if (dynamic(id)) {
+            StringBuilder names = new StringBuilder();
+            TestIdentifier at = id;
+            while (at != null && dynamic(at)) {
+                names.insert(0, "[" + at.getDisplayName() + "]");
+                at = parent(at);
+            }
+            TestSource factory = at == null ? null : at.getSource().orElse(null);
+            if (factory instanceof MethodSource) {
+                MethodSource m = (MethodSource) factory;
+                String recorded = at == parent(id) ? RecordedTests.madeOf(file(id.getSource().orElse(null))) : null;
+                if (recorded != null) return TestNames.recorded(m.getClassName(), recorded);
+                return TestNames.of(m.getClassName(), m.getMethodName(), at.getUniqueId()) + names;
+            }
+            return id.getDisplayName();
+        }
         TestSource source = id.getSource().orElse(null);
         if (source instanceof MethodSource) {
             MethodSource m = (MethodSource) source;
             return TestNames.of(m.getClassName(), m.getMethodName(), id.getUniqueId());
         }
-        String file = recordedFile(source);
-        if (file != null) {
-            for (TestIdentifier at = parent(id); at != null; at = parent(at)) {
-                TestSource s = at.getSource().orElse(null);
-                if (s instanceof MethodSource) return TestNames.recorded(((MethodSource) s).getClassName(), file);
-            }
-        }
         return id.getDisplayName();
     }
 
-    /** The name without {@code .json} of the recorded test file {@code source} points at; null for any other source. */
-    private static String recordedFile(TestSource source) {
-        if (!(source instanceof UriSource)) return null;
-        URI uri = ((UriSource) source).getUri();
-        String path = uri == null ? null : uri.getPath();
-        if (path == null || !path.endsWith(RecordedTestFiles.SUFFIX)) return null;
-        String name = path.substring(path.lastIndexOf('/') + 1);
-        return name.length() > RecordedTestFiles.SUFFIX.length()
-                ? name.substring(0, name.length() - RecordedTestFiles.SUFFIX.length()) : null;
+    /** True for a dynamic test or container: one a test factory made while it ran. */
+    private static boolean dynamic(TestIdentifier id) {
+        try {
+            String type = UniqueId.parse(id.getUniqueId()).getLastSegment().getType();
+            return "dynamic-test".equals(type) || "dynamic-container".equals(type);
+        } catch (RuntimeException notJupiters) {
+            return false;
+        }
+    }
+
+    /** The file {@code source} points at; null for a source that is not a file. */
+    private static Path file(TestSource source) {
+        try {
+            if (source instanceof FileSource) return ((FileSource) source).getFile().toPath();
+            if (source instanceof UriSource) return Paths.get(((UriSource) source).getUri());
+        } catch (RuntimeException notAFile) {
+            // a URI of another scheme
+        }
+        return null;
     }
 
     private static String className(TestSource s) {

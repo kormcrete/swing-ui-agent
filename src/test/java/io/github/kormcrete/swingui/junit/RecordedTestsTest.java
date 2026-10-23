@@ -50,15 +50,12 @@ class RecordedTestsTest {
         }
     }
 
-    /** Recorded tests beside a plain UI test: a run report starts only for a plan that lists a UI test up front. */
+    /** Only recorded tests, as a UI test class of them run alone: no UI test is known when the plan starts. */
     @FixtureClass
     @Tag("ui")
-    static class RecordedBesideAUiTest {
+    static class RecordedAlone {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runs);
-
-        @Test
-        void opens(Client ui) { }
 
         @TestFactory
         Stream<DynamicTest> recorded(Client ui) {
@@ -178,7 +175,7 @@ class RecordedTestsTest {
             folder = dir;
             runs = dir.resolve("ui-runs");
             LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
-                    .selectors(selectClass(RecordedBesideAUiTest.class))
+                    .selectors(selectClass(RecordedAlone.class))
                     .configurationParameter("swingui.fixtures", "run").build(),
                     new UiRunReport(runs.resolve("latest.txt")));
         } finally {
@@ -188,15 +185,14 @@ class RecordedTestsTest {
         }
 
         // the same ids as the journal files, in latest.txt and in the run folder's report.txt
-        assertThat(journals().keySet()).contains("RecordedTestsTest$RecordedBesideAUiTest#recorded[fail].jsonl",
-                "RecordedTestsTest$RecordedBesideAUiTest#recorded[pass].jsonl");
+        assertThat(journals().keySet()).containsExactly("RecordedTestsTest$RecordedAlone#recorded[fail].jsonl",
+                "RecordedTestsTest$RecordedAlone#recorded[pass].jsonl");
         String runId = new String(Files.readAllBytes(runs.resolve("latest-run.txt")), StandardCharsets.UTF_8).trim();
         for (Path report : new Path[] {runs.resolve("latest.txt"), runs.resolve(runId).resolve("report.txt")}) {
             List<String> lines = Files.readAllLines(report, StandardCharsets.UTF_8);
             assertThat(lines).as(report.toString())
-                    .anyMatch(l -> l.startsWith("PASS RecordedTestsTest$RecordedBesideAUiTest#opens "))
-                    .anyMatch(l -> l.startsWith("PASS RecordedTestsTest$RecordedBesideAUiTest#recorded[pass] "))
-                    .anyMatch(l -> l.startsWith("FAIL RecordedTestsTest$RecordedBesideAUiTest#recorded[fail] "))
+                    .anyMatch(l -> l.startsWith("PASS RecordedTestsTest$RecordedAlone#recorded[pass] "))
+                    .anyMatch(l -> l.startsWith("FAIL RecordedTestsTest$RecordedAlone#recorded[fail] "))
                     .noneMatch(l -> l.startsWith("PASS pass ") || l.startsWith("FAIL fail "));
         }
     }

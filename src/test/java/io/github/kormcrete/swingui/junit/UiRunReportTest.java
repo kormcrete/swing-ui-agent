@@ -4,10 +4,14 @@ import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.testing.FixtureClassCondition;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DynamicContainer;
+import org.junit.jupiter.api.DynamicNode;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.launcher.Launcher;
@@ -20,6 +24,7 @@ import org.junit.platform.launcher.core.LauncherFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -65,6 +70,28 @@ class UiRunReportTest {
     static class Repeated {
         @Test void opens() { }
         @RepeatedTest(2) void places() { }
+    }
+
+    /** Only a test template: no UI test is known when the plan starts. */
+    @FixtureClass
+    @Tag("ui")
+    static class OnlyRepeated {
+        @RepeatedTest(2) void places() { }
+    }
+
+    /** A UI test module's own factory: one test points at a .json file, one is in a container, one has no source. */
+    @FixtureClass
+    @Tag("ui")
+    static class OwnFactory {
+        static volatile URI file;
+
+        @TestFactory
+        Stream<DynamicNode> checks() {
+            return Stream.of(DynamicTest.dynamicTest("a file of its own", file, () -> { }),
+                    DynamicContainer.dynamicContainer("totals",
+                            Stream.of(DynamicTest.dynamicTest("with VAT", () -> { }))),
+                    DynamicTest.dynamicTest("plain", () -> { }));
+        }
     }
 
     @FixtureClass
@@ -183,6 +210,28 @@ class UiRunReportTest {
         assertThat(lines).anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#opens "))
                 .anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#places[1] "))
                 .anyMatch(l -> l.startsWith("PASS UiRunReportTest$Repeated#places[2] "));
+    }
+
+    @Test
+    void aPlanOfOnlyATestTemplateIsReported(@TempDir Path dir) throws Exception {
+        List<String> lines = run(dir, OnlyRepeated.class);
+
+        // tests= counts the tests known when the plan starts: an invocation is not one of them
+        assertThat(lines.get(0)).startsWith("STARTED ").contains(" tests=0");
+        assertThat(lines).anyMatch(l -> l.startsWith("PASS UiRunReportTest$OnlyRepeated#places[1] "))
+                .anyMatch(l -> l.startsWith("PASS UiRunReportTest$OnlyRepeated#places[2] "))
+                .anyMatch(l -> l.equals("DONE passed=2 failed=0 skipped=0 aborted=0"));
+    }
+
+    @Test
+    void aDynamicTestOfAnOwnFactoryIsTheFactoryAndItsDisplayNames(@TempDir Path dir) throws Exception {
+        OwnFactory.file = dir.resolve("place-order.json").toUri();   // a .json source does not make it a recorded test
+        List<String> lines = run(dir, OwnFactory.class);
+
+        assertThat(lines).anyMatch(l -> l.startsWith("PASS UiRunReportTest$OwnFactory#checks[a file of its own] "))
+                .anyMatch(l -> l.startsWith("PASS UiRunReportTest$OwnFactory#checks[totals][with VAT] "))
+                .anyMatch(l -> l.startsWith("PASS UiRunReportTest$OwnFactory#checks[plain] "))
+                .noneMatch(l -> l.contains("#recorded["));
     }
 
     @Test
