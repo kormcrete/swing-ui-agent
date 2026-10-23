@@ -29,7 +29,16 @@ public PluginParts start(PluginContext context) {
 }
 ```
 
-Its steps: `openNewOrder`, `addToCart`, `setQuantity`, `addQtyToCart`, `checkoutWithPo`, `placeOrder`, `openOrder` and the check `cartTotalIs`.
+Its 98 steps cover every screen of the app, in six groups:
+
+- **Starting an order:** `openNewOrder`, `chooseCustomer`, `typeCustomer`, `openNewOrderFromRecent`, the customer checks `newOrderIsFor`, `customerSuggestionsAre`, `customerTermsAre` and `recentCustomersAre`.
+- **Products and cart:** `addToCart`, `setQuantity`, `addQtyToCart`, `addProductsToCart`, `selectProducts`, `removeFromCart`, `keepCartLines`, `browseCategory`, `searchProducts`, `showInCategory`, and the checks `cartTotalIs`, `cartLinesAre`, `cartLineIs`, `cartAmountIs`, `productsListedAre`, `productIs`, `lowStockWarningIs`, `buttonIsDisabled` and more.
+- **Checkout:** `startCheckout`, `checkoutWithPo`, `setCheckoutField`, `chooseShipping`, `payByInvoice`, `payByCard`, `checkoutNext`, `checkoutBack`, `editReviewSection`, `answerCreditLimit`, `placeOrder`, `cancelCheckout`, and the checks `checkoutStepIs`, `checkoutFieldIs`, `checkoutFieldErrorIs`, `shippingPriceIs`, `reviewLineIs`, `reviewAmountIs`, `placeOrderConfirmationIs` and more.
+- **An order's tab:** `openOrder`, `saveReceipt`, `keepExistingReceipt`, `cancelOrder`, `keepOrder`, and the checks `orderStatusIs`, `orderFactsAre`, `orderItemsAre`, `orderItemIs`, `orderDeliveryIs`, `orderInvoiceIs`, `suggestedReceiptFileIs`, `receiptSaveErrorIs`.
+- **The Orders list:** `searchOrders`, `clearOrderSearch`, `filterOrders`, `sortOrders`, `selectOrders`, `cancelOrders`, `keepOrders`, `copyOrderNumbers`, `showOrders`, and the checks `orderIs`, `ordersListedAre`, `ordersCountIs`, `ordersEmptyMessageIs`, `selectedOrdersAre`, `cancelQuestionIs`.
+- **The main window:** `selectTab`, `closeTab`, `keepTab`, `switchTheme`, `cancelExit`, and the checks `openTabsAre`, `selectedTabIs`, `menuItemIs`, `statusLineIs`, `openOrdersCountIs`, `exitQuestionIs`, `aboutShows`.
+
+An agent wrote them from the app's source, with the [agent builds the plugin](/swing-ui-agent/plugins/agent-builds-the-plugin/) workflow; the plugin's `COVERAGE.md` lists every action and value of the app and the step that covers it.
 
 ## Write a step
 
