@@ -228,4 +228,39 @@ class RecordedJournalTest {
         assertThat(end.path("message").asText()).isEqualTo("Recorded test 'place-order' failed at step 2");
         assertThat(end.path("evidence").asText()).isEqualTo("target/failsafe-reports/recorded-test-failures/place-order.txt");
     }
+
+    @Test
+    void aSecretLongerThanACapLeavesNoPartOfItInAnyLine() throws IOException {
+        // one longer than a sentence's value (60), one longer than any text of a line (2,000); a say holds at
+        // most 200 characters, so only the shorter one is in one
+        String token = TestJournalTest.secretOf(70, 3);
+        String key = TestJournalTest.secretOf(2100, 4);
+        String flow = "{\"version\":4,\"name\":\"place-order\",\"start\":\"reset\",\"steps\":["
+                + "{\"say\":\"Paste the token " + token + "\",\"steps\":["
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Token\"},\"text\":\"" + token + "\"},"
+                + "{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Key\"},\"text\":\"" + key + "\","
+                + "\"say\":\"Type the key for " + token + "\"}]},"
+                + "{\"action\":\"click\",\"target\":{\"role\":\"button\",\"name\":\"Place order\"}}]}";
+        String reply = "{\"passed\":false,\"steps\":["
+                + "{\"n\":1,\"action\":\"type " + token + "\",\"passed\":true,\"ms\":1},"
+                + "{\"n\":2,\"action\":\"type " + key + "\",\"passed\":true,\"ms\":1},"
+                + "{\"n\":3,\"action\":\"click\",\"passed\":false,\"ms\":1,"
+                + "\"message\":\"Token " + token + " was refused\"}],"
+                + "\"report\":\"Recorded test 'place-order' failed: Token " + token + " was refused\"}";
+        TestJournal journal = journal();
+        journal.secret(token);
+        journal.secret(key);
+
+        RecordedJournal.write(journal, flow(flow), JSON.readTree(reply), STARTED, null);
+
+        List<JsonNode> lines = lines();
+        StringBuilder all = new StringBuilder();
+        for (JsonNode line : lines) all.append(line).append('\n');
+        TestJournalTest.assertNoPartOf(token, all.toString(), "journal");
+        TestJournalTest.assertNoPartOf(key, all.toString(), "journal");
+        assertThat(lines.get(1).path("text").asText()).isEqualTo("Paste the token ***");
+        assertThat(lines.get(2).path("text").asText()).isEqualTo("Type *** into Token");
+        assertThat(lines.get(3).path("text").asText()).isEqualTo("Type the key for ***");
+        assertThat(lines.get(4).path("message").asText()).isEqualTo("Token *** was refused");
+    }
 }

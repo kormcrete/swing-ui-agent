@@ -20,10 +20,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -32,7 +34,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * One test's journal: {@code <run>/steps/<test>.jsonl}, one JSON object per line, appended and flushed per line. The
  * {@code test} line comes with the first other line, so a test that writes nothing makes no file. Every line gets the
- * next {@code seq} and is masked: each secret seen becomes {@value JournalLines#MASK}. Writing never fails a test: an
+ * next {@code seq} and is masked: each secret seen becomes {@value JournalLines#MASK}, also in what a line's sentence
+ * is made from, before any value is cut (a cut would leave a part of a long secret). Writing never fails a test: an
  * IO failure turns the run's steps journal off ({@link RunFolder#broken}). Checkpoint names and their folder work
  * also while the steps journal is off.
  */
@@ -58,6 +61,8 @@ public final class TestJournal {
     private String base;
     private int seq;
     private boolean headerWritten;
+    /** True once the end line is written: a second end is ignored. */
+    private boolean ended;
     private volatile boolean discarded;
 
     TestJournal(RunFolder folder, String test) {
@@ -138,8 +143,8 @@ public final class TestJournal {
                 String password = typedPassword(step);
                 if (password != null) secret(password);   // later lines (a check, the end) must not echo it either
                 String message = call.reason == null ? call.message : DriverException.stripReason(call.message, call.reason);
-                append(JournalLines.step(step, call.passed, message, call.reason == null ? null : call.reason.name(),
-                        call.ms, startedAtMillis), client);
+                append(JournalLines.step(maskStep(step), call.passed, mask(message),
+                        call.reason == null ? null : call.reason.name(), call.ms, startedAtMillis), client);
             }
 
             @Override public void secret(String value) {
@@ -156,26 +161,31 @@ public final class TestJournal {
         return text == null || text.isEmpty() || JournalLines.MASK.equals(text) ? null : text;
     }
 
-    /** A line that starts a section of the test, named by its author. */
+    /** A line that starts a section of the test, named by its author; its text is capped as every text of a line. */
     public void section(String text) {
         if (!stepsOn()) return;
-        append(JournalLines.section(text, System.currentTimeMillis()), 0);
+        append(JournalLines.section(mask(text), System.currentTimeMillis()), 0);
     }
 
     /** A read of client {@code client} that started at {@code startedAt}: its value, or how it failed. */
     public void read(int client, String verb, Locator target, Object value, long startedAt, Throwable failure) {
         if (!stepsOn()) return;
         Failure f = new Failure(failure);
-        append(JournalLines.read(verb, target, failure == null ? value : null, failure == null, f.message, f.reason,
-                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+        append(JournalLines.read(verb, maskLocator(target), failure == null ? maskValue(value) : null, failure == null,
+                mask(f.message), f.reason, Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
     }
 
     /** A read of the items of the menu-bar menu {@code path} ({@code menuItems}), as {@link #read}. */
     public void readMenu(int client, List<String> path, Object value, long startedAt, Throwable failure) {
         if (!stepsOn()) return;
         Failure f = new Failure(failure);
-        append(JournalLines.readMenu(path, failure == null ? value : null, failure == null, f.message, f.reason,
-                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+        List<String> menu = null;
+        if (path != null) {
+            menu = new ArrayList<String>();
+            for (String name : path) menu.add(mask(name));
+        }
+        append(JournalLines.readMenu(menu, failure == null ? maskValue(value) : null, failure == null, mask(f.message),
+                f.reason, Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
     }
 
     /**
@@ -185,8 +195,24 @@ public final class TestJournal {
     public void eventually(int client, String what, Locator target, Object lastValue, long startedAt, Throwable failure) {
         if (!stepsOn()) return;
         Failure f = new Failure(failure);
-        append(JournalLines.eventually(what, target, lastValue, failure == null, f.message, f.reason,
-                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+        append(JournalLines.eventually(mask(what), maskLocator(target), maskValue(lastValue), failure == null,
+                mask(f.message), f.reason, Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+    }
+
+    /**
+     * The line of checkpoint {@code name} of client {@code client}: its picture and sidecar ({@code png}, {@code json},
+     * relative to the run folder) when it was written, else how it failed.
+     */
+    public void checkpoint(int client, String name, Locator target, List<Locator> masks, String png, String json,
+                           boolean passed, String message, long ms, long at) {
+        if (!stepsOn()) return;
+        List<Locator> masked = null;
+        if (masks != null) {
+            masked = new ArrayList<Locator>();
+            for (Locator m : masks) masked.add(maskLocator(m));
+        }
+        append(JournalLines.checkpoint(name, maskLocator(target), masked, png, json, passed, mask(message), ms, at),
+                client);
     }
 
     /**
@@ -209,19 +235,23 @@ public final class TestJournal {
 
     /**
      * The last line: {@code outcome} is {@code passed}, {@code failed} or {@code aborted}; {@code message} (its first
-     * line, without a leading {@code REASON: } of a driver failure) and {@code evidence} only when given.
+     * line, without a leading {@code REASON: } of a driver failure) and {@code evidence} only when given. Once an end
+     * line is written, a second end is ignored.
      */
     public void end(String outcome, String message, String evidence) {
         if (!stepsOn()) return;
-        long now = System.currentTimeMillis();
-        ObjectNode line = NODES.objectNode();
-        line.put("t", JournalLines.time(now));
-        line.put("kind", "end");
-        line.put("outcome", outcome);
-        line.put("ms", Math.max(0, now - startedAt));
-        if (message != null) line.put("message", withoutReason(message.split("\\r\\n|\\r|\\n", 2)[0]));
-        if (evidence != null) line.put("evidence", evidence);
-        append(line, 0);
+        synchronized (this) {
+            if (ended) return;
+            long now = System.currentTimeMillis();
+            ObjectNode line = NODES.objectNode();
+            line.put("t", JournalLines.time(now));
+            line.put("kind", "end");
+            line.put("outcome", outcome);
+            line.put("ms", Math.max(0, now - startedAt));
+            if (message != null) line.put("message", withoutReason(message.split("\\r\\n|\\r|\\n", 2)[0]));
+            if (evidence != null) line.put("evidence", evidence);
+            if (append(line, 0) > 0) ended = true;
+        }
     }
 
     /** {@code message} without the {@code REASON: } a driver failure starts with. */
@@ -340,6 +370,48 @@ public final class TestJournal {
         ArrayNode list = line.putArray("clients");
         for (ObjectNode c : clients) list.add(c);
         return line;
+    }
+
+    /**
+     * {@code step} with each secret masked in its texts but its {@code action}: what a line is built from, so that no
+     * cut of a value or a sentence keeps a part of a secret.
+     */
+    JsonNode maskStep(JsonNode step) {
+        JsonNode masked = mask(step);
+        if (masked != step && masked.isObject() && step.has("action")) {
+            ((ObjectNode) masked).set("action", step.get("action"));
+        }
+        return masked;
+    }
+
+    /** {@code target} with each secret masked in its texts; the same locator when there is nothing to mask. */
+    Locator maskLocator(Locator target) {
+        if (target == null || secrets.isEmpty()) return target;
+        Locator masked = JournalLines.locator(mask(JournalLines.tree(target)));
+        return masked == null ? target : masked;
+    }
+
+    /**
+     * A read's {@code value} with each secret masked: a text masked, a list or a map masked in each entry, a number
+     * or a truth value kept, anything else by its {@code toString()} masked (as a line writes it).
+     */
+    Object maskValue(Object value) {
+        if (value == null || secrets.isEmpty() || value instanceof Number || value instanceof Boolean) return value;
+        if (value instanceof String) return mask((String) value);
+        if (value instanceof Object[]) return maskValue(Arrays.asList((Object[]) value));
+        if (value instanceof Collection) {
+            List<Object> out = new ArrayList<Object>();
+            for (Object e : (Collection<?>) value) out.add(maskValue(e));
+            return out;
+        }
+        if (value instanceof Map) {
+            Map<String, Object> out = new LinkedHashMap<String, Object>();
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) value).entrySet()) {
+                out.put(mask(String.valueOf(e.getKey())), maskValue(e.getValue()));
+            }
+            return out;
+        }
+        return mask(value.toString());
     }
 
     /** {@code node} with each secret masked in its texts. */

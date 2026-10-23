@@ -227,8 +227,25 @@ class CheckpointTest {
         Throwable main = catchThrowable(() -> plain.checkpoint("cart-totals"));
 
         assertThat(t).isInstanceOf(IllegalStateException.class)
-                .hasMessage("a checkpoint needs the Client of a @UiTest: it is written into the test's run folder");
+                .hasMessage("a checkpoint needs the Client of a @UiTest, written into the test's run folder: "
+                        + "this Client is not one, or the run journal could not be set up (see the warning above)");
         assertThat(main).isInstanceOf(IllegalStateException.class).hasMessage(t.getMessage());
         assertThat(verbs.calls).isEmpty();
+    }
+
+    @Test
+    void aSecretAsAMaskTargetsNameIsMaskedInTheSidecarAndTheLine() throws IOException {
+        journal.secret("Discount-4471-kq");
+
+        ui.checkpoint("order-form", ui.field("Discount-4471-kq"));
+
+        String side = new String(Files.readAllBytes(checkpoints().resolve("order-form.json")), StandardCharsets.UTF_8);
+        assertThat(side).doesNotContain("Discount-4471-kq");
+        JsonNode mask = JSON.readTree(side).path("masks").get(0);
+        assertThat(mask.path("target").asText()).isEqualTo("text '***'");
+        assertThat(mask.path("locator").path("name").asText()).isEqualTo("***");
+        JsonNode line = lines().get(1);
+        assertThat(line.toString()).doesNotContain("Discount-4471-kq");
+        assertThat(line.path("text").asText()).isEqualTo("Checkpoint order-form of the main window, masking ***");
     }
 }

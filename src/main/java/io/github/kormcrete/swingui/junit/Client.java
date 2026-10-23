@@ -10,7 +10,6 @@ import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.UiUsers;
 import io.github.kormcrete.swingui.journal.CheckpointFiles;
-import io.github.kormcrete.swingui.journal.JournalLines;
 import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.journal.TestJournal;
 
@@ -197,7 +196,8 @@ public final class Client {
 
     /**
      * Starts a part of this test in its run journal, named in the author's words: {@code ui.step("Place the order")}.
-     * The steps, reads and checks after it belong to it, up to the next. Line breaks become spaces. Throws
+     * The steps, reads and checks after it belong to it, up to the next. Line breaks become spaces, and a sentence
+     * longer than {@value JournalLines#VALUE_CAP} characters is cut to that many in the journal. Throws
      * IllegalArgumentException("a step needs a sentence") for a null or blank one; a Client built directly writes
      * nothing.
      */
@@ -455,8 +455,8 @@ public final class Client {
      */
     void checkpoint(String name, Locator target, Target[] masks) {
         if (journal == null) {
-            throw new IllegalStateException("a checkpoint needs the Client of a @UiTest: it is written into the test's "
-                    + "run folder");
+            throw new IllegalStateException("a checkpoint needs the Client of a @UiTest, written into the test's run "
+                    + "folder: this Client is not one, or the run journal could not be set up (see the warning above)");
         }
         journal.claimCheckpoint(name);
         List<Locator> maskLocators = new ArrayList<Locator>();
@@ -493,9 +493,9 @@ public final class Client {
                                    long startedAt) {
         if (!journal.stepsOn()) return;
         try {
-            journal.append(JournalLines.checkpoint(name, target, masks, files == null ? null : files[0],
+            journal.checkpoint(client, name, target, masks, files == null ? null : files[0],
                     files == null ? null : files[1], files != null, failure,
-                    Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+                    Math.max(0, System.currentTimeMillis() - startedAt), startedAt);
         } catch (RuntimeException e) {
             RunFolder.warnOff(e);   // the journal never fails a test
         }

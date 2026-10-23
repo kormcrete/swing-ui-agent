@@ -3,6 +3,7 @@ package io.github.kormcrete.swingui.junit;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.agent.InJvmAgent;
 import io.github.kormcrete.swingui.client.AgentClient;
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.spi.AppHooks;
@@ -48,6 +49,8 @@ class UiTestExtensionTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     /** What the test types with {@code ui.secret("ada", "pin")}; never in a journal. */
     private static final String PIN = "pin-7319-zq";
+    /** What the test reads with {@code ui.secret("ada", "token")}: longer than a sentence's 60 characters. */
+    private static final String TOKEN = "WKbsDE5kGZoDiPCFdcERFmdD5nHQrroDnobDQCm7JUcKkHnVm5uMGonrNZGmwEnDqPhukd2W";
 
     /** The agent the inner test class binds to; set before each launch. */
     static volatile AgentClient agentUnderTest;
@@ -102,6 +105,28 @@ class UiTestExtensionTest {
             ui.password("Password").type("pa55word");
             servedUnderTest.failNext = new DriverException(Reason.NOT_FOUND,
                     "no button 'Pay' near '" + pin + "' and 'pa55word'");
+            ui.button("Pay").click();
+        }
+    }
+
+    /** A long secret through every kind of line: section, step, read, eventually, checkpoint and a failure. */
+    @FixtureClass
+    @Tag("ui")   // a run report runs too: its report.txt goes to the same run folder
+    static class UsesALongSecret {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runsUnderTest);
+
+        @Test
+        void runs(Client ui) {
+            String token = ui.secret("ada", "token");
+            ui.step("Paste the token " + token);
+            ui.field("Token").type(token);
+            servedUnderTest.readAnswer.name = token;
+            ui.field("Token").text();
+            UiAssertions.eventually("Token shows " + token, java.time.Duration.ofSeconds(5),
+                    () -> ui.field("Token").text(), token::equals);
+            ui.checkpoint("token-form", ui.field("Token " + token));
+            servedUnderTest.failNext = new DriverException(Reason.NOT_FOUND, "no button 'Pay' near '" + token + "'");
             ui.button("Pay").click();
         }
     }
@@ -283,6 +308,42 @@ class UiTestExtensionTest {
         }
         assertThat(new String(Files.readAllBytes(runFolder().resolve("report.txt")), StandardCharsets.UTF_8))
                 .contains("FAIL UiTestExtensionTest$TypesSecrets#runs").contains("near '***' and '***'");
+    }
+
+    @Test
+    void aSecretLongerThanASentencesValueLeavesNoPartOfItInTheRunFolder() throws IOException {
+        startJournalAgent();
+        servedUnderTest.checkpointAnswer = new CheckpointShot(new byte[] {1, 2, 3}, 40, 20,
+                Collections.singletonList(new CheckpointShot.Mask(1, 2, 3, 4, false)));
+        Path users = tmp.resolve("ui-users.properties");
+        Files.write(users, ("ada=ada:x\nada.token=" + TOKEN + "\n").getBytes(StandardCharsets.UTF_8));
+        System.setProperty(UiUsers.FILE_PROPERTY, users.toString());
+
+        List<Throwable> results = launch(UsesALongSecret.class,
+                new TestExecutionListener[] {new UiRunReport(runsUnderTest.resolve("latest.txt"))});
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0)).isNotNull().hasMessageContaining(TOKEN);
+        List<JsonNode> lines = lines("UiTestExtensionTest$UsesALongSecret#runs");
+        assertThat(kinds(lines))
+                .containsExactly("test", "section", "action", "read", "check", "checkpoint", "action", "end");
+        assertThat(lines.get(2).path("text").asText()).isEqualTo("Type *** into Token");
+        assertThat(lines.get(3).path("text").asText()).isEqualTo("Read the text of Token: ***");
+        // every file of the run folder: journal, sidecar, report.txt, run.json
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(runFolder())) {
+            files = walk.filter(Files::isRegularFile).collect(Collectors.toList());
+        }
+        assertThat(files).contains(runFolder().resolve("report.txt"),
+                runFolder().resolve("checkpoints/UiTestExtensionTest$UsesALongSecret#runs/token-form.json"));
+        for (Path f : files) {
+            String text = new String(Files.readAllBytes(f), StandardCharsets.ISO_8859_1);
+            for (int i = 0; i + 8 <= TOKEN.length(); i++) {
+                assertThat(text).as(f + ": a part of the secret at " + i).doesNotContain(TOKEN.substring(i, i + 8));
+            }
+        }
+        assertThat(new String(Files.readAllBytes(runFolder().resolve("report.txt")), StandardCharsets.UTF_8))
+                .contains("FAIL UiTestExtensionTest$UsesALongSecret#runs").contains("near '***'");
     }
 
     @Test

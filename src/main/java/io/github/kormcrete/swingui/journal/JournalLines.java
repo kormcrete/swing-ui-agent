@@ -23,12 +23,12 @@ import java.util.Map;
 /**
  * Builds the journal's lines (without {@code seq}, which {@link TestJournal} adds) from a step's JSON, a read, a
  * section or a checkpoint. Pure: no files, no clock. Each line stays small: a {@code value} longer than
- * {@link #VALUE_CAP} characters is cut and marked {@code "capped": true}, each text inside {@code step} is cut the
- * same, and the sentence holds at most {@link StepWords#VALUE_CAP} characters of a value.
+ * {@link #VALUE_CAP} characters is cut and marked {@code "capped": true}, each text inside {@code step} and a
+ * section's text are cut the same, and the sentence holds at most {@link StepWords#VALUE_CAP} characters of a value.
  */
 public final class JournalLines {
 
-    /** Longest {@code value} (its text, or its JSON text) and longest text inside {@code step}. */
+    /** Longest {@code value} (its text, or its JSON text), longest text inside {@code step} and of a section. */
     public static final int VALUE_CAP = 2000;
 
     /** What a password typed into a {@code password} target becomes. */
@@ -170,12 +170,12 @@ public final class JournalLines {
         line.set("locator", capTexts(JSON.valueToTree(target)));
     }
 
-    /** The line that starts a section of the test, named by the test's author. */
+    /** The line that starts a section of the test, named by the test's author: its text cut at {@link #VALUE_CAP}. */
     public static ObjectNode section(String text, long at) {
         ObjectNode line = NODES.objectNode();
         line.put("t", time(at));
         line.put("kind", "section");
-        line.put("text", text);
+        line.put("text", text == null ? null : cut(text, VALUE_CAP));
         return line;
     }
 
@@ -329,7 +329,13 @@ public final class JournalLines {
         return text.substring(0, end);
     }
 
-    private static Locator locator(JsonNode n) {
+    /** {@code target} as the JSON a line's {@code locator} holds. */
+    static JsonNode tree(Locator target) {
+        return JSON.valueToTree(target);
+    }
+
+    /** The locator {@code n} describes; null when it describes none. */
+    static Locator locator(JsonNode n) {
         if (n == null || !n.isObject()) return null;
         try {
             return JSON.treeToValue(n, Locator.class);

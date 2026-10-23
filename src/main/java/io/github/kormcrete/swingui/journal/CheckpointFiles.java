@@ -35,7 +35,7 @@ public final class CheckpointFiles {
         public final String where;
 
         NotWritten(String where, Throwable cause) {
-            super(where + ": " + cause.getMessage(), cause);
+            super(where + ": " + (cause.getMessage() != null ? cause.getMessage() : cause.toString()), cause);
             this.where = where;
         }
     }

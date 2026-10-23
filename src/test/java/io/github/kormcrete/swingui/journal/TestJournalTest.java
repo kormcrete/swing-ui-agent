@@ -422,4 +422,105 @@ class TestJournalTest {
         assertThat(folder.create()).isEqualTo(runs.resolve("nightly-42"));
         assertThat(folder.create()).isDirectory();
     }
+
+    /** A secret of {@code length} letters and digits that no line holds by chance. */
+    static String secretOf(int length, long seed) {
+        java.util.Random random = new java.util.Random(seed);
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) sb.append(chars.charAt(random.nextInt(chars.length())));
+        return sb.toString();
+    }
+
+    /** Fails when {@code text} holds any 8 characters in a row of {@code secret}. */
+    static void assertNoPartOf(String secret, String text, String where) {
+        for (int i = 0; i + 8 <= secret.length(); i++) {
+            assertThat(text).as(where + ": a part of the secret at " + i).doesNotContain(secret.substring(i, i + 8));
+        }
+    }
+
+    @Test
+    void aSecretLongerThanACapLeavesNoPartOfItInAnyLine() throws IOException {
+        // one longer than a sentence's value (60), one longer than any text of a line (2,000)
+        String token = secretOf(70, 1);
+        String key = secretOf(2100, 2);
+        RunFolder folder = folder();
+        TestJournal journal = folder.test("K#m");
+        StepCallVerbs.Sink sink = journal.sink(1);
+        sink.secret(token);
+        sink.secret(key);
+        Locator field = Locator.of("text", "Token " + token);
+
+        for (String secret : Arrays.asList(token, key)) {
+            StepCall typed = new StepCall("{\"action\":\"type\",\"target\":{\"role\":\"text\",\"name\":\"Token\"},"
+                    + "\"text\":\"" + secret + "\"}", "type");
+            typed.passed = true;
+            sink.ended(typed, System.currentTimeMillis());
+            StepCall check = new StepCall("{\"action\":\"expect\",\"target\":{\"role\":\"text\",\"name\":\"Token\"},"
+                    + "\"text\":\"" + secret + "\"}", "expect");
+            check.passed = false;
+            check.message = "EXPECTATION: Token shows '" + secret + "'";
+            check.reason = Reason.EXPECTATION;
+            sink.ended(check, System.currentTimeMillis());
+            journal.section("Paste the token " + secret);
+            journal.read(1, "text", field, secret, System.currentTimeMillis(), null);
+            journal.read(1, "rows", field, Arrays.asList(secret, Collections.singletonMap("Token", secret)),
+                    System.currentTimeMillis(), null);
+            journal.readMenu(1, Arrays.asList("File", secret), Arrays.asList(secret), System.currentTimeMillis(), null);
+            journal.eventually(1, "Token shows " + secret, field, secret, System.currentTimeMillis(), null);
+            journal.checkpoint(1, "token", field, Collections.singletonList(Locator.of("label", secret)),
+                    null, null, false, "could not write " + secret, 3, System.currentTimeMillis());
+        }
+        journal.end("failed", "Token shows " + token, null);
+
+        Path file = folder.create().resolve("steps/K#m.jsonl");
+        String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        assertNoPartOf(token, text, "journal");
+        assertNoPartOf(key, text, "journal");
+        List<JsonNode> lines = lines(file);
+        assertThat(lines.get(1).path("text").asText()).isEqualTo("Type *** into Token");
+        assertThat(lines.get(1).path("value").asText()).isEqualTo("***");
+        assertThat(lines.get(2).path("text").asText()).isEqualTo("Check that Token shows ***");
+        assertThat(lines.get(4).path("text").asText()).isEqualTo("Read the text of Token ***: ***");
+        assertThat(lines.get(8).path("text").asText()).isEqualTo("Checkpoint token of Token ***, masking ***");
+    }
+
+    @Test
+    void aSectionsTextIsCappedLikeEveryOtherText() throws IOException {
+        RunFolder folder = folder();
+        TestJournal journal = folder.test("K#m");
+        StringBuilder sentence = new StringBuilder("Place the order");
+        while (sentence.length() < 2500) sentence.append(" and check it");
+
+        journal.section(sentence.toString());
+
+        JsonNode line = lines(folder.create().resolve("steps/K#m.jsonl")).get(1);
+        assertThat(line.path("kind").asText()).isEqualTo("section");
+        assertThat(line.path("text").asText()).isEqualTo(sentence.substring(0, JournalLines.VALUE_CAP));
+    }
+
+    @Test
+    void aSecondEndIsIgnored() throws IOException {
+        RunFolder folder = folder();
+        TestJournal journal = folder.test("K#m");
+        journal.append(click("Add to cart"), 1);
+
+        journal.end("failed", "expected text '€7.32'", null);
+        journal.end("passed", null, null);
+
+        List<JsonNode> lines = lines(folder.create().resolve("steps/K#m.jsonl"));
+        assertThat(lines).hasSize(3);
+        assertThat(lines.get(2).path("kind").asText()).isEqualTo("end");
+        assertThat(lines.get(2).path("outcome").asText()).isEqualTo("failed");
+    }
+
+    @Test
+    void aCheckpointFileNotWrittenNeverSaysNull() {
+        CheckpointFiles.NotWritten bare = new CheckpointFiles.NotWritten("cart-totals.png", new IOException());
+        CheckpointFiles.NotWritten said =
+                new CheckpointFiles.NotWritten("cart-totals.png", new IOException("disk full"));
+
+        assertThat(bare.getMessage()).isEqualTo("cart-totals.png: java.io.IOException");
+        assertThat(said.getMessage()).isEqualTo("cart-totals.png: disk full");
+    }
 }

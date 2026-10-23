@@ -55,16 +55,20 @@ public final class RecordedJournal {
         long t = startedAtMillis;
         for (JsonNode ran : reply.path("steps")) {
             Integer i = flat.get(ran.path("n").asText());
-            if (i != null && sections.containsKey(i)) journal.append(JournalLines.section(sections.get(i), t), 0);
+            if (i != null && sections.containsKey(i)) {
+                journal.append(JournalLines.section(journal.mask(sections.get(i)), t), 0);
+            }
             Action record = i == null ? null : flow.steps.get(i);
             JsonNode step = record == null ? NODES.objectNode()
                     : asRan(FlowJson.mapper().valueToTree(record), values(ran.path("resolved")));
             ObjectNode line = line(journal, step, ran, t);
-            String say = step.path("say").asText("");
-            String told = ran.path("action").asText("");
+            // masked before a cap could cut a secret
+            String say = journal.mask(step.path("say").asText(""));
+            String told = journal.mask(ran.path("action").asText(""));
             if (!say.trim().isEmpty()) line.set("text", JournalLines.capTexts(TextNode.valueOf(say)));
-            else if (record == null) line.put("text", ran.path("say").asText(told.trim().isEmpty() ? "Step" : told));
-            else if (record instanceof DoAction && !told.trim().isEmpty()) {
+            else if (record == null) {
+                line.put("text", journal.mask(ran.path("say").asText(told.trim().isEmpty() ? "Step" : told)));
+            } else if (record instanceof DoAction && !told.trim().isEmpty()) {
                 // the plugin's own sentence, as the palette shows it
                 line.set("text", JournalLines.capTexts(TextNode.valueOf(told)));
             }
@@ -88,7 +92,10 @@ public final class RecordedJournal {
         }
     }
 
-    /** The line of {@code step}, as {@code ran} says it went; a password it types is a secret of the journal from now on. */
+    /**
+     * The line of {@code step}, as {@code ran} says it went, built from the step and message masked; a password it
+     * types is a secret of the journal from now on.
+     */
     private static ObjectNode line(TestJournal journal, JsonNode step, JsonNode ran, long t) {
         JsonNode given = step != null && step.isObject() ? step : NODES.objectNode();
         String password = TestJournal.typedPassword(given);
@@ -96,7 +103,8 @@ public final class RecordedJournal {
         boolean passed = ran.path("passed").asBoolean(false);
         String reason = ran.path("reason").isTextual() ? ran.path("reason").asText() : null;
         String message = ran.path("message").isTextual() ? withoutReason(ran.path("message").asText(), reason) : null;
-        return JournalLines.step(given, passed, message, reason, Math.max(0, ran.path("ms").asLong(0)), t);
+        return JournalLines.step(journal.maskStep(given), passed, journal.mask(message), reason,
+                Math.max(0, ran.path("ms").asLong(0)), t);
     }
 
     private static String withoutReason(String message, String reason) {
