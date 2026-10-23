@@ -181,4 +181,56 @@ class RunRetentionTest {
         })).containsExactly(old);
         assertThat(deleted.subList(deleted.size() - 2, deleted.size())).containsExactly(old.resolve("run.json"), old);
     }
+
+    @Test
+    void aLinkToAFolderOutsideGoesAsALinkAndWhatItPointsAtStays() throws IOException {
+        Path outside = Files.createTempDirectory("ui-runs-outside");
+        try {
+            // what a link points at: a folder outside the runs dir that even looks like a run folder of the link's name
+            String started = Instant.ofEpochMilli(NOW - 5 * HOUR).toString();
+            Files.write(outside.resolve("run.json"), ("{\"format\":1,\"runId\":\"UIT-linked\",\"started\":\""
+                    + started + "\",\"clients\":[]}").getBytes(StandardCharsets.UTF_8));
+            Files.write(outside.resolve("keep.txt"), new byte[] {1});
+            age(outside);
+            Path old = run("99", 3, true);
+            Path inside = old.resolve("steps").resolve("shared");
+            Path top = runs.resolve("UIT-linked");
+            boolean links;
+            try {
+                Files.createSymbolicLink(inside, outside);
+                Files.createSymbolicLink(top, outside);
+                links = true;
+            } catch (UnsupportedOperationException | IOException | SecurityException refused) {
+                links = false;   // Windows without the privilege: only the part without links is checked
+                Files.deleteIfExists(inside);
+            }
+            age(old);   // making the link touched its folder
+            Path current = run("100", 1, false);
+            List<Path> deleted = new ArrayList<Path>();
+
+            List<Path> pruned = RunRetention.prune(runs, current, 1, NOW, RunRetention.RECENT_MS, p -> {
+                deleted.add(p);
+                Files.delete(p);
+            });
+
+            assertThat(old).doesNotExist();
+            assertThat(outside.resolve("run.json")).isRegularFile();
+            assertThat(outside.resolve("keep.txt")).isRegularFile();
+            assertThat(current).isDirectory();
+            if (links) {
+                assertThat(pruned).containsExactlyInAnyOrder(old, top);
+                // each link went once, as a link; nothing behind it was handed to the deleter
+                assertThat(deleted).containsOnlyOnce(inside, top);
+                assertThat(deleted).noneMatch(p -> p.startsWith(inside) && !p.equals(inside)
+                        || p.startsWith(top) && !p.equals(top) || p.startsWith(outside));
+                assertThat(Files.exists(top, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse();
+            } else {
+                assertThat(pruned).containsExactly(old);
+            }
+        } finally {
+            Files.deleteIfExists(outside.resolve("run.json"));
+            Files.deleteIfExists(outside.resolve("keep.txt"));
+            Files.deleteIfExists(outside);
+        }
+    }
 }
