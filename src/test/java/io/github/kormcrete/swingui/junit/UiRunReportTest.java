@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.junit;
 
+import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import io.github.kormcrete.swingui.testing.FixtureClassCondition;
 import org.junit.jupiter.api.BeforeAll;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.launcher.Launcher;
+import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.TestIdentifier;
 import org.junit.platform.launcher.TestPlan;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -19,11 +21,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
@@ -92,19 +97,60 @@ class UiRunReportTest {
     }
 
     private List<String> run(Path dir, Class<?>... classes) throws Exception {
+        return run(dir, "on", classes);
+    }
+
+    private List<String> run(Path dir, String journal, Class<?>... classes) throws Exception {
         Path file = dir.resolve("latest.txt");
         LauncherDiscoveryRequestBuilder req = LauncherDiscoveryRequestBuilder.request();
         for (Class<?> c : classes) req.selectors(selectClass(c));
         req.configurationParameter(FixtureClassCondition.PARAMETER, FixtureClassCondition.VALUE);
+        req.configurationParameter("swingui.journal", journal);
         Launcher launcher = LauncherFactory.create();
-        launcher.execute(req.build(), new UiRunReport(file));
+        try {
+            launcher.execute(req.build(), new UiRunReport(file));
+        } finally {
+            RunFolder.forget(dir);
+        }
         return Files.readAllLines(file, StandardCharsets.UTF_8);
+    }
+
+    private static List<String> names(Path dir) throws Exception {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.map(p -> p.getFileName().toString()).sorted().collect(Collectors.toList());
+        }
+    }
+
+    @Test
+    void theLibraryJarRegistersTheRunReport() {
+        List<TestExecutionListener> reports = new ArrayList<TestExecutionListener>();
+        for (TestExecutionListener l : ServiceLoader.load(TestExecutionListener.class)) {
+            if (l instanceof UiRunReport) reports.add(l);
+        }
+        assertThat(reports).hasSize(1);
+    }
+
+    @Test
+    void theReportNamesItsRunFolderAndCopiesItsLinesThere(@TempDir Path dir) throws Exception {
+        List<String> lines = run(dir, Mixed.class);
+        String runId = lines.get(0).substring(lines.get(0).lastIndexOf(" run=") + " run=".length());
+        assertThat(runId).isNotEmpty();
+        assertThat(names(dir)).containsExactly(runId, "latest-run.txt", "latest.txt");
+        assertThat(Files.readAllLines(dir.resolve(runId).resolve("report.txt"), StandardCharsets.UTF_8)).isEqualTo(lines);
+    }
+
+    @Test
+    void withTheJournalOffTheReportMakesNoRunFolder(@TempDir Path dir) throws Exception {
+        List<String> lines = run(dir, "off", Mixed.class);
+        assertThat(lines.get(0)).startsWith("STARTED ").endsWith(" tests=2");
+        assertThat(lines.get(lines.size() - 1)).isEqualTo("DONE passed=1 failed=1 skipped=0 aborted=0");
+        assertThat(names(dir)).containsExactly("latest.txt");
     }
 
     @Test
     void aClassWhoseSetupFailsReportsEachOfItsTestsAsFailed(@TempDir Path dir) throws Exception {
         List<String> lines = run(dir, BrokenSetup.class);
-        assertThat(lines.get(0)).endsWith(" tests=2");
+        assertThat(lines.get(0)).contains(" tests=2 run=");
         assertThat(lines.subList(1, lines.size())).hasSize(3);
         assertThat(lines.get(1)).startsWith("FAIL UiRunReportTest$BrokenSetup#").endsWith("0ms — server down");
         assertThat(lines.get(2)).startsWith("FAIL UiRunReportTest$BrokenSetup#").endsWith("0ms — server down");

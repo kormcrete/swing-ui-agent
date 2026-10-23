@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.junit;
 
+import io.github.kormcrete.swingui.journal.RunFolder;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
 import org.junit.platform.engine.TestTag;
@@ -17,13 +18,15 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Writes target/ui-runs/latest.txt for any run that holds a {@code @UiTest} (tag "ui"), so a caller that cannot
  * watch IntelliJ's Run window reads the verdict. The {@code target} is the test module's, found from the
- * first UI test's class (see {@link ModuleTarget}), not the working directory. Registered by the test module's
- * META-INF/services/org.junit.platform.launcher.TestExecutionListener.
+ * first UI test's class (see {@link ModuleTarget}), not the working directory. With the journal on it also makes the
+ * run folder ({@link RunFolder}): STARTED ends with {@code run=<runId>}, every line goes to its report.txt too.
+ * Registered by the library jar's META-INF/services/org.junit.platform.launcher.TestExecutionListener, so it is on
+ * whenever the library is on the test class path; a plan without UI tests gets no report.
  */
 public final class UiRunReport implements TestExecutionListener {
 
     private static final TestTag UI = TestTag.create("ui");
-    /** Null until a run resolves it: the module of the run's first UI test. */
+    /** The report file a test gives; null: {@code <module>/target/ui-runs/latest.txt} of the run's first UI test. */
     private final Path file;
     private final Map<String, Long> started = new ConcurrentHashMap<String, Long>();
     private final Set<String> reported = ConcurrentHashMap.newKeySet();
@@ -52,8 +55,28 @@ public final class UiRunReport implements TestExecutionListener {
         if (ui == 0) return;
         this.plan = plan;
         reported.clear();
-        report = new RunReport(file != null ? file : ModuleTarget.of(firstClass).resolve("ui-runs").resolve("latest.txt"));
+        Path latest = file != null ? file : ModuleTarget.of(firstClass).resolve("ui-runs").resolve("latest.txt");
+        report = new RunReport(latest, runFolder(plan, latest.getParent()));
         report.started(ui);
+    }
+
+    /** The run's folder, made now when the journal is on; null when even its settings cannot be had. */
+    private static RunFolder runFolder(TestPlan plan, Path runsDir) {
+        RunFolder folder;
+        try {
+            folder = RunFolder.of(runsDir, k -> plan.getConfigurationParameters().get(k));
+        } catch (RuntimeException e) {
+            System.err.println("[ui-warning] run journal off for this run: " + e);
+            return null;
+        }
+        if (folder.settings().journal) {
+            try {
+                folder.create();
+            } catch (RuntimeException e) {
+                folder.broken(e);
+            }
+        }
+        return folder;
     }
 
     @Override

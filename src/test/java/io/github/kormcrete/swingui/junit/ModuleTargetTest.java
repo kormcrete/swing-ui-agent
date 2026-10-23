@@ -46,11 +46,10 @@ class ModuleTargetTest {
     }
 
     @Test
-    void theDefaultRunReportLandsInTheTestModulesTarget() throws Exception {
+    void theRunReportIsOnByItselfAndLandsInTheTestModulesTarget() throws Exception {
         Instant before = Instant.now().minusSeconds(1);
         LauncherFactory.create().execute(
-                LauncherDiscoveryRequestBuilder.request().selectors(selectClass(OneUiTest.class)).configurationParameter("swingui.fixtures", "run").build(),
-                new UiRunReport());
+                LauncherDiscoveryRequestBuilder.request().selectors(selectClass(OneUiTest.class)).configurationParameter("swingui.fixtures", "run").build());
         Path file = ModuleTarget.of(ModuleTargetTest.class).resolve("ui-runs").resolve("latest.txt");
         List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
         assertThat(Instant.parse(lines.get(0).split(" ")[1])).isAfter(before);
