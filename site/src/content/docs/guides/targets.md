@@ -73,6 +73,7 @@ scopes what lies inside it as `section:<caption>`.
   a value label named by its caption (`label("Total")` next to the caption Total), `text()` is the caption and
   `value()` what it shows (`€31.32`). In assertions, `hasText(...)` checks what the element shows.
   When the label next to the value is not tied to it (the caption itself answers to `label 'Delivery note'` and shows the caption), the value label is named by its own text: check it with `{"role":"label","name":"Leave at reception"},"shown":true`. A per-run value there is linked through its `name` (and through a `tab:`/window title).
+  A caption names only a value beside it on its row: the lines of a message stacked one under another (an option pane's) stay labels of their own, also a line that ends in a colon, such as `{"role":"label","name":"The receipt could not be saved:"}`.
 - `count()` is how many elements match now (0 when none), `texts()` every match's name and `values()` every
   match's value, in tree order: a popup's entries, the labels in a strip. They read every match, so they refuse an
   `nth(...)`.

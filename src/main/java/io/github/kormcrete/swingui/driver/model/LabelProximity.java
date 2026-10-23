@@ -293,17 +293,20 @@ public final class LabelProximity {
         return t != null && t.endsWith(":");
     }
 
-    /** The closest label, empty or not, on {@code caption}'s row to its right in the same panel (the {@link #sameRowRight} row test). */
+    /**
+     * The closest label, empty or not, on {@code caption}'s row to its right in the same panel. On its row = the two
+     * overlap vertically: the lines of a message stacked at one x (an option pane's) touch but do not overlap, so a line
+     * ending in a colon is no caption of the line under it.
+     */
     private static JLabel labelRight(JLabel caption, List<JLabel> labels) {
         Container parent = caption.getParent();
         Rectangle c = caption.getBounds();
-        int captionMidY = c.y + c.height / 2;
         JLabel best = null;
         int bestDx = Integer.MAX_VALUE;
         for (JLabel l : labels) {
             if (l == caption || l.getParent() != parent) continue;
             Rectangle v = l.getBounds();
-            boolean sameRow = Math.abs((v.y + v.height / 2) - captionMidY) <= Math.max(8, v.height);
+            boolean sameRow = v.y < c.y + c.height && c.y < v.y + v.height;
             if (!sameRow || v.x < c.x) continue;
             int dx = v.x - c.x;
             if (dx < bestDx) { bestDx = dx; best = l; }

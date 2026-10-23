@@ -260,6 +260,31 @@ class LabelProximityTest {
     }
 
     @Test
+    void aMessageLineEndingInAColonIsNoCaptionOfTheLineUnderIt() {
+        // an option pane stacks the lines of its message at the same x, each its own label, touching
+        JPanel p = new JPanel(null);
+        JLabel first = new JLabel("The receipt could not be saved:");
+        first.setBounds(0, 0, 200, 16);
+        JLabel second = new JLabel("Disk full");
+        second.setBounds(0, 16, 60, 16);
+        p.add(first); p.add(second);
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).isEmpty();
+        assertThat(LabelProximity.captionLabels(p, Visibility.TREE)).isEmpty();
+    }
+
+    @Test
+    void aValueABitLowerThanItsCaptionIsStillOnItsRow() {
+        JPanel p = new JPanel(null);
+        JLabel total = label("Total:", 0, 0);
+        JLabel value = new JLabel("€7.32");
+        value.setBounds(90, 6, 80, 24);   // a larger font, its top a little lower
+        p.add(total); p.add(value);
+
+        assertThat(LabelProximity.valueCaptions(p, Visibility.TREE)).containsEntry(value, total);
+    }
+
+    @Test
     void twoLabelsOnARowWithoutAColonAreNotPaired() {
         JPanel p = new JPanel(null);
         p.add(label("Orders", 0, 0));
