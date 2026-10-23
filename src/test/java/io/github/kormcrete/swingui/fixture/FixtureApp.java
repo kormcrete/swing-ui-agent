@@ -1,6 +1,7 @@
 package io.github.kormcrete.swingui.fixture;
 
 import javax.swing.AbstractCellEditor;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.DropMode;
 import javax.swing.JButton;
@@ -36,6 +37,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -54,13 +56,15 @@ import java.awt.dnd.DropTargetDropEvent;
 import java.awt.event.ContainerAdapter;
 import java.awt.event.ContainerEvent;
 import java.awt.event.InputEvent;
+import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
 
 /**
  * A plain Swing order form with no application framework, for driving through swing-ui-agent in its own JVM
- * (FixtureAppDriveIT): two fields, Save, a New that moves focus itself, a Delete that asks in a modal dialog,
- * an attachments drop target with a context menu, a lines table, a status label that tells what happened, a Total
+ * (FixtureAppDriveIT): two fields (Notes with a plain border and a caret that does not blink, so a picture of it
+ * shows whether its caret was painted), Save, a New that moves focus itself, a Delete that asks in a modal dialog,
+ * an attachments drop target with a context menu that lights up while the pointer is over it, a lines table, a status label that tells what happened, a Total
  * caption beside the value label it names (Save sets the value, New sets it back to €0.00) and an
  * Archive button bottom right, with a button beside it that drags the person's palette over Archive (as a person
  * would: the palette's default spot covers no button). That button is enabled once the palette is in the window.
@@ -83,6 +87,10 @@ public final class FixtureApp {
             customer.setName("customer");
             JTextField notes = new JTextField(10);
             notes.setName("notes");
+            // a plain border and a caret that does not blink: focused, Notes differs from unfocused by its caret alone
+            notes.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(Color.GRAY),
+                    BorderFactory.createEmptyBorder(2, 3, 2, 3)));
+            notes.getCaret().setBlinkRate(0);
             JLabel status = new JLabel("idle");
             status.setName("status");
             JLabel totalCaption = new JLabel("Total");
@@ -112,6 +120,12 @@ public final class FixtureApp {
 
             JLabel attachments = new JLabel("[attachments]");
             attachments.setName("attachments");
+            // the drop zone lights up while the pointer is over it
+            final Color attachmentsColor = attachments.getForeground();
+            attachments.addMouseListener(new MouseAdapter() {
+                @Override public void mouseEntered(MouseEvent e) { attachments.setForeground(new Color(0x1E5AA8)); }
+                @Override public void mouseExited(MouseEvent e) { attachments.setForeground(attachmentsColor); }
+            });
             new DropTarget(attachments, DnDConstants.ACTION_COPY, new DropTargetAdapter() {
                 @Override
                 public void drop(DropTargetDropEvent e) {

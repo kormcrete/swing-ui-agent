@@ -54,9 +54,9 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
  * by default. In the Register window the agent records tests whose steps use what earlier steps made (a copied record,
  * a new tag and folder) and a text unique per run; a new app and agent replay them from their files alone, as recorded
  * tests and as Java tests. UI tests launched against it leave a run folder of the documented format: a journal line of
- * every kind, a masked checkpoint, a failing test's journal ending at its failed check, and two checkpoints of the same
- * screen that are the same picture. Run by failsafe after {@code package}; on every OS CI covers, this is what makes the
- * platform green.
+ * every kind, a masked checkpoint, a failing test's journal ending at its failed check, and checkpoints that leave out
+ * the pointer's hover and the text caret. Run by failsafe after {@code package}; on every OS CI covers, this is what
+ * makes the platform green.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FixtureAppDriveIT {
@@ -877,21 +877,26 @@ class FixtureAppDriveIT {
         }
     }
 
-    /** The same screen twice, once with the pointer over Save and a caret in Customer, once without. */
+    /**
+     * Notes and the attachments drop zone, each pictured twice: with Notes focused (its caret held on) and the pointer
+     * over the drop zone (lit up), and again with the focus and the pointer elsewhere. A checkpoint that left the
+     * caret or the pointer's hover in its picture would make the two differ.
+     */
     @FixtureClass
     @Tag("ui")
-    static class CheckpointTwice {
+    static class CheckpointPointerAndCaret {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension();
 
         @Test
-        void sameScreenSamePicture(Client ui) throws Exception {
-            ui.byId("customer").click();   // focus and a blinking caret in Customer
-            ui.byId("save").hover();       // Save rolled over
-            ui.checkpoint("first");
-            ui.byId("save").unhover();
-            Thread.sleep(700);             // past one caret blink
-            ui.checkpoint("second");
+        void thePointerAndTheCaretAreLeftOut(Client ui) {
+            ui.byId("notes").click();              // Notes focused: its caret is on and does not blink
+            ui.byId("attachments").hover();        // the drop zone lights up under the pointer
+            ui.byId("attachments").checkpoint("attachments-pointed-at");
+            ui.byId("notes").checkpoint("notes-focused");
+            ui.byId("customer").click();           // the focus and the pointer leave both
+            ui.byId("notes").checkpoint("notes-unfocused");
+            ui.byId("attachments").checkpoint("attachments-alone");
         }
     }
 
@@ -965,24 +970,29 @@ class FixtureAppDriveIT {
 
     @Test
     @Order(29)
-    void twoCheckpointsOfTheSameScreenAreTheSamePicture() throws Exception {
-        Path folder = launchUiFixture(CheckpointTwice.class, true);
-        Path dir = folder.resolve("checkpoints").resolve("FixtureAppDriveIT$CheckpointTwice#sameScreenSamePicture");
-        java.awt.image.BufferedImage first = javax.imageio.ImageIO.read(dir.resolve("first.png").toFile());
-        java.awt.image.BufferedImage second = javax.imageio.ImageIO.read(dir.resolve("second.png").toFile());
-        assertThat(first).isNotNull();
-        assertThat(second).isNotNull();
-        assertThat(second.getWidth()).isEqualTo(first.getWidth());
-        assertThat(second.getHeight()).isEqualTo(first.getHeight());
+    void aCheckpointLeavesOutThePointersHoverAndTheCaret() throws Exception {
+        Path folder = launchUiFixture(CheckpointPointerAndCaret.class, true);
+        Path dir = folder.resolve("checkpoints").resolve("FixtureAppDriveIT$CheckpointPointerAndCaret#thePointerAndTheCaretAreLeftOut");
+        // the checkpoint moved the pointer off: the drop zone it was over is not lit up in the picture
+        assertSamePicture(dir.resolve("attachments-pointed-at.png"), dir.resolve("attachments-alone.png"));
+        // the checkpoint hid the caret of the focused Notes for its paint
+        assertSamePicture(dir.resolve("notes-focused.png"), dir.resolve("notes-unfocused.png"));
+    }
+
+    private static void assertSamePicture(Path a, Path b) throws Exception {
+        java.awt.image.BufferedImage first = javax.imageio.ImageIO.read(a.toFile());
+        java.awt.image.BufferedImage second = javax.imageio.ImageIO.read(b.toFile());
+        assertThat(first).as("%s", a).isNotNull();
+        assertThat(second).as("%s", b).isNotNull();
+        assertThat(second.getWidth()).as("width of %s", b).isEqualTo(first.getWidth());
+        assertThat(second.getHeight()).as("height of %s", b).isEqualTo(first.getHeight());
         int differ = 0;
         for (int y = 0; y < first.getHeight(); y++) {
             for (int x = 0; x < first.getWidth(); x++) {
                 if (first.getRGB(x, y) != second.getRGB(x, y)) differ++;
             }
         }
-        // the checkpoint moved the pointer off (no rollover on Save) and hid the caret in Customer for its paint
-        assertThat(differ).as("pixels that differ between %s and %s", dir.resolve("first.png"), dir.resolve("second.png"))
-                .isZero();
+        assertThat(differ).as("pixels that differ between %s and %s", a, b).isZero();
     }
 
     /**
