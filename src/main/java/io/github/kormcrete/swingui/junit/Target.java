@@ -319,21 +319,25 @@ public final class Target {
         }
     }
 
-    // ---- reads (no retry; use an assertion to wait for a value)
+    // ---- reads (no retry; use an assertion to wait for a value). Each public read journals once, by its own name.
 
     /** Where the element is, in its window's coordinates (no retry). */
     public Bounds bounds() {
-        try {
-            return Bounds.of(client.verbs().geometry(locator.copy()));
-        } catch (io.github.kormcrete.swingui.driver.DriverException e) {
-            throw new UiActionFailed("bounds", locator, e, client.candidatesFor(locator, e));
-        }
+        return client.read("bounds", locator, () -> {
+            try {
+                return Bounds.of(client.verbs().geometry(locator.copy()));
+            } catch (io.github.kormcrete.swingui.driver.DriverException e) {
+                throw new UiActionFailed("bounds", locator, e, client.candidatesFor(locator, e));
+            }
+        });
     }
 
     public enum Presence { NONE, ONE, MANY }
 
     /** One read, no retry: is the target there now, and is it unique? */
-    public Presence presence() {
+    public Presence presence() { return client.read("presence", locator, this::presenceNow); }
+
+    private Presence presenceNow() {
         try {
             client.verbs().read(locator.copy(), 0);
             return Presence.ONE;
@@ -345,9 +349,9 @@ public final class Target {
     }
 
     /** One read, no retry: true when the target resolves now, once or several times. */
-    public boolean exists() { return presence() != Presence.NONE; }
+    public boolean exists() { return client.read("exists", locator, () -> presenceNow() != Presence.NONE); }
 
-    /** One read, no retry. For capturing a value; to wait for one, use an assertion. */
+    /** One read, no retry, not journalled (the public read that calls it is). */
     io.github.kormcrete.swingui.driver.model.Node read() {
         try {
             return client.verbs().read(locator.copy(), null);
@@ -376,7 +380,7 @@ public final class Target {
     }
 
     /** The element's name as the driver reads it: a label's or button's text, a field's caption. */
-    public String text() { return read().name; }
+    public String text() { return client.read("text", locator, () -> read().name); }
 
     /**
      * The text a person sees in the element, as a recorded test's remember step keeps it: a field's content, a label's or
@@ -384,13 +388,13 @@ public final class Target {
      * to the timeout until there is one; fails when the element is missing or empty. Unlike {@link #text}, which is the
      * element's name (a field's caption).
      */
-    public String shownText() { return remembered(false); }
+    public String shownText() { return client.read("shownText", locator, () -> remembered(false)); }
 
     /**
      * The text of what is selected in the element: the selected row's cell in the target's column (a table target with a
      * column), the selected item (list, tree) or the selected tab's title. Waits like {@link #shownText}.
      */
-    public String selectedText() { return remembered(true); }
+    public String selectedText() { return client.read("selectedText", locator, () -> remembered(true)); }
 
     private String remembered(boolean selected) {
         try {
@@ -401,57 +405,69 @@ public final class Target {
     }
 
     /** The element's current value: a field's content, a combo's selection. */
-    public String value() { return read().value; }
+    public String value() { return client.read("value", locator, () -> read().value); }
 
     /** The tooltip the element - a cell: its rendered cell - shows on hover, HTML stripped; null when none. */
-    public String tooltip() { return read().tooltip; }
+    public String tooltip() { return client.read("tooltip", locator, () -> read().tooltip); }
 
     public List<String> columns() {
-        List<String> c = read().columns;
-        return c == null ? Collections.<String>emptyList() : c;
+        return client.read("columns", locator, () -> {
+            List<String> c = read().columns;
+            return c == null ? Collections.<String>emptyList() : c;
+        });
     }
 
     public List<Map<String, String>> rows() {
-        io.github.kormcrete.swingui.driver.model.Node n = read();
-        List<Map<String, String>> out = new ArrayList<Map<String, String>>();
-        if (n.rows == null || n.columns == null) return out;
-        for (List<String> r : n.rows) {
-            Map<String, String> m = new LinkedHashMap<String, String>();
-            for (int i = 0; i < n.columns.size() && i < r.size(); i++) m.put(n.columns.get(i), r.get(i));
-            out.add(m);
-        }
-        return out;
+        return client.read("rows", locator, () -> {
+            io.github.kormcrete.swingui.driver.model.Node n = read();
+            List<Map<String, String>> out = new ArrayList<Map<String, String>>();
+            if (n.rows == null || n.columns == null) return out;
+            for (List<String> r : n.rows) {
+                Map<String, String> m = new LinkedHashMap<String, String>();
+                for (int i = 0; i < n.columns.size() && i < r.size(); i++) m.put(n.columns.get(i), r.get(i));
+                out.add(m);
+            }
+            return out;
+        });
     }
 
     public int rowCount() {
-        io.github.kormcrete.swingui.driver.model.Node n = read();
-        if (n.rowCount != null) return n.rowCount;
-        return n.rows == null ? 0 : n.rows.size();
+        return client.read("rowCount", locator, () -> {
+            io.github.kormcrete.swingui.driver.model.Node n = read();
+            if (n.rowCount != null) return n.rowCount;
+            return n.rows == null ? 0 : n.rows.size();
+        });
     }
 
     /** How many elements match now (no retry). */
-    public int count() { return readAll().size(); }
+    public int count() { return client.read("count", locator, () -> readAll().size()); }
 
     /**
      * The values of every element this locator matches, in order — for a named label, button or tick box the text the
      * reader sees (its name being its component name), for a field its content.
      */
     public List<String> values() {
-        List<String> out = new ArrayList<String>();
-        for (io.github.kormcrete.swingui.driver.model.Node n : readAll()) out.add(n.value);
-        return out;
+        return client.read("values", locator, () -> {
+            List<String> out = new ArrayList<String>();
+            for (io.github.kormcrete.swingui.driver.model.Node n : readAll()) out.add(n.value);
+            return out;
+        });
     }
 
     /** Every match's name, in tree order (no retry): a popup's entries, a strip's cell labels. */
     public List<String> texts() {
-        List<String> out = new ArrayList<String>();
-        for (io.github.kormcrete.swingui.driver.model.Node n : readAll()) out.add(n.name);
-        return out;
+        return client.read("texts", locator, () -> {
+            List<String> out = new ArrayList<String>();
+            for (io.github.kormcrete.swingui.driver.model.Node n : readAll()) out.add(n.name);
+            return out;
+        });
     }
 
-    public List<Integer> selectedRows() { List<Integer> s = read().selected; return s == null ? Collections.<Integer>emptyList() : s; }
-    public List<String> items() { List<String> s = read().items; return s == null ? Collections.<String>emptyList() : s; }
-    public List<String> expandedItems() { List<String> s = read().expanded; return s == null ? Collections.<String>emptyList() : s; }
+    public List<Integer> selectedRows() { return client.read("selectedRows", locator, () -> orEmpty(read().selected)); }
+    public List<String> items() { return client.read("items", locator, () -> orEmpty(read().items)); }
+    public List<String> expandedItems() { return client.read("expandedItems", locator, () -> orEmpty(read().expanded)); }
+
+    private static <E> List<E> orEmpty(List<E> list) { return list == null ? Collections.<E>emptyList() : list; }
 
     private List<io.github.kormcrete.swingui.driver.model.Node> readAll() {
         if (locator.nth != null) throw new IllegalStateException("count()/texts() read every match; drop nth(" + locator.nth + ")");
@@ -462,10 +478,7 @@ public final class Target {
         }
     }
 
-    public List<String> states() {
-        List<String> s = read().state;
-        return s == null ? Collections.<String>emptyList() : s;
-    }
+    public List<String> states() { return client.read("states", locator, () -> orEmpty(read().state)); }
 
     @Override
     public String toString() { return locator.toString(); }

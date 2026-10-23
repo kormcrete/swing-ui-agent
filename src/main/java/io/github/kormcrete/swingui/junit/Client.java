@@ -8,6 +8,7 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.UiUsers;
+import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.journal.TestJournal;
 
 import java.io.IOException;
@@ -191,6 +192,22 @@ public final class Client {
         return app == null ? UiUsers.secret(alias, name) : app.secret(alias, name);
     }
 
+    /**
+     * Starts a part of this test in its run journal, named in the author's words: {@code ui.step("Place the order")}.
+     * The steps, reads and checks after it belong to it, up to the next. Line breaks become spaces. Throws
+     * IllegalArgumentException("a step needs a sentence") for a null or blank one; a Client built directly writes
+     * nothing.
+     */
+    public void step(String sentence) {
+        if (sentence == null || sentence.trim().isEmpty()) throw new IllegalArgumentException("a step needs a sentence");
+        if (journal == null) return;
+        try {
+            journal.section(sentence.replaceAll("\\r\\n|\\r|\\n", " "));
+        } catch (RuntimeException e) {
+            RunFolder.warnOff(e);   // the journal never fails a test
+        }
+    }
+
     public List<String> warnings() { return Collections.unmodifiableList(warnings); }
 
     Verbs verbs() { return verbs; }
@@ -249,11 +266,14 @@ public final class Client {
 
     /** The visible labels of the menu-bar menu {@code path} names (a read: nothing opens). */
     public List<String> menuItems(String... path) {
-        try {
-            return verbs.menuItems(Arrays.asList(path));
-        } catch (DriverException e) {
-            throw new UiActionFailed("menuItems " + Arrays.asList(path), null, e, Collections.<String>emptyList());
-        }
+        final List<String> menu = Arrays.asList(path);
+        return read("menuItems", null, menu, () -> {
+            try {
+                return verbs.menuItems(menu);
+            } catch (DriverException e) {
+                throw new UiActionFailed("menuItems " + menu, null, e, Collections.<String>emptyList());
+            }
+        });
     }
 
     public void pick(String... path) { act("pick " + Arrays.asList(path), null, () -> verbs.pick(Arrays.asList(path), timeoutMillis)); }
@@ -277,11 +297,13 @@ public final class Client {
 
     /** The clipboard's text, e.g. what a copy in the app left there; null when it holds none. */
     public String clipboardText() {
-        try {
-            return verbs.clipboardText();
-        } catch (DriverException e) {
-            throw new UiActionFailed("clipboardText", null, e, Collections.<String>emptyList());
-        }
+        return read("clipboardText", null, () -> {
+            try {
+                return verbs.clipboardText();
+            } catch (DriverException e) {
+                throw new UiActionFailed("clipboardText", null, e, Collections.<String>emptyList());
+            }
+        });
     }
 
     /**
@@ -289,11 +311,13 @@ public final class Client {
      * up to this client's timeout. Fails as a UiActionFailed when none shows.
      */
     public FileChooser fileChooser() {
-        try {
-            return FileChooser.of(verbs.fileChooser(timeoutMillis));
-        } catch (DriverException e) {
-            throw new UiActionFailed("fileChooser", null, e, Collections.<String>emptyList());
-        }
+        return read("fileChooser", null, () -> {
+            try {
+                return FileChooser.of(verbs.fileChooser(timeoutMillis));
+            } catch (DriverException e) {
+                throw new UiActionFailed("fileChooser", null, e, Collections.<String>emptyList());
+            }
+        });
     }
 
     /** The absolute path of the folder the showing file chooser is in ({@link #fileChooser()}). */
@@ -319,11 +343,13 @@ public final class Client {
      * resolves a window root itself, so no Target can answer this.
      */
     public boolean modalShowing() {
-        try {
-            return modalShowing(verbs);
-        } catch (DriverException e) {
-            throw new UiActionFailed("modalShowing", null, e, Collections.<String>emptyList());
-        }
+        return read("modalShowing", null, () -> {
+            try {
+                return modalShowing(verbs);
+            } catch (DriverException e) {
+                throw new UiActionFailed("modalShowing", null, e, Collections.<String>emptyList());
+            }
+        });
     }
 
     /**
@@ -331,6 +357,10 @@ public final class Client {
      * text, not the label's name: a {@code JOptionPane} names every message label "OptionPane.label".
      */
     public String describeModal() {
+        return read("describeModal", null, this::describeModalNow);
+    }
+
+    private String describeModalNow() {
         Node app;
         try {
             app = verbs.snapshot("dialog", null, DESCRIBE_MAX_NODES, 0);
@@ -411,6 +441,44 @@ public final class Client {
             Files.write(file, png);
         } catch (IOException e) {
             throw new IllegalStateException("could not write screenshot " + file.toAbsolutePath(), e);
+        }
+    }
+
+    /**
+     * Runs the read {@code call}, named {@code verb} (the public method's name) on {@code target} (null: none), and
+     * journals it once: a {@code read} line with the value it came back with, or how it failed, after which the
+     * failure is rethrown unchanged. While {@link UiAssertions#eventually} polls on this thread, the read is kept as the
+     * poll's last instead, for its one check line. A Client built directly only runs it.
+     */
+    <T> T read(String verb, Locator target, Supplier<T> call) {
+        return read(verb, target, null, call);
+    }
+
+    /** {@link #read(String, Locator, Supplier)}; {@code menu} non-null for {@code menuItems}, the menu read. */
+    private <T> T read(String verb, Locator target, List<String> menu, Supplier<T> call) {
+        if (journal == null) return call.get();
+        UiAssertions.Poll poll = UiAssertions.polling();
+        long startedAt = System.currentTimeMillis();
+        T value;
+        try {
+            value = call.get();
+        } catch (RuntimeException | Error e) {
+            if (poll != null) poll.saw(journal, client, target, null);
+            else journalRead(verb, target, menu, null, startedAt, e);
+            throw e;
+        }
+        if (poll != null) poll.saw(journal, client, target, value);
+        else journalRead(verb, target, menu, value, startedAt, null);
+        return value;
+    }
+
+    private void journalRead(String verb, Locator target, List<String> menu, Object value, long startedAt,
+                             Throwable failure) {
+        try {
+            if (menu != null) journal.readMenu(client, menu, value, startedAt, failure);
+            else journal.read(client, verb, target, value, startedAt, failure);
+        } catch (RuntimeException e) {
+            RunFolder.warnOff(e);   // the journal never fails a read
         }
     }
 

@@ -106,19 +106,68 @@ public final class JournalLines {
     /** {@link #read(String, Locator, Object, boolean, String, long, long)} with the failure's reason. */
     static ObjectNode read(String verb, Locator target, Object value, boolean passed, String message, String reason,
                            long ms, long startedAtMillis) {
+        ObjectNode line = readHead(verb, target, startedAtMillis);
+        return readTail(line, value, passed, message, reason, ms,
+                StepWords.read(verb, target, passed ? shortText(value) : null));
+    }
+
+    /**
+     * The line of reading the items of the menu-bar menu {@code path} ({@code menuItems}): no target, the menu as
+     * {@code path}, and the sentence names it ("Read the items of the menu File > Export: PDF, CSV").
+     */
+    static ObjectNode readMenu(List<String> path, Object value, boolean passed, String message, String reason,
+                               long ms, long startedAtMillis) {
+        ObjectNode line = readHead("menuItems", null, startedAtMillis);
+        List<String> menu = path == null ? new ArrayList<String>() : path;
+        ArrayNode names = line.putArray("path");
+        for (String name : menu) names.add(capTexts(TextNode.valueOf(String.valueOf(name))));
+        return readTail(line, value, passed, message, reason, ms,
+                StepWords.readMenu(join(menu, " > "), passed ? shortText(value) : null));
+    }
+
+    private static ObjectNode readHead(String verb, Locator target, long startedAtMillis) {
         ObjectNode line = NODES.objectNode();
         line.put("t", time(startedAtMillis));
         line.put("kind", "read");
         if (verb != null) line.put("verb", verb);
-        if (target != null) {
-            line.put("target", target.toString());
-            line.set("locator", capTexts(JSON.valueToTree(target)));
-        }
+        putTarget(line, target);
+        return line;
+    }
+
+    private static ObjectNode readTail(ObjectNode line, Object value, boolean passed, String message, String reason,
+                                       long ms, String text) {
         if (passed && value != null) putValue(line, toJson(value));
         outcome(line, passed, message, reason);
         line.put("ms", ms);
-        line.put("text", StepWords.read(verb, target, passed ? shortText(value) : null));
+        line.put("text", text);
         return line;
+    }
+
+    /**
+     * The one line of {@code UiAssertions.eventually} polling reads: kind {@code check}, verb {@code eventually}, the
+     * target and {@code value} of its last read (none when that read failed), the author's {@code what} as
+     * {@code expected} and in the sentence ("Check that the Total shows €7.32").
+     */
+    static ObjectNode eventually(String what, Locator target, Object value, boolean passed, String message,
+                                 String reason, long ms, long startedAtMillis) {
+        String said = what == null ? "" : what.replaceAll("\\r\\n|\\r|\\n", " ");
+        ObjectNode line = NODES.objectNode();
+        line.put("t", time(startedAtMillis));
+        line.put("kind", "check");
+        line.put("verb", "eventually");
+        putTarget(line, target);
+        line.putObject("expected").set("what", capTexts(TextNode.valueOf(said)));
+        if (value != null) putValue(line, toJson(value));
+        outcome(line, passed, message, reason);
+        line.put("ms", ms);
+        line.put("text", cut("Check that " + said, VALUE_CAP));
+        return line;
+    }
+
+    private static void putTarget(ObjectNode line, Locator target) {
+        if (target == null) return;
+        line.put("target", target.toString());
+        line.set("locator", capTexts(JSON.valueToTree(target)));
     }
 
     /** The line that starts a section of the test, named by the test's author. */
@@ -137,10 +186,7 @@ public final class JournalLines {
         line.put("t", time(at));
         line.put("kind", "checkpoint");
         line.put("name", name);
-        if (target != null) {
-            line.put("target", target.toString());
-            line.set("locator", capTexts(JSON.valueToTree(target)));
-        }
+        putTarget(line, target);
         if (png != null) line.put("png", png);
         if (json != null) line.put("json", json);
         line.put("masks", masks == null ? 0 : masks.size());

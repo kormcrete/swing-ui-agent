@@ -165,13 +165,46 @@ public final class TestJournal {
     /** A read of client {@code client} that started at {@code startedAt}: its value, or how it failed. */
     public void read(int client, String verb, Locator target, Object value, long startedAt, Throwable failure) {
         if (!stepsOn()) return;
-        long now = System.currentTimeMillis();
-        String message = failure == null ? null : failure.getMessage() != null ? failure.getMessage() : failure.toString();
-        Reason why = failure instanceof DriverException ? ((DriverException) failure).reason() : null;
-        if (why != null) message = DriverException.stripReason(message, why);
-        String reason = why == null ? null : why.name();
-        append(JournalLines.read(verb, target, failure == null ? value : null, failure == null, message, reason,
-                Math.max(0, now - startedAt), startedAt), client);
+        Failure f = new Failure(failure);
+        append(JournalLines.read(verb, target, failure == null ? value : null, failure == null, f.message, f.reason,
+                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+    }
+
+    /** A read of the items of the menu-bar menu {@code path} ({@code menuItems}), as {@link #read}. */
+    public void readMenu(int client, List<String> path, Object value, long startedAt, Throwable failure) {
+        if (!stepsOn()) return;
+        Failure f = new Failure(failure);
+        append(JournalLines.readMenu(path, failure == null ? value : null, failure == null, f.message, f.reason,
+                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+    }
+
+    /**
+     * The one check line of an {@code eventually} that started at {@code startedAt} and polled reads of client
+     * {@code client}: {@code what} it waited for, the target and value of its last read, and how it failed (or null).
+     */
+    public void eventually(int client, String what, Locator target, Object lastValue, long startedAt, Throwable failure) {
+        if (!stepsOn()) return;
+        Failure f = new Failure(failure);
+        append(JournalLines.eventually(what, target, lastValue, failure == null, f.message, f.reason,
+                Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+    }
+
+    /**
+     * How a read or check failed, in a line's words: the message without a leading {@code REASON: } and the reason
+     * of a driver failure; a failure that wraps a driver failure (a UiActionFailed) by that driver failure.
+     */
+    private static final class Failure {
+        final String message;
+        final String reason;
+
+        Failure(Throwable failure) {
+            Throwable e = failure != null && !(failure instanceof DriverException)
+                    && failure.getCause() instanceof DriverException ? failure.getCause() : failure;
+            String text = e == null ? null : e.getMessage() != null ? e.getMessage() : e.toString();
+            Reason why = e instanceof DriverException ? ((DriverException) e).reason() : null;
+            message = why == null ? text : DriverException.stripReason(text, why);
+            reason = why == null ? null : why.name();
+        }
     }
 
     /**
