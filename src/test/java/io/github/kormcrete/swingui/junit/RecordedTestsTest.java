@@ -1,5 +1,7 @@
 package io.github.kormcrete.swingui.junit;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kormcrete.swingui.agent.InJvmAgent;
 import io.github.kormcrete.swingui.client.AgentClient;
 import io.github.kormcrete.swingui.journal.RunFolder;
@@ -22,6 +24,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,6 +94,86 @@ class RecordedTestsTest {
         assertThat(failure.getMessage()).contains("UI evidence: " + txt);
         // a file without a name runs under its file's base name, like its test and its report file
         assertThat(failure.getMessage()).contains("Recorded test 'fail' failed");
+    }
+
+    /** The lines of each journal of the run, by file name; every one is in the run folder's steps/. */
+    private Map<String, List<JsonNode>> journals() throws IOException {
+        Map<String, List<JsonNode>> out = new TreeMap<String, List<JsonNode>>();
+        ObjectMapper json = new ObjectMapper();
+        List<Path> files = new ArrayList<Path>();
+        try (Stream<Path> s = Files.walk(runs)) {
+            s.filter(p -> p.toString().endsWith(".jsonl")).forEach(files::add);
+        }
+        for (Path f : files) {
+            assertThat(f.getParent().getFileName().toString()).isEqualTo("steps");
+            List<JsonNode> lines = new ArrayList<JsonNode>();
+            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) lines.add(json.readTree(line));
+            out.put(f.getFileName().toString(), lines);
+        }
+        return out;
+    }
+
+    private static JsonNode last(List<JsonNode> lines) {
+        return lines.get(lines.size() - 1);
+    }
+
+    @Test
+    void eachRecordedTestWritesItsOwnJournalAndTheFactoryNone() throws IOException {
+        write("pass.json", PASS);
+        write("fail.json", FAIL);
+        TestExecutionSummary s = launch(new RecordingVerbs());
+        assertThat(s.getTestsSucceededCount()).isEqualTo(1);
+        assertThat(s.getFailures()).hasSize(1);
+
+        Map<String, List<JsonNode>> journals = journals();
+        // the factory's own journal is dropped: its dynamic tests have theirs
+        assertThat(journals.keySet()).containsExactly("RecordedTestsTest$Recorded#recorded[fail].jsonl",
+                "RecordedTestsTest$Recorded#recorded[pass].jsonl");
+
+        List<JsonNode> pass = journals.get("RecordedTestsTest$Recorded#recorded[pass].jsonl");
+        assertThat(pass.get(0).path("test").asText()).isEqualTo("RecordedTestsTest$Recorded#recorded[pass]");
+        // test, the check, end: the agent ran the check, the client wrote no line of its own for the run
+        assertThat(pass).hasSize(3);
+        assertThat(pass.get(1).path("kind").asText()).isEqualTo("check");
+        assertThat(pass.get(1).path("outcome").asText()).isEqualTo("ok");
+        assertThat(last(pass).path("outcome").asText()).isEqualTo("passed");
+
+        List<JsonNode> fail = journals.get("RecordedTestsTest$Recorded#recorded[fail].jsonl");
+        assertThat(fail).hasSize(3);
+        assertThat(fail.get(1).path("verb").asText()).isEqualTo("loginAs");
+        assertThat(fail.get(1).path("outcome").asText()).isEqualTo("failed");
+        JsonNode end = last(fail);
+        assertThat(end.path("kind").asText()).isEqualTo("end");
+        assertThat(end.path("outcome").asText()).isEqualTo("failed");
+        assertThat(end.path("message").asText()).startsWith("Recorded test 'fail' failed");
+        Path txt = ModuleTarget.of(RecordedTestsTest.class).toAbsolutePath()
+                .resolve("failsafe-reports").resolve("recorded-test-failures").resolve("fail.txt");
+        assertThat(end.path("evidence").asText()).isEqualTo(txt.toString());
+    }
+
+    @Test
+    void aRecordedTestThatCannotRunOrBeReadStillEndsItsJournalFailed() throws IOException {
+        // the agent refuses a do step without a plugin: the call throws, no reply comes back
+        write("needs-plugin.json", "{\"version\":4,\"start\":\"reset\",\"requires\":[\"order-desk\"],\"steps\":["
+                + "{\"action\":\"do\",\"step\":\"order-desk:setQty\",\"params\":{\"qty\":\"3\"}}]}");
+        write("broken.json", "{\"version\":5,\"start\":\"reset\",\"steps\":[]}");
+        TestExecutionSummary s = launch(new RecordingVerbs());
+        assertThat(s.getTestsFailedCount()).isEqualTo(2);
+
+        Map<String, List<JsonNode>> journals = journals();
+        assertThat(journals.keySet()).containsExactly("RecordedTestsTest$Recorded#recorded[broken].jsonl",
+                "RecordedTestsTest$Recorded#recorded[needs-plugin].jsonl");
+        for (List<JsonNode> lines : journals.values()) {
+            // test and end: no step lines
+            assertThat(lines).hasSize(2);
+            assertThat(last(lines).path("kind").asText()).isEqualTo("end");
+            assertThat(last(lines).path("outcome").asText()).isEqualTo("failed");
+            assertThat(last(lines).has("evidence")).isFalse();
+        }
+        assertThat(last(journals.get("RecordedTestsTest$Recorded#recorded[needs-plugin].jsonl")).path("message").asText())
+                .contains("plugin");
+        assertThat(last(journals.get("RecordedTestsTest$Recorded#recorded[broken].jsonl")).path("message").asText())
+                .contains("version");
     }
 
     @Test

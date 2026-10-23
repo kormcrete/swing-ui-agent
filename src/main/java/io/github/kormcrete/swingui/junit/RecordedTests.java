@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kormcrete.swingui.flow.Flow;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
 import io.github.kormcrete.swingui.flow.RecordedTestSelection;
+import io.github.kormcrete.swingui.journal.RecordedJournal;
+import io.github.kormcrete.swingui.journal.RunFolder;
+import io.github.kormcrete.swingui.journal.TestJournal;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.function.Executable;
 
@@ -31,6 +34,8 @@ import java.util.stream.Stream;
  * by name. A run that selects nothing fails. Each recorded test begins with the app reset; a failing recorded test fails its test with the
  * report, and the report and the failing step's picture go to {@code target/failsafe-reports/recorded-test-failures}. A file
  * that cannot be read is a failed test too, never a skipped one.
+ * <p>Each recorded test writes its own run journal, {@code steps/<Class>#recorded[<file>].jsonl}: its steps and checks
+ * as they ran, from the agent's reply, then how it ended. The factory's own journal is dropped.
  */
 public final class RecordedTests {
 
@@ -69,17 +74,40 @@ public final class RecordedTests {
         dir = (dir.isAbsolute() ? dir : module.resolve(dir)).normalize();
         Path evidence = target.resolve("failsafe-reports").resolve("recorded-test-failures");
         List<DynamicTest> out = new ArrayList<DynamicTest>();
+        TestJournal journal = ui == null ? null : ui.journal();
         for (Path file : RecordedTestSelection.select(dir, System.getProperty(RecordedTestSelection.PROPERTY))) {
             String base = file.getFileName().toString();
             if (base.endsWith(RecordedTestFiles.SUFFIX)) base = base.substring(0, base.length() - RecordedTestFiles.SUFFIX.length());
-            out.add(DynamicTest.dynamicTest(base, file.toUri(), run(ui, base, file, evidence)));
+            out.add(DynamicTest.dynamicTest(base, file.toUri(), run(ui, journal, base, file, evidence)));
         }
+        // each recorded test has its own journal; the factory's would only say "passed", whatever its tests did
+        // (a selection that fails above keeps it: that failure is the factory's)
+        if (journal != null) journal.discard();
         return out.stream();
     }
 
-    private static Executable run(final Client ui, final String name, final Path file, final Path evidence) {
+    private static Executable run(final Client ui, final TestJournal factory, final String name, final Path file,
+                                  final Path evidence) {
         return new Executable() {
             @Override public void execute() throws Throwable {
+                TestJournal journal = factory == null ? null : factory.child("recorded[" + name + "]");
+                Ended ended = new Ended();
+                Throwable thrown = null;
+                try {
+                    run(journal, ended);
+                } catch (Throwable t) {
+                    thrown = t;
+                    throw t;
+                } finally {
+                    // a failure before the agent's reply (an unreadable file, an unreachable app) still ends the journal
+                    if (!ended.done) {
+                        end(journal, thrown instanceof org.opentest4j.TestAbortedException ? "aborted" : "failed",
+                                thrown == null ? null : UiRunReport.reason(thrown), null);
+                    }
+                }
+            }
+
+            private void run(TestJournal journal, Ended ended) throws Throwable {
                 String json = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
                 Flow flow;
                 try {
@@ -92,8 +120,10 @@ public final class RecordedTests {
                     flow.name = name;
                     json = RecordedTestFiles.write(flow);
                 }
+                long started = System.currentTimeMillis();
                 JsonNode result = new ObjectMapper().readTree(ui.app().runRecordedTest(json, evidence.toString()));
                 if (result.path("passed").asBoolean(false)) {
+                    write(journal, flow, result, started, null, ended);
                     System.out.println("[recorded-test] " + name + " passed: " + result.path("ran").asInt() + " steps, "
                             + result.path("ms").asLong() + " ms");
                     return;
@@ -104,10 +134,41 @@ public final class RecordedTests {
                     Files.createDirectories(evidence);
                     Files.write(txt, report.getBytes(StandardCharsets.UTF_8));
                 } catch (IOException e) {
+                    write(journal, flow, result, started, null, ended);
                     throw new AssertionError(report + "\n(the report could not be written to " + txt + ": " + e + ")");
                 }
+                write(journal, flow, result, started, txt.toAbsolutePath().toString(), ended);
                 throw new AssertionError(report + "\nUI evidence: " + txt);
             }
         };
+    }
+
+    /** Whether a recorded test's journal got its end line. */
+    private static final class Ended {
+        boolean done;
+    }
+
+    /** The lines of a recorded test's run and its end; the journal never fails a test. */
+    private static void write(TestJournal journal, Flow flow, JsonNode result, long started, String evidence, Ended ended) {
+        ended.done = true;
+        if (journal == null) return;
+        try {
+            RecordedJournal.write(journal, flow, result, started, evidence);
+        } catch (RuntimeException e) {
+            RunFolder.warnOff(e);
+            // the lines stop here; the end still says how the recorded test went
+            boolean passed = result.path("passed").asBoolean(false);
+            end(journal, passed ? "passed" : "failed", passed ? null : result.path("report").asText(null),
+                    passed ? null : evidence);
+        }
+    }
+
+    private static void end(TestJournal journal, String outcome, String message, String evidence) {
+        if (journal == null) return;
+        try {
+            journal.end(outcome, message, evidence);
+        } catch (RuntimeException e) {
+            RunFolder.warnOff(e);
+        }
     }
 }

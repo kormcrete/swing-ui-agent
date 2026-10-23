@@ -44,7 +44,7 @@ public final class TestJournal {
     private static final List<String> SEEN = new CopyOnWriteArrayList<String>();
     /** The fields of a line that may hold what the app or the test said, and so a secret. */
     private static final List<String> MASKED =
-            Arrays.asList("target", "locator", "value", "expected", "step", "message", "text");
+            Arrays.asList("target", "locator", "value", "expected", "step", "message", "text", "resolved");
 
     private final RunFolder folder;
     private final String test;
@@ -149,7 +149,7 @@ public final class TestJournal {
     }
 
     /** The text a {@code type} step types into a {@code password} target; null for any other step or a masked text. */
-    private static String typedPassword(JsonNode step) {
+    static String typedPassword(JsonNode step) {
         if (!"type".equals(step.path("action").asText(null))) return null;
         if (!"password".equals(step.path("target").path("role").asText(null))) return null;
         String text = step.path("text").asText(null);
