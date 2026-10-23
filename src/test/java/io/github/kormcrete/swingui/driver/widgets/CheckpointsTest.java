@@ -218,4 +218,102 @@ class CheckpointsTest {
         assertThat(Arrays.asList(shot.masks.get(0).x, shot.masks.get(1).x))
                 .containsExactly(table.getCellRect(0, 3, true).x, 0);
     }
+
+    /** A form taller than its 100 px scroll pane: the Customer label shows, the Ref field at y=145 does not. */
+    private static JPanel tallForm(JScrollPane[] paneOut, JTextField[] fieldOut) {
+        JPanel form = new JPanel(null);
+        form.setPreferredSize(new java.awt.Dimension(200, 300));
+        javax.swing.JLabel customer = new javax.swing.JLabel("Customer");
+        customer.setBounds(10, 10, 100, 20);
+        JTextField ref = new JTextField("ORD-1640");
+        ref.setBounds(10, 145, 100, 20);
+        form.add(customer);
+        form.add(ref);
+        JScrollPane pane = new JScrollPane(form);
+        pane.setSize(200, 100);
+        layout(pane);
+        layout(pane);
+        paneOut[0] = pane;
+        fieldOut[0] = ref;
+        return form;
+    }
+
+    @Test
+    void aComponentScrolledOutOfViewFailsNamingScrollIntoView() {
+        JTextField[] ref = new JTextField[1];
+        tallForm(new JScrollPane[1], ref);
+
+        DriverException e = catchThrowableOfType(() -> take(whole(ref[0], "text")), DriverException.class);
+
+        assertThat(e.reason()).isEqualTo(Reason.NOT_ACTIONABLE);
+        assertThat(e.getMessage()).contains("nothing to capture: text is scrolled out of view")
+                .contains("scroll it into view");
+    }
+
+    /** The window below the form's pane shows a Total label where the hidden Ref field would lie if it were not cut. */
+    @Test
+    void aMaskScrolledOutOfViewDoesNotOverlap() {
+        JTextField[] ref = new JTextField[1];
+        JScrollPane[] formPane = new JScrollPane[1];
+        tallForm(formPane, ref);
+        JPanel window = new JPanel(null);
+        window.setSize(200, 300);
+        formPane[0].setLocation(0, 0);
+        window.add(formPane[0]);
+        javax.swing.JLabel total = new javax.swing.JLabel("Total €7.32");
+        total.setBounds(10, 140, 100, 20);
+        window.add(total);
+
+        DriverException e = catchThrowableOfType(() -> take(whole(window, "panel"), whole(ref[0], "text")),
+                DriverException.class);
+
+        assertThat(e.reason()).isEqualTo(Reason.BAD_INPUT);
+        assertThat(e.getMessage()).endsWith("mask text does not overlap checkpoint panel");
+    }
+
+    /** The design: a partly visible mask target is clipped and says so, also when its own scroll pane cuts it. */
+    @Test
+    void aMaskItsOwnScrollPaneCutsIsClipped() {
+        Edt.run(() -> pane.getViewport().setViewPosition(new java.awt.Point(0, table.getRowHeight() / 2)));
+
+        CheckpointShot shot = take(whole(pane, "scrollpane"), part(0, "Qty"), part(2, "Qty"));
+
+        CheckpointShot.Mask half = shot.masks.get(0);
+        assertThat(half.h).isEqualTo(table.getRowHeight() - table.getRowHeight() / 2);
+        assertThat(half.clipped).isTrue();
+        assertThat(shot.masks.get(1).h).isEqualTo(table.getRowHeight());
+        assertThat(shot.masks.get(1).clipped).isFalse();
+    }
+
+    @Test
+    void aCaretThatWillNotComeBackLeavesTheOthersOn() {
+        boolean[] armed = {false};
+        JPanel form = Edt.call(() -> {
+            JPanel f = new JPanel(null);
+            f.setSize(220, 60);
+            for (int i = 0; i < 2; i++) {
+                JTextField field = new JTextField("ORD-164" + i);
+                field.setBounds(0, i * 30, 200, 24);
+                if (i == 0) {
+                    field.setCaret(new DefaultCaret() {
+                        @Override public void setVisible(boolean on) {
+                            if (on && armed[0]) throw new IllegalStateException("no caret today");
+                            super.setVisible(on);
+                        }
+                    });
+                } else {
+                    field.setCaret(new DefaultCaret());
+                }
+                field.getCaret().setBlinkRate(0);
+                field.getCaret().setVisible(true);
+                f.add(field);
+            }
+            return f;
+        });
+        armed[0] = true;
+
+        take(whole(form, "panel"));
+
+        assertThat(Edt.call(() -> ((JTextField) form.getComponent(1)).getCaret().isVisible())).isTrue();
+    }
 }

@@ -38,21 +38,31 @@ public final class Checkpoints {
 
     private Checkpoints() {}
 
-    /** Where a picture or a mask is: {@link #rect} in {@link #root}'s coordinates, empty when nothing of it shows. */
+    /**
+     * Where a picture or a mask is, in {@link #root}'s coordinates: {@link #rect} what shows of it (empty when nothing
+     * does), {@link #full} all of it, also what its own scroll pane cuts off (a mask with a part outside the picture is
+     * {@code clipped}).
+     */
     public static final class Area {
         public final Component root;
         public final Rectangle rect;
+        public final Rectangle full;
 
-        Area(Component root, Rectangle rect) {
+        Area(Component root, Rectangle full) {
+            this(root, visible(root, full), full);
+        }
+
+        private Area(Component root, Rectangle rect, Rectangle full) {
             this.root = root;
             this.rect = rect == null || rect.isEmpty() ? new Rectangle() : rect;
+            this.full = full == null ? new Rectangle() : full;
         }
     }
 
     /** A whole window: its root pane as it shows (no title bar or border), or the content itself for a popup. */
     public static Area window(Component content) {
         Component root = content instanceof RootPaneContainer ? ((RootPaneContainer) content).getRootPane() : content;
-        return new Area(root, Screenshots.shown(root));
+        return new Area(root, bounds(root));
     }
 
     /**
@@ -62,8 +72,8 @@ public final class Checkpoints {
      */
     public static Area area(Resolved r) {
         Component c = r.component;
-        if (r.part != null) return new Area(c, visible(c, r.part.bounds));
-        if (r.tab != null && c instanceof JTabbedPane) return new Area(c, visible(c, ((JTabbedPane) c).getBoundsAt(r.tab)));
+        if (r.part != null) return new Area(c, r.part.bounds);
+        if (r.tab != null && c instanceof JTabbedPane) return new Area(c, ((JTabbedPane) c).getBoundsAt(r.tab));
         if (c instanceof JTable) {
             JTable table = (JTable) c;
             RowSpec row = r.row();
@@ -72,20 +82,21 @@ public final class Checkpoints {
                 Rectangle cells = r.column() != null
                         ? table.getCellRect(at, TableWidget.column(table, r.column()), true)
                         : table.getCellRect(at, 0, true).union(table.getCellRect(at, table.getColumnCount() - 1, true));
-                return new Area(table, visible(table, cells));
+                return new Area(table, cells);
             }
             if (r.column() != null) return column(table, TableWidget.column(table, r.column()));
         }
         if (c instanceof JTree && r.item() != null) {
             JTree tree = (JTree) c;
-            return new Area(tree, visible(tree, tree.getRowBounds(TreeWidget.row(tree, r.item()))));
+            return new Area(tree, tree.getRowBounds(TreeWidget.row(tree, r.item())));
         }
         if (c instanceof JList && r.item() != null) {
             JList<?> list = (JList<?>) c;
             int i = ListWidget.index(list, r.item().get(0));
-            return new Area(list, visible(list, list.getCellBounds(i, i)));
+            return new Area(list, list.getCellBounds(i, i));
         }
-        return new Area(c, Screenshots.shown(c));
+        // the part in view: a component scrolled out of its pane has nothing to show (a root in no window shows all)
+        return new Area(c, bounds(c));
     }
 
     /**
@@ -107,13 +118,14 @@ public final class Checkpoints {
                 throw new DriverException(Reason.BAD_INPUT, "mask " + words + " is in another window than checkpoint "
                         + targetWords);
             }
-            Rectangle in = SwingUtilities.convertRectangle(m.root, m.rect, area.root);
-            Rectangle cut = in.intersection(area.rect);
+            Rectangle cut = SwingUtilities.convertRectangle(m.root, m.rect, area.root).intersection(area.rect);
             if (m.rect.isEmpty() || cut.isEmpty()) {
                 throw new DriverException(Reason.BAD_INPUT, "mask " + words + " does not overlap checkpoint " + targetWords);
             }
+            // clipped: some of the element is not in the picture, cut by the picture or by its own scroll pane
+            Rectangle all = SwingUtilities.convertRectangle(m.root, m.full, area.root);
             rects.add(new CheckpointShot.Mask(cut.x - area.rect.x, cut.y - area.rect.y, cut.width, cut.height,
-                    !cut.equals(in)));
+                    !cut.equals(all)));
         }
         List<Caret> hidden = new ArrayList<Caret>();
         BufferedImage image;
@@ -121,7 +133,13 @@ public final class Checkpoints {
             hideCarets(area.root, hidden);
             image = Screenshots.paint(area.root, area.rect, 1);
         } finally {
-            for (Caret caret : hidden) caret.setVisible(true);
+            for (Caret caret : hidden) {
+                try {
+                    caret.setVisible(true);
+                } catch (RuntimeException e) {
+                    // one caret that will not come back must not keep the others off
+                }
+            }
         }
         return new CheckpointShot(Screenshots.png(image), image.getWidth(), image.getHeight(), rects);
     }
@@ -132,22 +150,30 @@ public final class Checkpoints {
      */
     private static Area column(JTable table, int column) {
         Rectangle cells = table.getRowCount() == 0 ? new Rectangle()
-                : visible(table, table.getCellRect(0, column, true)
-                        .union(table.getCellRect(table.getRowCount() - 1, column, true)));
+                : table.getCellRect(0, column, true).union(table.getCellRect(table.getRowCount() - 1, column, true));
         JTableHeader header = table.getTableHeader();
         JScrollPane pane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, table);
         JViewport heading = pane == null ? null : pane.getColumnHeader();
         boolean shown = header != null && header.isVisible() && heading != null && heading.isVisible()
                 && heading.getView() == header && pane.getViewport() != null && pane.getViewport().getView() == table;
         if (!shown) return new Area(table, cells);
-        Rectangle head = visible(header, header.getHeaderRect(column));
-        Rectangle out = new Rectangle();
-        if (!head.isEmpty()) out = SwingUtilities.convertRectangle(header, head, pane);
-        if (!cells.isEmpty()) {
-            Rectangle body = SwingUtilities.convertRectangle(table, cells, pane);
-            out = out.isEmpty() ? body : out.union(body);
-        }
-        return new Area(pane, out);
+        Rectangle head = header.getHeaderRect(column);
+        Rectangle seen = union(inPane(header, visible(header, head), pane), inPane(table, visible(table, cells), pane));
+        Rectangle all = union(inPane(header, head, pane), inPane(table, cells, pane));
+        return new Area(pane, seen, all);
+    }
+
+    private static Rectangle inPane(Component c, Rectangle r, Component pane) {
+        return r.isEmpty() ? new Rectangle() : SwingUtilities.convertRectangle(c, r, pane);
+    }
+
+    /** The union of two rectangles where an empty one adds nothing. */
+    private static Rectangle union(Rectangle a, Rectangle b) {
+        return a.isEmpty() ? b : b.isEmpty() ? a : a.union(b);
+    }
+
+    private static Rectangle bounds(Component c) {
+        return new Rectangle(0, 0, c.getWidth(), c.getHeight());
     }
 
     /** {@code rect} cut to what shows of {@code c}; empty for none (a null rect: not laid out). */

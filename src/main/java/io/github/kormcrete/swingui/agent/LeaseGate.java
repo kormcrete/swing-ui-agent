@@ -72,6 +72,8 @@ final class LeaseGate {
 
             @Override public Set<String> readOnlyOps() { return reads; }
 
+            @Override public Set<String> actingFlags() { return tool.actingFlags(); }
+
             @Override public String invoke(JsonNode args) throws Exception {
                 if (args != null && args.hasNonNull("op") && reads.contains(args.get("op").asText())) {
                     lease.renew(token(args));

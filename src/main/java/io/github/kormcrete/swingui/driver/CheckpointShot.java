@@ -26,7 +26,10 @@ public final class CheckpointShot {
         this.masks = Collections.unmodifiableList(new ArrayList<Mask>(masks));
     }
 
-    /** A mask's rectangle in the picture; {@link #clipped} when part of the element lies outside the picture. */
+    /**
+     * A mask's rectangle in the picture: the part of the element that shows in it. {@link #clipped} when any of the
+     * element is not in the picture, cut off by the picture's edge or by the element's own scroll pane.
+     */
     public static final class Mask {
         public final int x;
         public final int y;

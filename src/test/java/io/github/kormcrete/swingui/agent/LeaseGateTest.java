@@ -229,4 +229,16 @@ class LeaseGateTest {
         }
         throw new AssertionError("no screenshot tool");
     }
+
+    @Test
+    void everyWrapperKeepsTheToolsActingFlags() {
+        java.util.Set<String> flags = java.util.Collections.singleton("checkpoint");
+        McpToolDefinition mixed = LeaseGate.gate(Arrays.asList(tool("recording", false,
+                java.util.Collections.singleton("list"), flags)), lease, m).get(0);
+        McpToolDefinition gated = LeaseGate.gate(Arrays.asList(tool("do_action", false,
+                java.util.Collections.<String>emptySet(), flags)), lease, m).get(0);
+        assertThat(mixed.actingFlags()).containsExactly("checkpoint");
+        assertThat(gated.actingFlags()).containsExactly("checkpoint");
+        assertThat(screenshot().actingFlags()).containsExactly("checkpoint");
+    }
 }
