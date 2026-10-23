@@ -40,6 +40,8 @@ public final class TestJournal {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
+    /** Every secret any journal of this JVM was given, longest first: the run's report.txt masks them too. */
+    private static final List<String> SEEN = new CopyOnWriteArrayList<String>();
     /** The fields of a line that may hold what the app or the test said, and so a secret. */
     private static final List<String> MASKED =
             Arrays.asList("target", "locator", "value", "expected", "step", "message", "text");
@@ -213,9 +215,17 @@ public final class TestJournal {
         discarded = true;
     }
 
-    /** Masks {@code value} in every line from now on, also in this journal's children. */
+    /**
+     * Masks {@code value} in every line from now on, also in this journal's children, and in every line of a run's
+     * report.txt ({@link #maskSeen}).
+     */
     public void secret(String value) {
         if (value == null || value.isEmpty()) return;
+        add(secrets, value);
+        add(SEEN, value);
+    }
+
+    private static void add(List<String> secrets, String value) {
         synchronized (secrets) {
             if (secrets.contains(value)) return;
             secrets.add(value);
@@ -225,6 +235,15 @@ public final class TestJournal {
 
     /** {@code text} with each secret seen replaced by {@value JournalLines#MASK}. */
     public String mask(String text) {
+        return mask(secrets, text);
+    }
+
+    /** {@code text} with each secret any journal of this JVM was given replaced by {@value JournalLines#MASK}. */
+    static String maskSeen(String text) {
+        return mask(SEEN, text);
+    }
+
+    private static String mask(List<String> secrets, String text) {
         if (text == null) return null;
         String s = text;
         for (String secret : secrets) s = s.replace(secret, JournalLines.MASK);

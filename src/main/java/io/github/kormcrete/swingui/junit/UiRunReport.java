@@ -103,7 +103,7 @@ public final class UiRunReport implements TestExecutionListener {
                 folder = RunFolder.of(runsDir, JournalSettings.defaults());
             }
         } catch (RuntimeException e) {
-            System.err.println("[ui-warning] run journal off for this run: " + e);
+            RunFolder.warnOff(e);
             return null;
         }
         if (folder.settings().journal) {
@@ -176,8 +176,8 @@ public final class UiRunReport implements TestExecutionListener {
         report.finished(name(id), status, ms, failure, evidence);
     }
 
-    /** The message, else the exception's simple class name: never the word null. */
-    private static String reason(Throwable t) {
+    /** The message, else the exception's simple class name: never the word null (the journal's end line too). */
+    static String reason(Throwable t) {
         if (t == null) return null;
         return t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
     }

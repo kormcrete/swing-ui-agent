@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kormcrete.swingui.flow.UiUsers;
 import io.github.kormcrete.swingui.journal.RunFolder;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -88,6 +89,7 @@ class UiTestExtensionTest {
     }
 
     @FixtureClass
+    @Tag("ui")   // a run report runs too: its report.txt goes to the same run folder
     static class TypesSecrets {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runsUnderTest);
@@ -108,6 +110,18 @@ class UiTestExtensionTest {
     static class TwoPassing {
         @RegisterExtension
         static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> runsUnderTest);
+
+        @Test void first(Client ui) { ui.button("Add to cart").click(); }
+
+        @Test void second(Client ui) { ui.button("Add to cart").click(); }
+    }
+
+    @FixtureClass
+    static class NoRunsFolder {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension(c -> UiPool.of(agentUnderTest), cls -> {
+            throw new IllegalStateException("no target folder for " + cls.getSimpleName());
+        });
 
         @Test void first(Client ui) { ui.button("Add to cart").click(); }
 
@@ -152,15 +166,23 @@ class UiTestExtensionTest {
 
     /** Launches {@code fixture} with the given configuration parameters (name, value, ...): each test's failure or null. */
     private static List<Throwable> launch(Class<?> fixture, String... parameters) {
+        return launch(fixture, new TestExecutionListener[0], parameters);
+    }
+
+    /** {@link #launch(Class, String...)} with {@code also} listening too. */
+    private static List<Throwable> launch(Class<?> fixture, TestExecutionListener[] also, String... parameters) {
         LauncherDiscoveryRequestBuilder request = LauncherDiscoveryRequestBuilder.request().selectors(selectClass(fixture))
                 .configurationParameter("swingui.fixtures", "run");
         for (int i = 0; i + 1 < parameters.length; i += 2) request.configurationParameter(parameters[i], parameters[i + 1]);
         final List<Throwable> results = new ArrayList<Throwable>();
-        LauncherFactory.create().execute(request.build(), new TestExecutionListener() {
+        TestExecutionListener[] listeners = new TestExecutionListener[also.length + 1];
+        listeners[0] = new TestExecutionListener() {
             @Override public void executionFinished(TestIdentifier id, TestExecutionResult result) {
                 if (id.isTest()) results.add(result.getThrowable().orElse(null));
             }
-        });
+        };
+        System.arraycopy(also, 0, listeners, 1, also.length);
+        LauncherFactory.create().execute(request.build(), listeners);
         return results;
     }
 
@@ -232,7 +254,8 @@ class UiTestExtensionTest {
         Files.write(users, ("ada=ada:x\nada.pin=" + PIN + "\n").getBytes(StandardCharsets.UTF_8));
         System.setProperty(UiUsers.FILE_PROPERTY, users.toString());
 
-        List<Throwable> results = launch(TypesSecrets.class);
+        List<Throwable> results = launch(TypesSecrets.class,
+                new TestExecutionListener[] {new UiRunReport(runsUnderTest.resolve("latest.txt"))});
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0)).isNotNull();
@@ -248,11 +271,24 @@ class UiTestExtensionTest {
         assertThat(lines.get(3).path("text").asText()).isEqualTo("Type *** into Password");
         assertThat(lines.get(4).path("message").asText()).isEqualTo("no button 'Pay' near '***' and '***'");
         assertThat(lines.get(5).path("message").asText()).endsWith("no button 'Pay' near '***' and '***'");
+        // nor any other file of the run folder: its report.txt says the failure masked too
+        List<Path> files;
+        try (Stream<Path> walk = Files.walk(runFolder())) {
+            files = walk.filter(Files::isRegularFile).collect(Collectors.toList());
+        }
+        assertThat(files).contains(runFolder().resolve("report.txt"));
+        for (Path f : files) {
+            assertThat(new String(Files.readAllBytes(f), StandardCharsets.UTF_8)).as(f.toString())
+                    .doesNotContain(PIN).doesNotContain("pa55word");
+        }
+        assertThat(new String(Files.readAllBytes(runFolder().resolve("report.txt")), StandardCharsets.UTF_8))
+                .contains("FAIL UiTestExtensionTest$TypesSecrets#runs").contains("near '***' and '***'");
     }
 
     @Test
     void anUnwritableRunsFolderWarnsOnceAndTheTestStillPasses() throws IOException {
         startJournalAgent();
+        RunFolder.forgetWarning();
         Files.write(runsUnderTest, "in the way".getBytes(StandardCharsets.UTF_8));
         PrintStream out = System.out;
         PrintStream err = System.err;
@@ -272,6 +308,31 @@ class UiTestExtensionTest {
         String printed = new String(captured.toByteArray(), StandardCharsets.UTF_8);
         assertThat(printed.split("run journal off for this run", -1)).as(printed).hasSize(2);
         assertThat(runsUnderTest).isRegularFile();
+    }
+
+    @Test
+    void noRunsFolderAtAllWarnsOnceAndTheTestsStillPass() {
+        startJournalAgent();
+        RunFolder.forgetWarning();
+        PrintStream out = System.out;
+        PrintStream err = System.err;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        PrintStream both = new PrintStream(captured, true);
+        List<Throwable> results;
+        System.setOut(both);
+        System.setErr(both);
+        try {
+            results = launch(NoRunsFolder.class);
+        } finally {
+            System.setOut(out);
+            System.setErr(err);
+        }
+
+        assertThat(results).containsExactly(null, null);
+        String printed = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        assertThat(printed.split("run journal off for this run", -1)).as(printed).hasSize(2);
+        assertThat(printed).contains("[ui-warning] run journal off for this run: java.lang.IllegalStateException: "
+                + "no target folder for NoRunsFolder");
     }
 
     @Test

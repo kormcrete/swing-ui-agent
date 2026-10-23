@@ -270,6 +270,7 @@ class TestJournalTest {
 
     @Test
     void aBrokenFolderWarnsOnceAndWritesNothingMore() {
+        RunFolder.forgetWarning();
         RunFolder folder = folder();
         TestJournal journal = folder.test("K#m");
         PrintStream err = System.err;
@@ -300,6 +301,7 @@ class TestJournalTest {
 
     @Test
     void aFileInTheWayWarnsOnceAndTheJournalGoesQuiet() throws IOException {
+        RunFolder.forgetWarning();
         RunFolder folder = folder();
         Files.write(folder.create().resolve("steps"), new byte[0]);
         TestJournal journal = folder.test("K#m");

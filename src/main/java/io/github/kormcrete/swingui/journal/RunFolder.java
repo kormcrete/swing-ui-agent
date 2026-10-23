@@ -31,7 +31,7 @@ import java.util.function.Supplier;
  * {@code <runsDir>/<run id>} ({@code -2}, {@code -3}, ... when that name is taken), with its {@code run.json} and
  * {@code <runsDir>/latest-run.txt}; older run folders are pruned right after ({@link RunRetention}). It hands out the
  * per-test journals and keeps their file names apart. After an IO failure ({@link #broken}) the steps journal is off
- * for the rest of the JVM's run, with one warning.
+ * for the rest of the JVM's run, with one warning for the whole JVM ({@link #warnOff}).
  */
 public final class RunFolder {
 
@@ -39,12 +39,13 @@ public final class RunFolder {
     private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
     private static final String LIBRARY = AgentInfo.load().version;
     private static final Map<Path, RunFolder> FOLDERS = new HashMap<Path, RunFolder>();
+    /** True once the JVM printed its one "run journal off" warning. */
+    private static final AtomicBoolean WARNED = new AtomicBoolean();
     /** The app version a setup call named, for every run of this JVM; null when none did. */
     private static volatile String explicitAppVersion;
 
     private final Path runsDir;
     private final JournalSettings settings;
-    private final AtomicBoolean warned = new AtomicBoolean();
     /** The file name bases taken so far, lower case: a disk that ignores case must not mix two tests up. */
     private final Set<String> taken = new HashSet<String>();
     /** The clients seen, by their {@code agent}, in the order first seen. */
@@ -183,11 +184,14 @@ public final class RunFolder {
         writeRunJson();
     }
 
-    /** Appends {@code line} to the run's {@code report.txt}; nothing while the folder is not made or once broken. */
+    /**
+     * Appends {@code line} to the run's {@code report.txt}, each secret a journal of this JVM was given masked;
+     * nothing while the folder is not made or once broken.
+     */
     public synchronized void report(String line) {
         if (dir == null || broken) return;
         try {
-            Files.write(dir.resolve("report.txt"), (line + "\n").getBytes(StandardCharsets.UTF_8),
+            Files.write(dir.resolve("report.txt"), (TestJournal.maskSeen(line) + "\n").getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
         } catch (IOException e) {
             broken(e);
@@ -196,12 +200,12 @@ public final class RunFolder {
 
     /**
      * The run ended: {@code run.json} gets {@code finished} and the passed, failed, skipped and aborted counts
-     * ({@code null} when they are not known).
+     * ({@code null} when they are not known: the counts known from an earlier call stay).
      */
     public void finish(int[] passedFailedSkippedAborted) {
         synchronized (this) {
             finishedAt = System.currentTimeMillis();
-            counts = passedFailedSkippedAborted == null ? null : passedFailedSkippedAborted.clone();
+            if (passedFailedSkippedAborted != null) counts = passedFailedSkippedAborted.clone();
         }
         writeRunJson();
     }
@@ -211,12 +215,25 @@ public final class RunFolder {
         return settings.journal && !broken;
     }
 
-    /** A write failed: the steps journal is off for the rest of this run; the first call prints one warning. */
-    public void broken(Exception e) {
+    /** A write failed: the steps journal is off for this run, with the JVM's one warning ({@link #warnOff}). */
+    public void broken(Throwable e) {
         broken = true;
-        if (warned.compareAndSet(false, true)) {
+        warnOff(e);
+    }
+
+    /**
+     * Prints {@code [ui-warning] run journal off for this run: <e>}, the first time in this JVM only: whichever part of
+     * the journal fails first says so, and no other part says it again.
+     */
+    public static void warnOff(Throwable e) {
+        if (WARNED.compareAndSet(false, true)) {
             System.err.println("[ui-warning] run journal off for this run: " + e);
         }
+    }
+
+    /** Lets the next {@link #warnOff} print again (for tests). */
+    public static void forgetWarning() {
+        WARNED.set(false);
     }
 
     /** The journal of the test named {@code name} ({@code <Class>#<method>}). */

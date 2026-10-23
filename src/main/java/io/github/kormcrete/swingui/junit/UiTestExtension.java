@@ -18,7 +18,6 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -33,8 +32,6 @@ import java.util.function.Supplier;
 public final class UiTestExtension implements ParameterResolver, TestExecutionExceptionHandler, AfterEachCallback {
 
     private static final ExtensionContext.Namespace NS = ExtensionContext.Namespace.create(UiTestExtension.class);
-    /** One warning per JVM when not even a run folder can be had for the journal. */
-    private static final AtomicBoolean NO_FOLDER_WARNED = new AtomicBoolean();
 
     private final Function<ExtensionContext, UiPool> pools;
     private final Function<Class<?>, Path> runsDir;
@@ -130,9 +127,7 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             return journal;
         } catch (RuntimeException e) {
             if (folder != null) folder.broken(e);
-            else if (NO_FOLDER_WARNED.compareAndSet(false, true)) {
-                System.err.println("[ui-warning] run journal off for this run: " + e);
-            }
+            else RunFolder.warnOff(e);
             return null;
         }
     }
@@ -157,10 +152,19 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
         return client;
     }
 
-    /** {@code folder}'s run.json gets {@code finished} when the engine ends (a run report, when one runs, adds the counts). */
+    /**
+     * {@code folder}'s run.json gets {@code finished} when the engine ends (a run report, when one runs, adds the
+     * counts). A failure there turns the journal off with its warning: the engine's end never fails for it.
+     */
     private static void finishWithTheEngine(ExtensionContext c, final RunFolder folder) {
         c.getRoot().getStore(NS).getOrComputeIfAbsent(folder,
-                k -> (ExtensionContext.Store.CloseableResource) () -> folder.finish(null),
+                k -> (ExtensionContext.Store.CloseableResource) () -> {
+                    try {
+                        folder.finish(null);
+                    } catch (Throwable e) {
+                        folder.broken(e);
+                    }
+                },
                 ExtensionContext.Store.CloseableResource.class);
     }
 
@@ -250,19 +254,15 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
             if (t == null) {
                 journal.end("passed", null, null);
             } else if (t instanceof org.opentest4j.TestAbortedException) {
-                journal.end("aborted", message(t), null);
+                journal.end("aborted", UiRunReport.reason(t), null);
             } else {
                 Path evidence = store.get("evidence", Path.class);
-                journal.end("failed", message(t), evidence == null ? null : evidence.toAbsolutePath().toString());
+                journal.end("failed", UiRunReport.reason(t),
+                        evidence == null ? null : evidence.toAbsolutePath().toString());
             }
         } catch (RuntimeException e) {
             // the journal is a bystander: it never fails a test
         }
-    }
-
-    /** The failure's message, else its simple class name: never the word null. */
-    private static String message(Throwable t) {
-        return t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
     }
 
     /** Ends each run, last first; one that throws does not keep the others leased. Rethrows the first failure. */

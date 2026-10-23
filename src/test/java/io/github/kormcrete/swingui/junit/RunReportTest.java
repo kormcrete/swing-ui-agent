@@ -72,6 +72,7 @@ class RunReportTest {
 
     @Test
     void aReportThatCannotBeWrittenWarnsOnceAndNeverThrows(@TempDir Path dir) throws Exception {
+        RunFolder.forgetWarning();
         Files.write(dir.resolve("ui-runs"), new byte[0]);
         RunReport r = new RunReport(dir.resolve("ui-runs").resolve("latest.txt"));
         PrintStream err = System.err;

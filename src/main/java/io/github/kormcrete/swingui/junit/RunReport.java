@@ -79,6 +79,6 @@ final class RunReport {
     private void off(Exception e) {
         off = true;
         if (folder != null) folder.broken(e);
-        else System.err.println("[ui-warning] run journal off for this run: " + e);
+        else RunFolder.warnOff(e);
     }
 }

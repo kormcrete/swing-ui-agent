@@ -115,7 +115,20 @@ class RunFolderTest {
         assertThat(Instant.parse(run.path("finished").asText())).isAfterOrEqualTo(Instant.parse(started));
         assertThat(run.path("counts").toString()).isEqualTo("{\"passed\":3,\"failed\":1,\"skipped\":2,\"aborted\":0}");
 
+        // an engine end with no counts of its own (a later launch in this JVM) keeps the ones known
         folder.finish(null);
+        assertThat(runJson(dir).has("finished")).isTrue();
+        assertThat(runJson(dir).path("counts").toString())
+                .isEqualTo("{\"passed\":3,\"failed\":1,\"skipped\":2,\"aborted\":0}");
+    }
+
+    @Test
+    void finishWithoutCountsBeforeAnyKeepsThemOut() throws IOException {
+        RunFolder folder = RunFolder.of(runs, JournalSettings.defaults());
+        Path dir = folder.create();
+
+        folder.finish(null);
+
         assertThat(runJson(dir).has("finished")).isTrue();
         assertThat(runJson(dir).has("counts")).isFalse();
     }
@@ -195,6 +208,25 @@ class RunFolderTest {
     }
 
     @Test
+    void reportLinesMaskEverySecretAJournalOfThisJvmWasGiven() throws IOException {
+        Path other = runs.resolve("elsewhere");
+        try {
+            // a journal of another run folder: the registry is the JVM's, as the failure may reach any report
+            RunFolder.of(other, JournalSettings.defaults()).test("K#m").secret("pin-4471-qx");
+            RunFolder folder = RunFolder.of(runs, JournalSettings.defaults());
+            folder.test("K#n").secret("pa55word");
+            Path dir = folder.create();
+
+            folder.report("FAIL OrdersUiIT#pays 900ms \u2014 no button 'Pay' near 'pin-4471-qx' and 'pa55word'");
+
+            assertThat(Files.readAllLines(dir.resolve("report.txt"), StandardCharsets.UTF_8))
+                    .containsExactly("FAIL OrdersUiIT#pays 900ms \u2014 no button 'Pay' near '***' and '***'");
+        } finally {
+            RunFolder.forget(other);
+        }
+    }
+
+    @Test
     void theRunsAppVersionIsTheSetupCallsElseTheSettingElseNone() {
         Path other = runs.resolve("other");
         try {
@@ -211,6 +243,25 @@ class RunFolderTest {
         } finally {
             RunFolder.forget(other);
         }
+    }
+
+    @Test
+    void twoBrokenRunFoldersWarnOnceForTheJvm() throws IOException {
+        Path other = runs.resolve("elsewhere");
+        RunFolder.forgetWarning();
+        PrintStream err = System.err;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(captured, true));
+        try {
+            RunFolder.of(runs, JournalSettings.defaults()).broken(new IOException("disk full"));
+            RunFolder.of(other, JournalSettings.defaults()).broken(new IOException("disk full again"));
+        } finally {
+            System.setErr(err);
+            RunFolder.forget(other);
+        }
+
+        assertThat(new String(captured.toByteArray(), StandardCharsets.UTF_8).trim())
+                .isEqualTo("[ui-warning] run journal off for this run: java.io.IOException: disk full");
     }
 
     @Test
