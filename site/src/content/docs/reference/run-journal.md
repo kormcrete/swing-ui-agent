@@ -11,7 +11,7 @@ The folders are for reading later, by a person or an agent: what a test did, ste
 
 Each file states its format: `run.json`, every sidecar and every journal's `test` line carry `"format": 1`. That number is the contract this page describes. A reader should check it, and ignore fields it does not know.
 
-A [sample run folder](https://github.com/kormcrete/swing-ui-agent/tree/main/src/test/resources/run-journal-sample) from a real run is in the repository, for use as a fixture.
+A [sample run folder](https://github.com/kormcrete/swing-ui-agent/tree/main/src/test/resources/run-journal-sample) is in the repository, for use as a fixture. It is adapted from a real run: ids, times and paths are normalised, and its `report.txt` and `run.json` are reshaped into one launch of its two tests.
 
 ## What a run leaves
 
@@ -112,7 +112,7 @@ DONE passed=1 failed=1 skipped=0 aborted=0
 
 ## Journal lines
 
-A journal is one JSON object per line, appended and flushed as each step ends. A test that fails stops at the step that failed, and the `end` line follows. A line holds these fields:
+A journal is one JSON object per line, appended and flushed as each step ends. When one of the library's steps, checks, reads or checkpoints fails the test, the journal stops at its line, and the `end` line follows. A plain JUnit or AssertJ assertion writes no line of its own: the journal then ends with the last library line before it, and the `end` line's `message` says what failed (see [What is not in the journal](#what-is-not-in-the-journal)). A line holds these fields:
 
 | Field | What it is |
 | --- | --- |
@@ -187,13 +187,13 @@ Each public read of a `Target` or `Client` writes one line, under its own name, 
 
 ### end
 
-The last line: how the test ended. `outcome` is `passed`, `failed` or `aborted`. `message` is the failure's first line. For a Java test, `evidence` is the absolute path of its folder under `target/ui-failures`. For a recorded test, it is the absolute path of the failure report under `target/failsafe-reports/recorded-test-failures`.
+The last line: how the test ended. `outcome` is `passed`, `failed` or `aborted`. `message` is the failure's first line. For a Java test, `evidence` is the absolute path of its folder under `target/ui-failures`. For a recorded test, it is the absolute path of the failure report under `target/failsafe-reports/recorded-test-failures`. The sample run folder shows it relative, so that it names no machine.
 
 ```json
 {"seq":11,"t":"2026-10-23T08:12:15.330Z","kind":"end","outcome":"failed","ms":10790,"message":"Expected label 'Total' to have text '€7.32'","evidence":"/home/ci/order-desk/target/ui-failures/PlaceOrderUiIT/placesAnOrderForAda"}
 ```
 
-Before it, a failing test's journal ends at the step that failed:
+Before it, a test that failed at one of the library's checks ends with that check's line:
 
 ```json
 {"seq":10,"t":"2026-10-23T08:12:05.318Z","kind":"check","verb":"expect","target":"label 'Total'","locator":{"role":"label","name":"Total"},"expected":{"text":"€7.32"},"step":{"action":"expect","target":{"role":"label","name":"Total"},"text":"€7.32"},"outcome":"failed","message":"expected text '€7.32' but was '€5.88'","reason":"EXPECTATION","ms":10012,"text":"Check that Total shows €7.32"}
@@ -249,7 +249,8 @@ ui.section("Cart").checkpoint("cart-totals", ui.label("Date"));
 
 - The name is the author's and says what the picture shows: `A-Z a-z 0-9 . _ -` only (not `.` or `..`), once per test. Names that differ only in case are refused too, as a disk may not tell them apart. Anything else fails the test at once.
 - Use few: one, at most three per test.
-- A checkpoint the test asks for that cannot be taken or written fails the test. Examples: a target scrolled out of view or with no size (NOT_ACTIONABLE, "scroll it into view first"), a mask in another window or outside the picture (BAD_INPUT), a file that cannot be written. An agent older than the library fails it as CAPABILITY_GAP.
+- A checkpoint the test asks for that cannot be taken or written fails the test. Examples: a target scrolled out of view or with no size (NOT_ACTIONABLE, "scroll it into view first"), a mask in another window or outside the picture (BAD_INPUT), a file that cannot be written. An agent older than the library fails it as CAPABILITY_GAP. These failures still write a `checkpoint` line with `outcome` `failed`.
+- A checkpoint refused before the agent is asked writes no `checkpoint` line: the test just fails with the exception. That is an unsafe or repeated name, a null mask or a mask of another client, or a `Client` from outside a `@UiTest`.
 - Checkpoints are written even with the journal off, into a run folder made for them.
 
 ### The picture
@@ -258,7 +259,7 @@ ui.section("Cart").checkpoint("cart-totals", ui.label("Date"));
 
 - a window shows its content, with no title bar or border;
 - a table cell, row or tree or list item shows just that part, as far as it is in view;
-- a table column shows its header cell and its cells in view;
+- a table column shows its cells in view, and its header cell when the header is shown in the scroll pane's column header;
 - any other target shows the part of the component on screen.
 
 The picture is painted at scale 1 and never scaled down. Two runs of the same screen must give the same pixels, so before the paint the agent does this:
@@ -327,7 +328,7 @@ A recorded test run from JUnit through `RecordedTests.of(ui)` writes its own jou
 
 ## Settings
 
-Each is a JUnit configuration parameter, which JUnit also reads from the system property of the same name: `-D…`, `junit-platform.properties` or a suite's `@ConfigurationParameter`. They are read once per JVM, the first time a run folder is needed; a change later in the same JVM is not seen.
+Each is a JUnit configuration parameter, which JUnit also reads from the system property of the same name: `-D…`, `junit-platform.properties` or a suite's `@ConfigurationParameter`. They are read once per runs directory (normally the test module's `target/ui-runs`), the first time a run folder there is needed; a change later in the same JVM is not seen.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -350,6 +351,6 @@ The steps journal is then off for the rest of that JVM's run, and nothing is tri
 
 ## What's next
 
-- [The sample run folder](https://github.com/kormcrete/swing-ui-agent/tree/main/src/test/resources/run-journal-sample), from a real run.
+- [The sample run folder](https://github.com/kormcrete/swing-ui-agent/tree/main/src/test/resources/run-journal-sample), adapted from a real run (ids, times and paths normalised; `report.txt` and `run.json` reshaped into one launch).
 - [Run the tests](/swing-ui-agent/start/run/) and [Screenshots](/swing-ui-agent/guides/screenshots/#checkpoints).
 - [Sentences and groups](/swing-ui-agent/guides/sentences/) for the `say` of recorded steps and `ui.step` in exported Java tests.
