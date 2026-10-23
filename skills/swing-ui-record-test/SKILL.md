@@ -109,17 +109,32 @@ come first, in this order:
    `link`), never typed as `${...}`. A domain check's param is never linked to what the check reads; read
    `recording list` `uses` to see what was. A step's own values (`codeWithOutcome` in the plugin) are under `step`
    in its outcome: `${placeOrder.step.number}`.
-4. **Keep the batch going.** A value you are asked to tell (a message, a reason, a count) and do not know: run the
-   check that reads it with the text you expect, from the request or its `about`. When it fails, its `message`
-   says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"): that is the answer. When a
-   request reports several values, add `"continueOnFailedCheck":true` to the batch: a failed check is reported and
-   the rest still runs (a failed act step still stops it). A failed check records nothing: when the saved test must
-   keep it, leave the option off, and the next call begins with that check again with the shown text, then the rest.
-   Something the app should refuse (cancel a shipped order): run the check that reads the refusal (a button
-   disabled, with its reason) instead of the act step that would fail.
+4. **Keep the batch going.**
+   - **A value you are asked to tell** (a message, a reason, a count) and do not know: run the check that reads it
+     with the text you expect, from the request or its `about`. When it fails, its `message` says what the app
+     shows ("… reads “Account · Invoice 30 days”, expected “Account”"): that is the answer. A failed check records
+     nothing, so the saved test must get it back with the shown text. One value: leave `continueOnFailedCheck`
+     off; the next call begins with that check again with the shown text, then the rest.
+     Several values: add `"continueOnFailedCheck":true` (a failed check is reported and the rest still runs; a
+     failed act step still stops it), then put each failed check back with the shown text at the label it would
+     have had (`recording list` shows the checks that were kept). An inserted check is not run; the re-runs prove
+     it:
+     ```sh
+     $UI recording '{"op":"insert","at":"1.2","step":{"action":"do","step":"order-desk:orderItemsSummaryIs","params":{"order":"ORD-1639","summary":"55 units in 3 lines"}}}'
+     ```
+     Either way, no batch before the recording to learn the values. (The swing-ui-driver agent, when it only
+     reports and saves nothing, needs neither: the message is its answer, and the batch goes on.)
+   - **Something the app should refuse** (cancel a shipped order): run the check that reads the refusal (a button
+     disabled, with its reason) instead of the act step that would fail.
+   - **A value computed from another** ("the count goes up by one"): a recorded test cannot hold it. Check both
+     values in the batch and tell the person, then `recording delete` those checks before you save (fixed values
+     that held once fail on the next run), and say plainly that this check needs a Java test.
 5. **Only for the parts no step covers**: find the targets with a scoped `read {"target":...}`, then raw verbs, in
    the same batch where you can (swing-ui-targeting). Never refuse a part because no step covers it, and never
-   stretch a step to do something else. In your report, one line per such part, in exactly this form:
+   stretch a step to do something else. Never copy a locator from a step's `folds` text in the vocabulary list: it
+   is pattern syntax, where `*` means any value; in a locator `*` is a literal, so no row matches and the step waits
+   its whole timeout. In your report, one line per part done with raw verbs (any step that is not a `do`: a `menu`,
+   `click`, `read`, `expect`, even one that worked at once), in exactly this form:
    `Plugin gap: no step or check for <the part, in their words>; done step by step instead.`
 
 **No snapshot** to find the way or to report a result: not the `snapshot` tool, not a batch's `"snapshot"` option,
@@ -156,9 +171,10 @@ each one gets its own `Plugin gap:` line.
 ## Steps
 
 1. **Plan from the vocabulary; explore only the rest.** Where the app's own steps cover the request, there is
-   nothing to find, and nothing to try first: record it at once (a wrong step is fixed with step 6). For the parts
-   they do not, find the route and every target before recording: a scoped `read` (see the swing-ui-targeting
-   skill; a snapshot only as the last resort above).
+   nothing to find, and nothing to try first: record it at once, with no try-out batch before `recording start`,
+   not even to learn a value you must tell (step 4 of "The app's own steps" learns it inside the recording). A
+   wrong step is fixed with step 6. For the parts the steps do not cover, find the route and every target before
+   recording: a scoped `read` (see the swing-ui-targeting skill; a snapshot only as the last resort above).
 2. **Start at a reset:** `$UI recording '{"op":"start","reset":true}'`. (`session '{"op":"reset"}'` starts a
    recording too, but the palette does not show it.) Read `startNote` in the result: a search or filter left filled
    next to a table on the start screen.
@@ -193,8 +209,9 @@ each one gets its own `Plugin gap:` line.
    and later, replays the steps before it from a reset and records on. `delete {"n":3}` takes step 3's checks
    with it, `delete {"n":"3.1"}` only that check; `undo` takes back the last edit, yours or the person's.
 7. **Leave the screen as you found it, then stop and save.** Before you stop, record the steps that put the screen
-   back: clear what you typed into a search, put a filter back. They are the test's own last steps, so every run
-   ends where the next one starts. Then `$UI recording '{"op":"stop"}'`. Save with
+   back: clear what you typed into a search, put a filter back, close the tab. They are the test's own last steps,
+   so every run ends where the next one starts; send them in the same batch as the rest, not in a call of their
+   own. Then `$UI recording '{"op":"stop"}'`. Save with
    `$UI recording '{"op":"export","as":"recorded","name":"place-order"}'` while you still verify; it keeps the
    recording, so a fix is `insert`/`edit`/`redo`, `replay`, export again over the same file.
    `$UI export_recorded_test '{"name":"place-order","description":"A new order for Ada Shop Ltd"}'` empties it
@@ -347,7 +364,9 @@ rather than hand-editing recorded steps.
 
 ## Verify
 
-1. Put the app on some other screen (another menu item, another tab).
+1. Without a plugin reset, put the app on some other screen first (another menu item, another tab): the test must
+   reach its start screen by itself. With a plugin whose reset brings a defined start, skip this: every run starts
+   with that reset, so run the test straight after the save, with no call in between.
 2. A recorded test: `$UI run_recorded_test '{"name":"place-order"}'` (the CLI exits 4 when it fails; the failing
    step carries what its locators match now and a picture under `evidence`). A Java test: run only the new class
    while the app is up, the project's way; without one `mvn -Dtest=PlaceOrderUiIT verify` (failsafe picks up `*IT`

@@ -27,7 +27,9 @@ Hand the driver:
   step's sentence, use them. Do not ask it to look at the screen (a snapshot) for a text: a check that reads the
   text reports it word for word.
 - **The known targets**, if any (locators, menu paths, ids), so it does not rediscover them.
-- **Whether to record and export**, and the class name. Default: no.
+- **Whether to record and export**, and the class name. Default: no. A request to save is recorded at once (no
+  try-out first), and a check computed from another value ("the count goes up by one") cannot be saved in a
+  recorded test: the driver checks it, says so, and leaves it out of the file.
 - **Where to write results.**
 - **The project's part**, when the driver cannot read the project's instructions: the agent command and port, how
   tests run, how to start the app, which data it may change, the glossary file.
@@ -36,6 +38,6 @@ Hand the driver:
   an item it cannot get through.
 
 Expect back at most a few lines: verdict, counts (passed / failed / gaps), the results file, any blocker, and a
-`Plugin gap:` line for each part the app's plugin has no step for (done step by step all the same). Pass those
-lines on to the user.
+`Plugin gap:` line for each part done with raw verbs because the app's plugin has no step for it. Pass those lines
+on to the user.
 

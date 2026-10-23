@@ -26,7 +26,9 @@ way passes even when the button is broken, which makes the test worthless.
 **A domain step beats a locator.** When the app's plugin has a step or check for what the user names
 (`vocabulary list`, see the swing-ui-record-test skill), run it (`{"verb":"do","step":...}`) and find no target;
 this skill is for the parts no step covers. Search the whole list first: a text the user asks about (a message, a
-question, a reason) often has a check that reads it, and its failure says what the app shows.
+question, a reason) often has a check that reads it, and its failure says what the app shows. A step's `folds` text
+in the list is no locator to copy: it is pattern syntax, where `*` means any value, while in a locator `*` is a
+literal (no row matches, and the step waits its whole timeout).
 
 ## A locator
 
@@ -144,8 +146,8 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
   or a plain component inside a scrolling form.
 - `context_menu` on a table row, list item or tree row selects it first, unless it is already part of the
   selection (a multi-selection stays), as a right-click does in most apps; the menu then acts on it.
-- A wrong `context_menu` item fails in about a second and lists the items: use that to read a row's menu (no read
-  lists it without right-clicking).
+- A wrong `context_menu` or `pick` item fails in about a second and lists the items: use that to read a row's menu
+  or a dropdown's items (no read lists them without opening the popup).
 - `pending` and `describe_ui`'s `dialog` carry an option pane's whole message, one line per line; for another
   kind of dialog, its first three labels.
 - `realInput` in a step result means real mouse or key input reached the app while the step ran (a person at the

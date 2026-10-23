@@ -79,13 +79,22 @@ An app plugin may offer a vocabulary: the app's own steps and checks, each a sen
      it fails, its `message` says what the app shows ("… reads “Account · Invoice 30 days”, expected “Account”"):
      report that text. When the item reports a value this way (or several), send the batch with
      `"continueOnFailedCheck":true`: a failed check is reported and the rest still runs, closing steps too, so one
-     call is enough; a failed act step still stops it.
+     call is enough; a failed act step still stops it. While you record, a failed check is not saved, so the test
+     must get it back: follow swing-ui-record-test (the next call runs that check again with the shown text first,
+     or, with several values, each failed check is inserted with the shown text).
+   - **A value computed from another** ("the count goes up by one", "the total doubles"): check both values in the
+     batch and report them, and say plainly that a saved test cannot hold the comparison: it needs a Java test. When
+     you record, delete those two checks before the save (`recording delete`): fixed values held once, and the next
+     run fails on them.
    - **Something the app should refuse** (cancel a shipped order, choose a delivery it does not offer): run the
      check that reads the refusal (a button disabled, with its reason) instead of the act step that would fail;
      the batch goes on. When an act step fails all the same, its `message` is the app's reason: report it.
 5. **Only for what no step covers**: plain steps (verbs, `expect`) in the same batch when you know the target, else
-   find it first with a scoped `read` (below). Never refuse a part because no step covers it. Tell the tester in one
-   line which part the plugin lacked, in this form:
+   find it first with a scoped `read` (below). Never refuse a part because no step covers it. Never copy a locator
+   from a step's `folds` text in the vocabulary list: that is pattern syntax, where `*` means any value; in a
+   locator `*` is a literal, so no row matches and the step waits its whole timeout. When the app has a vocabulary,
+   every raw verb you use (any step that is not a `do`: a `menu`, `click`, `read`, `expect`, even one that worked
+   at once) gets one line that tells the tester which part the plugin lacked, in this form:
    `Plugin gap: no step or check for <the part, in the tester's words>; done step by step instead.`
    It is a note, not a GAP: the item still passes or fails on what the app did.
 
@@ -128,7 +137,10 @@ which says how far it got).
 - **No export unless asked** (`export_recorded_test`, `export_test`). Steps are recorded either way; exporting
   unasked leaves a file behind. If asked to record or to name steps, follow swing-ui-record-test (start at a reset,
   the first step reaches the start screen; the last steps, recorded before `stop` and the save, leave the screen
-  as you found it; `recording` `edit`/`group` with `say` for names). A step that uses what an earlier step made
+  as you found it; `recording` `edit`/`group` with `say` for names). Record at once: no try-out batch before
+  `recording start`, the recorded batch is the run. The steps that put the screen back go inside that batch, not
+  in a call of their own. With a plugin, re-run the saved test straight away (its reset starts every run), with
+  no call between the save and the runs. A step that uses what an earlier step made
   (a new order number) is linked by the recorder or with
   `recording` `link`/`remember`/`unique`;
   never type `${...}` yourself (typed text is literal). Tab, section, dialog and window titles are linked like names. `"outcome": true` on a step returns what it changed.
