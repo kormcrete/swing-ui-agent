@@ -9,7 +9,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -190,5 +192,46 @@ class RunFolderTest {
 
         assertThat(Files.readAllLines(dir.resolve("report.txt"), StandardCharsets.UTF_8)).containsExactly(
                 "PASS OrdersUiIT#placesAnOrder 4100ms", "DONE passed=1 failed=0 skipped=0 aborted=0");
+    }
+
+    @Test
+    void theRunsAppVersionIsTheSetupCallsElseTheSettingElseNone() {
+        Path other = runs.resolve("other");
+        try {
+            RunFolder given = RunFolder.of(runs, settings(JournalSettings.APP_VERSION, "2.4.1"));
+            RunFolder none = RunFolder.of(other, JournalSettings.defaults());
+            assertThat(given.appVersionResolved()).isEqualTo("2.4.1");
+            assertThat(none.appVersionResolved()).isNull();
+
+            RunFolder.appVersion("2.5.0");
+
+            assertThat(given.appVersionResolved()).isEqualTo("2.5.0");
+            assertThat(none.appVersionResolved()).isEqualTo("2.5.0");
+            assertThat(RunFolder.appVersion()).isEqualTo("2.5.0");
+        } finally {
+            RunFolder.forget(other);
+        }
+    }
+
+    @Test
+    void aBrokenFolderTriesNoMoreWrites() throws IOException {
+        RunFolder folder = RunFolder.of(runs, JournalSettings.defaults());
+        Path dir = folder.create();
+        String before = new String(Files.readAllBytes(dir.resolve("run.json")), StandardCharsets.UTF_8);
+        PrintStream err = System.err;
+        System.setErr(new PrintStream(new ByteArrayOutputStream(), true));
+        try {
+            folder.broken(new IOException("disk full"));
+        } finally {
+            System.setErr(err);
+        }
+
+        folder.report("PASS OrdersUiIT#placesAnOrder 4100ms");
+        folder.client(client("localhost:8799"));
+        folder.finish(new int[] {1, 0, 0, 0});
+        RunFolder.appVersion("2.5.0");
+
+        assertThat(dir.resolve("report.txt")).doesNotExist();
+        assertThat(new String(Files.readAllBytes(dir.resolve("run.json")), StandardCharsets.UTF_8)).isEqualTo(before);
     }
 }

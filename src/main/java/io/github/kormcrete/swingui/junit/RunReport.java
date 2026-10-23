@@ -12,7 +12,8 @@ import java.time.Instant;
 /**
  * The run report a caller polls: STARTED, one line per finished test, DONE. Each line is flushed at once and, when the
  * run folder was made by the time of STARTED, also goes to its {@code report.txt}; DONE's counts go to its
- * {@code run.json}. Writing never throws: a failure gives one {@code [ui-warning]} line and the report goes quiet.
+ * {@code run.json}. Writing never throws: a failure gives one {@code [ui-warning]} line and the report, its
+ * report.txt copy included, goes quiet.
  */
 final class RunReport {
 
@@ -64,8 +65,8 @@ final class RunReport {
     }
 
     private void write(String line, boolean truncate) {
-        if (tee) folder.report(line);
         if (off) return;
+        if (tee) folder.report(line);
         try {
             Files.write(file, (line + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE,
                     truncate ? StandardOpenOption.TRUNCATE_EXISTING : StandardOpenOption.APPEND, StandardOpenOption.WRITE);

@@ -88,4 +88,23 @@ class RunReportTest {
         assertThat(warnings).startsWith("[ui-warning] run journal off for this run: ");
         assertThat(warnings.split("\\[ui-warning]", -1)).hasSize(2);
     }
+
+    @Test
+    void afterTheReportFailsNothingMoreGoesToReportTxt(@TempDir Path dir) throws Exception {
+        RunFolder folder = RunFolder.of(dir.resolve("runs"), JournalSettings.defaults());
+        Files.write(dir.resolve("blocked"), new byte[0]);
+        PrintStream err = System.err;
+        System.setErr(new PrintStream(new ByteArrayOutputStream(), true));
+        try {
+            Path run = folder.create();
+            RunReport r = new RunReport(dir.resolve("blocked").resolve("latest.txt"), folder);
+            r.started(1);
+            r.finished("OrdersUiIT#placesAnOrder", "PASS", 1, null, null);
+            r.done();
+            assertThat(run.resolve("report.txt")).doesNotExist();
+        } finally {
+            System.setErr(err);
+            RunFolder.forget(dir.resolve("runs"));
+        }
+    }
 }

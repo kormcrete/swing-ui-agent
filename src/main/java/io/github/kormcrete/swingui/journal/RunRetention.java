@@ -39,6 +39,11 @@ public final class RunRetention {
      * folders deleted.
      */
     public static List<Path> prune(Path runsDir, Path current, int keep, long nowMillis, long recentMillis) {
+        return prune(runsDir, current, keep, nowMillis, recentMillis, Files::delete);
+    }
+
+    /** {@link #prune(Path, Path, int, long, long)} deleting each file and folder with {@code delete} (for tests). */
+    static List<Path> prune(Path runsDir, Path current, int keep, long nowMillis, long recentMillis, Deleter delete) {
         if (keep <= 0) return Collections.emptyList();
         List<Run> runs = new ArrayList<Run>();
         try (DirectoryStream<Path> dirs = Files.newDirectoryStream(runsDir)) {
@@ -56,7 +61,7 @@ public final class RunRetention {
         for (Run r : runs.subList(Math.min(runs.size(), keep - 1), runs.size())) {
             if (touchedSince(r.dir, nowMillis - recentMillis)) continue;
             try {
-                deleteTree(r.dir);
+                deleteTree(r.dir, delete);
                 deleted.add(r.dir);
             } catch (IOException | RuntimeException e) {
                 warn("cannot delete the old run folder " + r.dir + ": " + e);
@@ -98,18 +103,29 @@ public final class RunRetention {
         }
     }
 
-    private static void deleteTree(Path dir) throws IOException {
+    /** Deletes one file or empty folder. */
+    interface Deleter {
+        void delete(Path path) throws IOException;
+    }
+
+    /**
+     * Deletes {@code dir} and all in it, its {@code run.json} last: a folder only partly deleted (a file still open
+     * elsewhere) stays a run folder that a later run prunes.
+     */
+    private static void deleteTree(Path dir, Deleter delete) throws IOException {
+        Path runJson = dir.resolve("run.json");
         Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.delete(file);
+                if (!file.equals(runJson)) delete.delete(file);
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult postVisitDirectory(Path d, IOException e) throws IOException {
                 if (e != null) throw e;
-                Files.delete(d);
+                if (d.equals(dir)) delete.delete(runJson);
+                delete.delete(d);
                 return FileVisitResult.CONTINUE;
             }
         });

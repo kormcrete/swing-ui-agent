@@ -16,17 +16,25 @@ import org.junit.platform.launcher.TestPlan;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -101,18 +109,29 @@ class UiRunReportTest {
     }
 
     private List<String> run(Path dir, String journal, Class<?>... classes) throws Exception {
-        Path file = dir.resolve("latest.txt");
+        return run(dir, journal, new TestExecutionListener[] {new UiRunReport(dir.resolve("latest.txt"))}, classes);
+    }
+
+    private List<String> run(Path dir, String journal, TestExecutionListener[] reports, Class<?>... classes)
+            throws Exception {
         LauncherDiscoveryRequestBuilder req = LauncherDiscoveryRequestBuilder.request();
         for (Class<?> c : classes) req.selectors(selectClass(c));
         req.configurationParameter(FixtureClassCondition.PARAMETER, FixtureClassCondition.VALUE);
         req.configurationParameter("swingui.journal", journal);
         Launcher launcher = LauncherFactory.create();
         try {
-            launcher.execute(req.build(), new UiRunReport(file));
+            launcher.execute(req.build(), reports);
         } finally {
             RunFolder.forget(dir);
         }
-        return Files.readAllLines(file, StandardCharsets.UTF_8);
+        return Files.readAllLines(dir.resolve("latest.txt"), StandardCharsets.UTF_8);
+    }
+
+    private static byte[] readAll(InputStream in) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[4096];
+        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+        return out.toByteArray();
     }
 
     private static List<String> names(Path dir) throws Exception {
@@ -122,12 +141,69 @@ class UiRunReportTest {
     }
 
     @Test
-    void theLibraryJarRegistersTheRunReport() {
+    void theLibraryJarRegistersTheRunReport(@TempDir Path dir) throws Exception {
+        String services = "META-INF/services/" + TestExecutionListener.class.getName();
         List<TestExecutionListener> reports = new ArrayList<TestExecutionListener>();
         for (TestExecutionListener l : ServiceLoader.load(TestExecutionListener.class)) {
             if (l instanceof UiRunReport) reports.add(l);
         }
         assertThat(reports).hasSize(1);
+
+        // a test module that still lists it in its own services file gets one report, not two
+        Path own = Files.createDirectories(dir.resolve("META-INF/services")).resolve(TestExecutionListener.class.getName());
+        Files.write(own, (UiRunReport.class.getName() + "\n").getBytes(StandardCharsets.UTF_8));
+        try (URLClassLoader module = new URLClassLoader(new URL[] {dir.toUri().toURL()}, UiRunReportTest.class.getClassLoader())) {
+            int listing = 0;
+            for (URL url : Collections.list(module.getResources(services))) {
+                try (InputStream in = url.openStream()) {
+                    if (new String(readAll(in), StandardCharsets.UTF_8).contains(UiRunReport.class.getName())) listing++;
+                }
+            }
+            assertThat(listing).isEqualTo(2);
+            List<TestExecutionListener> loaded = new ArrayList<TestExecutionListener>();
+            for (TestExecutionListener l : ServiceLoader.load(TestExecutionListener.class, module)) {
+                if (l instanceof UiRunReport) loaded.add(l);
+            }
+            assertThat(loaded).hasSize(1);
+        }
+    }
+
+    @Test
+    void aSecondRunReportOfTheSamePlanWritesNothing(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("latest.txt");
+        List<String> lines = run(dir, "on", new TestExecutionListener[] {new UiRunReport(file), new UiRunReport(file)},
+                Mixed.class);
+        assertThat(lines).hasSize(4);
+        assertThat(lines.get(0)).startsWith("STARTED ").contains(" tests=2 run=");
+        assertThat(lines.get(3)).isEqualTo("DONE passed=1 failed=1 skipped=0 aborted=0");
+        String runId = lines.get(0).substring(lines.get(0).lastIndexOf(" run=") + " run=".length());
+        assertThat(Files.readAllLines(dir.resolve(runId).resolve("report.txt"), StandardCharsets.UTF_8)).isEqualTo(lines);
+    }
+
+    @Test
+    void aJUnitPlatformWithoutConfigurationParametersGetsTheDefaultsWithOneWarning(@TempDir Path dir) throws Exception {
+        Function<TestPlan, Function<String, Optional<String>>> old = plan -> key -> {
+            throw new NoSuchMethodError("org.junit.platform.launcher.TestPlan.getConfigurationParameters()");
+        };
+        Path first = dir.resolve("first");
+        Path second = dir.resolve("second");
+        PrintStream err = System.err;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(captured, true));
+        List<String> a;
+        List<String> b;
+        try {
+            a = run(first, "off", new TestExecutionListener[] {new UiRunReport(first.resolve("latest.txt"), old)}, Mixed.class);
+            b = run(second, "off", new TestExecutionListener[] {new UiRunReport(second.resolve("latest.txt"), old)}, Mixed.class);
+        } finally {
+            System.setErr(err);
+        }
+        assertThat(a.get(0)).contains(" tests=2 run=");
+        assertThat(b.get(0)).contains(" tests=2 run=");
+        assertThat(a.get(a.size() - 1)).isEqualTo("DONE passed=1 failed=1 skipped=0 aborted=0");
+        String warnings = new String(captured.toByteArray(), StandardCharsets.UTF_8);
+        assertThat(warnings.split("\\[ui-warning]", -1)).hasSize(2);
+        assertThat(warnings).startsWith("[ui-warning] ").contains("defaults");
     }
 
     @Test

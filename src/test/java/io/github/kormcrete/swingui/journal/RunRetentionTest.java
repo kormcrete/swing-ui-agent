@@ -3,12 +3,15 @@ package io.github.kormcrete.swingui.journal;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -120,5 +123,62 @@ class RunRetentionTest {
 
         assertThat(prune(current, 2)).containsExactly(crashed);
         assertThat(finished).isDirectory();
+    }
+
+    @Test
+    void aFolderThatIsNotWhollyDeletedKeepsItsRunJsonAndGoesOnALaterRun() throws IOException {
+        Path old = run("99", 3, true);
+        for (String name : new String[] {"report.txt", "a.txt", "z.txt"}) Files.write(old.resolve(name), new byte[] {1});
+        Files.write(Files.createDirectories(old.resolve("checkpoints").resolve("OrdersUiIT#placesAnOrder"))
+                .resolve("cart-totals.png"), new byte[] {1});
+        age(old);
+        Path current = run("100", 1, false);
+        Path held = old.resolve("steps").resolve("OrdersUiIT#placesAnOrder.jsonl"); // still open elsewhere
+        PrintStream err = System.err;
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(captured, true));
+        List<Path> first;
+        try {
+            first = RunRetention.prune(runs, current, 1, NOW, RunRetention.RECENT_MS, p -> {
+                if (p.equals(held)) throw new IOException("in use");
+                Files.delete(p);
+            });
+        } finally {
+            System.setErr(err);
+        }
+
+        assertThat(first).isEmpty();
+        assertThat(old.resolve("run.json")).isRegularFile();
+        assertThat(new String(captured.toByteArray(), StandardCharsets.UTF_8))
+                .startsWith("[ui-warning] cannot delete the old run folder ");
+
+        List<Path> deleted = new ArrayList<Path>();
+        List<Path> later = RunRetention.prune(runs, current, 1, NOW + RunRetention.RECENT_MS + 60_000L,
+                RunRetention.RECENT_MS, p -> {
+                    deleted.add(p);
+                    Files.delete(p);
+                });
+        assertThat(later).containsExactly(old);
+        assertThat(old).doesNotExist();
+        assertThat(deleted.subList(deleted.size() - 2, deleted.size())).containsExactly(old.resolve("run.json"), old);
+    }
+
+    @Test
+    void runJsonIsTheLastFileOfAFolderToGo() throws IOException {
+        Path old = run("99", 3, true);
+        for (String name : new String[] {"a.txt", "report.txt", "s.txt", "z.txt"}) {
+            Files.write(old.resolve(name), new byte[] {1});
+        }
+        Files.write(Files.createDirectories(old.resolve("checkpoints").resolve("OrdersUiIT#placesAnOrder"))
+                .resolve("cart-totals.png"), new byte[] {1});
+        age(old);
+        Path current = run("100", 1, false);
+        List<Path> deleted = new ArrayList<Path>();
+
+        assertThat(RunRetention.prune(runs, current, 1, NOW, RunRetention.RECENT_MS, p -> {
+            deleted.add(p);
+            Files.delete(p);
+        })).containsExactly(old);
+        assertThat(deleted.subList(deleted.size() - 2, deleted.size())).containsExactly(old.resolve("run.json"), old);
     }
 }

@@ -115,6 +115,12 @@ public final class RunFolder {
         explicitAppVersion = null;
     }
 
+    /** This run's app version: the setup call's, else {@code swingui.appVersion}, else null. */
+    public String appVersionResolved() {
+        String setup = explicitAppVersion;
+        return setup != null ? setup : settings.appVersion;
+    }
+
     /** The settings this run folder was made with. */
     public JournalSettings settings() {
         return settings;
@@ -123,7 +129,7 @@ public final class RunFolder {
     /**
      * The run folder, made on the first call with its {@code run.json} and {@code <runsDir>/latest-run.txt}, older run
      * folders pruned right after; the same path after. Throws when the folder itself cannot be made; a file in it that
-     * cannot be written turns the journal off ({@link #broken}) and keeps the folder.
+     * cannot be written turns the journal off ({@link #broken}) and keeps the folder, with no further writes.
      */
     public synchronized Path create() {
         if (dir != null) return dir;
@@ -144,10 +150,12 @@ public final class RunFolder {
         startedAt = System.currentTimeMillis();
         dir = made;
         writeRunJson();
+        if (broken) return made;
         try {
             Files.write(runsDir.resolve("latest-run.txt"), (runId() + "\n").getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             broken(e);
+            return made;
         }
         RunRetention.prune(runsDir, made, settings.keep, System.currentTimeMillis(), RunRetention.RECENT_MS);
         return made;
@@ -175,9 +183,9 @@ public final class RunFolder {
         writeRunJson();
     }
 
-    /** Appends {@code line} to the run's {@code report.txt}; nothing while the folder is not made. */
+    /** Appends {@code line} to the run's {@code report.txt}; nothing while the folder is not made or once broken. */
     public synchronized void report(String line) {
-        if (dir == null) return;
+        if (dir == null || broken) return;
         try {
             Files.write(dir.resolve("report.txt"), (line + "\n").getBytes(StandardCharsets.UTF_8),
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
@@ -225,9 +233,9 @@ public final class RunFolder {
         }
     }
 
-    /** Rewrites {@code run.json} whole, {@code format} first; nothing while the folder is not made. */
+    /** Rewrites {@code run.json} whole, {@code format} first; nothing while the folder is not made or once broken. */
     private synchronized void writeRunJson() {
-        if (dir == null) return;
+        if (dir == null || broken) return;
         ObjectNode run = NODES.objectNode();
         run.put("format", 1);
         run.put("runId", runId());
@@ -237,7 +245,7 @@ public final class RunFolder {
         run.put("java", System.getProperty("java.version"));
         run.put("os", System.getProperty("os.name") + " " + System.getProperty("os.version") + " "
                 + System.getProperty("os.arch"));
-        String app = explicitAppVersion != null ? explicitAppVersion : settings.appVersion;
+        String app = appVersionResolved();
         if (app != null) run.putObject("app").put("version", app);
         ArrayNode list = run.putArray("clients");
         for (ObjectNode c : clients.values()) list.add(c);
