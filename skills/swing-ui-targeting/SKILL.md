@@ -137,7 +137,11 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
 - `scroll` moves the viewport directly (`to`, `pages`, or a `row` on the target, exactly one); read the result from
   the element's `scroll` block or `expect {"state":["atBottom"]}`. Use it, not `press "Ctrl+End"`, for scrolling.
 - On the macOS screen menu bar, `menu` invokes the item directly (recorded `via:"api"`).
-- `drag` posts a mouse gesture and never starts a native drag; deliver files or text with `drop`.
+- `drag` posts a mouse gesture and never starts a native drag; deliver files or text with `drop`. Where the app does
+  AWT drag and drop (a gesture recognizer where the drag starts, a drop target where it ends, e.g. rows reordered by
+  dragging one onto another), `drag` runs that drag and drop in the app and its `message` says what the drop target
+  did; a refused or rejected drop fails as NOT_ACTIONABLE, a drag started on the app's own `DragSource` as
+  CAPABILITY_GAP. Check the result (the new row order) with `expect` as for any step.
 - `screenshot` paints the app's own components: open popups, combo dropdowns and tooltips (their own windows) are
   not in the image. Use it for alignment and layout calls only; numbers and booleans are `expect`.
 - `hover`, `resize_column`, `resize_window` and `close_window` are tools; in a `batch` they are steps like any
