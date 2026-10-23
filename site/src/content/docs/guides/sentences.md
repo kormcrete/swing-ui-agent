@@ -74,7 +74,7 @@ Prefer the value where the row is data the test knows (an order number, a produc
 
 ## In a Java test
 
-Exporting the same recording as Java turns each sentence into a `ui.step("…")` line above the code it names, a group's sentence first. Each one starts a part of the test's run journal. A check's sentence stays a comment above its assertion:
+Exporting the same recording as Java turns each sentence into a `ui.step("…")` line above the code it names, a group's sentence first. Each one starts a part of the test's [run journal](/swing-ui-agent/reference/run-journal/#section). A check's sentence stays a comment above its assertion:
 
 ```java
     @Test

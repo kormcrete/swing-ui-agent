@@ -1,0 +1,16 @@
+{
+  "format" : 1,
+  "name" : "paper-qty",
+  "test" : "FixtureAppDriveIT$JournalConformance#placesAnOrder",
+  "target" : "#lines row={Product=Paper} column=Qty",
+  "locator" : {
+    "id" : "lines",
+    "row" : {
+      "Product" : "Paper"
+    },
+    "column" : "Qty"
+  },
+  "width" : 64,
+  "height" : 16,
+  "masks" : [ ]
+}

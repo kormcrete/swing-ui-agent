@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.kormcrete.swingui.fixture.FixtureApp;
 import io.github.kormcrete.swingui.flow.RecordedTestFiles;
+import io.github.kormcrete.swingui.journal.RunFolderFormat;
 import io.github.kormcrete.swingui.junit.Client;
 import io.github.kormcrete.swingui.junit.RecordedTests;
+import io.github.kormcrete.swingui.junit.UiAssertions;
 import io.github.kormcrete.swingui.junit.UiTestExtension;
 import io.github.kormcrete.swingui.testing.FixtureClass;
 import org.junit.jupiter.api.AfterAll;
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -31,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -49,8 +53,10 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
  * context menu and a row moved by the app's own drag and drop - with the person's palette shown in the window, as it is
  * by default. In the Register window the agent records tests whose steps use what earlier steps made (a copied record,
  * a new tag and folder) and a text unique per run; a new app and agent replay them from their files alone, as recorded
- * tests and as Java tests. Run by failsafe after {@code package}; on every OS CI covers, this is what makes the platform
- * green.
+ * tests and as Java tests. UI tests launched against it leave a run folder of the documented format: a journal line of
+ * every kind, a masked checkpoint, a failing test's journal ending at its failed check, and two checkpoints of the same
+ * screen that are the same picture. Run by failsafe after {@code package}; on every OS CI covers, this is what makes the
+ * platform green.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FixtureAppDriveIT {
@@ -849,6 +855,173 @@ class FixtureAppDriveIT {
         JsonNode read = call("read", "{'target':{" + window + "}}");
         assertThat(read.path("node").toString()).as(read.path("why").asText()).containsSubsequence("Plums", "Apples", "Pears");
         step("close_window", "{'window':'window:Line order'}");
+    }
+
+    /** A UI test that leaves a line of every kind in its run journal, and two checkpoints, one with a mask. */
+    @FixtureClass
+    @Tag("ui")   // as @UiTest would: the run report writes latest.txt for the launch
+    static class JournalConformance {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension();
+
+        @Test
+        void placesAnOrder(Client ui) {
+            ui.step("Fill the order");
+            ui.byId("customer").fill("Ada");
+            ui.byId("save").click();
+            UiAssertions.assertThat(ui.label("Total")).hasText("€7.32");   // the value label FixtureApp captions "Total"
+            assertThat(ui.label("Total").shownText()).isEqualTo("€7.32");   // a read line
+            ui.step("Look at the lines");
+            ui.byId("lines").row("Product", "Paper").cell("Qty").checkpoint("paper-qty");
+            ui.checkpoint("order-form", ui.byId("status"));
+        }
+    }
+
+    /** The same screen twice, once with the pointer over Save and a caret in Customer, once without. */
+    @FixtureClass
+    @Tag("ui")
+    static class CheckpointTwice {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension();
+
+        @Test
+        void sameScreenSamePicture(Client ui) throws Exception {
+            ui.byId("customer").click();   // focus and a blinking caret in Customer
+            ui.byId("save").hover();       // Save rolled over
+            ui.checkpoint("first");
+            ui.byId("save").unhover();
+            Thread.sleep(700);             // past one caret blink
+            ui.checkpoint("second");
+        }
+    }
+
+    /** A UI test whose check fails: its journal ends at that check. */
+    @FixtureClass
+    @Tag("ui")
+    static class JournalFailing {
+        @RegisterExtension
+        static final UiTestExtension EXT = new UiTestExtension();
+
+        @Test
+        void failsAtTheStatus(Client ui) {
+            ui.byId("save").click();
+            UiAssertions.assertThat(ui.byId("status")).within(Duration.ofSeconds(1)).hasText("never shown");
+            ui.byId("new").click();   // never runs
+        }
+    }
+
+    @Test
+    @Order(27)
+    void aUiTestLeavesAJournalOfEveryKindAndAMaskedCheckpoint() throws Exception {
+        Path folder = launchUiFixture(JournalConformance.class, true);
+        assertThat(RunFolderFormat.check(folder)).as("run folder %s", folder).isEmpty();
+        List<JsonNode> lines = journal(folder, "FixtureAppDriveIT$JournalConformance#placesAnOrder");
+        List<String> kinds = new java.util.ArrayList<String>();
+        for (JsonNode l : lines) kinds.add(l.path("kind").asText());
+        assertThat(kinds).as("%s", lines).contains("test", "section", "action", "check", "read", "checkpoint", "end");
+        assertThat(lines.get(lines.size() - 1).path("outcome").asText()).as("%s", lines).isEqualTo("passed");
+
+        Path checkpoints = folder.resolve("checkpoints").resolve("FixtureAppDriveIT$JournalConformance#placesAnOrder");
+        JsonNode qty = JSON.readTree(new String(Files.readAllBytes(checkpoints.resolve("paper-qty.json")), StandardCharsets.UTF_8));
+        JsonNode cell = call("read", "{'target':{'name':'lines','row':{'Product':'Paper'},'column':'Qty'},'form':'geometry'}");
+        JsonNode table = call("read", "{'target':{'name':'lines'},'form':'geometry'}");
+        // just the cell, as the agent measures it: narrower than the table (whose one row is as high as the cell)
+        assertThat(qty.path("width").asInt()).as(cell.path("why").asText()).isEqualTo(cell.path("geometry").path("width").asInt());
+        assertThat(qty.path("height").asInt()).as(cell.path("why").asText()).isEqualTo(cell.path("geometry").path("height").asInt());
+        assertThat(qty.path("width").asInt()).as(table.path("why").asText())
+                .isLessThan(table.path("geometry").path("width").asInt());
+        JsonNode form = JSON.readTree(new String(Files.readAllBytes(checkpoints.resolve("order-form.json")), StandardCharsets.UTF_8));
+        assertThat(form.path("masks")).as("%s", form).hasSize(1);
+        assertThat(form.path("masks").path(0).path("target").asText()).as("%s", form).contains("status");
+        assertThat(Files.isRegularFile(checkpoints.resolve("order-form.png"))).isTrue();
+
+        // the recorded test the JUnit runner ran (order 13) wrote to the same run folder, in a file of its own
+        List<Path> recorded;
+        try (Stream<Path> files = Files.list(folder.resolve("steps"))) {
+            recorded = files.filter(p -> p.getFileName().toString().startsWith("FixtureAppDriveIT$Runner#recorded["))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+        assertThat(recorded).as("journals in %s", folder.resolve("steps")).hasSize(1);
+        List<String> recordedLines = Files.readAllLines(recorded.get(0), StandardCharsets.UTF_8);
+        assertThat(JSON.readTree(recordedLines.get(0)).path("kind").asText()).isEqualTo("test");
+        assertThat(JSON.readTree(recordedLines.get(recordedLines.size() - 1)).path("kind").asText()).isEqualTo("end");
+    }
+
+    @Test
+    @Order(28)
+    void aFailingUiTestsJournalEndsAtTheFailedCheck() throws Exception {
+        Path folder = launchUiFixture(JournalFailing.class, false);
+        assertThat(RunFolderFormat.check(folder)).as("run folder %s", folder).isEmpty();
+        List<JsonNode> lines = journal(folder, "FixtureAppDriveIT$JournalFailing#failsAtTheStatus");
+        JsonNode check = lines.get(lines.size() - 2);
+        JsonNode end = lines.get(lines.size() - 1);
+        assertThat(check.path("kind").asText()).as("%s", lines).isEqualTo("check");
+        assertThat(check.path("outcome").asText()).as("%s", lines).isEqualTo("failed");
+        assertThat(check.path("message").asText()).as("%s", lines).contains("never shown");
+        assertThat(end.path("kind").asText()).as("%s", lines).isEqualTo("end");
+        assertThat(end.path("outcome").asText()).as("%s", lines).isEqualTo("failed");
+        assertThat(end.path("evidence").asText()).as("%s", lines).isNotEmpty();
+    }
+
+    @Test
+    @Order(29)
+    void twoCheckpointsOfTheSameScreenAreTheSamePicture() throws Exception {
+        Path folder = launchUiFixture(CheckpointTwice.class, true);
+        Path dir = folder.resolve("checkpoints").resolve("FixtureAppDriveIT$CheckpointTwice#sameScreenSamePicture");
+        java.awt.image.BufferedImage first = javax.imageio.ImageIO.read(dir.resolve("first.png").toFile());
+        java.awt.image.BufferedImage second = javax.imageio.ImageIO.read(dir.resolve("second.png").toFile());
+        assertThat(first).isNotNull();
+        assertThat(second).isNotNull();
+        assertThat(second.getWidth()).isEqualTo(first.getWidth());
+        assertThat(second.getHeight()).isEqualTo(first.getHeight());
+        int differ = 0;
+        for (int y = 0; y < first.getHeight(); y++) {
+            for (int x = 0; x < first.getWidth(); x++) {
+                if (first.getRGB(x, y) != second.getRGB(x, y)) differ++;
+            }
+        }
+        // the checkpoint moved the pointer off (no rollover on Save) and hid the caret in Customer for its paint
+        assertThat(differ).as("pixels that differ between %s and %s", dir.resolve("first.png"), dir.resolve("second.png"))
+                .isZero();
+    }
+
+    /**
+     * Launches the UI test class {@code fixture} against the app, as a build runs a {@code @UiTest}; requires it to pass
+     * (or, with {@code passes} false, to fail its one test). Returns the run folder its STARTED line in latest.txt names.
+     */
+    private static Path launchUiFixture(Class<?> fixture, boolean passes) throws Exception {
+        SummaryGeneratingListener listener = new SummaryGeneratingListener();
+        LauncherFactory.create().execute(LauncherDiscoveryRequestBuilder.request()
+                .selectors(selectClass(fixture))
+                .configurationParameter("swingui.fixtures", "run")
+                .configurationParameter("swingui.agents", "127.0.0.1:" + port).build(), listener);
+        TestExecutionSummary summary = listener.getSummary();
+        assertThat(summary.getTestsFoundCount()).isEqualTo(1);
+        if (passes) {
+            assertThat(summary.getFailures()).as("failures: %s\napp output:\n%s", summary.getFailures(), appOutput).isEmpty();
+            assertThat(summary.getTestsSucceededCount()).isEqualTo(1);
+        } else {
+            assertThat(summary.getTestsFailedCount()).isEqualTo(1);
+        }
+        Path runs = Paths.get(FixtureApp.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent()
+                .resolve("ui-runs");
+        String started = Files.readAllLines(runs.resolve("latest.txt"), StandardCharsets.UTF_8).get(0);
+        Matcher m = Pattern.compile("^STARTED \\S+ tests=1 run=(\\S+)$").matcher(started);
+        assertThat(m.matches()).as(started).isTrue();
+        Path folder = runs.resolve(m.group(1));
+        assertThat(folder).isDirectory();
+        assertThat(new String(Files.readAllBytes(runs.resolve("latest-run.txt")), StandardCharsets.UTF_8).trim())
+                .isEqualTo(m.group(1));
+        return folder;
+    }
+
+    /** The lines of test {@code test}'s journal in run folder {@code folder}. */
+    private static List<JsonNode> journal(Path folder, String test) throws Exception {
+        Path file = folder.resolve("steps").resolve(test + ".jsonl");
+        assertThat(file).isRegularFile();
+        List<JsonNode> out = new java.util.ArrayList<JsonNode>();
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) out.add(JSON.readTree(line));
+        return out;
     }
 
     /** The Number column of the Register table, top to bottom; a read is not one of the agent's steps. */

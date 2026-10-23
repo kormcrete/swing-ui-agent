@@ -1,0 +1,4 @@
+STARTED 2026-10-23T08:12:04.520Z tests=2 run=UIT-20261023-081204-a3f9
+PASS FixtureAppDriveIT$JournalConformance#placesAnOrder 147ms
+FAIL FixtureAppDriveIT$JournalFailing#failsAtTheStatus 1145ms — Expected #status to have text 'never shown' — evidence target/ui-failures/JournalFailing/failsAtTheStatus
+DONE passed=1 failed=1 skipped=0 aborted=0

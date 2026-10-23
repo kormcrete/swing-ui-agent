@@ -1,0 +1,22 @@
+{
+  "format" : 1,
+  "name" : "order-form",
+  "test" : "FixtureAppDriveIT$JournalConformance#placesAnOrder",
+  "target" : "in main",
+  "locator" : {
+    "window" : "main"
+  },
+  "width" : 760,
+  "height" : 254,
+  "masks" : [ {
+    "x" : 614,
+    "y" : 33,
+    "w" : 64,
+    "h" : 16,
+    "target" : "#status",
+    "locator" : {
+      "id" : "status"
+    },
+    "clipped" : false
+  } ]
+}

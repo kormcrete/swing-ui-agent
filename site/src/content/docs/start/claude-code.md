@@ -98,8 +98,8 @@ several, and you click the ✓ on the one you mean. See
 
 For a recorded test the agent calls `run_recorded_test {"name":…}`. For a Java test it runs `mvn -B -Pui verify`
 against the running app and reads the results. For a failure it reads the evidence in `target/ui-failures/` (what the
-step expected, the element tree, a screenshot) and can drive the app to see for itself. To have each run write a
-one-line-per-test summary the agent can read, register the run report: see
+step expected, the element tree, a screenshot) and can drive the app to see for itself. Each run also writes a
+one-line-per-test summary the agent can read, and a journal of each test's steps: see
 [A run report for scripts](/swing-ui-agent/start/run/#a-run-report-for-scripts).
 
 ## Over MCP instead

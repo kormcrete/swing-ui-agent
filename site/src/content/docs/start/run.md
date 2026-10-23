@@ -126,19 +126,15 @@ Without a plugin, a reset does not close tabs. Restart the app, or have the test
 
 ## A run report for scripts
 
-A coding agent that runs the Java tests cannot watch the IDE's test window. Register the run report in your test module, in `src/test/resources/META-INF/services/org.junit.platform.launcher.TestExecutionListener`:
+A coding agent that runs the Java tests cannot watch the IDE's test window. Every run that holds a UI test writes `target/ui-runs/latest.txt` in the test module, one line at a time. Nothing needs registering: the library registers the report itself, and a services entry of your own for `io.github.kormcrete.swingui.junit.UiRunReport` does no harm (it writes nothing twice).
 
 ```text
-io.github.kormcrete.swingui.junit.UiRunReport
-```
-
-Every run that holds a UI test then writes `target/ui-runs/latest.txt`, one line at a time:
-
-```text
-STARTED 2026-10-13T10:34:55.574Z tests=1
+STARTED 2026-10-13T10:34:55.574Z tests=1 run=UIT-20261013-123455-a3f9
 PASS PlaceOrderUiIT#placesAnOrderForAda 4255ms
 DONE passed=1 failed=0 skipped=0 aborted=0
 ```
+
+The STARTED line ends with ` run=<run id>`: the run folder `target/ui-runs/<run id>/`, which holds each test's journal (every step, check and read, with an English sentence) and its checkpoints. `target/ui-runs/latest-run.txt` holds the same id on one line. A repeated or parameterized test is listed once per invocation, as `<Class>#<method>[n]`. See [Run journal](/swing-ui-agent/reference/run-journal/).
 
 ## What's next
 

@@ -1,6 +1,6 @@
 ---
 title: Screenshots
-description: Images of the app for people, painted by the app itself.
+description: Images of the app for people, painted by the app itself, and checkpoints for comparing runs.
 sidebar:
   order: 10
 ---
@@ -75,6 +75,26 @@ ui.inWindow("dialog").saveScreenshot("PlaceOrderUiIT/04-address.png", 2);
 - `screenshot()` and `screenshot(scale)` return the PNG bytes instead of writing a file.
 
 [PlaceOrderUiIT, step by step](/swing-ui-agent/demo/recorded-test/) shows the ten images Order Desk's CI run keeps.
+
+## Checkpoints
+
+A screenshot is a picture for a person. A checkpoint is a picture for comparing: the same moment of the same test, run after run and release after release. A test names it, and it goes into the test's run folder with a sidecar JSON and a line in the test's [run journal](/swing-ui-agent/reference/run-journal/):
+
+```java
+ui.checkpoint("order-form");                                     // the main window
+ui.tab("Orders").table().row("Number", "ORD-1640").checkpoint("order-row");
+ui.section("Cart").checkpoint("cart-totals", ui.label("Date"));  // Date is masked
+```
+
+The files are `target/ui-runs/<run id>/checkpoints/<Class>#<method>/cart-totals.png` and `cart-totals.json`. What a checkpoint does that `saveScreenshot` does not:
+
+- **Its name is the test author's** and says what it shows. It uses only `A-Z a-z 0-9 . _ -`, and is used once per test. Nothing is ever named for you, so the same checkpoint lines up across runs.
+- **Same screen, same pixels.** Before the paint the agent waits for pending events and moves the pointer off the window, so no button is left highlighted under it. The text caret is hidden for the paint only. The picture is always at scale 1 and never scaled down.
+- **Just the part the target names:** a cell, a row or a column of a table is that part, not the whole table.
+- **Masks** are elements to leave out when comparing, such as a date or an order number. Their rectangles go into the sidecar, relative to the picture. Nothing is painted over them.
+- **It can fail the test:** a bad or repeated name, a target scrolled out of view, a mask outside the picture or a file that cannot be written.
+
+Take few: one, at most three per test, at the moments a person would want to compare. The sidecar and how the picture is made are in [Run journal](/swing-ui-agent/reference/run-journal/#checkpoints).
 
 ## As a recorded step
 

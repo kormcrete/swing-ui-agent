@@ -40,8 +40,13 @@ Set them with `-D` on the JVM named in the second column.
 | `swingui.agents` | the tests | Several agents for tests that drive more than one app, as `host:port,host:port`. A JUnit configuration parameter: a system property, `junit-platform.properties` or a suite's `@ConfigurationParameter`. Default: the one agent on `swingui.port`. |
 | `swingui.poolWaitMs` | the tests | How long a test waits for another test in the same JVM to give back the agents it needs. Default `600000` (10 minutes). |
 | `swingui.leaseWaitMs` | the tests | How long a test waits for a busy agent's lease. Default `16000`, just past the 15 seconds after which an idle lease can be taken over. |
+| `swingui.journal` | the tests | `off` writes no run journal: no steps files, no `report.txt`, no ` run=` in `latest.txt`. Checkpoints a test asks for are still written. A JUnit configuration parameter, like `swingui.agents`. Default: on. See [Run journal](/swing-ui-agent/reference/run-journal/#settings). |
+| `swingui.journal.keep` | the tests | How many run folders `target/ui-runs` keeps; `0` keeps all. A JUnit configuration parameter. Default `10`. |
+| `swingui.runId` | the tests | The run folder's name instead of the test JVM's run id, e.g. a CI build number: `A-Z a-z 0-9 . _ -` only. A JUnit configuration parameter. A name already taken gets `-2`, `-3`, … |
+| `swingui.appVersion` | the tests | The app version the run tests, written into `run.json` and each test's journal. A JUnit configuration parameter. `UiRunJournal.appVersion(...)` in test code wins over it. |
 
-A test saves `ui.saveScreenshot("…")` with a relative path under its module's `target/ui-screenshots` and leaves failure evidence under `target/ui-failures`. With the [run report](/swing-ui-agent/start/run/#a-run-report-for-scripts) registered, it writes `target/ui-runs/latest.txt`. None of these needs a property.
+A test saves `ui.saveScreenshot("…")` with a relative path under its module's `target/ui-screenshots` and leaves failure evidence under `target/ui-failures`. Every run with a UI test writes the [run report](/swing-ui-agent/start/run/#a-run-report-for-scripts) `target/ui-runs/latest.txt` and a run folder beside it with each test's [run journal](/swing-ui-agent/reference/run-journal/) and checkpoints. None of these needs a property.
+
 ## The timing log
 
 One line per tool call, for finding where a driven run spends its time:
