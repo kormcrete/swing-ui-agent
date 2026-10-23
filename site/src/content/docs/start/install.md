@@ -76,7 +76,7 @@ does not answer.
 Copy the agent jar to one fixed path in your own build, so the `-javaagent` flag, run configurations and shell
 commands all name the same file. Order Desk does it in its `pom.xml`:
 
-<!-- snippet: pom.xml#L169-L193 -->
+<!-- snippet: pom.xml#L188-L212 -->
 ```xml
 <plugin>
     <groupId>org.apache.maven.plugins</groupId>

@@ -13,7 +13,7 @@ The tests are [recorded tests](/swing-ui-agent/start/recorded-tests/#in-maven-an
 
 Order Desk keeps the steps in one script, so CI and a person run them the same way. On Linux without a display it starts Xvfb first and waits for its socket:
 
-<!-- snippet: .github/scripts/ui-tests.sh#L8-L41 -->
+<!-- snippet: .github/scripts/ui-tests.sh#L9-L55 -->
 ```sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -48,10 +48,24 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+# the agent answers before main() runs; the window opens after the splash
+for i in $(seq 1 30); do
+  SNAPSHOT=$(java -jar "$AGENT" --port "$PORT" snapshot 2>&1 || true)
+  if echo "$SNAPSHOT" | grep -q '"role":"window","name":"Order Desk"'; then echo "Order Desk's window is up (${i}s)"; break; fi
+  if [ "$i" = 30 ]; then
+    echo "Order Desk's window did not open in 30 s:"
+    echo "$SNAPSHOT"
+    if [ -n "$APP" ]; then cat target/app.log; fi
+    exit 1
+  fi
+  sleep 1
+done
+
 mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" "$@" failsafe:integration-test failsafe:verify
 ```
 
 - **Wait for `session`.** It exits `0` once the agent answers, and `3` while nothing listens yet.
+- **Wait for the window too.** The agent answers before `main()` runs and the window opens after the splash, so a second loop reads `snapshot` until it shows the `Order Desk` window (30 s at most).
 - **Stop early when the app dies,** and print its log: a missing display or a bad flag shows up there.
 - **`palette=off`** leaves the recording palette out: nothing in the app listens to input, and a test run's lease would hide it anyway.
 - **`plugins=`** loads Order Desk's [vocabulary plugin](/swing-ui-agent/plugins/vocabulary/), built and installed by the job's step before it: the recorded test `cart-with-steps.json` holds `do` steps that only the plugin can run.
@@ -62,10 +76,12 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" "$@" failsafe:integration-test fa
 
 ## 2. The job
 
-<!-- snippet: .github/workflows/build.yml#L29-L57 -->
+<!-- snippet: .github/workflows/build.yml#L35-L65 -->
 ```yaml
 - name: Install swing-ui-agent
   run: mvn -B -f swing-ui-agent/pom.xml install -DskipTests
+- name: Install the Lagoon theme
+  run: mvn -B -f swing-flatlaf-lagoon-theme/pom.xml install -DskipTests
 - name: Build and install the Order Desk plugin (its domain steps; the app's UI tests use it)
   run: mvn -B -f order-desk-plugin/pom.xml install
 - name: Build and test

@@ -44,10 +44,13 @@ An agent wrote them from the app's source, with the [agent builds the plugin](/s
 
 A step is built with `DomainStep.act(id, sentence)` for something that changes the app, or `DomainStep.check(id, sentence)` for something that checks it. The sentence has `{param}` placeholders. Its body is Java code that works through the same `Client` a UI test uses:
 
-<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskVocabulary.java#L78-L85 -->
+<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskVocabulary.java#L107-L117 -->
 ```java
 DomainStep.act("addToCart", "Add {product} to the cart")
-        .about("Adds one of a product to the cart of the open new order")
+        .about("Needs: a new order showing, the product listed (see Browse category, Search the products)."
+                + " Ends: on it, one more in the product's cart line. {product}: the name or its start"
+                + " (\"stapler\"); one that fits several or none fails naming them; a product Add to cart"
+                + " refuses (out of stock) fails with the app's reason")
         .param("product", ParamType.TEXT).choices(this::productNames)
         .code((ui, p) -> OrderDeskSteps.addToCart(ui, p.text("product")))
         .match(json("{'action':'click','target':{%s}}", PRODUCT_ROW), ADD_BUTTON)
@@ -95,7 +98,7 @@ DomainStep.act("placeOrder", "Place the order")
 
 Each name the app shows is written once, in the plugin's steps class. The steps' code uses it, and so do the patterns that recognise a person's clicks:
 
-<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskSteps.java#L32-L37 -->
+<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskSteps.java#L35-L40 -->
 ```java
 /** A new order's tab title until its customer is chosen; then "New order · Ada Shop Ltd". */
 static final String NEW_ORDER_TAB = "New order";
@@ -105,15 +108,13 @@ static final String PRODUCT_COLUMN = "Product";
 static final String SKU_COLUMN = "SKU";
 ```
 
-The body and the typed call both live in that class, so a Java test calls what the recorded test runs:
+The typed call lives in that class too (it hands the work to the class for the new order's screen), so a Java test calls what the recorded test runs:
 
-<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskSteps.java#L67-L72 -->
+<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskSteps.java#L274-L277 -->
 ```java
-/** Adds one of {@code product} to the cart of the open new order: selects the product, then Add to cart. */
+/** Adds one of {@code product} (its name or the start of it) to the cart of the open new order. */
 public static void addToCart(Client ui, String product) {
-    // the SKU cell: the cart table lists the product too once it is in the cart, but has no SKU column
-    newOrder(ui).table().row(PRODUCT_COLUMN, product).cell(SKU_COLUMN).click();
-    newOrder(ui).button(ADD_TO_CART_BUTTON).click();
+    OrderDeskNewOrderSteps.addToCart(ui, product);
 }
 ```
 
@@ -123,10 +124,11 @@ When the app renames the "Add to cart" button, change its constant: the step, th
 
 A step's **pattern** is the run of recorded steps it stands for. Without `match`, the agent derives it from the body: when the plugin becomes ready it runs the body once or twice on a Client that reaches no app and notes the steps it would make. With `match`, you write it. `matchAlso` adds another way to do the same thing:
 
-<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskVocabulary.java#L93-L100 -->
+<!-- snippet: order-desk-plugin/src/main/java/io/github/kormcrete/orderdesk/uitest/OrderDeskVocabulary.java#L129-L137 -->
 ```java
 DomainStep.act("addQtyToCart", "Add {qty} × {product} to the cart")
-        .about("Adds a product to the cart of the open new order and sets its quantity")
+        .about("Needs: a new order showing, the product listed. Ends: on it, the product's cart line at"
+                + " that quantity (above stock the app keeps it and the cart warns)")
         .param("product", ParamType.TEXT).choices(this::productNames)
         .param("qty", ParamType.INT)
         .code((ui, p) -> OrderDeskSteps.addQtyToCart(ui, p.text("product"), p.integer("qty")))

@@ -174,7 +174,7 @@ What a reviewer looks for:
 // the number is the app's next one: wait for the status bar to name the order whose tab is selected, so a
 // rerun against a running app passes too (the last run's "Order … placed" shows until this one replaces it)
 String order = eventually("the status bar naming the new order", Duration.ofMillis(8000L), () -> {
-    String placed = ui.main().label("placed").contains().text();   // "Order ORD-1640 placed"
+    String placed = ui.main().label("placed").contains().shownText();   // "Order ORD-1640 placed" (text() is the label's name, statusMessage)
     String number = placed.substring("Order ".length(), placed.indexOf(" placed"));
     return ui.tab(number).states().contains("selected") ? number : null;
 }, number -> number != null);
