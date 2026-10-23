@@ -2,8 +2,19 @@ package io.github.kormcrete.swingui.driver.platform;
 
 import java.awt.AWTEvent;
 import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Image;
+import java.awt.Point;
 import java.awt.Window;
+import java.awt.datatransfer.Transferable;
+import java.awt.dnd.DragGestureEvent;
+import java.awt.dnd.DragGestureListener;
+import java.awt.dnd.DragGestureRecognizer;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.DragSourceContext;
+import java.awt.dnd.DragSourceListener;
 import java.awt.dnd.DropTargetContext;
+import java.awt.dnd.peer.DragSourceContextPeer;
 import java.awt.dnd.peer.DropTargetContextPeer;
 import java.util.List;
 import java.util.Set;
@@ -50,6 +61,31 @@ public interface Seam {
 
     /** Clears what {@link #attachDropPeer} set. */
     void detachDropPeer(DropTargetContext context);
+
+    /** What {@code recognizer} hands a recognized gesture to (its protected field); null when nothing. EDT. */
+    DragGestureListener gestureListener(DragGestureRecognizer recognizer);
+
+    /**
+     * Points {@code recognizer}'s next gestures at {@code source} and {@code listener} (its protected fields): the
+     * DragGestureEvent it makes carries {@code source}. Set back by calling it again with what it had. EDT.
+     */
+    void redirectGestures(DragGestureRecognizer recognizer, DragSource source, DragGestureListener listener);
+
+    /**
+     * A DragSourceContext for {@code trigger} whose peer is {@code peer}, never the toolkit's: no native drag can start
+     * from it. What DragSourceContext refuses (no drag action, no transferable) is thrown as itself. EDT.
+     */
+    DragSourceContext dragSourceContext(DragSourceContextPeer peer, DragGestureEvent trigger, Cursor cursor, Image image,
+                                        Point offset, Transferable data, DragSourceListener listener);
+
+    /**
+     * Marks a drag and drop as in progress, as the toolkit does for a native one; while it is, no native drag can
+     * start. False when one is in progress already.
+     */
+    boolean beginDragAndDrop();
+
+    /** Ends what {@link #beginDragAndDrop} began. */
+    void endDragAndDrop();
 
     /** Whether the OS counts this process as the active app; null when unknown. */
     Boolean appActive();

@@ -20,7 +20,8 @@ public final class ModuleAccess {
 
     /** What the seams use. Packages this JDK does not have (the macOS ones elsewhere) are skipped. */
     static final String[] PACKAGES = {
-        "java.awt", "java.awt.peer", "java.awt.dnd", "java.awt.dnd.peer", "sun.awt", "sun.lwawt", "sun.lwawt.macosx"
+        "java.awt", "java.awt.peer", "java.awt.dnd", "java.awt.dnd.peer", "sun.awt", "sun.awt.dnd", "sun.lwawt",
+        "sun.lwawt.macosx"
     };
 
     private ModuleAccess() {}

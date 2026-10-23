@@ -99,11 +99,22 @@ public final class Poster {
 
     /** Press, drags and release; a native drag is never started. */
     public void drag(final Component source, final Point from, final Point to) {
+        postAll(dragEvents(source, from, to));
+    }
+
+    /**
+     * What {@link #drag} posts, in order, for posting one at a time ({@link #post}): a move to {@code from}, the press,
+     * six drags on the way to {@code to} and the release there (both in {@code source}'s coordinates).
+     */
+    public List<MouseEvent> dragEvents(final Component source, final Point from, final Point to) {
         Window window = Edt.call(() -> FocusEmulator.windowOf(source));
         Point a = Edt.call(() -> SwingUtilities.convertPoint(source, from, window));
         Point b = Edt.call(() -> SwingUtilities.convertPoint(source, to, window));
-        long now = System.currentTimeMillis();
-        List<AWTEvent> events = new ArrayList<AWTEvent>();
+        return dragEvents(window, a, b, System.currentTimeMillis());
+    }
+
+    static List<MouseEvent> dragEvents(Component window, Point a, Point b, long now) {
+        List<MouseEvent> events = new ArrayList<MouseEvent>();
         events.add(new MouseEvent(window, MouseEvent.MOUSE_MOVED, now, 0, a.x, a.y, 0, false, MouseEvent.NOBUTTON));
         events.add(new MouseEvent(window, MouseEvent.MOUSE_PRESSED, now, InputEvent.BUTTON1_DOWN_MASK, a.x, a.y, 1, false, MouseEvent.BUTTON1));
         for (int i = 1; i <= DRAG_STEPS; i++) {
@@ -112,7 +123,12 @@ public final class Poster {
             events.add(new MouseEvent(window, MouseEvent.MOUSE_DRAGGED, now + i, InputEvent.BUTTON1_DOWN_MASK, x, y, 1, false, MouseEvent.NOBUTTON));
         }
         events.add(new MouseEvent(window, MouseEvent.MOUSE_RELEASED, now + DRAG_STEPS + 1, 0, b.x, b.y, 1, false, MouseEvent.BUTTON1));
-        postAll(events);
+        return events;
+    }
+
+    /** Posts one event, as every other method here posts theirs. */
+    public void post(AWTEvent event) {
+        sink.post(event);
     }
 
     public void chord(Component source, KeyChord chord) {

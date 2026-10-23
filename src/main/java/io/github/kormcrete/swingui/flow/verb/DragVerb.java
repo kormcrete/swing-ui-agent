@@ -8,8 +8,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@Doc("Posts a mouse drag gesture from one element to another in the same window. A native drag is never "
-        + "started; use drop to deliver data.")
+@Doc("Posts a mouse drag gesture from one element to another in the same window. When the app does AWT drag and "
+        + "drop there (a drag gesture recognizer where the drag starts, a drop target where it ends), the drag and drop "
+        + "runs in the app itself: the app starts its drag, its drop target gets the drop with the app's own data, and "
+        + "the message says what the drop target did; a refused or rejected drop fails the step (NOT_ACTIONABLE), a "
+        + "drag the driver cannot stand in for is a CAPABILITY_GAP. A native drag is never started; use drop to "
+        + "deliver files or text.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class DragVerb extends VerbAction {
     @Required @Doc("Where the drag starts.")

@@ -45,11 +45,12 @@ import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass
 /**
  * The whole product on this OS and Java: FixtureApp starts in its own JVM with the packaged agent jar
  * ({@code -javaagent}, so on Java 9+ the agent opens java.desktop itself), and the CLI drives it the way a coding
- * agent does - typing, clicking, keys that follow focus the app moved itself, Tab, a modal dialog, a drop and a
- * context menu - with the person's palette shown in the window, as it is by default. In the Register window the agent
- * records tests whose steps use what earlier steps made (a copied record, a new tag and folder) and a text unique per
- * run; a new app and agent replay them from their files alone, as recorded tests and as Java tests. Run by failsafe after
- * {@code package}; on every OS CI covers, this is what makes the platform green.
+ * agent does - typing, clicking, keys that follow focus the app moved itself, Tab, a modal dialog, a drop, a
+ * context menu and a row moved by the app's own drag and drop - with the person's palette shown in the window, as it is
+ * by default. In the Register window the agent records tests whose steps use what earlier steps made (a copied record,
+ * a new tag and folder) and a text unique per run; a new app and agent replay them from their files alone, as recorded
+ * tests and as Java tests. Run by failsafe after {@code package}; on every OS CI covers, this is what makes the platform
+ * green.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FixtureAppDriveIT {
@@ -786,6 +787,27 @@ class FixtureAppDriveIT {
         } finally {
             stopIfStillRecording();
         }
+    }
+
+    @Test
+    @Order(24)
+    void aRowDraggedOntoAnotherMovesThroughTheAppsOwnDragAndDrop() throws Exception {
+        String window = "'window':'window:Line order','name':'orderLines'";
+        step("menu", "{'path':['Window','Line order']}");
+        // the table moves rows with AWT drag and drop (a gesture recognizer and a drop target): the agent's drag
+        // starts the app's drag, and the app's drop target moves the row
+        JsonNode dragged = call("drag", "{'from':{" + window + ",'row':{'Product':'Milk'},'column':'Product'},"
+                + "'to':{" + window + ",'row':{'Product':'Coffee'},'column':'Product'}}");
+        String why = dragged.path("why").asText();
+        assertThat(dragged.path("passed").asBoolean()).as(why).isTrue();
+        assertThat(dragged.path("message").asText()).as(why).contains("accepted the drop (move)").contains("completed");
+        step("expect", "{'target':{'window':'window:Line order','name':'lineStatus'},'text':'moved Milk to line 1'}");
+        String[] order = {"Milk", "Coffee", "Tea"};
+        for (int i = 0; i < order.length; i++) {
+            step("expect", "{'target':{" + window + "},'cell':{'row':{'index':" + i + "},'column':'Product','expected':'"
+                    + order[i] + "'}}");
+        }
+        step("close_window", "{'window':'window:Line order'}");
     }
 
     /** The Number column of the Register table, top to bottom; a read is not one of the agent's steps. */

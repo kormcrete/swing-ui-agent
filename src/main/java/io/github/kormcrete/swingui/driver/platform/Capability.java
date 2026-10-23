@@ -6,6 +6,7 @@ public enum Capability {
     TYPE_AHEAD(true, "read and cancel queued focus requests"),
     OS_INPUT(false, "tell OS input from posted input"),
     DROP_PEER(false, "attach a drop peer"),
+    DRAG_SOURCE(false, "stand in for a drag source"),
     APP_ACTIVE(false, "read whether the app is active");
 
     public final boolean required;

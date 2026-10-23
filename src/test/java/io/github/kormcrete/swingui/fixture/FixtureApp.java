@@ -40,7 +40,11 @@ import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.Point;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
 import java.awt.dnd.DnDConstants;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.DragSourceAdapter;
+import java.awt.dnd.DragSourceDropEvent;
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
@@ -61,7 +65,8 @@ import java.util.function.Consumer;
  * digits: Code silently, Ref with a message dialog.
  * <p>Its one menu, {@code Window › Register}, opens the Register window ({@link #showRegister}): records the agent
  * copies, so that each run of a recorded test makes a record with a new number, and opens in a window of their own,
- * titled with their number.
+ * titled with their number. {@code Window › Line order} opens the Line order window ({@link #showLineOrder}): order
+ * lines a person reorders by dragging a row onto another, with AWT drag and drop.
  */
 public final class FixtureApp {
 
@@ -200,6 +205,9 @@ public final class FixtureApp {
             JMenuItem registerItem = new JMenuItem("Register");
             registerItem.addActionListener(e -> showRegister());
             windowMenu.add(registerItem);
+            JMenuItem lineOrderItem = new JMenuItem("Line order");
+            lineOrderItem.addActionListener(e -> showLineOrder());
+            windowMenu.add(lineOrderItem);
             menuBar.add(windowMenu);
             frame.setJMenuBar(menuBar);
             // the menu bar takes its own height: the content keeps the size the other cases were written against
@@ -311,6 +319,71 @@ public final class FixtureApp {
         frame.setContentPane(content);
         frame.setSize(560, 420);
         frame.setLocation(40, 340);
+        return frame;
+    }
+
+    /** The Line order window: made the first time {@code Window › Line order} is chosen, shown again after that. EDT. */
+    private static JFrame lineOrder;
+
+    /**
+     * Opens the Line order window: a table of order lines (Coffee, Tea, Milk) whose rows move by AWT drag and drop, as
+     * an app wires it by hand: a drag gesture recognizer on the table notes the row the drag starts on and starts the
+     * drag with the product's name, and the table's drop target moves that row to the row it is dropped on. A status
+     * line says what moved.
+     */
+    static void showLineOrder() {
+        if (lineOrder == null) lineOrder = lineOrderFrame();
+        lineOrder.setVisible(true);
+        lineOrder.toFront();
+    }
+
+    private static JFrame lineOrderFrame() {
+        JFrame frame = new JFrame("Line order");
+        frame.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+        DefaultTableModel model = new DefaultTableModel(new Object[][] {{"Coffee", 2}, {"Tea", 1}, {"Milk", 3}},
+                new Object[] {"Product", "Qty"}) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable table = new JTable(model);
+        table.setName("orderLines");
+        JLabel moved = new JLabel("no line moved");
+        moved.setName("lineStatus");
+        int[] dragRow = {-1};
+        DragSource.getDefaultDragSource().createDefaultDragGestureRecognizer(table, DnDConstants.ACTION_MOVE, gesture -> {
+            int row = table.rowAtPoint(gesture.getDragOrigin());
+            if (row < 0) return;
+            dragRow[0] = row;
+            gesture.startDrag(DragSource.DefaultMoveDrop, new StringSelection(String.valueOf(model.getValueAt(row, 0))),
+                    new DragSourceAdapter() {
+                        @Override public void dragDropEnd(DragSourceDropEvent e) { dragRow[0] = -1; }
+                    });
+        });
+        new DropTarget(table, DnDConstants.ACTION_MOVE, new DropTargetAdapter() {
+            @Override
+            public void drop(DropTargetDropEvent e) {
+                int to = table.rowAtPoint(e.getLocation());
+                int from = dragRow[0];
+                if (from < 0 || to < 0 || !e.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                    e.rejectDrop();
+                    return;
+                }
+                e.acceptDrop(DnDConstants.ACTION_MOVE);
+                try {
+                    Object product = e.getTransferable().getTransferData(DataFlavor.stringFlavor);
+                    model.moveRow(from, from, to);
+                    moved.setText("moved " + product + " to line " + (to + 1));
+                    e.dropComplete(true);
+                } catch (Exception ex) {
+                    e.dropComplete(false);
+                }
+            }
+        });
+        JPanel content = new JPanel(new BorderLayout());
+        content.add(new JScrollPane(table), BorderLayout.CENTER);
+        content.add(moved, BorderLayout.SOUTH);
+        frame.setContentPane(content);
+        frame.setSize(300, 180);
+        frame.setLocation(600, 300);
         return frame;
     }
 

@@ -63,6 +63,19 @@ class PosterTest {
     }
 
     @Test
+    void aDragIsMovePressSixDragsAndARelease() {
+        List<MouseEvent> events = Poster.dragEvents(source, new Point(10, 40), new Point(10, 10), 5L);
+        assertThat(events).extracting(MouseEvent::getID).containsExactly(MouseEvent.MOUSE_MOVED,
+                MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_DRAGGED,
+                MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_RELEASED);
+        assertThat(events.get(2).getPoint()).isEqualTo(new Point(10, 35));
+        assertThat(events.get(7).getPoint()).isEqualTo(new Point(10, 10));
+        assertThat(events.get(7).getModifiersEx() & InputEvent.BUTTON1_DOWN_MASK).isNotZero();
+        assertThat(events.get(8).getModifiersEx()).isZero();
+        assertThat(events.get(8).getPoint()).isEqualTo(new Point(10, 10));
+    }
+
+    @Test
     void aKeyWithACharacterAlsoTypesIt() {
         List<KeyEvent> enter = Poster.keyEvents(source, KeyChord.parse("Enter", InputEvent.META_DOWN_MASK), 5L);
         assertThat(enter).extracting(KeyEvent::getID)

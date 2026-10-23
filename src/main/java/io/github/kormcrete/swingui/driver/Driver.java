@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.driver;
 
+import io.github.kormcrete.swingui.driver.dnd.DragAndDrop;
 import io.github.kormcrete.swingui.driver.dnd.DropInjector;
 import io.github.kormcrete.swingui.driver.focus.Activation;
 import io.github.kormcrete.swingui.driver.focus.FocusEmulator;
@@ -48,6 +49,7 @@ public final class Driver {
     private final Poster poster;
     private final Settle<Window> settle;
     private final DropInjector drops;
+    private final DragAndDrop drags;
     private final Watch watch;
     private final EdtErrors edtErrors;
     private final AppWindows windows = new AppWindows();
@@ -72,6 +74,7 @@ public final class Driver {
         this.poster = Poster.forThisJvm();
         this.settle = Settle.live();
         this.drops = new DropInjector(seam);
+        this.drags = new DragAndDrop(seam, drops);
         this.watch = new Watch(seam);
         this.edtErrors = EdtErrors.live();
     }
@@ -103,6 +106,7 @@ public final class Driver {
     public Poster poster() { return poster; }
     public Settle<Window> settle() { return settle; }
     public DropInjector drops() { return drops; }
+    public DragAndDrop drags() { return drags; }
     public Watch watch() { return watch; }
     public EdtErrors edtErrors() { return edtErrors; }
     public AppWindows windows() { return windows; }

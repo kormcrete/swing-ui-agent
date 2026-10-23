@@ -235,6 +235,10 @@ public final class Target {
         client.act("scroll into view", locator, () -> client.verbs().scroll(locator.copy(), null, null, timeoutMillis()));
     }
 
+    /**
+     * Drags this target onto {@code to}, in the same window: a mouse drag, or - where the app does AWT drag and drop
+     * there - that drag and drop, run in the app; a refused or rejected drop fails the step.
+     */
     public void dragTo(Target to) {
         client.act("drag to " + to.locator, locator,
                 () -> client.verbs().drag(locator.copy(), to.locator.copy(), timeoutMillis()));

@@ -10,6 +10,7 @@ import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.Shot;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
 import io.github.kormcrete.swingui.driver.Verbs;
+import io.github.kormcrete.swingui.driver.dnd.DragAndDrop;
 import io.github.kormcrete.swingui.driver.dnd.DropInjector;
 import io.github.kormcrete.swingui.driver.focus.FocusEmulator;
 import io.github.kormcrete.swingui.driver.input.Bindings;
@@ -80,6 +81,7 @@ import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.datatransfer.Transferable;
+import java.awt.dnd.DragGestureRecognizer;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.ArrayList;
@@ -525,7 +527,8 @@ public final class LiveVerbs implements Verbs {
         Map<String, Locator> targets = new LinkedHashMap<String, Locator>();
         targets.put("from", from);
         targets.put("to", to);
-        return perform(targets, r -> Kind.POINTER, timeout, settleMillis(), t -> {
+        final AtomicReference<String> note = new AtomicReference<String>();
+        VerbOutcome out = perform(targets, r -> Kind.POINTER, timeout, settleMillis(), t -> {
             final Aimed a = t.get("from");
             final Aimed b = t.get("to");
             Point end = Edt.call(() -> {
@@ -534,9 +537,26 @@ public final class LiveVerbs implements Verbs {
                 }
                 return SwingUtilities.convertPoint(b.component(), b.point, a.component());
             });
-            driver.poster().drag(a.component(), a.point, end);
+            // a press that goes to a drag gesture recognizer starts the app's AWT drag and drop: done in process
+            DragGestureRecognizer recognizer = Edt.call(() -> DragAndDrop.recognizerAt(a.component(), a.point));
+            final DragAndDrop.Gesture gesture = recognizer == null ? null
+                    : driver.drags().start(driver.poster(), recognizer, a.component(), a.point, end);
+            if (gesture == null) {
+                driver.poster().drag(a.component(), a.point, end);
+                return POSTED;
+            }
+            // Queued, as a drop is: the app's drop may open a modal dialog synchronously, which settle must be free
+            // to see as pending; drain lets a drop that opens none finish first.
+            final AtomicReference<String> outcome = new AtomicReference<String>();
+            final AtomicReference<DriverException> refusal = new AtomicReference<DriverException>();
+            EventQueue.invokeLater(() -> runDrop(() -> gesture.drop(b.component(), b.point), outcome, refusal));
+            driver.settle().drain();
+            if (refusal.get() != null) throw refusal.get();
+            note.set(outcome.get());
             return POSTED;
         });
+        out.note = note.get();
+        return out;
     }
 
     @Override

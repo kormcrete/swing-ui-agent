@@ -5,11 +5,22 @@ import io.github.kormcrete.swingui.driver.Reason;
 
 import java.awt.AWTEvent;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.DefaultKeyboardFocusManager;
+import java.awt.Image;
+import java.awt.Point;
 import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
 import java.awt.Window;
+import java.awt.datatransfer.Transferable;
+import java.awt.dnd.DragGestureEvent;
+import java.awt.dnd.DragGestureListener;
+import java.awt.dnd.DragGestureRecognizer;
+import java.awt.dnd.DragSource;
+import java.awt.dnd.DragSourceContext;
+import java.awt.dnd.DragSourceListener;
 import java.awt.dnd.DropTargetContext;
+import java.awt.dnd.peer.DragSourceContextPeer;
 import java.awt.dnd.peer.DropTargetContextPeer;
 import java.awt.event.ActionEvent;
 import java.lang.reflect.AccessibleObject;
@@ -55,6 +66,7 @@ public final class AwtSeam implements Seam {
     private Method dequeueKeyEvents;
     private Method isSystemGenerated;
     private DropPeerHook dropPeer;
+    private DragSourceHook dragSource;
     private Method isApplicationActive;
 
     public AwtSeam(Platform platform) {
@@ -64,6 +76,7 @@ public final class AwtSeam implements Seam {
         lookUpTypeAhead();
         lookUpSystemGenerated();
         lookUpDropPeer();
+        lookUpDragSource();
         lookUpApplicationActive();
     }
 
@@ -114,6 +127,11 @@ public final class AwtSeam implements Seam {
     private void lookUpDropPeer() {
         dropPeer = new DropPeerHook();
         if (dropPeer.missingBecause() != null) missing.put(Capability.DROP_PEER, dropPeer.missingBecause());
+    }
+
+    private void lookUpDragSource() {
+        dragSource = new DragSourceHook();
+        if (dragSource.missingBecause() != null) missing.put(Capability.DRAG_SOURCE, dragSource.missingBecause());
     }
 
     private void lookUpApplicationActive() {
@@ -238,6 +256,57 @@ public final class AwtSeam implements Seam {
             dropPeer.detach(context);
         } catch (ReflectiveOperationException e) {
             throw gap(Capability.DROP_PEER, e);
+        }
+    }
+
+    @Override
+    public DragGestureListener gestureListener(DragGestureRecognizer recognizer) {
+        require(Capability.DRAG_SOURCE);
+        try {
+            return dragSource.listener(recognizer);
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DRAG_SOURCE, e);
+        }
+    }
+
+    @Override
+    public void redirectGestures(DragGestureRecognizer recognizer, DragSource source, DragGestureListener listener) {
+        require(Capability.DRAG_SOURCE);
+        try {
+            dragSource.redirect(recognizer, source, listener);
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DRAG_SOURCE, e);
+        }
+    }
+
+    @Override
+    public DragSourceContext dragSourceContext(DragSourceContextPeer peer, DragGestureEvent trigger, Cursor cursor,
+                                               Image image, Point offset, Transferable data, DragSourceListener listener) {
+        require(Capability.DRAG_SOURCE);
+        try {
+            return dragSource.context(peer, trigger, cursor, image, offset, data, listener);
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DRAG_SOURCE, e);
+        }
+    }
+
+    @Override
+    public boolean beginDragAndDrop() {
+        require(Capability.DRAG_SOURCE);
+        try {
+            return dragSource.begin();
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DRAG_SOURCE, e);
+        }
+    }
+
+    @Override
+    public void endDragAndDrop() {
+        require(Capability.DRAG_SOURCE);
+        try {
+            dragSource.end();
+        } catch (ReflectiveOperationException e) {
+            throw gap(Capability.DRAG_SOURCE, e);
         }
     }
 

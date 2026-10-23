@@ -29,7 +29,8 @@ class ModuleAccessTest {
         assertThat(redefine.getMethod().getName()).isEqualTo("redefineModule");
         Map<?, ?> exports = (Map<?, ?>) redefine.getArguments()[2];
         Map<?, ?> opens = (Map<?, ?>) redefine.getArguments()[3];
-        assertThat(exports.keySet()).contains("java.awt", "java.awt.peer", "java.awt.dnd", "java.awt.dnd.peer", "sun.awt");
+        assertThat(exports.keySet()).contains("java.awt", "java.awt.peer", "java.awt.dnd", "java.awt.dnd.peer", "sun.awt",
+                "sun.awt.dnd");
         assertThat(opens).isEqualTo(exports);
     }
 
