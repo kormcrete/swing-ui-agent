@@ -324,6 +324,33 @@ class MatcherTest {
     }
 
     @Test
+    void aCellCheckIsMatchedWithTheRowItsTableWasSeenAt() throws IOException {
+        // the Check menu's cell check keeps its row under 'cell'; the row was seen with every cell of it
+        JsonNode recorded = JSON.readTree(json("{'action':'expect','target':{'id':'products'},"
+                + "'cell':{'row':{'SKU':'PEN-GEL-BLK'},'column':'Price','expected':'€1.20'}}"));
+        JsonNode seen = JSON.readTree(json("{'target':{'scope':['tab:New order · Ada Shop Ltd'],'role':'table',"
+                + "'row':{'SKU':'PEN-GEL-BLK','Product':'Gel pen, black'},'column':'Price'}}"));
+
+        JsonNode form = Matcher.matchForm(recorded, seen, false);
+
+        assertThat(form.path("cell").path("row")).isEqualTo(JSON.readTree(json(
+                "{'SKU':'PEN-GEL-BLK','Product':'Gel pen, black'}")));
+        assertThat(recorded.path("cell").path("row").has("Product")).isFalse();   // the recorded step is not changed
+        DomainStep priceIs = DomainStep.check("priceIs", "{product} costs {price}")
+                .param("product", ParamType.TEXT).param("price", ParamType.TEXT).code(NOTHING)
+                .match(json("{'action':'expect','target':{'role':'table'},"
+                        + "'cell':{'row':{'Product':'{product}'},'column':'Price','expected':'{price}'}}")).build();
+        Pattern p = compile(priceIs).get(0).patterns().get(0);
+        assertThat(p.match(Collections.singletonList(form)).params())
+                .containsEntry("product", "Gel pen, black").containsEntry("price", "€1.20");
+        assertThat(p.match(Collections.singletonList(recorded))).isNull();
+        // a cell row named by its position stays that position
+        JsonNode byPosition = JSON.readTree(json("{'action':'expect','target':{'id':'products'},"
+                + "'cell':{'row':{'index':0},'column':'Price','expected':'€1.20'}}"));
+        assertThat(Matcher.matchForm(byPosition, seen, true).path("cell").path("row").has("Product")).isFalse();
+    }
+
+    @Test
     void aRowNamedByPositionNeverMatchesAParamRow() throws IOException {
         DomainStep openRow = DomainStep.act("openRow", "Open order {n} of the list").param("n", ParamType.INT).code(NOTHING)
                 .match(json("{'action':'click','target':{'role':'table','row':{'index':'{n}'}},'count':2}")).build();

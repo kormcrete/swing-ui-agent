@@ -133,6 +133,8 @@ In the text of a written pattern:
 - fields left out match anything; an entry with `"optional":true` may be missing;
 - `{"use":"<id>"}` stands for another step's own pattern, so `addQtyToCart` is `addToCart` then `setQuantity`, for the same product.
 
+A recorded step is matched as its element was seen, not as the shorter locator the recorder wrote: its full scope, role, name, and a table row with every cell of it. That holds for a cell check's `cell.row` too, so a pattern such as `'cell':{'row':{'Product':'{product}'},'column':'Price','expected':'{price}'}` takes the product of the row the person checked, whichever column the recorder keyed the row by. A row the person named by its position stays that position.
+
 A tab or section title ending in `*` matches a title prefix (`tab:New order*`, for "New order · Ada Shop Ltd") only as a **scope step** of a target, never as the leaf target itself.
 
 ### When a fold happens

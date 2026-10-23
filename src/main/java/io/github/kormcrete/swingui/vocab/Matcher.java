@@ -370,8 +370,8 @@ public final class Matcher {
      * A recorded step as a pattern matches it: {@code action} (the step's JSON) with each target field {@code seen} names
      * ({@code target}, {@code from}, {@code to}: the element as it was when the step was recorded) given that element's
      * full scope (every tab and section around it), role, name and row (every cell of it), in the place of the shorter
-     * locator the recorder writes; the rest stays the step's own (column, id, window, ...). Null {@code seen}: the step
-     * as it is. With {@code rowByPosition} (the step names its table row by its index, as the person chose) the row stays
+     * locator the recorder writes; the rest stays the step's own (column, id, window, ...). A cell check's {@code cell}
+     * names its row too: it gets the row its {@code target} was seen at. Null {@code seen}: the step as it is. With {@code rowByPosition} (the step names its table row by its index, as the person chose) the row stays
      * that index, as a decimal number: a pattern's literal index still matches it, an INT param (which takes whole
      * numbers only) never does, and a row of values is not offered. {@code action} itself is not changed.
      */
@@ -389,6 +389,9 @@ public final class Matcher {
                 if (!rowByPosition && was.path("row").isObject() && target.has("row")) {
                     target.set("row", was.get("row").deepCopy());
                 }
+            } else if (seen != null && "cell".equals(f.getKey()) && !rowByPosition && target.has("row")
+                    && seen.path("target").path("row").isObject()) {
+                target.set("row", seen.get("target").get("row").deepCopy());
             }
             JsonNode index = target.path("row").path("index");
             if (rowByPosition && target.path("row").size() == 1 && index.isIntegralNumber()) {
