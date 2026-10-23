@@ -705,6 +705,32 @@ class PatternTest {
     }
 
     @Test
+    void aWrittenPatternsWindowIsNotComparedAndANoteSaysSo() {
+        DomainStep next = DomainStep.act("checkoutNext", "Go to the next checkout step").code(NOTHING)
+                .match(json("{'action':'click','target':{'window':'dialog','role':'button','name':'Next'}}"))
+                .matchAlso(json("{'action':'press','keys':'Enter'}"))
+                .matchAlso(json("{'action':'drag','from':{'role':'list','row':{'window':'x'}},"
+                        + "'to':{'window':'main','role':'list'}}"))
+                .build();
+        DomainStep derived = DomainStep.act("checkoutBack", "Go back a checkout step")
+                .steps("{\"action\":\"click\",\"target\":{\"window\":\"dialog\",\"role\":\"button\",\"name\":\"Back\"}}")
+                .build();
+
+        List<PatternCompiler.Compiled> all = compile(next, derived);
+
+        // still kept, still matching in any window
+        assertThat(all.get(0).problems()).isEmpty();
+        assertThat(all.get(0).patterns()).hasSize(3);
+        assertThat(all.get(0).patterns().get(0).match(steps("{'action':'click','target':{'window':'main',"
+                + "'role':'button','name':'Next'}}"))).isNotNull();
+        // a window in a written pattern is named; one in a row is a column; one in a derived pattern is the body's own
+        assertThat(all.get(0).notes()).containsExactly(
+                "match entry 1 names a window, which a pattern does not compare yet: it matches in any window",
+                "matchAlso 2 entry 1 names a window, which a pattern does not compare yet: it matches in any window");
+        assertThat(all.get(1).notes()).isEmpty();
+    }
+
+    @Test
     void usesThatGoRoundInACircleAreAProblem() {
         DomainStep a = DomainStep.act("a", "A").code(NOTHING).match("{\"use\":\"b\"}").build();
         DomainStep b = DomainStep.act("b", "B").code(NOTHING).match("{\"use\":\"a\"}").build();

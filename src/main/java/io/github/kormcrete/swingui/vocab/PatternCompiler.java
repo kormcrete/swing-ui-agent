@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -50,6 +51,10 @@ import java.util.regex.Matcher;
  * <p>Every pattern must capture each required param; one whose entries are all optional, or that is empty, is a
  * problem. A step with a problem is to be dropped.
  *
+ * <p>A pattern never compares {@code window} (nor {@code timeout}, {@code via}, {@code fragile}, {@code nth}). A
+ * written entry that names one still compiles, matching in any window, and {@link Compiled#notes} says so; a derived
+ * pattern's window is the body's own and is dropped without a note.
+ *
  * <p>Not plugin API; may change.
  */
 public final class PatternCompiler {
@@ -86,12 +91,14 @@ public final class PatternCompiler {
         private final List<Pattern> patterns;
         private final String why;
         private final List<String> problems;
+        private final List<String> notes;
 
-        Compiled(DomainStep step, List<Pattern> patterns, String why, List<String> problems) {
+        Compiled(DomainStep step, List<Pattern> patterns, String why, List<String> problems, Collection<String> notes) {
             this.step = step;
             this.patterns = Collections.unmodifiableList(new ArrayList<Pattern>(patterns));
             this.why = why;
             this.problems = Collections.unmodifiableList(new ArrayList<String>(problems));
+            this.notes = Collections.unmodifiableList(new ArrayList<String>(notes));
         }
 
         public DomainStep step() { return step; }
@@ -104,12 +111,20 @@ public final class PatternCompiler {
 
         /** What is wrong with its written patterns, e.g. "match entry 1 has no action"; the step is to be dropped. */
         public List<String> problems() { return problems; }
+
+        /**
+         * What its written patterns hold that they do not compare, e.g. "match entry 1 names a window, ...": the step is
+         * kept and matches as if it were not there.
+         */
+        public List<String> notes() { return notes; }
     }
 
     private final Map<String, DomainStep> byId = new LinkedHashMap<String, DomainStep>();
     private final Function<DomainStep, Traced> tracer;
     private final Map<String, Own> owns = new HashMap<String, Own>();
     private final Map<String, List<Entry>> written = new HashMap<String, List<Entry>>();
+    /** Each step's {@link Compiled#notes}, by id, as its written patterns are compiled. */
+    private final Map<String, Set<String>> notes = new HashMap<String, Set<String>>();
 
     private PatternCompiler(List<DomainStep> steps, Function<DomainStep, Traced> tracer) {
         for (DomainStep s : steps) byId.put(s.id(), s);
@@ -143,10 +158,11 @@ public final class PatternCompiler {
             problems.addAll(also);
             if (p != null) patterns.add(p);
         }
+        Set<String> noted = notes.containsKey(step.id()) ? notes.get(step.id()) : Collections.<String>emptySet();
         if (!problems.isEmpty()) {
-            return new Compiled(step, Collections.<Pattern>emptyList(), main.why, new ArrayList<String>(problems));
+            return new Compiled(step, Collections.<Pattern>emptyList(), main.why, new ArrayList<String>(problems), noted);
         }
-        return new Compiled(step, patterns, main.why, Collections.<String>emptyList());
+        return new Compiled(step, patterns, main.why, Collections.<String>emptyList(), noted);
     }
 
     /** A step's own pattern (written or derived), or why it has none, or its problems. */
@@ -253,6 +269,11 @@ public final class PatternCompiler {
         }
         ObjectNode rest = entry.deepCopy();
         rest.remove("optional");
+        if (namesAWindow(rest, false)) {
+            Set<String> of = notes.get(step.id());
+            if (of == null) notes.put(step.id(), of = new LinkedHashSet<String>());
+            of.add(where + " names a window, which a pattern does not compare yet: it matches in any window");
+        }
         int before = problems.size();
         Pattern.Node node = writtenNode(rest, declared, false, where, problems);
         return problems.size() == before ? new Pattern.One(node, isOptional) : null;
@@ -414,6 +435,20 @@ public final class PatternCompiler {
         flush(lit, parts);
         if (glob) parts.add(Pattern.Text.STAR);
         return new Pattern.Text(parts);
+    }
+
+    /** Whether {@code value} has a {@code window} field outside a row (in a row it is a column). */
+    private static boolean namesAWindow(JsonNode value, boolean inRow) {
+        if (value.isObject()) {
+            for (Iterator<Map.Entry<String, JsonNode>> it = value.fields(); it.hasNext(); ) {
+                Map.Entry<String, JsonNode> f = it.next();
+                if (!inRow && f.getKey().equals("window")) return true;
+                if (namesAWindow(f.getValue(), !inRow && f.getKey().equals("row"))) return true;
+            }
+        } else if (value.isArray()) {
+            for (JsonNode v : value) if (namesAWindow(v, false)) return true;
+        }
+        return false;
     }
 
     private static Pattern.Node writtenNode(JsonNode value, Map<String, ParamType> declared, boolean inRow, String where,

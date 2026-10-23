@@ -131,7 +131,8 @@ In the text of a written pattern:
 - `*` matches any text;
 - a backslash makes a following `*`, opening brace or backslash plain text;
 - fields left out match anything; an entry with `"optional":true` may be missing;
-- `{"use":"<id>"}` stands for another step's own pattern, so `addQtyToCart` is `addToCart` then `setQuantity`, for the same product.
+- `{"use":"<id>"}` stands for another step's own pattern, so `addQtyToCart` is `addToCart` then `setQuantity`, for the same product;
+- `window`, `timeout`, `nth`, `fragile` and `via` are not compared. A written entry that names a `window` still folds, in any window, and `session` lists it under `vocabularyProblems` with the step kept, so a pattern cannot yet limit a fold to a dialog.
 
 A recorded step is matched as its element was seen, not as the shorter locator the recorder wrote: its full scope, role, name, and a table row with every cell of it. That holds for a cell check's `cell.row` too, so a pattern such as `'cell':{'row':{'Product':'{product}'},'column':'Price','expected':'{price}'}` takes the product of the row the person checked, whichever column the recorder keyed the row by. A row the person named by its position stays that position.
 

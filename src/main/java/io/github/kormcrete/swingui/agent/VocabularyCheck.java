@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 /**
  * A plugin's vocabulary as read when the plugin became ready: the steps that pass the checks {@link DomainStep}
  * describes and whose patterns compile ({@link PatternCompiler}), their patterns, and one problem line per step
- * dropped (or one for a vocabulary that failed). A Java body without {@code match(...)} is traced here for its
+ * dropped (or one for a vocabulary that failed), or kept with {@link PatternCompiler.Compiled#notes}. A Java body without {@code match(...)} is traced here for its
  * pattern, within {@link BodyTrace#TIME_LIMIT} each.
  */
 final class VocabularyCheck {
@@ -91,6 +91,10 @@ final class VocabularyCheck {
             if (c.problems().isEmpty()) {
                 kept.add(c.step());
                 patterns.add(c);
+                if (!c.notes().isEmpty()) {
+                    problemAt[offered.indexOf(c.step())] = plugin + ": step '" + c.step().id() + "' kept, but "
+                            + String.join("; ", c.notes());
+                }
             } else {
                 problemAt[offered.indexOf(c.step())] = dropped(plugin, c.step(), c.problems());
             }

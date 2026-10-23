@@ -265,7 +265,9 @@ public final class DomainStep {
          * {@code *}, opening brace or backslash plain text. An entry may say {@code "optional":true}, and
          * {@code {"use":"<id>"}} stands for another step's own pattern (same plugin). The full rules are in
          * {@code io.github.kormcrete.swingui.vocab.PatternCompiler} and {@code Pattern}; a pattern that does not parse
-         * drops the step when the plugin becomes ready.
+         * drops the step when the plugin becomes ready. A pattern does not compare {@code window} yet: an entry that
+         * names one matches in any window, and {@code session} lists it under {@code vocabularyProblems} (the step
+         * is kept).
          */
         public Builder match(String... patternStepJson) {
             this.match = list(patternStepJson);

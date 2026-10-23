@@ -129,6 +129,18 @@ class PluginsTest {
     }
 
     @Test
+    void aWrittenPatternThatNamesAWindowKeepsItsStepAndIsListedAsAProblem() {
+        Plugins plugins = new Plugins(null);
+        readyWith(plugins, "order-desk", DomainStep.act("checkoutNext", "Go to the next checkout step")
+                .code(PluginSlotTest.NOTHING)
+                .match("{\"action\":\"click\",\"target\":{\"window\":\"dialog\",\"role\":\"button\",\"name\":\"Next\"}}")
+                .build());
+        assertThat(names(plugins)).containsExactly("checkoutNext from order-desk: Go to the next checkout step");
+        assertThat(plugins.vocabularyProblems()).containsExactly("order-desk: step 'checkoutNext' kept, but match entry 1 "
+                + "names a window, which a pattern does not compare yet: it matches in any window");
+    }
+
+    @Test
     void anIdInTwoPluginsIsQualified() {
         Plugins plugins = new Plugins(null);
         readyWith(plugins, "order-desk", PluginSlotTest.addToCart(), step("placeOrder", "Place the order"));
