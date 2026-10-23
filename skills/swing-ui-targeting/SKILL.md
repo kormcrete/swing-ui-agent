@@ -141,9 +141,10 @@ vocabulary of the app's own steps (`vocabulary list`; see the swing-ui-record-te
   the app's own drag and drop - AWT's (a drag gesture recognizer, e.g. rows reordered by dragging one onto another)
   or Swing's (drag enabled, with a TransferHandler) - `drag` runs that drag and drop inside the app instead of as a
   native drag, and its `message` says what the drop target did. A refused drag or a rejected drop fails as
-  NOT_ACTIONABLE; a drag started on a `DragSource` the app holds itself (or a `DragSource` subclass of the app's) as
-  CAPABILITY_GAP; a gesture the app starts no drag for passes as the mouse drag it was, and says so. Check the
-  result (the new order) with `expect` as for any step.
+  NOT_ACTIONABLE; a drag the app's drag gesture listener starts on a `DragSource` it holds itself (or a `DragSource`
+  subclass of the app's) as CAPABILITY_GAP; a gesture the app starts no drag for passes as the mouse drag it was, and
+  says so. A drag the app starts from its own mouse listener (no gesture recognizer, drag not enabled) stays posted
+  mouse input and may start a real native drag. Check the result (the new order) with `expect` as for any step.
 - `screenshot` paints the app's own components: open popups, combo dropdowns and tooltips (their own windows) are
   not in the image. Use it for alignment and layout calls only; numbers and booleans are `expect`.
 - `hover`, `resize_column`, `resize_window` and `close_window` are tools; in a `batch` they are steps like any
