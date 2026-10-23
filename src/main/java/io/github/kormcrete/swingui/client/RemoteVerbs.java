@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.client;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Expectation;
 import io.github.kormcrete.swingui.driver.FileChooserState;
@@ -15,8 +16,10 @@ import io.github.kormcrete.swingui.driver.platform.Watch;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +27,9 @@ import java.util.function.Supplier;
 
 /**
  * The driver, out of process: every verb is one do_action step (not recorded), every read one read,
- * snapshot, screenshot, read_clipboard or read_file_chooser call. A failed step throws the DriverException the
- * in-process driver would have thrown: same reason, same message, same details. Inside {@link #withChanges} the first
- * step asks the agent for what it changed ({@code "outcome": true}).
+ * snapshot, screenshot, read_clipboard or read_file_chooser call (a checkpoint is a screenshot call too). A failed step
+ * throws the DriverException the in-process driver would have thrown: same reason, same message, same details. Inside
+ * {@link #withChanges} the first step asks the agent for what it changed ({@code "outcome": true}).
  */
 public final class RemoteVerbs implements Verbs {
 
@@ -109,7 +112,50 @@ public final class RemoteVerbs implements Verbs {
         put(a, "maxSize", maxSize);
         put(a, "scale", scale);
         if (palette) a.put("palette", true);
-        JsonNode result = agent.call("screenshot", a);
+        Picture p = picture(a);
+        return new Shot(p.png, p.meta.path("width").asInt(), p.meta.path("height").asInt(),
+                p.meta.path("sourceWidth").asInt(), p.meta.path("sourceHeight").asInt(), p.meta.path("scaled").asBoolean());
+    }
+
+    /**
+     * A screenshot call with {@code checkpoint: true}: only the target and the masks go with it (the agent refuses
+     * the options that change the picture). An agent from before checkpoints ignores both and sends a plain
+     * screenshot, which has no {@code "checkpoint": true}: a CAPABILITY_GAP.
+     */
+    @Override public CheckpointShot checkpoint(Locator target, List<Locator> masks) {
+        ObjectNode a = agent.args();
+        a.put("checkpoint", true);
+        put(a, "target", target);
+        ArrayNode list = a.putArray("masks");
+        if (masks != null) {
+            for (Locator m : masks) list.add(json.valueToTree(m));
+        }
+        Picture p = picture(a);
+        if (!p.meta.path("checkpoint").asBoolean(false)) {
+            throw new DriverException(Reason.CAPABILITY_GAP, "the agent is older than this client: it takes no "
+                    + "checkpoints; use the agent jar of this library's version");
+        }
+        List<CheckpointShot.Mask> rects = new ArrayList<CheckpointShot.Mask>();
+        for (JsonNode m : p.meta.path("masks")) {
+            rects.add(new CheckpointShot.Mask(m.path("x").asInt(), m.path("y").asInt(), m.path("w").asInt(),
+                    m.path("h").asInt(), m.path("clipped").asBoolean()));
+        }
+        return new CheckpointShot(p.png, p.meta.path("width").asInt(), p.meta.path("height").asInt(), rects);
+    }
+
+    /** A screenshot answer: the PNG and the text block about it. */
+    private static final class Picture {
+        final byte[] png;
+        final JsonNode meta;
+
+        Picture(byte[] png, JsonNode meta) {
+            this.png = png;
+            this.meta = meta;
+        }
+    }
+
+    private Picture picture(ObjectNode args) {
+        JsonNode result = agent.call("screenshot", args);
         byte[] png = null;
         JsonNode meta = json.createObjectNode();
         for (JsonNode c : result.path("content")) {
@@ -117,8 +163,7 @@ public final class RemoteVerbs implements Verbs {
             if ("text".equals(c.path("type").asText())) meta = agent.parse(c.path("text").asText());
         }
         if (png == null) throw new DriverException(Reason.APP_ERROR, "screenshot: the agent sent no image");
-        return new Shot(png, meta.path("width").asInt(), meta.path("height").asInt(), meta.path("sourceWidth").asInt(),
-                meta.path("sourceHeight").asInt(), meta.path("scaled").asBoolean());
+        return new Picture(png, meta);
     }
 
     @Override public String clipboardText() {

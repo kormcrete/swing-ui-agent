@@ -375,6 +375,26 @@ class UiTestExtensionTest {
     }
 
     @Test
+    void theHeaderAndRunJsonCarryEachClientsLooks() throws IOException {
+        startJournalAgent();
+        journalAgent.looks(2.0, "com.formdev.flatlaf.FlatLightLaf", 1280, 800);
+        UiAgents checked = new UiAgents("127.0.0.1", journalAgent.port());
+        poolUnderTest = new UiPool(Collections.singletonList(checked), 0, "127.0.0.1:" + journalAgent.port());
+
+        assertThat(launch(AsAda.class)).containsExactly((Throwable) null);
+
+        JsonNode client = lines("UiTestExtensionTest$AsAda#runs").get(0).path("clients").get(0);
+        JsonNode run = JSON.readTree(runFolder().resolve("run.json").toFile()).path("clients").get(0);
+        for (JsonNode c : java.util.Arrays.asList(client, run)) {
+            assertThat(c.path("scale").isNumber()).isTrue();
+            assertThat(c.path("scale").asDouble()).isEqualTo(2.0);
+            assertThat(c.path("laf").asText()).isEqualTo("com.formdev.flatlaf.FlatLightLaf");
+            assertThat(c.path("window").path("w").asInt()).isEqualTo(1280);
+            assertThat(c.path("window").path("h").asInt()).isEqualTo(800);
+        }
+    }
+
+    @Test
     void anAppVersionTheTestNamesBeatsTheAgentsAndAnAgentATestMadeHasNoGuessedFields() throws IOException {
         startJournalAgent();
         UiRunJournal.appVersion("2.5.0-rc1");
@@ -387,6 +407,9 @@ class UiTestExtensionTest {
         assertThat(client.has("agentVersion")).isFalse();
         assertThat(client.path("app").has("name")).isFalse();
         assertThat(client.path("app").path("version").asText()).isEqualTo("2.5.0-rc1");
+        assertThat(client.has("scale")).isFalse();
+        assertThat(client.has("laf")).isFalse();
+        assertThat(client.has("window")).isFalse();
     }
 
     /** A test whose reset fails (a stubborn modal), with an @AfterEach that takes a Client. */

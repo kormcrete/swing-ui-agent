@@ -319,6 +319,22 @@ public final class Target {
         }
     }
 
+    /**
+     * A checkpoint of this element: a picture of it for comparing runs (of a cell, row or column target just that
+     * part), written with its sidecar into the test's run folder as {@code checkpoints/<test>/<name>.png} and
+     * {@code .json}, and a {@code checkpoint} line in the run journal. {@code name} is yours and says what it shows
+     * ({@code "cart-totals"}): only {@code A-Z a-z 0-9 . _ -}, once per test. A checkpoint that cannot be taken or
+     * written fails the test: an element scrolled out of view, too. Use few: one, at most three per test.
+     */
+    public void checkpoint(String name) { client.checkpoint(name, locator.copy(), new Target[0]); }
+
+    /**
+     * {@link #checkpoint(String)} with {@code masks}: elements inside the picture whose rectangles the sidecar lists,
+     * to leave out when comparing (a date, an order number); nothing is painted over them. A mask outside the picture
+     * or in another window fails the checkpoint.
+     */
+    public void checkpoint(String name, Target... masks) { client.checkpoint(name, locator.copy(), masks); }
+
     // ---- reads (no retry; use an assertion to wait for a value). Each public read journals once, by its own name.
 
     /** Where the element is, in its window's coordinates (no retry). */

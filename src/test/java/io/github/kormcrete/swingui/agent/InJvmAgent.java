@@ -53,6 +53,12 @@ public final class InJvmAgent {
         return new InJvmAgent(a);
     }
 
+    /** What {@code session info} says of how the app looks; each null is left out, as an agent that cannot read it. */
+    public InJvmAgent looks(Double scale, String lookAndFeel, Integer width, Integer height) {
+        assembly.sessionTool.looks(() -> new SessionTool.Looks(scale, lookAndFeel, width, height));
+        return this;
+    }
+
     public int port() { return assembly.endpoint.port(); }
 
     Lease lease() { return assembly.lease; }

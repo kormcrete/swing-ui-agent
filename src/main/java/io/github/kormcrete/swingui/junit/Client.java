@@ -1,5 +1,6 @@
 package io.github.kormcrete.swingui.junit;
 
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.VerbOutcome;
@@ -8,6 +9,8 @@ import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.flow.FlowExecutor;
 import io.github.kormcrete.swingui.flow.UiUsers;
+import io.github.kormcrete.swingui.journal.CheckpointFiles;
+import io.github.kormcrete.swingui.journal.JournalLines;
 import io.github.kormcrete.swingui.journal.RunFolder;
 import io.github.kormcrete.swingui.journal.TestJournal;
 
@@ -421,6 +424,80 @@ public final class Client {
             return verbs.screenshot(null, null, null, scale, palette).png;
         } catch (DriverException e) {
             throw new UiActionFailed("screenshot", null, e, Collections.<String>emptyList());
+        }
+    }
+
+    /**
+     * A checkpoint of the main window: a picture of it for comparing runs, written with its sidecar into the test's
+     * run folder as {@code checkpoints/<test>/<name>.png} and {@code .json}, and a {@code checkpoint} line in the run
+     * journal. {@code name} is yours and says what it shows ({@code "order-form"}): only {@code A-Z a-z 0-9 . _ -},
+     * once per test. A checkpoint that cannot be taken or written fails the test. Use few: one, at most three per test.
+     */
+    public void checkpoint(String name) { checkpoint(name, mainWindow(), new Target[0]); }
+
+    /**
+     * {@link #checkpoint(String)} with {@code masks}: elements whose rectangles the sidecar lists, to leave out when
+     * comparing (a date, an order number); nothing is painted over them.
+     */
+    public void checkpoint(String name, Target... masks) { checkpoint(name, mainWindow(), masks); }
+
+    private static Locator mainWindow() {
+        Locator l = new Locator();
+        l.window = "main";
+        return l;
+    }
+
+    /**
+     * Takes checkpoint {@code name} of {@code target}: the name is claimed first (an unsafe or repeated one fails
+     * before any call), each mask must be a target of this client, the agent paints it, the files are written and one
+     * {@code checkpoint} line says how it went (also when it failed, before the failure leaves). With the run journal
+     * off only that line is left out.
+     */
+    void checkpoint(String name, Locator target, Target[] masks) {
+        if (journal == null) {
+            throw new IllegalStateException("a checkpoint needs the Client of a @UiTest: it is written into the test's "
+                    + "run folder");
+        }
+        journal.claimCheckpoint(name);
+        List<Locator> maskLocators = new ArrayList<Locator>();
+        for (Target m : masks == null ? new Target[0] : masks) {
+            if (m == null) throw new IllegalArgumentException("checkpoint " + name + ": a mask is null");
+            if (m.client().verbs() != verbs) {
+                throw new IllegalArgumentException("checkpoint " + name + ": mask " + m.locator()
+                        + " is a target of another client; a checkpoint masks parts of its own client's window");
+            }
+            maskLocators.add(m.locator());
+        }
+        long startedAt = System.currentTimeMillis();
+        CheckpointShot shot;
+        try {
+            shot = verbs.checkpoint(target.copy(), maskLocators);
+        } catch (DriverException e) {
+            journalCheckpoint(name, target, maskLocators, null, DriverException.stripReason(e.getMessage(), e.reason()),
+                    startedAt);
+            throw new UiActionFailed("checkpoint " + name, target, e, candidatesFor(target, e));
+        }
+        String[] files;
+        try {
+            files = CheckpointFiles.write(journal, name, target, maskLocators, shot);
+        } catch (CheckpointFiles.NotWritten e) {
+            IllegalStateException failed = new IllegalStateException("could not write checkpoint " + e.where, e);
+            journalCheckpoint(name, target, maskLocators, null, failed.getMessage(), startedAt);
+            throw failed;
+        }
+        journalCheckpoint(name, target, maskLocators, files, null, startedAt);
+    }
+
+    /** The checkpoint line: its files when it was written, else how it failed. Never fails the test. */
+    private void journalCheckpoint(String name, Locator target, List<Locator> masks, String[] files, String failure,
+                                   long startedAt) {
+        if (!journal.stepsOn()) return;
+        try {
+            journal.append(JournalLines.checkpoint(name, target, masks, files == null ? null : files[0],
+                    files == null ? null : files[1], files != null, failure,
+                    Math.max(0, System.currentTimeMillis() - startedAt), startedAt), client);
+        } catch (RuntimeException e) {
+            RunFolder.warnOff(e);   // the journal never fails a test
         }
     }
 

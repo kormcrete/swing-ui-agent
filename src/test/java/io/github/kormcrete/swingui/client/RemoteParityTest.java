@@ -1,10 +1,12 @@
 package io.github.kormcrete.swingui.client;
 
 import io.github.kormcrete.swingui.agent.InJvmAgent;
+import io.github.kormcrete.swingui.driver.CheckpointShot;
 import io.github.kormcrete.swingui.driver.DriverException;
 import io.github.kormcrete.swingui.driver.FileChooserState;
 import io.github.kormcrete.swingui.driver.Reason;
 import io.github.kormcrete.swingui.driver.model.Geometry;
+import io.github.kormcrete.swingui.driver.model.Locator;
 import io.github.kormcrete.swingui.driver.model.Node;
 import io.github.kormcrete.swingui.driver.outcome.UiReading;
 import io.github.kormcrete.swingui.junit.Client;
@@ -17,8 +19,21 @@ import io.github.kormcrete.swingui.testing.RecordingVerbs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.sun.net.httpserver.HttpServer;
 
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.function.Consumer;
 
 import static io.github.kormcrete.swingui.junit.UiAssertions.assertThat;
@@ -196,5 +211,87 @@ class RemoteParityTest {
         assertThat(b).isInstanceOf(UiActionFailed.class).hasMessage(a.getMessage());
         assertThat(((UiActionFailed) b).reason()).isEqualTo(Reason.NOT_FOUND);
         assertThat(((UiActionFailed) b).candidates()).containsExactly("button 'Save'");
+    }
+
+    @Test
+    void aCheckpointArrivesAsTheSameCall() {
+        CheckpointShot answer = new CheckpointShot(new byte[] {9, 8, 7}, 412, 180, Arrays.asList(
+                new CheckpointShot.Mask(12, 40, 90, 18, false), new CheckpointShot.Mask(0, 160, 30, 20, true)));
+        local.checkpointAnswer = answer;
+        served.checkpointAnswer = answer;
+        RemoteVerbs wire = new RemoteVerbs(new AgentClient("127.0.0.1", agent.port()));
+        Locator lines = inProcess.tab("Orders").table("Lines").row("Number", "ORD-1640").locator();
+        List<Locator> masks = Arrays.asList(inProcess.label("Date").locator(),
+                inProcess.table("Lines").row("Number", "ORD-1640").cell("Qty").locator());
+        Locator main = inProcess.main().locator();
+
+        CheckpointShot a = local.checkpoint(lines, masks);
+        CheckpointShot b = wire.checkpoint(lines, masks);
+        local.checkpoint(main, Collections.<Locator>emptyList());
+        CheckpointShot whole = wire.checkpoint(main, Collections.<Locator>emptyList());
+
+        assertThat(served.calls).isEqualTo(local.calls);
+        assertThat(served.calls).containsExactly(
+                "checkpoint table 'Lines' [tab:Orders] row={Number=ORD-1640} masks=[label 'Date', "
+                        + "table 'Lines' row={Number=ORD-1640} column=Qty]",
+                "checkpoint in main masks=[]");
+        assertThat(b.png).isEqualTo(a.png);
+        assertThat(b.width).isEqualTo(412);
+        assertThat(b.height).isEqualTo(180);
+        assertThat(b.masks).hasSize(2);
+        for (int i = 0; i < 2; i++) {
+            CheckpointShot.Mask want = a.masks.get(i);
+            CheckpointShot.Mask got = b.masks.get(i);
+            assertThat(new int[] {got.x, got.y, got.w, got.h}).containsExactly(want.x, want.y, want.w, want.h);
+            assertThat(got.clipped).isEqualTo(want.clipped);
+        }
+        assertThat(whole.width).isEqualTo(412);
+    }
+
+    @Test
+    void anAgentWithoutCheckpointsIsACapabilityGap() throws Exception {
+        final List<JsonNode> asked = Collections.synchronizedList(new ArrayList<JsonNode>());
+        final ObjectMapper json = new ObjectMapper();
+        HttpServer older = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
+        older.createContext("/mcp", exchange -> {
+            JsonNode request = json.readTree(exchange.getRequestBody());
+            asked.add(request.path("params").path("arguments"));
+            // what an agent from before checkpoints answers: a plain screenshot, the unknown arguments ignored
+            ObjectNode r = json.createObjectNode().put("jsonrpc", "2.0");
+            r.set("id", request.get("id"));
+            ArrayNode content = r.putObject("result").putArray("content");
+            content.addObject().put("type", "image").put("mimeType", "image/png")
+                    .put("data", Base64.getEncoder().encodeToString(new byte[] {1, 2, 3}));
+            content.addObject().put("type", "text").put("text",
+                    "{\"width\":640,\"height\":480,\"sourceWidth\":640,\"sourceHeight\":480,\"scaled\":false,\"bytes\":3}");
+            byte[] body = r.toString().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        older.start();
+        try {
+            RemoteVerbs wire = new RemoteVerbs(new AgentClient("127.0.0.1", older.getAddress().getPort()));
+            Locator lines = inProcess.table("Lines").locator();
+
+            Throwable t = catchThrowable(() -> wire.checkpoint(lines,
+                    Collections.singletonList(inProcess.label("Date").locator())));
+
+            assertThat(t).isInstanceOf(DriverException.class).hasMessage("CAPABILITY_GAP: the agent is older than this client: it "
+                    + "takes no checkpoints; use the agent jar of this library's version");
+            assertThat(((DriverException) t).reason()).isEqualTo(Reason.CAPABILITY_GAP);
+            // only what a checkpoint takes goes out: never palette, scale, maxSize or region
+            JsonNode sent = asked.get(0);
+            List<String> fields = new ArrayList<String>();
+            sent.fieldNames().forEachRemaining(fields::add);
+            assertThat(fields).containsExactlyInAnyOrder("checkpoint", "target", "masks");
+            assertThat(sent.path("checkpoint").asBoolean()).isTrue();
+            assertThat(sent.path("target").path("name").asText()).isEqualTo("Lines");
+            assertThat(sent.path("masks").get(0).path("name").asText()).isEqualTo("Date");
+        } finally {
+            older.stop(0);
+        }
     }
 }

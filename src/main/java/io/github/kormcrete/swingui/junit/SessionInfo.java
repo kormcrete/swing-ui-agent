@@ -26,6 +26,13 @@ public final class SessionInfo {
     public final boolean ready;
     /** The app's main window: "showing", "not showing" or "unknown"; null when the agent does not say. */
     public final String mainWindow;
+    /** The main window's screen scale (2 on a Retina display); null when the agent does not say. */
+    public final Double screenScale;
+    /** The app's look and feel class; null when the agent does not say. */
+    public final String lookAndFeel;
+    /** The main window's size; each null when the agent does not say. */
+    public final Integer mainWindowWidth;
+    public final Integer mainWindowHeight;
     public final List<Plugin> plugins;
     private final String appStartedAt;
 
@@ -61,6 +68,10 @@ public final class SessionInfo {
         for (JsonNode c : app.path("classpath")) cp.add(c.asText());
         appClasspath = Collections.unmodifiableList(cp);
         mainWindow = text(app, "mainWindow");
+        screenScale = app.path("screenScale").isNumber() ? app.get("screenScale").asDouble() : null;
+        lookAndFeel = text(app, "lookAndFeel");
+        mainWindowWidth = integer(app.path("mainWindowSize"), "width");
+        mainWindowHeight = integer(app.path("mainWindowSize"), "height");
         ready = i.path("ready").asBoolean(true);
         pluginState = text(i.path("plugin"), "state");
         pluginDetail = text(i.path("plugin"), "detail");
@@ -91,6 +102,11 @@ public final class SessionInfo {
     private static String text(JsonNode n, String field) {
         JsonNode v = n.path(field);
         return v.isMissingNode() || v.isNull() ? null : v.asText();
+    }
+
+    private static Integer integer(JsonNode n, String field) {
+        JsonNode v = n.path(field);
+        return v.isNumber() ? v.asInt() : null;
     }
 
     private static long millis(String iso) {

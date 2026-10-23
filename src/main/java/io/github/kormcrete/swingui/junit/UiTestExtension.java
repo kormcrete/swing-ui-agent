@@ -134,7 +134,7 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
 
     /**
      * One client of a test as its journal lists it: number, agent address, alias, and what the agent said of itself and
-     * its app, each only when known (an agent a test made itself says nothing). The app version a run names beats
+     * its app (version, screen scale, look and feel, main window size), each only when known (an agent a test made itself says nothing). The app version a run names beats
      * the app's own.
      */
     private static ObjectNode client(int number, UiAgents agent, String alias, RunFolder folder) {
@@ -149,6 +149,11 @@ public final class UiTestExtension implements ParameterResolver, TestExecutionEx
         String version = folder.appVersionResolved();
         if (version == null && info != null) version = info.appVersion;
         if (version != null) app.put("version", version);
+        if (info != null && info.screenScale != null) client.put("scale", info.screenScale);
+        if (info != null && info.lookAndFeel != null) client.put("laf", info.lookAndFeel);
+        if (info != null && info.mainWindowWidth != null && info.mainWindowHeight != null) {
+            client.putObject("window").put("w", info.mainWindowWidth).put("h", info.mainWindowHeight);
+        }
         return client;
     }
 

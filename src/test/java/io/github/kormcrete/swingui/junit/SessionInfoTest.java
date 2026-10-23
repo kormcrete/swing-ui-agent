@@ -58,4 +58,25 @@ class SessionInfoTest {
         assertThat(old.ready).isTrue();
         assertThat(old.mainWindow).isNull();
     }
+
+    @Test
+    void scaleLookAndFeelAndWindowSizeAreReadWhenGiven() throws Exception {
+        SessionInfo i = SessionInfo.parse(new ObjectMapper().readTree("{\"app\":{\"screenScale\":2.0,"
+                + "\"lookAndFeel\":\"com.formdev.flatlaf.FlatLightLaf\",\"mainWindowSize\":{\"width\":1280,\"height\":800}}}"));
+        assertThat(i.screenScale).isEqualTo(2.0);
+        assertThat(i.lookAndFeel).isEqualTo("com.formdev.flatlaf.FlatLightLaf");
+        assertThat(i.mainWindowWidth).isEqualTo(1280);
+        assertThat(i.mainWindowHeight).isEqualTo(800);
+        // an older agent, or one that could not read them: absent, never guessed
+        SessionInfo old = SessionInfo.parse(new ObjectMapper().readTree(INFO));
+        assertThat(old.screenScale).isNull();
+        assertThat(old.lookAndFeel).isNull();
+        assertThat(old.mainWindowWidth).isNull();
+        assertThat(old.mainWindowHeight).isNull();
+        SessionInfo half = SessionInfo.parse(new ObjectMapper().readTree("{\"app\":{\"screenScale\":null,"
+                + "\"mainWindowSize\":{\"width\":1280}}}"));
+        assertThat(half.screenScale).isNull();
+        assertThat(half.mainWindowWidth).isEqualTo(1280);
+        assertThat(half.mainWindowHeight).isNull();
+    }
 }

@@ -343,7 +343,7 @@ public final class TestJournal {
     }
 
     /** {@code node} with each secret masked in its texts. */
-    private JsonNode mask(JsonNode node) {
+    JsonNode mask(JsonNode node) {
         if (node == null || secrets.isEmpty()) return node;
         if (node.isTextual()) return TextNode.valueOf(mask(node.asText()));
         if (node.isObject()) {
