@@ -275,6 +275,16 @@ final class StepsPanel extends JPanel {
             super.processMouseEvent(e);
         }
     };
+    /** A row of text and link: the row's own text, or a domain step's laid-out HTML, then the link drawn. */
+    private final RowView view = new RowView();
+    /** The text of a row with a link that is no domain step's. */
+    private final JLabel plain = RowView.bare();
+    /** Domain steps' rows as laid out, by HTML, colour and font: parsed once, not on every paint. */
+    private final Map<String, JLabel> htmlRows = new java.util.LinkedHashMap<String, JLabel>(64, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, JLabel> eldest) {
+            return size() > 256;
+        }
+    };
     private final JLabel title = new JLabel("Steps");
     /** Under the list: what the last steps could become; hidden when nothing. */
     private final JLabel hint = new JLabel();
@@ -371,10 +381,6 @@ final class StepsPanel extends JPanel {
                     setFont(getFont().deriveFont(Font.ITALIC));
                     return this;
                 }
-                // a domain step's values in bold
-                if (row.line != null && row.line.domain() && !row.line.params.isEmpty()) {
-                    setText(html(lead(row), text(row.line) + linked(row.line), row.line.params.values()));
-                }
                 // a new group's header looks like any group's while its sentence is typed
                 if (row.header() || row.fresh) {
                     setFont(getFont().deriveFont(Font.BOLD));
@@ -386,7 +392,23 @@ final class StepsPanel extends JPanel {
                     setForeground("✗".equals(mark) ? Overlay.NO : "✓".equals(mark) ? Overlay.YES.darker()
                             : "▶".equals(mark) ? Overlay.HOVER : Color.DARK_GRAY);
                 }
-                return this;
+                // a domain step's values in bold
+                boolean bold = row.line != null && row.line.domain() && !row.line.params.isEmpty();
+                String linked = row.line != null ? linked(row.line) : "";
+                if (!bold && linked.isEmpty()) return this;
+                // the list paints its rows on every scroll step: HTML is parsed once per row, the 🔗 is drawn, not laid
+                // out as text (an emoji costs a font search on every paint: Java 8 on macOS takes a quarter of a second)
+                JLabel text;
+                if (bold) {
+                    text = htmlLabel(html(lead(row), text(row.line), row.line.params.values()), getForeground(), getFont());
+                } else {
+                    String shown = getText();
+                    plain.setText(shown.endsWith(linked) ? shown.substring(0, shown.length() - linked.length()) : shown);
+                    plain.setForeground(getForeground());
+                    plain.setFont(getFont());
+                    text = plain;
+                }
+                return view.show(this, text, linked.isEmpty() ? null : linkWords(row.line));
             }
         });
         list.addMouseListener(new MouseAdapter() {
@@ -1048,10 +1070,15 @@ final class StepsPanel extends JPanel {
         rerender();
     }
 
-    /** What the renderer shows for {@code row}: the list's text, or for a domain step with values, HTML with them bold. */
+    /**
+     * What the renderer shows for {@code row}: the list's text, or for a domain step with values, HTML with them bold;
+     * then a link's 🔗 (drawn) and words.
+     */
     String rendered(int row) {
         Component c = list.getCellRenderer().getListCellRendererComponent(list, model.get(row), row, false, false);
-        return ((JLabel) c).getText();
+        if (!(c instanceof RowView)) return ((JLabel) c).getText();
+        RowView v = (RowView) c;
+        return v.text().getText() + (v.link() != null ? "  🔗 " + v.link().getText() : "");
     }
 
     /** Whether {@code row} shows greyed: what the person is still doing, or a step a fold stands for. */
@@ -1384,9 +1411,147 @@ final class StepsPanel extends JPanel {
     /** After a record's sentence: 🔗 and where its links take their values from, in words; "" for a step without. */
     private static String linked(Inspector.StepLine s) {
         if (s.links.isEmpty()) return "";
+        return "  🔗 " + linkWords(s);
+    }
+
+    /** Where a record's links take their values from, in words. */
+    private static String linkWords(Inspector.StepLine s) {
         List<String> words = new ArrayList<String>();
         for (Inspector.LinkLine l : s.links) words.add(l.words);
-        return "  🔗 " + String.join("; ", words);
+        return String.join("; ", words);
+    }
+
+    /** A domain step's row {@code html} laid out in {@code color} and {@code font}, once. */
+    private JLabel htmlLabel(String html, Color color, Font font) {
+        String key = color.getRGB() + " " + font + " " + html;
+        JLabel label = htmlRows.get(key);
+        if (label == null) {
+            label = RowView.bare();
+            label.setForeground(color);
+            label.setFont(font);
+            label.setText(html);
+            htmlRows.put(key, label);
+        }
+        return label;
+    }
+
+    /**
+     * A row with a link, or a domain step's row: its text, then 🔗 drawn as an icon and the link's words. Paints the
+     * labels the way a list paints its renderer, and, like {@link DefaultListCellRenderer}, never revalidates or repaints
+     * the list: the list asks for it on every paint.
+     */
+    static final class RowView extends JComponent {
+        private final javax.swing.CellRendererPane pane = new javax.swing.CellRendererPane();
+        private final JLabel linkLabel = bare();
+        private JLabel text;
+        private boolean withLink;
+
+        /** A label for a row's part: no border, see-through, painted in a row. */
+        static JLabel bare() {
+            DefaultListCellRenderer label = new DefaultListCellRenderer();
+            label.setBorder(null);
+            label.setOpaque(false);
+            return label;
+        }
+
+        /** Shows {@code text}, then the link's {@code words} (null: no link) in the colours and border of {@code cell}. */
+        RowView show(JLabel cell, JLabel text, String words) {
+            this.text = text;
+            withLink = words != null;
+            setFont(cell.getFont());
+            setForeground(cell.getForeground());
+            setBackground(cell.getBackground());
+            setBorder(cell.getBorder());
+            setToolTipText(cell.getToolTipText());
+            setOpaque(true);
+            if (withLink) {
+                linkLabel.setText(words);
+                linkLabel.setForeground(cell.getForeground());
+                linkLabel.setFont(cell.getFont());
+                int space = cell.getFontMetrics(cell.getFont()).charWidth(' ');
+                linkLabel.setIconTextGap(space);
+                linkLabel.setBorder(BorderFactory.createEmptyBorder(0, 2 * space, 0, 0));
+                linkLabel.setIcon(LinkIcon.sized(cell.getFont().getSize()));
+            }
+            return this;
+        }
+
+        JLabel text() {
+            return text;
+        }
+
+        /** The link's label; null for a row without. */
+        JLabel link() {
+            return withLink ? linkLabel : null;
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            Insets in = getInsets();
+            Dimension t = text.getPreferredSize();
+            Dimension k = withLink ? linkLabel.getPreferredSize() : new Dimension(0, 0);
+            return new Dimension(in.left + t.width + k.width + in.right, in.top + Math.max(t.height, k.height) + in.bottom);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            if (isOpaque()) {
+                g.setColor(getBackground());
+                g.fillRect(0, 0, getWidth(), getHeight());
+            }
+            Insets in = getInsets();
+            int h = getHeight() - in.top - in.bottom;
+            int w = text.getPreferredSize().width;
+            pane.paintComponent(g, text, this, in.left, in.top, w, h, true);
+            if (withLink) {
+                pane.paintComponent(g, linkLabel, this, in.left + w, in.top, linkLabel.getPreferredSize().width, h, true);
+            }
+        }
+
+        @Override public void invalidate() { }
+        @Override public void validate() { }
+        @Override public void revalidate() { }
+        @Override public void repaint(long tm, int x, int y, int width, int height) { }
+        @Override public void repaint(Rectangle r) { }
+        @Override public void repaint() { }
+    }
+
+    /** 🔗 drawn: two chain links in the row's colour, sharp at any scale, on every platform. */
+    static final class LinkIcon implements javax.swing.Icon {
+        private static final Map<Integer, LinkIcon> SIZES = new HashMap<Integer, LinkIcon>();
+        private final int size;
+
+        private LinkIcon(int size) {
+            this.size = size;
+        }
+
+        /** The icon for text of {@code fontSize} points (event dispatch thread). */
+        static LinkIcon sized(int fontSize) {
+            return SIZES.computeIfAbsent(Math.max(8, fontSize), LinkIcon::new);
+        }
+
+        @Override public int getIconWidth() { return size; }
+        @Override public int getIconHeight() { return size; }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
+                g2.setColor(c.getForeground());
+                g2.setStroke(new java.awt.BasicStroke(Math.max(1.2f, size / 9f)));
+                g2.translate(x + size / 2.0, y + size / 2.0);
+                g2.rotate(-Math.PI / 4);
+                float w = size * 0.56f;
+                float h = size * 0.34f;
+                float shift = w * 0.32f;
+                g2.draw(new java.awt.geom.RoundRectangle2D.Float(-shift - w / 2, -h / 2, w, h, h, h));
+                g2.draw(new java.awt.geom.RoundRectangle2D.Float(shift - w / 2, -h / 2, w, h, h, h));
+            } finally {
+                g2.dispose();
+            }
+        }
     }
 
     /** For the hover: each link with the value it stood for when the step last ran; "" for a step without. */

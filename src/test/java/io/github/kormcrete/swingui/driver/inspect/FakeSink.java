@@ -106,6 +106,15 @@ final class FakeSink implements Inspector.Sink {
         return s.id;
     }
 
+    /** Adds the agent's do step with its sentence, values and links (no fold). */
+    void linkedDo(String say, Map<String, String> params, List<Inspector.LinkLine> links) {
+        synchronized (this) {
+            steps.add(new Inspector.StepLine(nextId++, "agent", "do(order-desk:orderIs)", false, null, say, false, 0, null,
+                    null, Collections.<String>emptyList(), params, links, Collections.<Inspector.LinkOffer>emptyList(), null,
+                    Collections.<String>emptyList()));
+        }
+    }
+
     /** {@link #add} of the person's record without sentence, group or row. */
     int add(String label, String l) {
         return add("person", label, l, null, 0, null, null);

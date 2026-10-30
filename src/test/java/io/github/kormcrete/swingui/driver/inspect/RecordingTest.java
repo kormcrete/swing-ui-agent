@@ -2346,6 +2346,72 @@ class RecordingTest {
         });
     }
 
+    /** What row {@code row} of the steps list paints: its text's label, and its link's label when it has one. */
+    private List<javax.swing.JLabel> painted(int row) {
+        javax.swing.JList<String> list = recording.panel.stepsList();
+        Component c = list.getCellRenderer().getListCellRendererComponent(list, list.getModel().getElementAt(row), row,
+                false, false);
+        List<javax.swing.JLabel> labels = new ArrayList<javax.swing.JLabel>();
+        if (c instanceof StepsPanel.RowView) {
+            labels.add(((StepsPanel.RowView) c).text());
+            if (((StepsPanel.RowView) c).link() != null) labels.add(((StepsPanel.RowView) c).link());
+        } else {
+            labels.add((javax.swing.JLabel) c);
+        }
+        return labels;
+    }
+
+    @Test
+    void aLinkIsDrawnAsAnIconNotLaidOutAsText() throws Exception {
+        // an emoji laid out as text costs a font search on every paint (Java 8 on macOS: a quarter of a second a row)
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("2"));
+        sink.linked("2", "type(#search 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS, "off", UNUSED);
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<String, String>();
+        params.put("order", "ORD-1643");
+        sink.linkedDo("The Status of order ORD-1643 is Placed", params, link("from step 1: Copy added", "ORD-1643"));
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            for (int row = 0; row < 3; row++) {
+                for (javax.swing.JLabel l : painted(row)) {
+                    assertThat(l.getText().codePoints().filter(Character::isSupplementaryCodePoint).count())
+                            .as("row %d: %s", row, l.getText()).isZero();
+                }
+            }
+            assertThat(painted(0)).hasSize(1);
+            assertThat(painted(0).get(0).getIcon()).isNull();
+            List<javax.swing.JLabel> typed = painted(1);
+            assertThat(typed.get(0).getText()).isEqualTo("2  ●  type(#search 'ORD-1643')");
+            assertThat(typed.get(1).getText()).isEqualTo("from step 1: Copy added");
+            assertThat(typed.get(1).getIcon()).isInstanceOf(StepsPanel.LinkIcon.class);
+            // a domain step keeps its values in bold, the link after it the same as any step's
+            List<javax.swing.JLabel> domain = painted(2);
+            assertThat(domain.get(0).getText()).startsWith("<html>").contains("<b>ORD-1643</b>").doesNotContain("from step");
+            assertThat(domain.get(1).getText()).isEqualTo("from step 1: Copy added");
+            assertThat(domain.get(1).getIcon()).isInstanceOf(StepsPanel.LinkIcon.class);
+        });
+        // the rows the agent and the tests read keep their 🔗
+        assertThat(rows().get(1)).isEqualTo("2  ●  type(#search 'ORD-1643')  🔗 from step 1: Copy added");
+    }
+
+    @Test
+    void aDomainRowIsLaidOutOnceNotOnEveryPaint() throws Exception {
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<String, String>();
+        params.put("order", "ORD-1643");
+        sink.linkedDo("The Status of order ORD-1643 is Placed", params, NO_LINKS);
+        sink.linkedDo("The Total of order ORD-1643 is €23.52", params, NO_LINKS);
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            javax.swing.JLabel first = painted(0).get(0);
+            Object view = first.getClientProperty(javax.swing.plaf.basic.BasicHTML.propertyKey);
+            assertThat(view).isNotNull();
+            painted(1);
+            // the list paints its rows on every scroll step: the row's HTML is parsed once, then painted as it is
+            javax.swing.JLabel again = painted(0).get(0);
+            assertThat(again).isSameAs(first);
+            assertThat(again.getClientProperty(javax.swing.plaf.basic.BasicHTML.propertyKey)).isSameAs(view);
+        });
+    }
+
     @Test
     void theStepMenuOffersEarlierChangesInWords() throws Exception {
         sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, UNUSED);
