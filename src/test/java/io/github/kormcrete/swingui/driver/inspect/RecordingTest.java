@@ -2394,6 +2394,29 @@ class RecordingTest {
     }
 
     @Test
+    void aLinksHoverDrawsItsIconToo() throws Exception {
+        sink.linked("1", "click(button 'Copy')", NO_LINKS, NO_OFFERS, null, Collections.singletonList("2"));
+        sink.linked("2", "type(#search 'ORD-1643')", link("from step 1: Copy added", "ORD-1643"), NO_OFFERS, "off", UNUSED);
+        withSteps();
+        SwingUtilities.invokeAndWait(() -> {
+            javax.swing.JToolTip tip = recording.panel.stepsList().createToolTip();
+            tip.setTipText(recording.panel.tooltipAt(1));
+            assertThat(tip).isInstanceOf(StepsPanel.LinkTip.class);
+            StepsPanel.LinkTip linked = (StepsPanel.LinkTip) tip;
+            // what the tip lays out holds no emoji: the text before the 🔗, the icon, the words after it
+            assertThat(linked.getTipText().codePoints().filter(Character::isSupplementaryCodePoint).count()).isZero();
+            assertThat(linked.before().getText()).isEqualTo("type(#search 'ORD-1643')");
+            assertThat(linked.after().getText()).isEqualTo("from step 1: Copy added (seen: ORD-1643)");
+            assertThat(linked.after().getIcon()).isInstanceOf(StepsPanel.LinkIcon.class);
+            assertThat(linked.getPreferredSize().width).isGreaterThan(linked.after().getPreferredSize().width);
+            // a hover without a link is the plain tip
+            tip.setTipText(recording.panel.tooltipAt(0));
+            assertThat(tip.getTipText()).isEqualTo("click(button 'Copy')");
+            assertThat(linked.after().getText()).isEmpty();
+        });
+    }
+
+    @Test
     void aDomainRowIsLaidOutOnceNotOnEveryPaint() throws Exception {
         java.util.Map<String, String> params = new java.util.LinkedHashMap<String, String>();
         params.put("order", "ORD-1643");

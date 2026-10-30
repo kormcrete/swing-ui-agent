@@ -274,6 +274,13 @@ final class StepsPanel extends JPanel {
             }
             super.processMouseEvent(e);
         }
+
+        @Override
+        public javax.swing.JToolTip createToolTip() {
+            javax.swing.JToolTip tip = new LinkTip();
+            tip.setComponent(this);
+            return tip;
+        }
     };
     /** A row of text and link: the row's own text, or a domain step's laid-out HTML, then the link drawn. */
     private final RowView view = new RowView();
@@ -1559,7 +1566,74 @@ final class StepsPanel extends JPanel {
         if (s.links.isEmpty()) return "";
         List<String> words = new ArrayList<String>();
         for (Inspector.LinkLine l : s.links) words.add(l.words + (l.seen == null ? "" : " (seen: " + l.seen + ")"));
-        return " - 🔗 " + String.join("; ", words);
+        return SEEN_LINK + String.join("; ", words);
+    }
+
+    /** Where a hover's links begin: they end it. */
+    private static final String SEEN_LINK = " - 🔗 ";
+
+    /**
+     * The steps list's hover: for a step with links, the text before them, then 🔗 drawn (see {@link RowView}) and the
+     * links' words; any other hover as a plain tip.
+     */
+    static final class LinkTip extends javax.swing.JToolTip {
+        private final javax.swing.CellRendererPane pane = new javax.swing.CellRendererPane();
+        private final JLabel before = RowView.bare();
+        private final JLabel after = RowView.bare();
+        private boolean linked;
+
+        @Override
+        public void setTipText(String text) {
+            int at = text == null ? -1 : text.lastIndexOf(SEEN_LINK);
+            linked = at >= 0;
+            before.setText(linked ? text.substring(0, at) : "");
+            after.setText(linked ? text.substring(at + SEEN_LINK.length()) : "");
+            // the tip's own text is laid out by its look and feel: none while the labels show it
+            super.setTipText(linked ? "" : text);
+            if (linked) parts();
+        }
+
+        JLabel before() {
+            return before;
+        }
+
+        JLabel after() {
+            return after;
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            if (!linked) return super.getPreferredSize();
+            parts();
+            Insets in = getInsets();
+            Dimension b = before.getPreferredSize();
+            Dimension a = after.getPreferredSize();
+            return new Dimension(in.left + b.width + a.width + in.right, in.top + Math.max(b.height, a.height) + in.bottom);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (!linked) return;
+            parts();
+            Insets in = getInsets();
+            int h = getHeight() - in.top - in.bottom;
+            int w = before.getPreferredSize().width;
+            pane.paintComponent(g, before, this, in.left, in.top, w, h, true);
+            pane.paintComponent(g, after, this, in.left + w, in.top, after.getPreferredSize().width, h, true);
+        }
+
+        /** The labels in the tip's font and colour, the icon a space or two after the text before it. */
+        private void parts() {
+            for (JLabel l : new JLabel[] {before, after}) {
+                l.setFont(getFont());
+                l.setForeground(getForeground());
+            }
+            int space = getFontMetrics(getFont()).charWidth(' ');
+            after.setIconTextGap(space);
+            after.setBorder(BorderFactory.createEmptyBorder(0, 2 * space, 0, 0));
+            after.setIcon(LinkIcon.sized(getFont().getSize()));
+        }
     }
 
     /** A record's sentence, or else its line ("check: …" for a check). */
