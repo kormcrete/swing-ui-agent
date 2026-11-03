@@ -1,8 +1,10 @@
 package io.github.kormcrete.swingui.agent;
 
+import io.github.kormcrete.swingui.driver.Driver;
 import io.github.kormcrete.swingui.mcp.HttpMcpEndpoint;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -11,6 +13,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -28,6 +31,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SwingUiAgentTest {
+
+    /**
+     * {@link SwingUiAgent#start} installs the one Driver of the process, and a process never takes it back. All test
+     * classes share a JVM, and the others expect none: with one, {@code session reset} waits for an app window no unit
+     * test has. Without this they passed or failed by the order the file system lists the classes in.
+     */
+    @AfterAll
+    static void forgetTheDriverTheAgentInstalled() throws Exception {
+        Field current = Driver.class.getDeclaredField("current");
+        current.setAccessible(true);
+        current.set(null, null);
+    }
 
     @Test
     void badArgumentsLeaveTheAppRunning() {
