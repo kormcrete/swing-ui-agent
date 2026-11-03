@@ -81,7 +81,7 @@ mvn -B -Pui -Dswingui.agents="127.0.0.1:$PORT" "$@" failsafe:integration-test fa
 - name: Install swing-ui-agent
   run: mvn -B -f swing-ui-agent/pom.xml install -DskipTests
 - name: Install the Lagoon theme
-  run: mvn -B -f swing-flatlaf-lagoon-theme/pom.xml install -DskipTests
+  run: mvn -B -f lagoon-theme/pom.xml install -DskipTests
 - name: Build and install the Order Desk plugin (its domain steps; the app's UI tests use it)
   run: mvn -B -f order-desk-plugin/pom.xml install
 - name: Build and test
