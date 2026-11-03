@@ -36,11 +36,14 @@ final class FolderDialog extends JDialog {
         });
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         getContentPane().add(files);
-        pack();
     }
 
-    /** Shows the dialog in {@code start} (its nearest existing parent when it does not exist yet). EDT. */
+    /**
+     * Shows the dialog in {@code start} (its nearest existing parent when it does not exist yet). Packs here, not on
+     * construction: {@code pack} makes the native window, and one disposed unshown can crash the JVM on macOS. EDT.
+     */
     void open(Path start, Consumer<Path> picked) {
+        pack();
         this.picked = picked;
         Path at = existing(start);
         if (at != null) files.setCurrentDirectory(at.toFile());

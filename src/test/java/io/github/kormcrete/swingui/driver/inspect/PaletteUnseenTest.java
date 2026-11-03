@@ -132,6 +132,22 @@ class PaletteUnseenTest {
         });
     }
 
+    /** A native window disposed unshown can crash the JVM on macOS: Java 2D's flusher then touches its dead surface. */
+    @Test
+    void theFolderDialogMakesNoNativeWindowUntilItOpens() throws Exception {
+        onEdt(() -> {
+            JFrame frame = new JFrame();
+            FolderDialog dialog = new FolderDialog(frame);
+            try {
+                assertThat(dialog.isDisplayable()).isFalse();
+                assertThat(frame.isDisplayable()).isFalse();
+            } finally {
+                dialog.dispose();
+                frame.dispose();
+            }
+        });
+    }
+
     @Test
     void anAgentFileChooserStepNeverFindsTheFolderDialog() throws Exception {
         onEdt(() -> {
