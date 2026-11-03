@@ -99,7 +99,7 @@ logs, the agent writes a JUnit 5 `@UiTest` class instead, with the same driving 
 
 One jar attached with `-javaagent:` clicks, types and reads the live UI from inside the app's JVM. Input goes into the
 app's own event queue, so your mouse and keyboard stay yours. A coding agent calls it one tool per step, from a shell
-(`java -jar … <tool>`) or over MCP on loopback; three skills and a driver sub-agent teach it the workflow.
+(`java -jar … <tool>`) or over MCP on loopback; four skills and a driver sub-agent teach it the workflow.
 [Let your agent drive the app](https://kormcrete.github.io/swing-ui-agent/start/drive/) ·
 [CLI or MCP](https://kormcrete.github.io/swing-ui-agent/agents/cli-or-mcp/) ·
 [Skills](https://kormcrete.github.io/swing-ui-agent/agents/skills/)
@@ -154,8 +154,8 @@ java -javaagent:target/swing-ui-agent-0.1.0-SNAPSHOT-agent.jar -jar my-app.jar
 The palette appears in the app's main window and the agent listens on `127.0.0.1:8765`. Press **● Record**, or tell
 your coding agent what to test.
 
-**Skills for your coding agent.** Three skills (record a test, turn words into targets, hand off the driving) and a
-driver sub-agent teach it the workflow. The driver does the clicking on a cheaper model: Claude Code hands it "go and
+**Skills for your coding agent.** Four skills (record a test, turn words into targets, hand off the driving, build an
+app's plugin) and a driver sub-agent teach it the workflow. The driver does the clicking on a cheaper model: Claude Code hands it "go and
 check" jobs, such as walking a screen, confirming a fix or running a test, and gets back pass, fail or gap per item.
 In Claude Code they come as one plugin from the kormcrete marketplace,
 [kormcrete/claude-plugins](https://github.com/kormcrete/claude-plugins):

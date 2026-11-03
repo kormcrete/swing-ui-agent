@@ -25,7 +25,7 @@ You will learn how to:
 
 ## 1. Give Claude Code the skills
 
-Install the swing-ui-agent plugin, which brings the three skills and the driver sub-agent:
+Install the swing-ui-agent plugin, which brings the four skills and the driver sub-agent:
 
 ```text
 /plugin install swing-ui-agent --marketplace kormcrete/claude-plugins

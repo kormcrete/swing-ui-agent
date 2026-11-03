@@ -1,12 +1,12 @@
 ---
 title: Skills
-description: Three agent skills and a driver sub-agent that teach a coding agent the workflow. In Claude Code they install as one plugin from the kormcrete marketplace.
+description: Four agent skills and a driver sub-agent that teach a coding agent the workflow. In Claude Code they install as one plugin from the kormcrete marketplace.
 sidebar:
   order: 2
 ---
 
 A coding agent can find out on its own how to drive a Swing app, but it gets there faster and wastes fewer calls when
-it is told. swing-ui-agent comes with three agent skills and a driver sub-agent that tell it. They are written for the
+it is told. swing-ui-agent comes with four agent skills and a driver sub-agent that tell it. They are written for the
 CLI; the same tools also work over MCP. In Claude Code they come as one plugin, `swing-ui-agent`, from the kormcrete
 marketplace. Other coding agents copy the files.
 
@@ -28,6 +28,9 @@ marketplace. Other coding agents copy the files.
   what needs a plugin. `references/recipes.md` lists common jobs as live steps next to the Java each one exports to.
 - **`swing-ui-driver`** (sub-agent, plus a skill of the same name that tells the main session when to use it): does
   the clicking for the main session. See below.
+- **`swing-ui-build-plugin`** (skill): for the app's developer, who has the source. It builds, completes or updates
+  the app's plugin and proves it with an eval run by a fresh agent that has no source. See
+  [Let your agent build the plugin](/swing-ui-agent/plugins/agent-builds-the-plugin/).
 
 ## The driver sub-agent
 
@@ -84,8 +87,8 @@ plugin when someone opens the project and trusts the folder:
 ```
 
 `/plugin` lists what is installed, with its version. The skills are named `swing-ui-agent:swing-ui-record-test`,
-`swing-ui-agent:swing-ui-targeting` and `swing-ui-agent:swing-ui-driver`, and the sub-agent
-`swing-ui-agent:swing-ui-driver`. Claude Code picks them by what you ask; you can also call a skill by name, for
+`swing-ui-agent:swing-ui-targeting`, `swing-ui-agent:swing-ui-driver` and `swing-ui-agent:swing-ui-build-plugin`, and
+the sub-agent `swing-ui-agent:swing-ui-driver`. Claude Code picks them by what you ask; you can also call a skill by name, for
 example `/swing-ui-agent:swing-ui-record-test`.
 
 The skills bring the workflow; your project's instructions bring your app's facts: see
@@ -113,7 +116,7 @@ The files are in the swing-ui-agent repository:
 [`skills/`](https://github.com/kormcrete/swing-ui-agent/tree/main/skills) and
 [`agents/`](https://github.com/kormcrete/swing-ui-agent/tree/main/agents).
 
-1. Copy the three skill folders into your agent's skills directory:
+1. Copy the four skill folders into your agent's skills directory:
 
    ```sh
    cp -r swing-ui-agent/skills/swing-ui-* my-app/<your agent's skills folder>/
@@ -141,6 +144,16 @@ skill improves.
 | Starting the app | how to start or restart it, and where its log is | the agent does not start it; it asks |
 | Data | which app, database or environment it may change, and which data a test may rely on | a test creates what it checks; the agent asks before deleting, sending or changing other data |
 | Glossary | the file that keeps verified targets: screens, menu paths, columns, ids | none; the agent asks where before it creates one |
+
+`swing-ui-build-plugin` takes the agent command (its port is the one for its own checks) and these, for the developer
+who builds the plugin; a project that only drives the app and records tests needs none of them:
+
+| Fact | What to write | Default without it |
+|---|---|---|
+| Plugin module | where the plugin's code lives | the agent proposes a project of its own beside the app, with swing-ui-agent as a `provided` dependency, and asks before it creates it |
+| Coverage list | the file that lists everything a person can do or see, and what covers it | `COVERAGE.md` in the plugin module |
+| Building and testing | how to build the plugin and run its unit tests, and how to start the app with the plugin | the agent asks |
+| Who approves | who approves a change a user of the app could see | the person the agent works for |
 
 The plugin's vocabulary of named steps needs no entry: the agent asks the agent jar for it (`vocabulary list`).
 
