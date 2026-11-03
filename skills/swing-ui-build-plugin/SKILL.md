@@ -190,7 +190,7 @@ a check, every check's failure must carry the value, and every `about` must say 
     that is the first part of another step (select a product, then Add to cart) only suggests its step
     (`autoFold(false)`): folded at once, it would take the click the longer step needs.
 13. **A unit test per step**, in the plugin module: the steps its body takes, traced on a `Client` that reaches no
-    app (`TracingVerbs`, as Order Desk's `OrderDeskStepsTest` does), plus the failures of rules 5 to 9: a partial
+    app (`TracingVerbs`, as Order Desk's test helper `FakeApp` does), plus the failures of rules 5 to 9: a partial
     name that resolves or names the choices, `<step>FailsFastWhenItsScreenIsNotShowing`, `<step>OnTwoMatches`,
     `<check>FailsWithExpectedAndActual`, and the screen put back after a failure.
 

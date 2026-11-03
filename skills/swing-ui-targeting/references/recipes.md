@@ -47,5 +47,6 @@ In Java the same reads are `Target.value()`, `.text()` (the name: a field's capt
 `.selectedRows()`, `.presence()`, `.exists()`, `.bounds()`, `ui.clipboardText()`, `ui.fileChooser()`,
 `ui.describeModal()`. They read once; to wait for a value, assert it or use `UiAssertions.eventually`.
 
-Not exportable (the step runs, the result says `notRecorded`): a target with `item` or `point`, a `row` with more than
-two columns, `loginAs` after the first step. A leading `loginAs` exports as `@LoginAs("<alias>")` (plugin).
+Not exportable (the step runs, the result says `notRecorded`): a `point` on anything but a plain left click, a `row`
+with more than two columns, `loginAs` after the first step. An `item` exports as `.item(...)`, a plain click at a
+`point` as `.clickAt(x, y)`, a leading `loginAs` as `@LoginAs("<alias>")` (plugin).

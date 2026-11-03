@@ -159,8 +159,8 @@ each one gets its own `Plugin gap:` line.
   the rest with raw verbs, or `redo` from the kept steps. A failed check records nothing.
 - **Say which step you used** in your report, as the sentence with its values ("Add 10 × Gel pen, black to the
   cart"). Steps are named `<plugin>:<id>` in the recorded test, even with one plugin. A `do` step's own sentence
-  follows its links: with the order number linked, "Open order ORD-1641" is saved as "Open order the number placeOrder
-  made" (the run report's `action` shows each run's number). Write your own `say` for other words; it is kept.
+  follows its links: with the order number linked, "Open order ORD-1641" is saved as "Open order the Order placeOrder
+  added" (the run report's `action` shows each run's number). Write your own `say` for other words; it is kept.
 - Raw steps that match a step fold into it as they are recorded (`recording list` shows `folded` and `raw`); a check,
   a `do` step, a group or sentence, or a change of author stops a fold. `fold {from,to}`, `unfold {n}` (the steps stay
   raw afterwards) and `keepRaw {from,to}` change it. A check step (`kind: check`) never folds by itself: run it
